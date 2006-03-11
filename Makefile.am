@@ -1,4 +1,9 @@
 lib_LTLIBRARIES = libumem.la
+noinst_PROGRAMS = umem_test
+
+umem_test_SOURCES = umem_test.c
+umem_test_LDADD = -lumem -lpthread -ldl
+
 libumem_la_SOURCES =	init_lib.c \
 			umem_agent_support.c \
 			umem_fail.c \
@@ -6,13 +11,14 @@ libumem_la_SOURCES =	init_lib.c \
 			umem_update_thread.c \
 			vmem_mmap.c \
 			vmem_sbrk.c \
-			envvar.o \
-			getpcstack.o \
-			malloc.o \
-			misc.o \
-			vmem_base.o \
-			umem.o \
-			vmem.o
+			envvar.c \
+			getpcstack.c \
+			misc.c \
+			vmem_base.c \
+			umem.c \
+			vmem.c
+
+# malloc.c \
 
 # XXX: Standalone version?
 # See <http://cvs.opensolaris.org/source/xref/on/usr/src/lib/libumem/Makefile.com>

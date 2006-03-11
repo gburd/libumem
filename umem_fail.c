@@ -126,10 +126,11 @@ umem_panic(const char *format, ...)
 	if (format[strlen(format)-1] != '\n')
 		umem_error_enter("\n");
 
+#ifdef ECELERITY
 	va_start(va, format);
-	/*ec_debug_vprintf(DCRITICAL, DMEM, format, va);*/
-        fvprintf(stderr, format, va);
+	ec_debug_vprintf(DCRITICAL, DMEM, format, va);
 	va_end(va);
+#endif
 	
 	print_stacktrace();
 

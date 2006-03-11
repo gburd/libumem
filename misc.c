@@ -49,7 +49,10 @@
 
 #include <umem_impl.h>
 #include "misc.h"
+
+#ifdef ECELERITY
 #include "util.h"
+#endif
 
 #define	UMEM_ERRFD	2	/* goes to standard error */
 #define	UMEM_MAX_ERROR_SIZE 4096 /* error messages are truncated to this */
@@ -80,7 +83,9 @@ umem_log_enter(const char *error_str, int serious)
 	char c;
 
 	looped = 0;
+#ifdef ECELERITY
 	mem_printf(serious ? DCRITICAL : DINFO, "umem: %s", error_str);
+#endif
 
 	(void) mutex_lock(&umem_error_lock);
 

@@ -11,9 +11,15 @@
 #include <stdint.h>
 #include <pthread.h>
 
-#define INLINE inline
-#define THR_RETURN void *
-#define THR_API
+#ifdef _WIN32
+# define THR_RETURN DWORD
+# define THR_API WINAPI
+# define INLINE __inline
+#else
+# define THR_RETURN void *
+# define THR_API
+# define INLINE inline
+#endif
 
 #if defined(__MACH__) || defined(_WIN32)
 #define NO_WEAK_SYMBOLS
@@ -98,7 +104,41 @@ static INLINE int thr_create(void *stack_base,
 # define RTLD_FIRST 0
 #endif
 
-/*#include "ec_atomic.h"*/
+#ifdef ECELERITY
+# include "ec_atomic.h"
+#else
+# ifdef _WIN32
+#  define ec_atomic_inc(a)		InterlockedIncrement(a)
+#  define ec_atomic_inc64(a)    InterlockedIncrement64(a)
+# elif (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+static INLINE uint_t ec_atomic_cas(uint_t *mem, uint_t with, uint_t cmp)
+{
+  uint_t prev;
+  asm volatile ("lock; cmpxchgl %1, %2"
+        : "=a" (prev)
+        : "r"    (with), "m" (*(mem)), "0" (cmp)
+        : "memory");
+  return prev;
+}
+# endif
+
+# ifndef ec_atomic_inc
+static INLINE uint_t ec_atomic_inc(uint_t *mem)
+{
+  register uint_t last;
+  do {
+    last = *mem;
+  } while (ec_atomic_cas(mem, last+1, last) != last);
+  return ++last;
+}
+# endif
+# ifndef ec_atomic_inc64
+   /* yeah, it's not great.  It's only used to bump failed allocation
+    * counts, so it is not critical right now. */
+#  define ec_atomic_inc64(a)  (*a)++
+# endif
+
+#endif
 
 #define P2PHASE(x, align)    ((x) & ((align) - 1))
 #define P2ALIGN(x, align)    ((x) & -(align))
@@ -138,5 +178,13 @@ static INLINE int __nthreads(void)
 #if (SIZEOF_VOID_P == 8)
 # define _LP64 1
 #endif
+
+#ifndef MIN
+# define MIN(a,b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX
+# define MAX(a,b) ((a) > (b) ? (a) : (b))
+#endif
+
 
 #endif
