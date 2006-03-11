@@ -38,9 +38,10 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "misc.h"
-#include "util.h"
+/*#include "util.h"*/
 
 static volatile int umem_exiting = 0;
 #define	UMEM_EXIT_ABORT	1
@@ -126,7 +127,8 @@ umem_panic(const char *format, ...)
 		umem_error_enter("\n");
 
 	va_start(va, format);
-	ec_debug_vprintf(DCRITICAL, DMEM, format, va);
+	/*ec_debug_vprintf(DCRITICAL, DMEM, format, va);*/
+        fvprintf(stderr, format, va);
 	va_end(va);
 	
 	print_stacktrace();

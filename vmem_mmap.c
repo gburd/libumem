@@ -40,6 +40,8 @@
 #include <sys/sysmacros.h>
 #endif
 
+#include <unistd.h>
+
 #include "vmem_base.h"
 
 #define	ALLOC_PROT	PROT_READ | PROT_WRITE | PROT_EXEC

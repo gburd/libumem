@@ -6,6 +6,15 @@
 #ifndef _EC_UMEM_SOL_COMPAT_H_
 #define _EC_UMEM_SOL_COMPAT_H_
 
+#include "config.h"
+
+#include <stdint.h>
+#include <pthread.h>
+
+#define INLINE inline
+#define THR_RETURN void *
+#define THR_API
+
 #if defined(__MACH__) || defined(_WIN32)
 #define NO_WEAK_SYMBOLS
 #define _umem_cache_alloc(a,b) umem_cache_alloc(a,b)
@@ -89,7 +98,7 @@ static INLINE int thr_create(void *stack_base,
 # define RTLD_FIRST 0
 #endif
 
-#include "ec_atomic.h"
+/*#include "ec_atomic.h"*/
 
 #define P2PHASE(x, align)    ((x) & ((align) - 1))
 #define P2ALIGN(x, align)    ((x) & -(align))
