@@ -36,15 +36,29 @@ and reclaming memory." (Description sourced from Wikipedia.)
 rm -rf $RPM_BUILD_ROOT
 %makeinstall
 
+# Remove the libtool files -- we don't want them.
+find $RPM_BUILD_ROOT%{_libdir} -name '*.la' | xargs rm -fv
+
+# Remove the symlink to the SONAME. Let ldconfig manage that.
+rm -fv $RPM_BUILD_ROOT%{_libdir}/*.so.[0-9]
+
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 
+%pre
+/sbin/ldconfig
+
+
+%post
+/sbin/ldconfig
+
+
 %files
 %defattr(-,root,root,-)
 %doc AUTHORS COPYING COPYRIGHT INSTALL NEWS OPENSOLARIS.LICENSE README TODO
-%{_libdir}/*.so
+%{_libdir}/*.so.*
 
 
 %package devel
@@ -64,7 +78,8 @@ of Solaris's slab allocator, libumem, to Linux.
 %defattr(-,root,root,-)
 %{_includedir}/*.h
 %{_includedir}/sys/*.h
-%{_libdir}/*.so.*
+%{_libdir}/*.so
+%{_libdir}/*.a
 
 
 %changelog

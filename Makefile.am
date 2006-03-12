@@ -29,7 +29,7 @@ libumem_la_SOURCES =	init_lib.c \
 			sys/vmem.h \
 			sys/vmem_impl_user.h
 
-include_HEADERS = umem.h sys/vmem.h
+nobase_include_HEADERS = umem.h sys/vmem.h
 
 TESTS = umem_test
 
