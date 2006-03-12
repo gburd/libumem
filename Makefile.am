@@ -1,4 +1,4 @@
-EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE
+EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec
 
 lib_LTLIBRARIES = libumem.la
 noinst_PROGRAMS = umem_test
@@ -28,6 +28,8 @@ libumem_la_SOURCES =	init_lib.c \
 			vmem.c \
 			sys/vmem.h \
 			sys/vmem_impl_user.h
+
+include_HEADERS = umem.h sys/vmem.h
 
 TESTS = umem_test
 
