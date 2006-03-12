@@ -15,3 +15,5 @@ To-do List for the Linux port of umem
 * rpm spec file.
 
 * test suite.
+
+* static library support.

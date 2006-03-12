@@ -1,3 +1,5 @@
+EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE
+
 lib_LTLIBRARIES = libumem.la
 noinst_PROGRAMS = umem_test
 
@@ -14,11 +16,22 @@ libumem_la_SOURCES =	init_lib.c \
 			envvar.c \
 			getpcstack.c \
 			misc.c \
+			misc.h \
 			vmem_base.c \
+			vmem_base.h \
+			vmem_stand.h \
 			umem.c \
-			vmem.c
+			umem.h \
+			umem_base.h \
+			umem_impl.h \
+			sol_compat.h \
+			vmem.c \
+			sys/vmem.h \
+			sys/vmem_impl_user.h
 
-# malloc.c \
+TESTS = umem_test
+
+# malloc.c
 
 # XXX: Standalone version?
 # See <http://cvs.opensolaris.org/source/xref/on/usr/src/lib/libumem/Makefile.com>
