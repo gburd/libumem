@@ -9,9 +9,14 @@ URL:            http://sourceforge.net/projects/umem/
 Source0:        %{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
-# XXX
-#BuildRequires:  
-#Requires:       
+BuildRequires:  autoconf >= 2.50
+BuildRequires:  automake >= 1.4
+BuildRequires:  libtool >= 1.5.0
+BuildRequires:  doxygen
+BuildRequires:  gcc
+BuildRequires:  binutils
+BuildRequires:  make
+
 
 %description
 This a port of Solaris's slab allocator, libumem, to Linux.
@@ -21,6 +26,7 @@ of [...] memory. [...] It is targeted for use of many small pieces
 of memory chunks. By managing small memory chunks in the units
 called slabs, this mechanism enables lower fragmentation, fast allocation,
 and reclaming memory." (Description sourced from Wikipedia.)
+
 
 %prep
 %setup -q

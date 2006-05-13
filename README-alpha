@@ -40,9 +40,9 @@ writing these are:
 
   Package   Version (>=)
   ========  ============
-  automake  1.8.5
-  autoconf  2.59
-  libtool   1.5.8
+  automake  1.4
+  autoconf  2.50
+  libtool   1.5.0
   
     To prepare the package for building run autogen.sh. Then run
 ./configure with the desired options (See INSTALL and README for the
