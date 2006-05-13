@@ -15,3 +15,5 @@ libtool
 stamp-h
 stamp-h.in
 umem_test
+*.tar.gz
+*.tar.bz2
