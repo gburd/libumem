@@ -10,10 +10,10 @@ To-do List for the Linux port of umem
 
 * ec_debug_vprintf -> something else?
 
-* doxygen'ate the headers/code, to produce reference docs.
-
-* rpm spec file.
-
 * test suite.
 
 * static library support.
+
+* doxygen'ate the headers/code, to produce reference docs.
+
+* HAVE_DOT in Doxyfile.in should be detected by configure.

@@ -29,7 +29,37 @@
 
 /* #pragma ident	"@(#)umem.c	1.11	05/06/08 SMI" */
 
-/*
+/*!
+ * \mainpage Main Page
+ *
+ * \section README
+ *
+ * \include README
+ *
+ * \section Nuances
+ *
+ * There is a nuance in the behaviour of the umem port compared
+ * with umem on Solaris.
+ *
+ * On Linux umem will not return memory back to the OS until umem fails
+ * to allocate a chunk. On failure, umem_reap() will be called automatically,
+ * to return memory to the OS. If your code is going to be running
+ * for a long time on Linux and mixes calls to different memory allocators
+ * (e.g.: malloc()) and umem, your code will need to call
+ * umem_reap() periodically.
+ *
+ * This doesn't happen on Solaris, because malloc is replaced
+ * with umem calls, meaning that umem_reap() is called automatically.
+ *
+ * \section References
+ *
+ * http://docs.sun.com/app/docs/doc/816-5173/6mbb8advq?a=view
+ *
+ * http://access1.sun.com/techarticles/libumem.html
+ *
+ * \section Overview
+ *
+ * \code
  * based on usr/src/uts/common/os/kmem.c r1.64 from 2001/12/18
  *
  * The slab allocator, as described in the following two papers:
@@ -332,6 +362,7 @@
  *	If a constructor callback _does_ do a UMEM_NOFAIL allocation, and
  *	the nofail callback does a non-local exit, we will leak the
  *	partially-constructed buffer.
+ * \endcode
  */
 
 #include "config.h"

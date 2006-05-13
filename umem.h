@@ -48,13 +48,15 @@ extern void *umem_zalloc(size_t, int);
 extern void umem_free(void *, size_t);
 extern void umem_free_align(void *, size_t);
 
-/*
+/*!
  * Flags for umem_cache_create()
  */
+/*@{*/
 #define	UMC_NOTOUCH	0x00010000
 #define	UMC_NODEBUG	0x00020000
 #define	UMC_NOMAGAZINE	0x00040000
 #define	UMC_NOHASH	0x00080000
+/*@}*/
 
 struct umem_cache;		/* cache structure is opaque to umem clients */
 

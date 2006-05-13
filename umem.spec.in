@@ -1,5 +1,5 @@
-Name:           umem
-Version:        1.0
+Name:           @PACKAGE_NAME@
+Version:        @PACKAGE_VERSION@
 Release:        1%{?dist}
 Summary:        Port of Solaris's slab allocator.
 
@@ -30,6 +30,7 @@ and reclaming memory." (Description sourced from Wikipedia.)
 %configure
 %{__make}
 %{__make} check
+%{__make} html
 
 
 %install
@@ -57,7 +58,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%doc AUTHORS COPYING COPYRIGHT INSTALL NEWS OPENSOLARIS.LICENSE README TODO
+%doc AUTHORS COPYING COPYRIGHT INSTALL NEWS OPENSOLARIS.LICENSE README
 %{_libdir}/*.so.*
 
 
@@ -76,12 +77,9 @@ of Solaris's slab allocator, libumem, to Linux.
 
 %files devel
 %defattr(-,root,root,-)
+%doc AUTHORS COPYING COPYRIGHT INSTALL NEWS OPENSOLARIS.LICENSE README TODO
+%doc docs/html
 %{_includedir}/*.h
 %{_includedir}/sys/*.h
 %{_libdir}/*.so
 %{_libdir}/*.a
-
-
-%changelog
-* Sun Mar 12 2006 Richard Dawe <rich@phekda.gotadsl.co.uk> - 1.0-1
-- Initial packaging.

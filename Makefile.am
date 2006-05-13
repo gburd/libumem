@@ -1,4 +1,4 @@
-EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec
+EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile
 
 lib_LTLIBRARIES = libumem.la
 noinst_PROGRAMS = umem_test
@@ -32,6 +32,17 @@ libumem_la_SOURCES =	init_lib.c \
 nobase_include_HEADERS = umem.h sys/vmem.h
 
 TESTS = umem_test
+
+html-local:
+	mkdir -p docs
+	doxygen Doxyfile
+
+clean-local:
+	rm -rf docs
+
+.PHONY:	rpm
+rpm:	$(distdir).tar.bz2
+	rpmbuild -ta $<
 
 # malloc.c
 
