@@ -41,8 +41,8 @@ clean-local:
 	rm -rf docs
 
 .PHONY:	rpm
-rpm:	$(distdir).tar.bz2
-	rpmbuild -ta $<
+rpm:	dist-bzip2
+	rpmbuild -ta $(distdir).tar.bz2
 
 # malloc.c
 
