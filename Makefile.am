@@ -1,10 +1,13 @@
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile
 
 lib_LTLIBRARIES = libumem.la
-noinst_PROGRAMS = umem_test
+noinst_PROGRAMS = umem_test umem_test2
 
 umem_test_SOURCES = umem_test.c
 umem_test_LDADD = -lumem -lpthread -ldl
+
+umem_test2_SOURCES = umem_test2.c
+umem_test2_LDADD = -lumem -lpthread -ldl
 
 libumem_la_SOURCES =	init_lib.c \
 			umem_agent_support.c \
@@ -31,7 +34,7 @@ libumem_la_SOURCES =	init_lib.c \
 
 nobase_include_HEADERS = umem.h sys/vmem.h
 
-TESTS = umem_test
+TESTS = umem_test umem_test2
 
 html-local:
 	mkdir -p docs
