@@ -2,6 +2,7 @@
 *.la
 .deps
 .libs
+*.loT
 Makefile
 Makefile.in
 aclocal.m4
@@ -14,6 +15,9 @@ configure
 libtool
 stamp-h
 stamp-h.in
+stamp-h1
 umem_test
+Doxyfile
+umem.spec
 *.tar.gz
 *.tar.bz2
