@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <pthread.h>
 
+#ifdef HAVE_SYS_TIME_H
+#include <sys/time.h>
+#endif
+
 #ifdef _WIN32
 # define THR_RETURN DWORD
 # define THR_API WINAPI
