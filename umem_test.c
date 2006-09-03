@@ -1,3 +1,7 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "umem.h"
 
 int main(int argc, char *argv[])
