@@ -1,13 +1,18 @@
-EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile
+EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4
 
 lib_LTLIBRARIES = libumem.la
-noinst_PROGRAMS = umem_test umem_test2
+noinst_PROGRAMS = umem_test umem_test2 umem_test3
+
+libumem_la_LDFLAGS = -lpthread -ldl
 
 umem_test_SOURCES = umem_test.c
-umem_test_LDADD = -lumem -lpthread -ldl
+umem_test_LDADD = -lumem
 
 umem_test2_SOURCES = umem_test2.c
-umem_test2_LDADD = -lumem -lpthread -ldl
+umem_test2_LDADD = -lumem
+
+umem_test3_SOURCES = umem_test3.c
+umem_test3_LDADD = -lumem
 
 libumem_la_SOURCES =	init_lib.c \
 			umem_agent_support.c \
@@ -32,9 +37,13 @@ libumem_la_SOURCES =	init_lib.c \
 			sys/vmem.h \
 			sys/vmem_impl_user.h
 
+if MALLOC_REPLACEMENT
+libumem_la_SOURCES += malloc.c
+endif
+
 nobase_include_HEADERS = umem.h sys/vmem.h
 
-TESTS = umem_test umem_test2
+TESTS = umem_test umem_test2 umem_test3 umem_test4
 
 html-local:
 	mkdir -p docs
@@ -47,10 +56,6 @@ clean-local:
 rpm:	dist-bzip2
 	rpmbuild -ta $(distdir).tar.bz2
 
-# malloc.c
-
-# XXX: Standalone version?
-# See <http://cvs.opensolaris.org/source/xref/on/usr/src/lib/libumem/Makefile.com>
-
 # XXX: Non-i386: SPARC asm. x86_64?
 # Convert this to GNU as format: i386_subr_sol.s
+# <http://cvs.opensolaris.org/source/xref/on/usr/src/lib/libumem/>

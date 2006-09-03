@@ -16,6 +16,7 @@ BuildRequires:  doxygen
 BuildRequires:  gcc
 BuildRequires:  binutils
 BuildRequires:  make
+BuildRequires:  mktemp
 
 
 %description

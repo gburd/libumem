@@ -18,6 +18,7 @@ stamp-h.in
 stamp-h1
 umem_test
 umem_test2
+umem_test3
 Doxyfile
 umem.spec
 *.tar.gz

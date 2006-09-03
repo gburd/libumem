@@ -18,6 +18,6 @@ int main(int argc, char *argv[])
 
   umem_free(foo, 32);
 
-  return 0;
+  return EXIT_SUCCESS;
 }
 

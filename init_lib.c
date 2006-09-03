@@ -44,6 +44,9 @@
 #include <dlfcn.h>
 #endif
 
+#include <fcntl.h>
+#include <string.h>
+
 void
 vmem_heap_init(void)
 {
@@ -89,7 +92,41 @@ umem_type_init(caddr_t start, size_t len, size_t pgsize)
 int
 umem_get_max_ncpus(void)
 {
-#ifdef _SC_NPROCESSORS_ONLN
+#ifdef linux
+  /*
+   * HACK: sysconf() will invoke malloc() on Linux as part of reading
+   * in /proc/stat. To avoid recursion in the malloc replacement
+   * version of libumem, read /proc/stat into a static buffer.
+   */
+  static char proc_stat[8192];
+  int fd;
+  int ncpus = 1;
+
+  fd = open("/proc/stat", O_RDONLY);
+  if (fd >= 0) {
+    const ssize_t n = read(fd, proc_stat, sizeof(proc_stat) - 1);
+    if (n >= 0) {
+      const char *cur;
+      const char *next;
+
+      proc_stat[n] = '\0';
+      cur = proc_stat;
+      while (*cur && (next = strstr(cur + 3, "cpu"))) {
+        cur = next;
+      }
+
+      if (*cur)
+        ncpus = atoi(cur + 3) + 1;
+    }
+
+    close(fd);
+  }
+
+  return ncpus;
+
+#else /* !linux */
+
+#if _SC_NPROCESSORS_ONLN
   return (2 * sysconf(_SC_NPROCESSORS_ONLN));
 #elif defined(_SC_NPROCESSORS_CONF)
   return (2 * sysconf(_SC_NPROCESSORS_CONF));
@@ -101,4 +138,6 @@ umem_get_max_ncpus(void)
   /* XXX: determine CPU count on other platforms */
   return (1);
 #endif
+
+#endif /* linux */
 }

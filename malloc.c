@@ -414,3 +414,9 @@ realloc(void *buf_arg, size_t newsize)
 	free(buf_arg);
 	return (buf);
 }
+
+void __attribute__((constructor))
+__malloc_umem_init (void)
+{
+  umem_startup(NULL, 0, 0, NULL, NULL);
+}
