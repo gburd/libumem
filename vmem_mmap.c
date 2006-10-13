@@ -115,6 +115,7 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 	 */
 #ifdef _WIN32
 	buf = VirtualAlloc(NULL, size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+	if (buf == NULL) buf = MAP_FAILED;
 #else
 	buf = mmap(
 #ifdef MAP_ALIGN

@@ -212,7 +212,10 @@ static vmem_seg_t vmem_seg0[VMEM_SEG_INITIAL];
 static vmem_seg_t *vmem_segfree;
 static mutex_t vmem_list_lock = DEFAULTMUTEX;
 static mutex_t vmem_segfree_lock = DEFAULTMUTEX;
-static vmem_populate_lock_t vmem_nosleep_lock;
+static vmem_populate_lock_t vmem_nosleep_lock = {
+  DEFAULTMUTEX,
+  0
+};
 #define	IN_POPULATE()	(vmem_nosleep_lock.vmpl_thr == thr_self())
 static vmem_t *vmem_list;
 static vmem_t *vmem_internal_arena;

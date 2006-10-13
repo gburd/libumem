@@ -41,7 +41,6 @@
 #include <stdio.h>
 
 #include "misc.h"
-/*#include "util.h"*/
 
 static volatile int umem_exiting = 0;
 #define	UMEM_EXIT_ABORT	1
@@ -83,9 +82,21 @@ umem_do_abort(void)
 	}
 
 	for (;;) {
+#if defined(__FreeBSD__)
+		sigset_t set;
+		struct sigaction sa;
+
+		sa.sa_handler = SIG_DFL;
+		(void) sigaction(SIGABRT, &sa, NULL);
+		(void) sigemptyset (&set);
+		(void) sigaddset (&set, SIGABRT);
+		(void) sigprocmask (SIG_UNBLOCK, &set, NULL);
+		(void) raise (SIGABRT);
+#else
 		(void) signal(SIGABRT, SIG_DFL);
 		(void) sigrelse(SIGABRT);
 		(void) raise(SIGABRT);
+#endif
 	}
 #endif
 }

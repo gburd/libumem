@@ -480,21 +480,21 @@ size_t umem_minfirewall;	/* hardware-enforced redzone threshold */
 
 uint_t umem_flags = 0;
 
-mutex_t			umem_init_lock;		/* locks initialization */
+mutex_t			umem_init_lock = DEFAULTMUTEX;		/* locks initialization */
 cond_t			umem_init_cv = DEFAULTCV;		/* initialization CV */
 thread_t		umem_init_thr;		/* thread initializing */
 int			umem_init_env_ready;	/* environ pre-initted */
 int			umem_ready = UMEM_READY_STARTUP;
 
 static umem_nofail_callback_t *nofail_callback;
-static mutex_t		umem_nofail_exit_lock;
+static mutex_t		umem_nofail_exit_lock = DEFAULTMUTEX;
 static thread_t		umem_nofail_exit_thr;
 
 static umem_cache_t	*umem_slab_cache;
 static umem_cache_t	*umem_bufctl_cache;
 static umem_cache_t	*umem_bufctl_audit_cache;
 
-mutex_t			umem_flags_lock;
+mutex_t			umem_flags_lock = DEFAULTMUTEX;
 
 static vmem_t		*heap_arena;
 static vmem_alloc_t	*heap_alloc;
@@ -518,9 +518,14 @@ umem_log_header_t *umem_failure_log;
 umem_log_header_t *umem_slab_log;
 
 extern thread_t _thr_self(void);
+#if defined(__MACH__)
+# define CPUHINT()	((int)(_thr_self()))
+#endif
+
 #ifndef CPUHINT
 #define	CPUHINT()		(_thr_self())
 #endif
+
 #define	CPUHINT_MAX()		INT_MAX
 
 #define	CPU(mask)		(umem_cpus + (CPUHINT() & (mask)))
@@ -542,12 +547,12 @@ volatile thread_t	umem_st_update_thr;	/* only used when single-thd */
 			    thr_self() == umem_st_update_thr)
 #define	IN_REAP()	IN_UPDATE()
 
-mutex_t			umem_update_lock;	/* cache_u{next,prev,flags} */
+mutex_t			umem_update_lock = DEFAULTMUTEX;	/* cache_u{next,prev,flags} */
 cond_t			umem_update_cv = DEFAULTCV;
 
 volatile hrtime_t umem_reap_next;	/* min hrtime of next reap */
 
-mutex_t			umem_cache_lock;	/* inter-cache linkage only */
+mutex_t			umem_cache_lock = DEFAULTMUTEX;	/* inter-cache linkage only */
 
 #ifdef UMEM_STANDALONE
 umem_cache_t		umem_null_cache;

@@ -75,7 +75,7 @@ void log_message(const char *format, ...);
  * returns the index of the (high/low) bit + 1
  */
 int highbit(ulong_t) __attribute__ ((pure));
-int lowbit(ulong_t) __attribute__ ((pure));;
+int lowbit(ulong_t) __attribute__ ((pure));
 /* #pragma no_side_effect(highbit, lowbit) */
 
 /*
