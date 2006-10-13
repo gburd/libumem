@@ -165,7 +165,7 @@ static INLINE uint_t ec_atomic_inc(uint_t *mem)
 
 #ifdef _WIN32
 #define issetugid()		  0
-#else
+#elseif !defined(__FreeBSD__)
 #define issetugid()       (geteuid() == 0)
 #endif
 

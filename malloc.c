@@ -33,7 +33,9 @@
 
 #include <string.h>
 
+#ifdef HAVE_SYS_SYSMACROS_H
 #include <sys/sysmacros.h>
+#endif
 
 #include "umem_base.h"
 

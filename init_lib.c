@@ -47,6 +47,10 @@
 #include <fcntl.h>
 #include <string.h>
 
+#ifdef __FreeBSD__
+#include <machine/param.h>
+#endif
+
 void
 vmem_heap_init(void)
 {
@@ -84,8 +88,10 @@ umem_type_init(caddr_t start, size_t len, size_t pgsize)
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
 	pagesize = info.dwPageSize;
-#else
+#elseif !defined(__FreeBSD__)
 	pagesize = _sysconf(_SC_PAGESIZE);
+#else
+	pagesize = PAGE_SIZE;
 #endif
 }
 
