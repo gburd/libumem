@@ -1,15 +1,15 @@
 AC_INIT([umem], [1.0], [], [umem])
 AM_INIT_AUTOMAKE([dist-bzip2])
 
-AC_ARG_ENABLE([malloc-replacement],
-              AS_HELP_STRING([--enable-malloc-replacement],
-                             [Include implementations of malloc/free/etc. in libumem (default is no)]),
-              [case "${enableval}" in
-                yes) malloc_replacement=true ;;
-                no)  malloc_replacement=false ;;
-                *) AC_MSG_ERROR(bad value ${enableval} for --enable-malloc-replacement) ;;
-              esac],[malloc_replacement=false])
-AM_CONDITIONAL(MALLOC_REPLACEMENT, test x$malloc_replacement = xtrue)
+dnl AC_ARG_ENABLE([malloc-replacement],
+dnl               AS_HELP_STRING([--enable-malloc-replacement],
+dnl                              [Include implementations of malloc/free/etc. in libumem (default is no)]),
+dnl               [case "${enableval}" in
+dnl                 yes) malloc_replacement=true ;;
+dnl                 no)  malloc_replacement=false ;;
+dnl                 *) AC_MSG_ERROR(bad value ${enableval} for --enable-malloc-replacement) ;;
+dnl               esac],[malloc_replacement=false])
+dnl AM_CONDITIONAL(MALLOC_REPLACEMENT, test x$malloc_replacement = xtrue)
 
 AC_PROG_CC
 AM_PROG_AS

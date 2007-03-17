@@ -1,6 +1,6 @@
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4
 
-lib_LTLIBRARIES = libumem.la
+lib_LTLIBRARIES = libumem.la libumem_malloc.la
 noinst_PROGRAMS = umem_test umem_test2 umem_test3
 
 libumem_la_LDFLAGS = -lpthread -ldl
@@ -37,9 +37,8 @@ libumem_la_SOURCES =	init_lib.c \
 			sys/vmem.h \
 			sys/vmem_impl_user.h
 
-if MALLOC_REPLACEMENT
-libumem_la_SOURCES += malloc.c
-endif
+libumem_malloc_la_SOURCES = malloc.c
+libumem_malloc_la_LDFLAGS = -lpthread -ldl -lumem
 
 nobase_include_HEADERS = umem.h sys/vmem.h
 
