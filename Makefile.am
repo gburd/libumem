@@ -38,7 +38,7 @@ libumem_la_SOURCES =	init_lib.c \
 			sys/vmem_impl_user.h
 
 libumem_malloc_la_SOURCES = malloc.c
-libumem_malloc_la_LDFLAGS = -lpthread -ldl -lumem
+libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir) -lumem 
 
 nobase_include_HEADERS = umem.h sys/vmem.h
 
