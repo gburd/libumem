@@ -1,36 +1,31 @@
 This is the libumem package.
 This document describes the actions needed to build the pre-release
-or CVS version of the package. See end of file for copying conditions.
+or subversion version of the package. See end of file for copying conditions.
 
 * Introduction
 
-    This is a *pre-release* version, and not ready for production use
-yet. If you are taking source from CVS, you will need to have libtool,
-automake, and autoconf installed to help contribute. See the chapter
-`Building' for the detailed instructions. The script autogen.sh is
-provided to help autoconfigure libumem from the cvs src.  After you
-run autogen.sh, there should be a file 'INSTALL' with (generic)
-installation instructions. Package-specific installation instructions
-are set forth in the file README.
+	This is a *pre-release* version, and not ready for production use yet. If
+you are taking source from subversion, you will need to have libtool, automake,
+and autoconf installed to help contribute. See the chapter `Building' for the
+detailed instructions. The script autogen.sh is provided to help autoconfigure
+libumem from the cvs src.  After you run autogen.sh, there should be a file
+'INSTALL' with (generic) installation instructions. Package-specific
+installation instructions are set forth in the file README.
 
-    Please, note that the accompanying documentation may be inaccurate
-or incomplete. The CVS history is the authoritative documentation of
-all recent changes.
+	Please, note that the accompanying documentation may be inaccurate or
+incomplete. The subversion history is the authoritative documentation of all
+recent changes.
 
-Report bugs to (TODO: mailing list <>)
+Report bugs at https://labs.omniti.com/trac/portableumem/newticket
 
 * Checking Out the Sources
 
 The following instructions apply if you wish to obtain sources from
-the CVS repository:
+the subversion repository:
 
-To checkout the source tree from CVS issue the following command:
+To checkout the source tree from subversion issue the following command:
 
-  cvs -z3 -d:pserver:anonymous@umem.cvs.sourceforge.net:/cvsroot/umem co \
-    -P umem
-
-    This will give you read-only access.  If you think you need write access,
-contact the mailing list.
+  svn co https://labs.omniti.com/portableumem/trunk portable-umem
 
 * Building
 
