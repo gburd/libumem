@@ -10,7 +10,7 @@ umem_test2_SOURCES = umem_test2.c
 umem_test2_LDADD = -lumem
 
 umem_test3_SOURCES = umem_test3.c
-umem_test3_LDADD = -lumem
+umem_test3_LDADD = -lumem -lumem_malloc
 
 libumem_la_SOURCES =	init_lib.c \
 			umem_agent_support.c \
