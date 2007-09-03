@@ -90,3 +90,4 @@ of Solaris's slab allocator, libumem, to Linux.
 %{_includedir}/sys/*.h
 %{_libdir}/*.so
 %{_libdir}/*.a
+%{_mandir}/man*/*
