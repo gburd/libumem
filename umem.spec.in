@@ -1,11 +1,11 @@
 Name:           @PACKAGE_NAME@
 Version:        @PACKAGE_VERSION@
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Port of Solaris's slab allocator.
 
 Group:          System Environment/Libraries
 License:        CDDL
-URL:            http://sourceforge.net/projects/umem/
+URL:            https://labs.omniti.com/trac/portableumem/
 Source0:        %{name}-%{version}.tar.bz2
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
@@ -50,6 +50,39 @@ find $RPM_BUILD_ROOT%{_libdir} -name '*.la' | xargs rm -fv
 # Remove the symlink to the SONAME. Let ldconfig manage that.
 rm -fv $RPM_BUILD_ROOT%{_libdir}/*.so.[0-9]
 
+# Build the pkgconfig configurations.
+mkdir -p $RPM_BUILD_ROOT%{_libdir}/pkgconfig
+
+cat<<EOT >$RPM_BUILD_ROOT%{_libdir}/pkgconfig/%{name}-%{version}.pc
+prefix=%{_prefix}
+exec_prefix=%{_exec_prefix}
+libdir=%{_libdir}
+includedir=%{_includedir}
+
+Name: %{name}
+Version: %{version}
+Description: Port of Solaris's slab allocator.
+URL: https://labs.omniti.com/trac/portableumem/
+Requires:
+Libs: -L\${libdir} -lumem
+Cflags:
+EOT
+
+cat<<EOT >$RPM_BUILD_ROOT%{_libdir}/pkgconfig/%{name}-malloc-%{version}.pc
+prefix=%{_prefix}
+exec_prefix=%{_exec_prefix}
+libdir=%{_libdir}
+includedir=%{_includedir}
+
+Name: %{name}
+Version: %{version}
+Description: Port of Solaris's slab allocator. Libc malloc replacement.
+URL: https://labs.omniti.com/trac/portableumem/
+Requires:
+Libs: -L\${libdir} -lumem_malloc
+Cflags:
+EOT
+
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -75,6 +108,8 @@ Summary: Port of Solaris's slab allocator.
 
 Group: Development/Libraries
 
+Requires: pkgconfig
+
 
 %description devel
 
@@ -91,3 +126,4 @@ of Solaris's slab allocator, libumem, to Linux.
 %{_libdir}/*.so
 %{_libdir}/*.a
 %{_mandir}/man*/*
+%{_libdir}/pkgconfig/*.pc
