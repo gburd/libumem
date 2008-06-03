@@ -5,7 +5,7 @@
 #
 
 FILE=Makefile.am
-TMPLOC=$(mktemp -d -t umem_test4.XXXXXX)
+TMPLOC=`mktemp -d /tmp/umem_test4.XXXXXX`
 trap 'rm -rf $TMPLOC' 1 2 15
 
 LD_PRELOAD=.libs/libumem.so /usr/bin/ldd /bin/ls >$TMPLOC/log 2>&1
