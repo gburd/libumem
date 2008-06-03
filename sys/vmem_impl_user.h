@@ -24,7 +24,7 @@
  * Use is subject to license terms.
  */
 /*
- * Portions Copyright 2006 OmniTI, Inc.
+ * Portions Copyright 2006-2008 Message Systems, Inc.
  */
 
 #ifndef _SYS_VMEM_IMPL_USER_H

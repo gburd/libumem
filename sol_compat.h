@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 OmniTI, Inc. All rights reserved
+ * Copyright (c) 2006-2008 Message Systems, Inc. All rights reserved
  * This header file distributed under the terms of the CDDL.
  * Portions Copyright 2004 Sun Microsystems, Inc. All Rights reserved.
  */

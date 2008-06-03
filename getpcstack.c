@@ -24,7 +24,7 @@
  * Use is subject to license terms.
  */
 /*
- * Portions Copyright 2006 OmniTI, Inc.
+ * Portions Copyright 2006-2008 Message Systems, Inc.
  */
 
 /* #pragma ident	"@(#)getpcstack.c	1.5	05/06/08 SMI" */
