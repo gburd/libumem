@@ -1,4 +1,4 @@
-AC_INIT([umem], [1.0.1], [], [umem])
+AC_INIT([umem], [1.0.2], [], [umem])
 AM_INIT_AUTOMAKE([dist-bzip2])
 
 AC_PROG_CC
