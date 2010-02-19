@@ -518,13 +518,10 @@ umem_log_header_t *umem_failure_log;
 umem_log_header_t *umem_slab_log;
 
 extern thread_t _thr_self(void);
-#if defined(__MACH__) || defined(__FreeBSD__)
+#ifndef CPUHINT
 # define CPUHINT()	((int)(_thr_self()))
 #endif
 
-#ifndef CPUHINT
-#define	CPUHINT()		(_thr_self())
-#endif
 
 #define	CPUHINT_MAX()		INT_MAX
 

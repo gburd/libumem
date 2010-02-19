@@ -66,6 +66,9 @@
 #define	ERR_SIZE 8192		/* must be a power of 2 */
 
 static mutex_t umem_error_lock = DEFAULTMUTEX;
+#ifdef NEED_64_LOCK
+pthread_mutex_t umem_ppc_64inc_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 static char umem_error_buffer[ERR_SIZE] = "";
 static uint_t umem_error_begin = 0;
