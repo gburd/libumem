@@ -157,7 +157,7 @@ calloc(size_t nelem, size_t elsize)
  */
 
 #ifdef __GLIBC__
-static void *umem_memalign_hook(size_t size_arg, size_t align, const void *caller)
+static void *umem_memalign_hook(size_t align, size_t size_arg, const void *caller)
 #else
 void *
 memalign(size_t align, size_t size_arg)
