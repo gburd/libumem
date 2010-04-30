@@ -621,6 +621,9 @@ static umem_cache_t *umem_alloc_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT] = {
 caddr_t			umem_min_stack;
 caddr_t			umem_max_stack;
 
+#ifndef UMEM_STANDALONE
+static pthread_once_t umem_forkhandler_once = PTHREAD_ONCE_INIT;
+#endif
 
 /*
  * we use the _ versions, since we don't want to be cancelled.
@@ -2907,7 +2910,8 @@ umem_startup(caddr_t start, size_t len, size_t pagesize, caddr_t minstack,
 	int idx;
 	/* Standalone doesn't fork */
 #else
-	umem_forkhandler_init(); /* register the fork handler */
+	/* register the fork handler */
+	(void) pthread_once(&umem_forkhandler_once, umem_forkhandler_init);
 #endif
 
 #ifdef __lint

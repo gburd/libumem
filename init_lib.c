@@ -56,28 +56,31 @@ vmem_heap_init(void)
 {
 #ifdef _WIN32
 	vmem_backend = VMEM_BACKEND_MMAP;
+	(void) vmem_sbrk_arena(NULL, NULL);
 #else
-#if 0
+# if defined(sun)
 	void *handle = dlopen("libmapmalloc.so.1", RTLD_NOLOAD);
 
 	if (handle != NULL) {
-#endif
 		log_message("sbrk backend disabled\n");
 		vmem_backend = VMEM_BACKEND_MMAP;
-#if 0
 	}
-#endif
-#endif
+# else
+	if (vmem_backend == 0) {
+		/* prefer mmap, as sbrk() seems to have problems wither working
+		 * with other allocators or has some Solaris specific assumptions. */
+		vmem_backend = VMEM_BACKEND_MMAP;
+	}
+# endif
 
 	if ((vmem_backend & VMEM_BACKEND_MMAP) != 0) {
 		vmem_backend = VMEM_BACKEND_MMAP;
 		(void) vmem_mmap_arena(NULL, NULL);
 	} else {
-#ifndef _WIN32
 		vmem_backend = VMEM_BACKEND_SBRK;
 		(void) vmem_sbrk_arena(NULL, NULL);
-#endif
 	}
+#endif
 }
 
 /*ARGSUSED*/
@@ -104,28 +107,32 @@ umem_get_max_ncpus(void)
    * in /proc/stat. To avoid recursion in the malloc replacement
    * version of libumem, read /proc/stat into a static buffer.
    */
-  static char proc_stat[8192];
-  int fd;
-  int ncpus = 1;
+  static int ncpus = 0;
 
-  fd = open("/proc/stat", O_RDONLY);
-  if (fd >= 0) {
-    const ssize_t n = read(fd, proc_stat, sizeof(proc_stat) - 1);
-    if (n >= 0) {
-      const char *cur;
-      const char *next;
+  if (ncpus == 0) {
+    char proc_stat[8192];
+    int fd;
 
-      proc_stat[n] = '\0';
-      cur = proc_stat;
-      while (*cur && (next = strstr(cur + 3, "cpu"))) {
-        cur = next;
+    ncpus = 1;
+    fd = open("/proc/stat", O_RDONLY);
+    if (fd >= 0) {
+      const ssize_t n = read(fd, proc_stat, sizeof(proc_stat) - 1);
+      if (n >= 0) {
+        const char *cur;
+        const char *next;
+
+        proc_stat[n] = '\0';
+        cur = proc_stat;
+        while (*cur && (next = strstr(cur + 3, "cpu"))) {
+          cur = next;
+        }
+
+        if (*cur)
+          ncpus = atoi(cur + 3) + 1;
       }
 
-      if (*cur)
-        ncpus = atoi(cur + 3) + 1;
+      close(fd);
     }
-
-    close(fd);
   }
 
   return ncpus;
