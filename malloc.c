@@ -41,10 +41,6 @@
 
 #include "misc.h"
 
-#ifdef __GLIBC__
-# include <malloc.h>
-#endif
-
 /*
  * malloc_data_t is an 8-byte structure which is located "before" the pointer
  * returned from {m,c,re}alloc and memalign.  The first four bytes give
@@ -62,12 +58,8 @@ typedef struct malloc_data {
 	uint32_t malloc_stat; /* = UMEM_MALLOC_ENCODE(state, malloc_size) */
 } malloc_data_t;
 
-#ifdef __GLIBC__
-static void *umem_malloc_hook(size_t size_arg, const void *caller)
-#else
 void *
 malloc(size_t size_arg)
-#endif
 {
 #ifdef _LP64
 	uint32_t high_size = 0;
@@ -128,7 +120,6 @@ malloc(size_t size_arg)
 	return ((void *)ret);
 }
 
-#ifndef __GLIBC__
 void *
 calloc(size_t nelem, size_t elsize)
 {
@@ -147,7 +138,6 @@ calloc(size_t nelem, size_t elsize)
 	(void) memset(retval, 0, size);
 	return (retval);
 }
-#endif
 
 /*
  * memalign uses vmem_xalloc to do its work.
@@ -156,12 +146,8 @@ calloc(size_t nelem, size_t elsize)
  * code.
  */
 
-#ifdef __GLIBC__
-static void *umem_memalign_hook(size_t align, size_t size_arg, const void *caller)
-#else
 void *
 memalign(size_t align, size_t size_arg)
-#endif
 {
 	size_t size;
 	uintptr_t phase;
@@ -240,13 +226,11 @@ memalign(size_t align, size_t size_arg)
 	return ((void *)ret);
 }
 
-#ifndef __GLIBC__
 void *
 valloc(size_t size)
 {
 	return (memalign(pagesize, size));
 }
-#endif
 
 /*
  * process_free:
@@ -392,12 +376,8 @@ process_memalign:
 	return (1);
 }
 
-#ifdef __GLIBC__
-static void umem_free_hook(void *buf, const void *caller)
-#else
 void
 free(void *buf)
-#endif
 {
 	if (buf == NULL)
 		return;
@@ -408,12 +388,8 @@ free(void *buf)
 	(void) process_free(buf, 1, NULL);
 }
 
-#ifdef __GLIBC__
-static void *umem_realloc_hook(void *buf_arg, size_t newsize, const void *caller)
-#else
 void *
 realloc(void *buf_arg, size_t newsize)
-#endif
 {
 	size_t oldsize;
 	void *buf;
@@ -441,25 +417,9 @@ realloc(void *buf_arg, size_t newsize)
 	return (buf);
 }
 
-#ifdef __GLIBC__
-static void __attribute__((constructor)) umem_malloc_init_hook(void)
-{
-	if (__malloc_hook != umem_malloc_hook) {
-		umem_startup(NULL, 0, 0, NULL, NULL);
-		__malloc_hook = umem_malloc_hook;
-		__free_hook = umem_free_hook;
-		__realloc_hook = umem_realloc_hook;
-		__memalign_hook = umem_memalign_hook;
-	}
-}
-
-void (*__malloc_initialize_hook)(void) = umem_malloc_init_hook;
-
-#else
 void __attribute__((constructor))
 __malloc_umem_init (void)
 {
 	umem_startup(NULL, 0, 0, NULL, NULL);
 }
-#endif
 
