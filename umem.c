@@ -3193,3 +3193,10 @@ fail:
 	(void) mutex_unlock(&umem_init_lock);
 	return (0);
 }
+
+void __attribute__((constructor))
+__umem_init (void)
+{
+	umem_startup(NULL, 0, 0, NULL, NULL);
+}
+

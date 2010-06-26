@@ -21,6 +21,7 @@ int main(void){return (sizeof(pthread_mutex_t) > 24);}
   ]
 ) 
 
+AC_CHECK_LIB(dl,dlopen)
 
 AC_CHECK_HEADERS([sys/mman.h sys/sysmacros.h sys/time.h malloc.h])
 AC_CHECK_FUNCS([issetugid mallinfo malloc_stats])

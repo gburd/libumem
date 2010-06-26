@@ -1,7 +1,7 @@
 lib_LTLIBRARIES = libumem.la libumem_malloc.la
 noinst_PROGRAMS = umem_test umem_test2 umem_test3
 
-libumem_la_LDFLAGS = -lpthread -ldl
+libumem_la_LDFLAGS = -lpthread
 
 umem_test_SOURCES = umem_test.c
 umem_test_LDADD = -lumem
@@ -36,7 +36,7 @@ libumem_la_SOURCES =	init_lib.c \
 			sys/vmem_impl_user.h
 
 libumem_malloc_la_SOURCES = malloc.c
-libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir) -lumem 
+libumem_malloc_la_LDFLAGS = -lpthread -R$(libdir) -lumem 
 
 man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \

@@ -226,6 +226,16 @@ memalign(size_t align, size_t size_arg)
 	return ((void *)ret);
 }
 
+int
+posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+	*memptr = memalign(alignment, size);
+	if (*memptr) {
+		return 0;
+	}
+	return errno;
+}
+
 void *
 valloc(size_t size)
 {
@@ -397,6 +407,11 @@ realloc(void *buf_arg, size_t newsize)
 	if (buf_arg == NULL)
 		return (malloc(newsize));
 
+	if (newsize == 0) {
+		free(buf_arg);
+		return (NULL);
+	}
+
 	/*
 	 * get the old data size without freeing the buffer
 	 */
@@ -417,9 +432,4 @@ realloc(void *buf_arg, size_t newsize)
 	return (buf);
 }
 
-void __attribute__((constructor))
-__malloc_umem_init (void)
-{
-	umem_startup(NULL, 0, 0, NULL, NULL);
-}
 
