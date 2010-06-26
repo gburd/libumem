@@ -205,6 +205,14 @@ static INLINE uint64_t umem_atomic_inc64(uint64_t *val)
 #define P2SAMEHIGHBIT(x, y)    (((x) ^ (y)) < ((x) & (y)))
 #define IS_P2ALIGNED(v, a) ((((uintptr_t)(v)) & ((uintptr_t)(a) - 1)) == 0)
 #define ISP2(x)    (((x) & ((x) - 1)) == 0)
+/*
+ * return TRUE if adding len to off would cause it to cross an align
+ * boundary.
+ * eg, P2BOUNDARY(0x1234, 0xe0, 0x100) == TRUE (0x1234 + 0xe0 == 0x1314)
+ * eg, P2BOUNDARY(0x1234, 0x50, 0x100) == FALSE (0x1234 + 0x50 == 0x1284)
+ */
+#define P2BOUNDARY(off, len, align) \
+    (((off) ^ ((off) + (len) - 1)) > (align) - 1)
 
 /* beware! umem only uses these atomic adds for incrementing by 1 */
 #define atomic_add_64(lvalptr, delta) umem_atomic_inc64(lvalptr)

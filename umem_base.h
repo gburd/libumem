@@ -120,6 +120,10 @@ extern void umem_process_updates(void);
 extern void umem_cache_applyall(void (*)(umem_cache_t *));
 extern void umem_cache_update(umem_cache_t *);
 
+extern void umem_alloc_sizes_add(size_t);
+extern void umem_alloc_sizes_clear(void);
+extern void umem_alloc_sizes_remove(size_t);
+
 /*
  * umem_fork.c: private interfaces
  */

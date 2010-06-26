@@ -2,9 +2,8 @@
  * CDDL HEADER START
  *
  * The contents of this file are subject to the terms of the
- * Common Development and Distribution License, Version 1.0 only
- * (the "License").  You may not use this file except in compliance
- * with the License.
+ * Common Development and Distribution License (the "License").
+ * You may not use this file except in compliance with the License.
  *
  * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
  * or http://www.opensolaris.org/os/licensing.
@@ -20,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2002 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 /*
@@ -66,11 +65,9 @@ vmem_mmap_alloc(vmem_t *src, size_t size, int vmflags)
 
 	ret = vmem_alloc(src, size, vmflags);
 #ifndef _WIN32
-	if (ret != NULL
-		&&
+	if (ret != NULL &&
 	    mmap(ret, size, ALLOC_PROT, ALLOC_FLAGS | MAP_FIXED, -1, 0) ==
-	    MAP_FAILED
-		) {
+	    MAP_FAILED) {
 		vmem_free(src, ret, size);
 		vmem_reap();
 
@@ -116,18 +113,11 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 #ifdef _WIN32
 	buf = VirtualAlloc(NULL, size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 	if (buf == NULL) buf = MAP_FAILED;
+#elif defined(MAP_ALIGN)
+	buf = mmap((void*)CHUNKSIZE, size, FREE_PROT, FREE_FLAGS | MAP_ALIGN,
+			-1, 0);
 #else
-	buf = mmap(
-#ifdef MAP_ALIGN
-			(void *)CHUNKSIZE,
-#else
-			0,
-#endif
-			size, FREE_PROT, FREE_FLAGS
-#ifdef MAP_ALIGN
-			| MAP_ALIGN
-#endif
-			, -1, 0);
+	buf = mmap(0, size, FREE_PROT, FREE_FLAGS, -1, 0);
 #endif
 
 	if (buf != MAP_FAILED) {
@@ -170,8 +160,7 @@ vmem_mmap_arena(vmem_alloc_t **a_out, vmem_free_t **f_out)
 #endif
 	
 	if (mmap_heap == NULL) {
-		mmap_heap = vmem_init("mmap_top", 
-			CHUNKSIZE,
+		mmap_heap = vmem_init("mmap_top", CHUNKSIZE,
 		    vmem_mmap_top_alloc, vmem_free,
 		    "mmap_heap", NULL, 0, pagesize,
 		    vmem_mmap_alloc, vmem_mmap_free);

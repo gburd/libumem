@@ -20,7 +20,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 /*
@@ -50,10 +50,6 @@
 #include <umem_impl.h>
 #include "misc.h"
 
-#ifdef ECELERITY
-#include "util.h"
-#endif
-
 #define	UMEM_ERRFD	2	/* goes to standard error */
 #define	UMEM_MAX_ERROR_SIZE 4096 /* error messages are truncated to this */
 
@@ -80,15 +76,12 @@ static uint_t umem_error_end = 0;
 }
 
 static void
-umem_log_enter(const char *error_str, int serious)
+umem_log_enter(const char *error_str)
 {
 	int looped;
 	char c;
 
 	looped = 0;
-#ifdef ECELERITY
-	mem_printf(serious ? DCRITICAL : DINFO, "umem: %s", error_str);
-#endif
 
 	(void) mutex_lock(&umem_error_lock);
 
@@ -121,7 +114,7 @@ umem_error_enter(const char *error_str)
 		(void) write(UMEM_ERRFD, error_str, strlen(error_str));
 #endif
 
-	umem_log_enter(error_str, 1);
+	umem_log_enter(error_str);
 }
 
 int
@@ -207,7 +200,7 @@ log_message(const char *format, ...)
 		(void) write(UMEM_ERRFD, buf, strlen(buf));
 #endif
 
-	umem_log_enter(buf, 0);
+	umem_log_enter(buf);
 }
 
 #ifndef UMEM_STANDALONE
@@ -296,6 +289,7 @@ print_sym(void *pointer)
 		return (1);
 	}
 #else
+	umem_printf("?? (0x%p)", pointer);
 	return 0;
 #endif
 }

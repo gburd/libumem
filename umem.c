@@ -2,9 +2,8 @@
  * CDDL HEADER START
  *
  * The contents of this file are subject to the terms of the
- * Common Development and Distribution License, Version 1.0 only
- * (the "License").  You may not use this file except in compliance
- * with the License.
+ * Common Development and Distribution License.
+ * You may not use this file except in compliance with the License.
  *
  * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
  * or http://www.opensolaris.org/os/licensing.
@@ -20,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 /*
@@ -88,6 +87,7 @@
  *
  *	* KM_SLEEP v.s. UMEM_NOFAIL
  *
+ *	* lock ordering
  *
  * 2. Initialization
  * -----------------
@@ -362,6 +362,32 @@
  *	If a constructor callback _does_ do a UMEM_NOFAIL allocation, and
  *	the nofail callback does a non-local exit, we will leak the
  *	partially-constructed buffer.
+ *
+ *
+ * 6. Lock Ordering
+ * ----------------
+ * umem has a few more locks than kmem does, mostly in the update path.  The
+ * overall lock ordering (earlier locks must be acquired first) is:
+ *
+ *	umem_init_lock
+ *
+ *	vmem_list_lock
+ *	vmem_nosleep_lock.vmpl_mutex
+ *	vmem_t's:
+ *		vm_lock
+ *	sbrk_lock
+ *
+ *	umem_cache_lock
+ *	umem_update_lock
+ *	umem_flags_lock
+ *	umem_cache_t's:
+ *		cache_cpu[*].cc_lock
+ *		cache_depot_lock
+ *		cache_lock
+ *	umem_log_header_t's:
+ *		lh_cpu[*].clh_lock
+ *		lh_lock
+ *
  * \endcode
  */
 
@@ -413,8 +439,12 @@ size_t pagesize;
  * bytes, so that it will be 64-byte aligned.  For all multiples of 64,
  * the next kmem_cache_size greater than or equal to it must be a
  * multiple of 64.
+ *
+ * This table must be in sorted order, from smallest to highest.  The
+ * highest slot must be UMEM_MAXBUF, and every slot afterwards must be
+ * zero.
  */
-static const int umem_alloc_sizes[] = {
+static int umem_alloc_sizes[] = {
 #ifdef _LP64
 	1 * 8,
 	1 * 16,
@@ -433,16 +463,18 @@ static const int umem_alloc_sizes[] = {
 	P2ALIGN(8192 / 7, 64),
 	P2ALIGN(8192 / 6, 64),
 	P2ALIGN(8192 / 5, 64),
-	P2ALIGN(8192 / 4, 64),
+	P2ALIGN(8192 / 4, 64), 2304,
 	P2ALIGN(8192 / 3, 64),
-	P2ALIGN(8192 / 2, 64),
-	P2ALIGN(8192 / 1, 64),
+	P2ALIGN(8192 / 2, 64), 4544,
+	P2ALIGN(8192 / 1, 64), 9216,
 	4096 * 3,
-	8192 * 2,
+	UMEM_MAXBUF,				/* = 8192 * 2 */
+	/* 24 slots for user expansion */
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
 };
 #define	NUM_ALLOC_SIZES (sizeof (umem_alloc_sizes) / sizeof (*umem_alloc_sizes))
-
-#define	UMEM_MAXBUF	16384
 
 static umem_magtype_t umem_magtype[] = {
 	{ 1,	8,	3200,	65536	},
@@ -757,6 +789,8 @@ umem_remove_updates(umem_cache_t *cp)
 	 * Get it out of the active state
 	 */
 	while (cp->cache_uflags & UMU_ACTIVE) {
+		int cancel_state;
+
 		ASSERT(cp->cache_unext == NULL);
 
 		cp->cache_uflags |= UMU_NOTIFY;
@@ -768,7 +802,10 @@ umem_remove_updates(umem_cache_t *cp)
 		ASSERT(umem_update_thr != thr_self() &&
 		    umem_st_update_thr != thr_self());
 
-		(void) _cond_wait(&umem_update_cv, &umem_update_lock);
+		(void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,
+		    &cancel_state);
+		(void) cond_wait(&umem_update_cv, &umem_update_lock);
+		(void) pthread_setcancelstate(cancel_state, NULL);
 	}
 	/*
 	 * Get it out of the Work Requested state
@@ -1097,7 +1134,7 @@ umem_log_enter(umem_log_header_t *lhp, void *data, size_t size)
 {
 	void *logspace;
 	umem_cpu_log_header_t *clhp =
-	    &(lhp->lh_cpu[CPU(umem_cpu_mask)->cpu_number]);
+	    &lhp->lh_cpu[CPU(umem_cpu_mask)->cpu_number];
 
 	if (lhp == NULL || umem_logging == 0)
 		return (NULL);
@@ -2769,6 +2806,88 @@ umem_cache_destroy(umem_cache_t *cp)
 	vmem_free(umem_cache_arena, cp, UMEM_CACHE_SIZE(umem_max_ncpus));
 }
 
+void
+umem_alloc_sizes_clear(void)
+{
+	int i;
+
+	umem_alloc_sizes[0] = UMEM_MAXBUF;
+	for (i = 1; i < NUM_ALLOC_SIZES; i++)
+		umem_alloc_sizes[i] = 0;
+}
+
+void
+umem_alloc_sizes_add(size_t size_arg)
+{
+	int i, j;
+	size_t size = size_arg;
+
+	if (size == 0) {
+		log_message("size_add: cannot add zero-sized cache\n",
+		    size, UMEM_MAXBUF);
+		return;
+	}
+
+	if (size > UMEM_MAXBUF) {
+		log_message("size_add: %ld > %d, cannot add\n", size,
+		    UMEM_MAXBUF);
+		return;
+	}
+
+	if (umem_alloc_sizes[NUM_ALLOC_SIZES - 1] != 0) {
+		log_message("size_add: no space in alloc_table for %d\n",
+		    size);
+		return;
+	}
+
+	if (P2PHASE(size, UMEM_ALIGN) != 0) {
+		size = P2ROUNDUP(size, UMEM_ALIGN);
+		log_message("size_add: rounding %d up to %d\n", size_arg,
+		    size);
+	}
+
+	for (i = 0; i < NUM_ALLOC_SIZES; i++) {
+		int cur = umem_alloc_sizes[i];
+		if (cur == size) {
+			log_message("size_add: %ld already in table\n",
+			    size);
+			return;
+		}
+		if (cur > size)
+			break;
+	}
+
+	for (j = NUM_ALLOC_SIZES - 1; j > i; j--)
+		umem_alloc_sizes[j] = umem_alloc_sizes[j-1];
+	umem_alloc_sizes[i] = size;
+}
+
+void
+umem_alloc_sizes_remove(size_t size)
+{
+	int i;
+
+	if (size == UMEM_MAXBUF) {
+		log_message("size_remove: cannot remove %ld\n", size);
+		return;
+	}
+
+	for (i = 0; i < NUM_ALLOC_SIZES; i++) {
+		int cur = umem_alloc_sizes[i];
+		if (cur == size)
+			break;
+		else if (cur > size || cur == 0) {
+			log_message("size_remove: %ld not found in table\n",
+			    size);
+			return;
+		}
+	}
+
+	for (; i + 1 < NUM_ALLOC_SIZES; i++)
+		umem_alloc_sizes[i] = umem_alloc_sizes[i+1];
+	umem_alloc_sizes[i] = 0;
+}
+
 static int
 umem_cache_init(void)
 {
@@ -2861,6 +2980,10 @@ umem_cache_init(void)
 	for (i = 0; i < NUM_ALLOC_SIZES; i++) {
 		size_t cache_size = umem_alloc_sizes[i];
 		size_t align = 0;
+
+		if (cache_size == 0)
+			break;		/* 0 terminates the list */
+
 		/*
 		 * If they allocate a multiple of the coherency granularity,
 		 * they get a coherency-granularity-aligned address.
@@ -2888,6 +3011,9 @@ umem_cache_init(void)
 	for (i = 0; i < NUM_ALLOC_SIZES; i++) {
 		size_t cache_size = umem_alloc_sizes[i];
 
+		if (cache_size == 0)
+			break;		/* 0 terminates the list */
+
 		cp = umem_alloc_caches[i];
 
 		while (size <= cache_size) {
@@ -2895,6 +3021,7 @@ umem_cache_init(void)
 			size += UMEM_ALIGN;
 		}
 	}
+	ASSERT(size - UMEM_ALIGN == UMEM_MAXBUF);
 	return (1);
 }
 
@@ -2904,7 +3031,7 @@ umem_cache_init(void)
  */
 void
 umem_startup(caddr_t start, size_t len, size_t pagesize, caddr_t minstack,
-    caddr_t maxstack) 
+	caddr_t maxstack) 
 {
 #ifdef UMEM_STANDALONE
 	int idx;
@@ -2989,9 +3116,16 @@ umem_init(void)
 			 * someone else beat us to initializing umem.  Wait
 			 * for them to complete, then return.
 			 */
-			while (umem_ready == UMEM_READY_INITING)
-				(void) _cond_wait(&umem_init_cv,
+			while (umem_ready == UMEM_READY_INITING) {
+				int cancel_state;
+
+				(void) pthread_setcancelstate(
+				    PTHREAD_CANCEL_DISABLE, &cancel_state);
+				(void) cond_wait(&umem_init_cv,
 				    &umem_init_lock);
+				(void) pthread_setcancelstate(
+				    cancel_state, NULL);
+			}
 			ASSERT(umem_ready == UMEM_READY ||
 			    umem_ready == UMEM_READY_INIT_FAILED);
 			(void) mutex_unlock(&umem_init_lock);

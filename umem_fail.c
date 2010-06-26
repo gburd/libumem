@@ -137,12 +137,6 @@ umem_panic(const char *format, ...)
 	if (format[strlen(format)-1] != '\n')
 		umem_error_enter("\n");
 
-#ifdef ECELERITY
-	va_start(va, format);
-	ec_debug_vprintf(DCRITICAL, DMEM, format, va);
-	va_end(va);
-#endif
-	
 	print_stacktrace();
 
 	umem_do_abort();
@@ -171,7 +165,6 @@ __umem_assert_failed(const char *assertion, const char *file, int line)
 {
 	umem_panic("Assertion failed: %s, file %s, line %d\n",
 	    assertion, file, line);
-	umem_do_abort();
 	/*NOTREACHED*/
 	return (0);
 }
