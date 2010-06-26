@@ -3328,7 +3328,8 @@ fail:
 	return (0);
 }
 
-void __attribute__((constructor))
+void
+__attribute__((section(".init")))
 __umem_init (void)
 {
 	umem_startup(NULL, 0, 0, NULL, NULL);
