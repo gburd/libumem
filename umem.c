@@ -3328,10 +3328,12 @@ fail:
 	return (0);
 }
 
+#ifndef UMEM_STANDALONE
 void
-__attribute__((section(".init")))
+__attribute__((constructor))
 __umem_init (void)
 {
 	umem_startup(NULL, 0, 0, NULL, NULL);
 }
+#endif
 
