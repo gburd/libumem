@@ -21,6 +21,8 @@
 /*
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Portions Copyright 2012 Joyent, Inc. All rights reserved.
  */
 
 #ifndef	_VMEM_BASE_H
@@ -65,6 +67,8 @@ extern uint_t vmem_backend;
 #define	VMEM_BACKEND_SBRK	0x0000001
 #define	VMEM_BACKEND_MMAP	0x0000002
 #define	VMEM_BACKEND_STAND	0x0000003
+
+extern uint_t vmem_allocator;
 
 extern vmem_t *vmem_heap;
 extern vmem_alloc_t *vmem_heap_alloc;

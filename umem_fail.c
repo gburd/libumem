@@ -19,12 +19,12 @@
  *
  * CDDL HEADER END
  */
+
 /*
- * Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- */
-/*
- * Portions Copyright 2006-2008 Message Systems, Inc.
+ *
+ * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
 /* #pragma ident	"@(#)umem_fail.c	1.4	05/06/08 SMI" */

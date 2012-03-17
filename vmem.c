@@ -18,9 +18,12 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Portions Copyright 2012 Joyent, Inc. All rights reserved.
  */
 
 /* #pragma ident	"@(#)vmem.c	1.10	05/06/08 SMI" */
@@ -1083,6 +1086,7 @@ vmem_alloc(vmem_t *vmp, size_t size, int vmflag)
 	int hb;
 	int flist = 0;
 	uint32_t mtbf;
+	vmflag |= vmem_allocator;
 
 	if (size - 1 < vmp->vm_qcache_max) {
 		ASSERT(vmflag & VM_NOSLEEP);
