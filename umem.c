@@ -3058,12 +3058,7 @@ umem_cache_init(void)
  * umem_startup() is called early on, and must be called explicitly if we're
  * the standalone version.
  */
-#ifdef UMEM_STANDALONE
 void
-#else
-/* #pragma init(umem_startup) */
-static void
-#endif
 umem_startup(caddr_t start, size_t len, size_t pagesize, caddr_t minstack,
         caddr_t maxstack)
 {
