@@ -23,9 +23,9 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Portions Copyright 2012 Joyent, Inc. All rights reserved.
+ * Copyright 2012 Joyent, Inc. All rights reserved.
  *
- * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.
+ * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
 /* #pragma ident	"@(#)envvar.c	1.5	05/06/08 SMI" */
@@ -181,7 +181,10 @@ static umem_env_item_t umem_options_items[] = {
 	},
 #endif
 #endif
-
+	{ "perthread_cache",	"Evolving",	ITEM_SIZE,
+		"Size (in bytes) of per-thread allocation cache",
+		NULL, 0, NULL, &umem_ptc_size
+	},
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };
 

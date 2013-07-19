@@ -23,7 +23,7 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.
+ * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
 /* #pragma ident	"@(#)umem_update_thread.c	1.2	05/06/08 SMI" */

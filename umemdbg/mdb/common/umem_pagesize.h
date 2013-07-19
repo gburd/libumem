@@ -22,28 +22,23 @@
 /*
  * Copyright 2002 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- *
- * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
-/* #pragma ident	"@(#)umem_agent_support.c	1.2	05/06/08 SMI" */
+#ifndef	_UMEM_PAGESIZE_H
+#define	_UMEM_PAGESIZE_H
 
-#include "config.h"
-#include "umem_base.h"
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
-#define	AGENT_STACK_SIZE	4096
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
-#if 0
-char __umem_agent_stack_beg[AGENT_STACK_SIZE];
-char *__umem_agent_stack_end = __umem_agent_stack_beg + AGENT_STACK_SIZE;
+extern size_t umem_pagesize;
+#undef PAGESIZE
+#define	PAGESIZE (umem_pagesize)
 
-void
-__umem_agent_free_bp(umem_cache_t *cp, void *buf)
-{
-	extern void _breakpoint(void);			/* inline asm */
-
-	_umem_cache_free(cp, buf);
-	_breakpoint();
+#ifdef	__cplusplus
 }
 #endif
 
+#endif	/* _UMEM_PAGESIZE_H */

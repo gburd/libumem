@@ -20,30 +20,53 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2002 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- *
- * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
-/* #pragma ident	"@(#)umem_agent_support.c	1.2	05/06/08 SMI" */
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
-#include "config.h"
-#include "umem_base.h"
+#include <sys/asm_linkage.h>
 
-#define	AGENT_STACK_SIZE	4096
+#if defined(lint)
 
-#if 0
-char __umem_agent_stack_beg[AGENT_STACK_SIZE];
-char *__umem_agent_stack_end = __umem_agent_stack_beg + AGENT_STACK_SIZE;
-
-void
-__umem_agent_free_bp(umem_cache_t *cp, void *buf)
+void *
+getfp(void)
 {
-	extern void _breakpoint(void);			/* inline asm */
+	return (NULL);
+}
 
-	_umem_cache_free(cp, buf);
-	_breakpoint();
+#ifndef UMEM_STANDALONE
+void
+_breakpoint(void)
+{
+	return;
 }
 #endif
 
+#else	/* lint */
+
+#if defined(__amd64)
+
+	ENTRY(getfp)
+	movq	%rbp, %rax
+	ret
+	SET_SIZE(getfp)
+
+#else	/* __i386 */
+
+	ENTRY(getfp)
+	movl	%ebp, %eax
+	ret
+	SET_SIZE(getfp)
+
+#endif
+
+#ifndef UMEM_STANDALONE
+	ENTRY(_breakpoint)
+	int	$3
+	ret
+	SET_SIZE(_breakpoint)
+#endif
+
+#endif	/* lint */

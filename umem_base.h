@@ -2,9 +2,8 @@
  * CDDL HEADER START
  *
  * The contents of this file are subject to the terms of the
- * Common Development and Distribution License, Version 1.0 only
- * (the "License").  You may not use this file except in compliance
- * with the License.
+ * Common Development and Distribution License (the "License").
+ * You may not use this file except in compliance with the License.
  *
  * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
  * or http://www.opensolaris.org/os/licensing.
@@ -22,6 +21,8 @@
 /*
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright (c) 2012, Joyent, Inc.  All rights reserved.
  */
 
 #ifndef	_UMEM_BASE_H
@@ -76,6 +77,8 @@ extern volatile uint32_t umem_reaping;
 #define	UMEM_REAP_ADDING	0x00000001	/* umem_reap() is active */
 #define	UMEM_REAP_ACTIVE	0x00000002	/* update thread is reaping */
 
+extern uintptr_t umem_tmem_off;
+
 /*
  * umem.c: tunables
  */
@@ -98,6 +101,7 @@ extern size_t umem_lite_minsize;
 extern size_t umem_lite_maxalign;
 extern size_t umem_maxverify;
 extern size_t umem_minfirewall;
+extern size_t umem_ptc_size;
 
 extern uint32_t umem_flags;
 

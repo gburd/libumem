@@ -20,30 +20,30 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2002 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2000-2002 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- *
- * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
-/* #pragma ident	"@(#)umem_agent_support.c	1.2	05/06/08 SMI" */
+#ifndef	_PROC_KLUDGES_H
+#define	_PROC_KLUDGES_H
 
-#include "config.h"
-#include "umem_base.h"
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
-#define	AGENT_STACK_SIZE	4096
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
-#if 0
-char __umem_agent_stack_beg[AGENT_STACK_SIZE];
-char *__umem_agent_stack_end = __umem_agent_stack_beg + AGENT_STACK_SIZE;
+#define	KLUDGE_MAPWALK_NAME "__prockludge_mappings"
 
-void
-__umem_agent_free_bp(umem_cache_t *cp, void *buf)
-{
-	extern void _breakpoint(void);			/* inline asm */
+extern int prockludge_mappings_walk_init(mdb_walk_state_t *);
+extern int prockludge_mappings_walk_step(mdb_walk_state_t *);
+extern void prockludge_mappings_walk_fini(mdb_walk_state_t *);
 
-	_umem_cache_free(cp, buf);
-	_breakpoint();
+extern void prockludge_add_walkers(void);
+extern void prockludge_remove_walkers(void);
+
+#ifdef	__cplusplus
 }
 #endif
 
+#endif	/* _PROC_KLUDGES_H */

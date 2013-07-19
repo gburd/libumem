@@ -23,7 +23,7 @@
  * Copyright 1999-2002 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.
+ * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
 #ifndef _SYS_VMEM_IMPL_USER_H

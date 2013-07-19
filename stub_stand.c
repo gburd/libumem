@@ -2,9 +2,8 @@
  * CDDL HEADER START
  *
  * The contents of this file are subject to the terms of the
- * Common Development and Distribution License, Version 1.0 only
- * (the "License").  You may not use this file except in compliance
- * with the License.
+ * Common Development and Distribution License (the "License").
+ * You may not use this file except in compliance with the License.
  *
  * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
  * or http://www.opensolaris.org/os/licensing.
@@ -23,9 +22,11 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright (c) 2012, Joyent, Inc.  All rights reserved.
  */
 
-#pragma ident	"@(#)stub_stand.c	1.3	05/06/08 SMI"
+/* #pragma ident	"@(#)stub_stand.c	1.3	05/06/08 SMI" */
 
 /*
  * Stubs for the standalone to reduce the dependence on external libraries
@@ -123,4 +124,30 @@ int
 issetugid(void)
 {
 	return (1);
+}
+
+int
+_tmem_get_nentries(void)
+{
+	return (0);
+}
+
+uintptr_t
+_tmem_get_base(void)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+void
+_tmem_set_cleanup(void (*f)(int, void *))
+{
+}
+
+uint64_t
+atomic_swap_64(volatile uint64_t *t, uint64_t v)
+{
+	uint64_t old = *t;
+	*t = v;
+	return (old);
 }

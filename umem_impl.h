@@ -21,11 +21,11 @@
  */
 /*
  * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
- *
- * Portions Copyright 2012 Joyent, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.
+ * Copyright 2012 Joyent, Inc.  All rights reserved.
+ *
+ * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
 #ifndef _UMEM_IMPL_H
@@ -78,6 +78,7 @@ extern "C" {
 
 #define	UMF_HASH	0x00000200	/* cache has hash table */
 #define	UMF_RANDOMIZE	0x00000400	/* randomize other umem_flags */
+#define	UMF_PTC		0x00000800	/* cache has per-thread caching */
 
 #define	UMF_BUFTAG	(UMF_DEADBEEF | UMF_REDZONE)
 #define	UMF_TOUCH	(UMF_BUFTAG | UMF_LITE | UMF_CONTENTS)

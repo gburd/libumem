@@ -2,9 +2,8 @@
  * CDDL HEADER START
  *
  * The contents of this file are subject to the terms of the
- * Common Development and Distribution License, Version 1.0 only
- * (the "License").  You may not use this file except in compliance
- * with the License.
+ * Common Development and Distribution License (the "License").
+ * You may not use this file except in compliance with the License.
  *
  * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
  * or http://www.opensolaris.org/os/licensing.
@@ -24,7 +23,7 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.
+ * Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
 /* #pragma ident	"@(#)init_lib.c	1.2	05/06/08 SMI" */
@@ -149,7 +148,7 @@ umem_get_max_ncpus(void)
   return info.dwNumberOfProcessors;
 #else
   /* XXX: determine CPU count on other platforms */
-  return (1);
+  #error Cannot detremine CPU count on this platform, please submit a bug (and a patch) for this platform.
 #endif
 
 #endif /* linux */
