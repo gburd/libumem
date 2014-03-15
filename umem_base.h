@@ -144,6 +144,12 @@ extern int umem_create_update_thread(void);
 void umem_setup_envvars(int);
 void umem_process_envvars(void);
 
+/*
+ * umem_genasm.c: private interfaces
+ */
+extern int umem_genasm_supported;
+extern int umem_genasm(int *, umem_cache_t **, int);
+
 #ifdef	__cplusplus
 }
 #endif

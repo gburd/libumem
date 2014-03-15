@@ -1,3 +1,5 @@
+ACLOCAL_AMFLAGS = -I m4
+
 lib_LTLIBRARIES = libumem.la libumem_malloc.la
 noinst_PROGRAMS = umem_test umem_test2 umem_test3
 
@@ -33,10 +35,13 @@ libumem_la_SOURCES =	init_lib.c \
 			sol_compat.h \
 			vmem.c \
 			sys/vmem.h \
-			sys/vmem_impl_user.h
+			sys/vmem_impl_user.h \
+			amd64/umem_genasm.c
+
+asm_libumem_sources =	amd64/asm_subr.s
 
 libumem_malloc_la_SOURCES = malloc.c
-libumem_malloc_la_LDFLAGS = -lpthread -R$(libdir) -lumem 
+libumem_malloc_la_LDFLAGS = -lpthread -R$(libdir) -lumem
 
 man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \

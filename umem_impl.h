@@ -419,6 +419,13 @@ extern void umem_startup(caddr_t, size_t, size_t, caddr_t, caddr_t);
 extern int umem_add(caddr_t, size_t);
 #endif
 
+/*
+ * Private interface with libc for tcumem.
+ */
+extern uintptr_t _tmem_get_base(void);
+extern int _tmem_get_nentries(void);
+extern void _tmem_set_cleanup(void(*)(void *, int));
+
 #ifdef	__cplusplus
 }
 #endif

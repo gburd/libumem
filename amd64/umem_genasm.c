@@ -62,7 +62,7 @@
  * Each block of assembly has psuedocode that describes its purpose.
  */
 
-#include <atomic.h>
+//include <atomic.h>
 #include <inttypes.h>
 #include <sys/types.h>
 #include <strings.h>

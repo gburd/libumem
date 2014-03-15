@@ -10,10 +10,12 @@ config.guess
 config.h.in
 config.sub
 configure
+compile
 depcomp
 install-sh
 ltmain.sh
 missing
+m4
 .deps
 Doxyfile
 Makefile
@@ -22,6 +24,7 @@ config.log
 config.status
 libtool
 stamp-h1
+test-driver
 umem.spec
 umem_test
 umem_test1
