@@ -166,5 +166,4 @@ __umem_assert_failed(const char *assertion, const char *file, int line)
 	umem_panic("Assertion failed: %s, file %s, line %d\n",
 	    assertion, file, line);
 	/*NOTREACHED*/
-	return (0);
 }
