@@ -561,6 +561,9 @@ process_item(const umem_env_item_t *item, const char *item_arg)
 	case ITEM_SIZE:
 		arg_required = 1;
 		break;
+	case ITEM_INVALID:
+	default:
+		break;
 	}
 
 	switch (item->item_type) {
