@@ -7,6 +7,7 @@ INSTALL
 Makefile.in
 aclocal.m4
 autom4te.cache
+compile
 config.guess
 config.h.in
 config.sub
@@ -23,6 +24,7 @@ config.log
 config.status
 libtool
 stamp-h1
+test-driver
 umem.spec
 umem_test
 umem_test1
