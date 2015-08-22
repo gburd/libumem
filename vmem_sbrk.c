@@ -215,6 +215,9 @@ vmem_sbrk_tryfail(vmem_t *src, size_t size, int vmflags)
 static void *
 vmem_sbrk_alloc(vmem_t *src, size_t size, int vmflags)
 {
+	extern void *_sbrk_grow_aligned(size_t min_size, size_t low_align,
+	    size_t high_align, size_t *actual_size);
+
 	void *ret;
 	void *buf;
 	size_t buf_size;

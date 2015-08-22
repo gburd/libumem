@@ -21,11 +21,13 @@
  */
 
 /*
+ * Copyright 2014 Garrett D'Amore <garrett@damore.org>
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-
-#pragma ident	"@(#)stub_stand.c	1.3	05/06/08 SMI"
+/*
+ * Copyright (c) 2012, Joyent, Inc.  All rights reserved.
+ */
 
 /*
  * Stubs for the standalone to reduce the dependence on external libraries
@@ -64,6 +66,13 @@ _cond_wait(cond_t *cv, mutex_t *mutex)
 /*ARGSUSED*/
 int
 _cond_broadcast(cond_t *cvp)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+int
+pthread_setcancelstate(int state, int *oldstate)
 {
 	return (0);
 }
@@ -123,4 +132,37 @@ int
 issetugid(void)
 {
 	return (1);
+}
+
+int
+_tmem_get_nentries(void)
+{
+	return (0);
+}
+
+uintptr_t
+_tmem_get_base(void)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+void
+_tmem_set_cleanup(void (*f)(int, void *))
+{
+}
+
+int
+isspace(int c)
+{
+	switch (c) {
+	case ' ':
+	case '\t':
+	case '\n':
+	case '\r':
+	case '\f':
+	case '\v':
+		return (1);
+	}
+	return (0);
 }

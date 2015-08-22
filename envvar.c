@@ -181,7 +181,10 @@ static umem_env_item_t umem_options_items[] = {
 	},
 #endif
 #endif
-
+	{ "perthread_cache",	"Evolving",	ITEM_SIZE,
+		"Size (in bytes) of per-thread allocation cache",
+		NULL, 0, NULL, &umem_ptc_size
+	},
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };
 
