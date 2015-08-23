@@ -3,6 +3,8 @@
 
 #include "umem.h"
 
+extern void umem_startup(caddr_t, size_t, size_t, caddr_t, caddr_t);
+
 static const char *TESTSTRINGS[] = {
   "fred",
   "fredfredfred",
@@ -21,7 +23,7 @@ main (int argc, char *argv[])
   int i, j;
 
   memset(testcases, 0, sizeof(testcases));
-  
+
   umem_startup(NULL, 0, 0, NULL, NULL);
 
   for (i = 0; i < N_TESTSTRINGS; ++i)
