@@ -63,7 +63,7 @@ typedef struct malloc_data {
  * Because we do not support ptcumem on non-x86 today, we have to create these
  * weak aliases.
  */
-#ifndef _x86
+#if !defined(__amd64__) && !defined(__x86_64__)
 #pragma weak malloc = umem_malloc
 #pragma weak free = umem_malloc_free
 #endif /* !_x86 */
