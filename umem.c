@@ -30,6 +30,7 @@
 
 /*
  * Copyright (c) 2014 Joyent, Inc.  All rights reserved.
+ * Copyright (c) 2015 by Delphix. All rights reserved.
  */
 
 /*!
@@ -67,31 +68,35 @@
  *
  * The slab allocator, as described in the following two papers:
  *
- *      Jeff Bonwick,
- *      The Slab Allocator: An Object-Caching Kernel Memory Allocator.
- *      Proceedings of the Summer 1994 Usenix Conference.
- *      Available as /shared/sac/PSARC/1994/028/materials/kmem.pdf.
+ *	Jeff Bonwick,
+ *	The Slab Allocator: An Object-Caching Kernel Memory Allocator.
+ *	Proceedings of the Summer 1994 Usenix Conference.
+ *	Available as /shared/sac/PSARC/1994/028/materials/kmem.pdf.
  *
- *      Jeff Bonwick and Jonathan Adams,
- *      Magazines and vmem: Extending the Slab Allocator to Many CPUs and
- *      Arbitrary Resources.
- *      Proceedings of the 2001 Usenix Conference.
- *      Available as /shared/sac/PSARC/2000/550/materials/vmem.pdf.
+ *	Jeff Bonwick and Jonathan Adams,
+ *	Magazines and vmem: Extending the Slab Allocator to Many CPUs and
+ *	Arbitrary Resources.
+ *	Proceedings of the 2001 Usenix Conference.
+ *	Available as /shared/sac/PSARC/2000/550/materials/vmem.pdf.
  *
  * 1. Overview
  * -----------
- * umem is very close to kmem in implementation.  There are four major
+ * umem is very close to kmem in implementation.  There are seven major
  * areas of divergence:
  *
- *      * Initialization
+ *	* Initialization
  *
- *      * CPU handling
+ *	* CPU handling
  *
- *      * umem_update()
+ *	* umem_update()
  *
- *      * KM_SLEEP v.s. UMEM_NOFAIL
+ *	* KM_SLEEP v.s. UMEM_NOFAIL
  *
- *      * lock ordering
+ *  * lock ordering
+ *
+ *	* changing UMEM_MAXBUF
+ *
+ *	* Per-thread caching for malloc/free
  *
  * 2. Initialization
  * -----------------
@@ -99,9 +104,9 @@
  * into it before it is ready.  umem does not have these luxuries. Instead,
  * initialization is divided into two phases:
  *
- *      * library initialization, and
+ *	* library initialization, and
  *
- *      * first use
+ *	* first use
  *
  * umem's full initialization happens at the time of the first allocation
  * request (via malloc() and friends, umem_alloc(), or umem_zalloc()),
@@ -131,13 +136,13 @@
  *
  * There are four different paths from which umem_init() is called:
  *
- *      * from umem_alloc() or umem_zalloc(), with 0 < size < UMEM_MAXBUF,
+ *	* from umem_alloc() or umem_zalloc(), with 0 < size < UMEM_MAXBUF,
  *
- *      * from umem_alloc() or umem_zalloc(), with size > UMEM_MAXBUF,
+ *	* from umem_alloc() or umem_zalloc(), with size > UMEM_MAXBUF,
  *
- *      * from umem_cache_create(), and
+ *	* from umem_cache_create(), and
  *
- *      * from memalign(), with align > UMEM_ALIGN.
+ *	* from memalign(), with align > UMEM_ALIGN.
  *
  * The last three just check if umem is initialized, and call umem_init()
  * if it is not.  For performance reasons, the first case is more complicated.
@@ -162,16 +167,16 @@
  * There are a couple race conditions resulting from the initialization
  * code that we have to guard against:
  *
- *      * In umem_cache_create(), there is a special UMC_INTERNAL cflag
- *      that is passed for caches created during initialization.  It
- *      is illegal for a user to try to create a UMC_INTERNAL cache.
- *      This allows initialization to proceed, but any other
- *      umem_cache_create()s will block by calling umem_init().
+ *	* In umem_cache_create(), there is a special UMC_INTERNAL cflag
+ *	that is passed for caches created during initialization.  It
+ *	is illegal for a user to try to create a UMC_INTERNAL cache.
+ *	This allows initialization to proceed, but any other
+ *	umem_cache_create()s will block by calling umem_init().
  *
- *      * Since umem_null_cache has a 1-element cache_cpu, it's cache_cpu_mask
- *      is always zero.  umem_cache_alloc uses cp->cache_cpu_mask to
- *      mask the cpu number.  This prevents a race between grabbing a
- *      cache pointer out of umem_alloc_table and growing the cpu array.
+ *	* Since umem_null_cache has a 1-element cache_cpu, it's cache_cpu_mask
+ *	is always zero.  umem_cache_alloc uses cp->cache_cpu_mask to
+ *	mask the cpu number.  This prevents a race between grabbing a
+ *	cache pointer out of umem_alloc_table and growing the cpu array.
  *
  *
  * 3. CPU handling
@@ -205,16 +210,16 @@
  * -----------------------------------------
  * A given cache is in one of three states:
  *
- * Inactive             cache_uflags is zero, cache_u{next,prev} are NULL
+ * Inactive		cache_uflags is zero, cache_u{next,prev} are NULL
  *
- * Work Requested       cache_uflags is non-zero (but UMU_ACTIVE is not set),
- *                      cache_u{next,prev} link the cache onto the global
- *                      update list
+ * Work Requested	cache_uflags is non-zero (but UMU_ACTIVE is not set),
+ *			cache_u{next,prev} link the cache onto the global
+ *			update list
  *
- * Active               cache_uflags has UMU_ACTIVE set, cache_u{next,prev}
- *                      are NULL, and either umem_update_thr or
- *                      umem_st_update_thr are actively doing work on the
- *                      cache.
+ * Active		cache_uflags has UMU_ACTIVE set, cache_u{next,prev}
+ *			are NULL, and either umem_update_thr or
+ *			umem_st_update_thr are actively doing work on the
+ *			cache.
  *
  * An update can be added to any cache in any state -- if the cache is
  * Inactive, it transitions to being Work Requested.  If the cache is
@@ -251,12 +256,12 @@
  * The update thread spends most of its time in cond_timedwait() on the
  * umem_update_cv.  It wakes up under two conditions:
  *
- *      * The timedwait times out, in which case it needs to run a global
- *      update, or
+ *	* The timedwait times out, in which case it needs to run a global
+ *	update, or
  *
- *      * someone cond_broadcast(3THR)s the umem_update_cv, in which case
- *      it needs to check if there are any caches in the Work Requested
- *      state.
+ *	* someone cond_broadcast(3THR)s the umem_update_cv, in which case
+ *	it needs to check if there are any caches in the Work Requested
+ *	state.
  *
  * When it is time for another global update, umem calls umem_cache_update()
  * on every cache, then calls vmem_update(), which tunes the vmem structures.
@@ -292,19 +297,19 @@
  *
  * Because we locked all of the mutexes, the only possible inconsistancies are:
  *
- *      * a umem_cache_alloc() could leak its buffer.
+ *	* a umem_cache_alloc() could leak its buffer.
  *
- *      * a caller of umem_depot_alloc() could leak a magazine, and all the
- *      buffers contained in it.
+ *	* a caller of umem_depot_alloc() could leak a magazine, and all the
+ *	buffers contained in it.
  *
- *      * a cache could be in the Active update state.  In the child, there
- *      would be no thread actually working on it.
+ *	* a cache could be in the Active update state.  In the child, there
+ *	would be no thread actually working on it.
  *
- *      * a umem_hash_rescale() could leak the new hash table.
+ *	* a umem_hash_rescale() could leak the new hash table.
  *
- *      * a umem_magazine_resize() could be in progress.
+ *	* a umem_magazine_resize() could be in progress.
  *
- *      * a umem_reap() could be in progress.
+ *	* a umem_reap() could be in progress.
  *
  * The memory leaks we can't do anything about.  umem_release_child() resets
  * the update state, moves any caches in the Active state to the Work Requested
@@ -330,24 +335,24 @@
  * that its clients have any particular type of behavior.  Instead,
  * it provides two types of allocations:
  *
- *      * UMEM_DEFAULT, equivalent to KM_NOSLEEP (i.e. return NULL on
- *      failure)
+ *	* UMEM_DEFAULT, equivalent to KM_NOSLEEP (i.e. return NULL on
+ *	failure)
  *
- *      * UMEM_NOFAIL, which, on failure, calls an optional callback
- *      (registered with umem_nofail_callback()).
+ *	* UMEM_NOFAIL, which, on failure, calls an optional callback
+ *	(registered with umem_nofail_callback()).
  *
  * The callback is invoked with no locks held, and can do an arbitrary
  * amount of work.  It then has a choice between:
  *
- *      * Returning UMEM_CALLBACK_RETRY, which will cause the allocation
- *      to be restarted.
+ *	* Returning UMEM_CALLBACK_RETRY, which will cause the allocation
+ *	to be restarted.
  *
- *      * Returning UMEM_CALLBACK_EXIT(status), which will cause exit(2)
- *      to be invoked with status.  If multiple threads attempt to do
- *      this simultaneously, only one will call exit(2).
+ *	* Returning UMEM_CALLBACK_EXIT(status), which will cause exit(2)
+ *	to be invoked with status.  If multiple threads attempt to do
+ *	this simultaneously, only one will call exit(2).
  *
- *      * Doing some kind of non-local exit (thr_exit(3thr), longjmp(3C),
- *      etc.)
+ *	* Doing some kind of non-local exit (thr_exit(3thr), longjmp(3C),
+ *	etc.)
  *
  * The default callback returns UMEM_CALLBACK_EXIT(255).
  *
@@ -356,16 +361,16 @@
  * close to the original allocation, with no inconsistent state or held
  * locks.  The following steps are taken:
  *
- *      * All invocations of vmem are VM_NOSLEEP.
+ *	* All invocations of vmem are VM_NOSLEEP.
  *
- *      * All constructor callbacks (which can themselves to allocations)
- *      are passed UMEM_DEFAULT as their required allocation argument.  This
- *      way, the constructor will fail, allowing the highest-level allocation
- *      invoke the nofail callback.
+ *	* All constructor callbacks (which can themselves to allocations)
+ *	are passed UMEM_DEFAULT as their required allocation argument.  This
+ *	way, the constructor will fail, allowing the highest-level allocation
+ *	invoke the nofail callback.
  *
- *      If a constructor callback _does_ do a UMEM_NOFAIL allocation, and
- *      the nofail callback does a non-local exit, we will leak the
- *      partially-constructed buffer.
+ *	If a constructor callback _does_ do a UMEM_NOFAIL allocation, and
+ *	the nofail callback does a non-local exit, we will leak the
+ *	partially-constructed buffer.
  *
  *
  * 6. Lock Ordering
@@ -373,24 +378,24 @@
  * umem has a few more locks than kmem does, mostly in the update path.  The
  * overall lock ordering (earlier locks must be acquired first) is:
  *
- *      umem_init_lock
+ *	umem_init_lock
  *
- *      vmem_list_lock
- *      vmem_nosleep_lock.vmpl_mutex
- *      vmem_t's:
- *              vm_lock
- *      sbrk_lock
+ *	vmem_list_lock
+ *	vmem_nosleep_lock.vmpl_mutex
+ *	vmem_t's:
+ *		vm_lock
+ *	sbrk_lock
  *
- *      umem_cache_lock
- *      umem_update_lock
- *      umem_flags_lock
- *      umem_cache_t's:
- *              cache_cpu[*].cc_lock
- *              cache_depot_lock
- *              cache_lock
- *      umem_log_header_t's:
- *              lh_cpu[*].clh_lock
- *              lh_lock
+ *	umem_cache_lock
+ *	umem_update_lock
+ *	umem_flags_lock
+ *	umem_cache_t's:
+ *		cache_cpu[*].cc_lock
+ *		cache_depot_lock
+ *		cache_lock
+ *	umem_log_header_t's:
+ *		lh_cpu[*].clh_lock
+ *		lh_lock
  *
  * \endcode
  *
@@ -419,15 +424,15 @@
  * deallocations on a per-thread basis for use in satisfying subsequent calls
  *
  * In addition to improving performance, we also want to:
- *    * Minimize fragmentation
- *    * Not add additional memory overhead (no larger malloc tags)
+ *	* Minimize fragmentation
+ *	* Not add additional memory overhead (no larger malloc tags)
  *
  * In the ulwp_t of each thread there is a private data structure called a
  * umem_t that looks like:
  *
  * typedef struct {
- *    size_t	tm_size;
- *    void	*tm_roots[NTMEMBASE];  (Currently 16)
+ * 	size_t	tm_size;
+ * 	void	*tm_roots[NTMEMBASE];  (Currently 16)
  * } tmem_t;
  *
  * Each of the roots is treated as the head of a linked list. Each entry in the
@@ -537,15 +542,15 @@
  * ptcfree, see the individual umem_genasm.c files. The layout consists of the
  * following sections:
  *
- *    o. function-specfic prologue
- *    o. function-generic cache-selecting elements
- *    o. function-specific epilogue
+ *	o. function-specfic prologue
+ *	o. function-generic cache-selecting elements
+ *	o. function-specific epilogue
  *
  * There are three different generic cache elements that exist:
  *
- *    o. the last or only cache
- *    o. the intermediary caches if more than two
- *    o. the first one if more than one cache
+ *	o. the last or only cache
+ *	o. the intermediary caches if more than two
+ *	o. the first one if more than one cache
  *
  * The malloc and free prologues and epilogues mimic the necessary portions of
  * libumem's malloc and free. This includes things like checking for size
@@ -569,10 +574,10 @@
  * As mentioned in section 8.2, the trampoline library uses specifically named
  * variables to communicate the buffers and size to use. These variables are:
  *
- *    o. umem_genasm_mptr: The buffer for ptcmalloc
- *    o. umem_genasm_msize: The size in bytes of the above buffer
- *    o. umem_genasm_fptr: The buffer for ptcfree
- *    o. umem_genasm_fsize: The size in bytes of the above buffer
+ *	o. umem_genasm_mptr: The buffer for ptcmalloc
+ *	o. umem_genasm_msize: The size in bytes of the above buffer
+ *	o. umem_genasm_fptr: The buffer for ptcfree
+ *	o. umem_genasm_fsize: The size in bytes of the above buffer
  *
  * Finally, to enable the generated assembly we need to remove the previous jump
  * to the actual malloc that exists at the start of these buffers. On x86, this
@@ -589,23 +594,23 @@
  * this. They are not documented in man pages or header files. They are in the
  * SUNWprivate part of libc's mapfile.
  *
- *    o. _tmem_get_base(void)
+ *	o. _tmem_get_base(void)
  *
- *    Returns the offset from the ulwp_t (curthread) to the tmem_t structure.
- *    This is a constant for all threads and is effectively a way to to do
- *    ::offsetof ulwp_t ul_tmem without having to know the specifics of the
- *    structure outside of libc.
+ * 	Returns the offset from the ulwp_t (curthread) to the tmem_t structure.
+ * 	This is a constant for all threads and is effectively a way to to do
+ * 	::offsetof ulwp_t ul_tmem without having to know the specifics of the
+ * 	structure outside of libc.
  *
- *    o. _tmem_get_nentries(void)
+ *	o. _tmem_get_nentries(void)
  *
- *    Returns the number of roots that exist in the tmem_t. This is one part
- *    of the cap on the number of umem_caches that we can back with tmem.
+ *	Returns the number of roots that exist in the tmem_t. This is one part
+ *	of the cap on the number of umem_caches that we can back with tmem.
  *
- *    o. _tmem_set_cleanup(void (*)(void *, int))
+ *	o. _tmem_set_cleanup(void (*)(void *, int))
  *
- *    This sets a clean up handler that gets called back when a thread exits.
- *    There is one call per buffer, the void * is a pointer to the buffer on
- *    the list, the int is the index into the roots array for this buffer.
+ *	This sets a clean up handler that gets called back when a thread exits.
+ *	There is one call per buffer, the void * is a pointer to the buffer on
+ *	the list, the int is the index into the roots array for this buffer.
  *
  * 8.5 Tuning and disabling per-thread caching
  * -------------------------------------------
@@ -800,8 +805,6 @@ extern thread_t _thr_self(void);
 #ifndef CPUHINT
 # define CPUHINT()      ((int)(_thr_self()))
 #endif
-
-
 #define CPUHINT_MAX()           INT_MAX
 
 #define CPU(mask)               (umem_cpus + (CPUHINT() & (mask)))
@@ -1293,6 +1296,9 @@ umem_alloc_retry(umem_cache_t *cp, int umflag)
 		/*
 		 * Initialization failed.  Do normal failure processing.
 		 */
+	}
+	if (umem_flags & UMF_CHECKNULL) {
+		umem_err_recoverable("umem: out of heap space");
 	}
 	if (umflag & UMEM_NOFAIL) {
 		int def_result = UMEM_CALLBACK_EXIT(255);
@@ -3318,7 +3324,12 @@ umem_cache_init(void)
  * umem_startup() is called early on, and must be called explicitly if we're
  * the standalone version.
  */
+#ifdef UMEM_STANDALONE
 void
+#else
+#pragma init(umem_startup)
+static void
+#endif
 umem_startup(caddr_t start, size_t len, size_t pagesize, caddr_t minstack,
 	caddr_t maxstack)
 {
