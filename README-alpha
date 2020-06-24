@@ -16,7 +16,7 @@ installation instructions are set forth in the file README.
 incomplete. The subversion history is the authoritative documentation of all
 recent changes.
 
-Report bugs at https://labs.omniti.com/trac/portableumem/newticket
+Report bugs at https://github.com/gburd/libumem/issues
 
 * Checking Out the Sources
 
@@ -31,19 +31,29 @@ To checkout the source tree from subversion issue the following command:
 
     In order to build this you will first need to have right versions
 of autotools and some auxiliary GNU programs. At the time of this
-writing these are: 
+writing these are:
 
   Package   Version (>=)
   ========  ============
   automake  1.4
   autoconf  2.50
   libtool   1.5.0
-  
+
     To prepare the package for building run autogen.sh. Then run
 ./configure with the desired options (See INSTALL and README for the
 detailed instructions). Finally, run make. Notice that the first make
 of the package should be made in the source directory. Subsequent
 makes can use build directory different from the source one.
+
+* Use
+
+    To use link with both umem and umem_malloc (e.g. '-lumem -lumem_malloc').
+
+* Testing
+
+    There are two basic test files included, test.c and hello.c, with
+basic instructions within those files at the end.  Basic performance
+testing was done using hyperfine.
 
 * Copyright information:
 
