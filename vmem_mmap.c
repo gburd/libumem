@@ -94,6 +94,19 @@ vmem_mmap_free(vmem_t *src, void *addr, size_t size)
 	errno = old_errno;
 }
 
+static void
+vmem_mmap_top_free(vmem_t *src, void *addr, size_t size)
+{
+	int old_errno = errno;
+#ifdef _WIN32
+	VirtualFree(addr, size, MEM_RELEASE);
+#else
+	(void) mmap(addr, size, FREE_PROT, FREE_FLAGS | MAP_FIXED, -1, 0);
+#endif
+	vmem_free(src, addr, size);
+	errno = old_errno;
+}
+
 static void *
 vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 {
