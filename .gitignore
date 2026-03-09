@@ -30,3 +30,44 @@ umem_test
 umem_test1
 umem_test2
 umem_test3
+
+# Test artifacts
+*.log
+*.trs
+test-suite.log
+umem_ptc_test
+umem_ptc_fork_test
+umem_ptc_bench
+core.*
+
+# Generated m4 macros (created by libtoolize)
+m4/
+
+# Development environment files
+.envrc
+flake.nix
+flake.lock
+shell.nix
+*.patch
+
+# Personal configuration
+.bash_profile
+.bashrc
+.zprofile
+.zshrc
+.profile
+.gitconfig
+.gitmodules
+.ripgreprc
+.mcp.json
+
+# IDE/Editor directories
+.idea/
+.vscode/
+.claude/
+.direnv/
+.history/
+
+# Temporary files
+hello.c
+test.c
