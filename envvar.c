@@ -24,7 +24,7 @@
  * Use is subject to license terms.
  *
  * Portions Copyright 2012 Joyent, Inc. All rights reserved.
- *
+ * Portions Copyright 2015 by Delphix. All rights reserved.
  * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.
  */
 
@@ -181,7 +181,10 @@ static umem_env_item_t umem_options_items[] = {
 	},
 #endif
 #endif
-
+	{ "perthread_cache",	"Evolving",	ITEM_SIZE,
+		"Size (in bytes) of per-thread allocation cache",
+		NULL, 0, NULL, &umem_ptc_size
+	},
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };
 
@@ -249,6 +252,10 @@ static umem_env_item_t umem_debug_items[] = {
 	{ "allverbose",		"Private",	ITEM_FLAG,
 		"Enables writing all logged messages to stderr",
 		&umem_output,	2
+	},
+	{ "checknull",		"Private",	ITEM_FLAG,
+		"Abort if an allocation would return null",
+		&umem_flags,	UMF_CHECKNULL
 	},
 
 	{ NULL, "-- end of UMEM_DEBUG --",	ITEM_INVALID }
@@ -557,6 +564,9 @@ process_item(const umem_env_item_t *item, const char *item_arg)
 	case ITEM_UINT:
 	case ITEM_SIZE:
 		arg_required = 1;
+		break;
+	case ITEM_INVALID:
+	default:
 		break;
 	}
 

@@ -70,6 +70,12 @@ static char umem_error_buffer[ERR_SIZE] = "";
 static uint_t umem_error_begin = 0;
 static uint_t umem_error_end = 0;
 
+#define WRITE_IGNORE(fd, buf, len) \
+	do { \
+		ssize_t __attribute__((unused)) _ret; \
+		_ret = write((fd), (buf), (len)); \
+	} while (0)
+
 #define	WRITE_AND_INC(var, value) { \
 	umem_error_buffer[(var)++] = (value); \
 	var = P2PHASE((var), ERR_SIZE); \
@@ -111,7 +117,7 @@ umem_error_enter(const char *error_str)
 {
 #ifndef UMEM_STANDALONE
 	if (umem_output && !issetugid())
-		(void) write(UMEM_ERRFD, error_str, strlen(error_str));
+		WRITE_IGNORE(UMEM_ERRFD, error_str, strlen(error_str));
 #endif
 
 	umem_log_enter(error_str);
@@ -197,7 +203,7 @@ log_message(const char *format, ...)
 
 #ifndef UMEM_STANDALONE
 	if (umem_output > 1)
-		(void) write(UMEM_ERRFD, buf, strlen(buf));
+		WRITE_IGNORE(UMEM_ERRFD, buf, strlen(buf));
 #endif
 
 	umem_log_enter(buf);
@@ -215,7 +221,7 @@ debug_printf(const char *format, ...)
 	(void) vsnprintf(buf, UMEM_MAX_ERROR_SIZE-1, format, va);
 	va_end(va);
 
-	(void) write(UMEM_ERRFD, buf, strlen(buf));
+	WRITE_IGNORE(UMEM_ERRFD, buf, strlen(buf));
 }
 #endif
 
@@ -241,7 +247,7 @@ umem_printf(const char *format, ...)
 
 /*ARGSUSED*/
 void
-umem_printf_warn(void *ignored, const char *format, ...)
+umem_printf_warn(void *ignored __attribute__((unused)), const char *format, ...)
 {
 	va_list va;
 

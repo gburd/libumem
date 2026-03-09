@@ -34,6 +34,8 @@
 
 void __umem_assert_failed(void) {}
 void _atomic_add_64(void) {}
+void atomic_add_32_nv(void) {}
+void atomic_swap_64(void) {}
 void _atomic_add_32_nv(void) {}
 void bcopy(void) {}
 void bzero(void) {}

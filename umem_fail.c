@@ -82,7 +82,7 @@ umem_do_abort(void)
 	}
 
 	for (;;) {
-#if defined(__FreeBSD__)
+#if defined(__FreeBSD__) || defined(__linux__)
 		sigset_t set;
 		struct sigaction sa;
 
@@ -166,5 +166,6 @@ __umem_assert_failed(const char *assertion, const char *file, int line)
 	umem_panic("Assertion failed: %s, file %s, line %d\n",
 	    assertion, file, line);
 	/*NOTREACHED*/
-	return (0);
+	/* Suppress "noreturn function cannot return" warning */
+	__builtin_unreachable();
 }

@@ -23,7 +23,7 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Portions Copyright 2012 Joyent, Inc. All rights reserved.
+ * Copyright 2012 Joyent, Inc. All rights reserved.
  */
 
 /* #pragma ident	"@(#)vmem_base.c	1.6	05/06/08 SMI" */

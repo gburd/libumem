@@ -1,0 +1,24 @@
+From 130c231020f97e5eb878cc9fdb2bd9b186a5aa04 Mon Sep 17 00:00:00 2001
+From: Greg Burd <greg@burd.me>
+Date: Fri, 24 Oct 2025 11:58:24 -0400
+Subject: [PATCH] no warnings with -O0 and fortify source please
+
+---
+ include/features.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/include/features.h b/include/features.h
+index 673c4036..a02c8a3f 100644
+--- a/include/features.h
++++ b/include/features.h
+@@ -432,7 +432,6 @@
+ 
+ #if defined _FORTIFY_SOURCE && _FORTIFY_SOURCE > 0
+ # if !defined __OPTIMIZE__ || __OPTIMIZE__ <= 0
+-#  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+ # elif !__GNUC_PREREQ (4, 1)
+ #  warning _FORTIFY_SOURCE requires GCC 4.1 or later
+ # elif _FORTIFY_SOURCE > 2 && (__glibc_clang_prereq (9, 0)		      \
+-- 
+2.50.1
+

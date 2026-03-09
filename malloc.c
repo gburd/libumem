@@ -25,7 +25,7 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"@(#)malloc.c	1.5	05/06/08 SMI"
+/* #pragma ident	"@(#)malloc.c	1.5	05/06/08 SMI" */
 
 #include "config.h"
 #include <unistd.h>
@@ -59,8 +59,36 @@ typedef struct malloc_data {
 	uint32_t malloc_stat; /* = UMEM_MALLOC_ENCODE(state, malloc_size) */
 } malloc_data_t;
 
+/*
+ * On non-x86, we use weak aliases so malloc/free resolve to umem_malloc
+ * and umem_malloc_free.  On x86, malloc and free are defined as thin
+ * dispatchers that call through the PTC generated code (if enabled)
+ * or fall through to umem_malloc/umem_malloc_free.
+ */
+#if !defined(__amd64__) && !defined(__x86_64__)
+#pragma weak malloc = umem_malloc
+#pragma weak free = umem_malloc_free
+#endif /* !_x86 */
+
+/*
+ * On Linux, the PTC genasm code sets these function pointers after
+ * generating the per-thread-cache assembly.  malloc() and free() check
+ * these and dispatch through them when set.
+ */
+#ifndef __sun
+extern void *(*umem_genasm_malloc_ptr)(size_t);
+extern void (*umem_genasm_free_ptr)(void *);
+#endif
+
+/*
+ * umem_malloc: the real malloc implementation.
+ *
+ * This is the function that PTC generated code falls back to for
+ * allocations it cannot handle (overflow, oversized, etc.).
+ * On non-x86, malloc is a weak alias to this function.
+ */
 void *
-malloc(size_t size_arg)
+umem_malloc(size_t size_arg)
 {
 #ifdef _LP64
 	uint32_t high_size = 0;
@@ -387,8 +415,15 @@ process_memalign:
 	return (1);
 }
 
+/*
+ * umem_malloc_free: the real free implementation.
+ *
+ * This is the function that PTC generated code falls back to for
+ * free operations it cannot handle.
+ * On non-x86, free is a weak alias to this function.
+ */
 void
-free(void *buf)
+umem_malloc_free(void *buf)
 {
 	if (buf == NULL)
 		return;
@@ -398,6 +433,41 @@ free(void *buf)
 	 */
 	(void) process_free(buf, 1, NULL);
 }
+
+/*
+ * On x86 platforms, malloc() and free() are dispatchers that check
+ * whether PTC genasm has been enabled.  If so, they call through the
+ * generated assembly code (which handles small allocations via per-thread
+ * caches and falls back to umem_malloc/umem_malloc_free for everything else).
+ * If PTC is not enabled, they call the real implementations directly.
+ */
+#if defined(__amd64__) || defined(__x86_64__)
+
+#ifdef __sun
+/*
+ * On Solaris, _malloc/_free are in writable text segments and the PLT
+ * handles dispatching via weak aliases.  malloc/free are defined as
+ * weak aliases to _malloc/_free in the mapfile.
+ */
+#else
+void *
+malloc(size_t size_arg)
+{
+	if (__builtin_expect(umem_genasm_malloc_ptr != NULL, 1))
+		return (umem_genasm_malloc_ptr(size_arg));
+	return (umem_malloc(size_arg));
+}
+
+void
+free(void *buf)
+{
+	if (__builtin_expect(umem_genasm_free_ptr != NULL, 1))
+		return (umem_genasm_free_ptr(buf));
+	umem_malloc_free(buf);
+}
+#endif /* __sun */
+
+#endif /* __amd64__ || __x86_64__ */
 
 void *
 realloc(void *buf_arg, size_t newsize)
@@ -432,3 +502,26 @@ realloc(void *buf_arg, size_t newsize)
 	free(buf_arg);
 	return (buf);
 }
+
+/*
+ * _malloc and _free are the PTC (per-thread cache) trampoline entry points.
+ * On Solaris/Illumos, libc provides these in writable+executable text segments
+ * so that umem_genasm() can overwrite them with generated assembly.
+ * On Linux, these are simple trampolines -- after PTC genasm activates,
+ * malloc()/free() call through the generated code directly via function
+ * pointers, so these functions are only used for symbol resolution by the
+ * genasm initialization code.
+ */
+#ifndef __sun
+void *
+_malloc(size_t size)
+{
+	return (umem_malloc(size));
+}
+
+void
+_free(void *buf)
+{
+	umem_malloc_free(buf);
+}
+#endif

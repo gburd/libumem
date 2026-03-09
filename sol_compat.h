@@ -44,7 +44,7 @@
 typedef pthread_t thread_t;
 typedef pthread_mutex_t mutex_t;
 typedef pthread_cond_t cond_t;
-typedef u_int64_t hrtime_t;
+typedef uint64_t hrtime_t;
 typedef uint32_t uint_t;
 typedef unsigned long ulong_t;
 typedef struct timespec timestruc_t;
@@ -53,7 +53,7 @@ typedef struct timespec timespec_t;
 static INLINE hrtime_t gethrtime(void) {
   struct timeval tv;
   gettimeofday(&tv, NULL);
-  return (((u_int64_t)tv.tv_sec) << 32) | tv.tv_usec;
+  return (((uint64_t)tv.tv_sec) << 32) | tv.tv_usec;
 }
 # define thr_self()                pthread_self()
 static INLINE thread_t _thr_self(void) {
@@ -68,8 +68,9 @@ static INLINE thread_t _thr_self(void) {
 #define THR_DETACHED  2
 #define THR_DAEMON    4
 
-static INLINE int thr_create(void *stack_base,
-  size_t stack_size, THR_RETURN (THR_API *start_func)(void*),
+static INLINE int thr_create(void *stack_base __attribute__((unused)),
+  size_t stack_size __attribute__((unused)),
+  THR_RETURN (THR_API *start_func)(void*),
   void *arg, long flags, thread_t *new_thread_ID)
 {
   int ret;
@@ -215,8 +216,10 @@ static INLINE uint64_t umem_atomic_inc64(uint64_t *val)
     (((off) ^ ((off) + (len) - 1)) > (align) - 1)
 
 /* beware! umem only uses these atomic adds for incrementing by 1 */
+#ifndef atomic_add_64
 #define atomic_add_64(lvalptr, delta) umem_atomic_inc64(lvalptr)
-#define atomic_add_32_nv(a, b)  	  umem_atomic_inc(a) 
+#endif
+#define atomic_add_32_nv(a, b)  	  umem_atomic_inc(a)
 
 #ifndef NANOSEC
 #define NANOSEC 1000000000

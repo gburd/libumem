@@ -17,3 +17,5 @@ To-do List for the Linux port of umem
 * doxygen'ate the headers/code, to produce reference docs.
 
 * HAVE_DOT in Doxyfile.in should be detected by configure.
+
+* option to not use brk() as it's no longer supported on OSX as of 10.10

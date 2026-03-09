@@ -22,8 +22,7 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- *
- * Portions Copyright 2012 Joyent, Inc. All rights reserved.
+ * Copyright 2012 Joyent, Inc. All rights reserved.
  */
 
 /* #pragma ident	"@(#)vmem.c	1.10	05/06/08 SMI" */
@@ -1652,7 +1651,7 @@ vmem_hash_rescale(vmem_t *vmp)
  */
 /*ARGSUSED*/
 void
-vmem_update(void *dummy)
+vmem_update(void *dummy __attribute__((unused)))
 {
 	vmem_t *vmp;
 
