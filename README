@@ -17,8 +17,180 @@ Linux and Windows versions of our product as we have found it to be stable.
 We will continue to update this project as and when we make improvements, and
 welcome third-party patches that improve the usability for everyone.
 
- 
+
 Wez Furlong,
 Message Systems, Inc.
 wez (at) messagesystems (dot) com
+
+
+Per-Thread Caching (PTC)
+========================
+
+Overview
+--------
+
+Per-thread caching (PTC) is a lock-free optimization for malloc() and free()
+that eliminates the per-CPU lock acquisition normally required by libumem for
+each allocation. When contention is low and malloc/free frequency is high,
+the lock overhead can dominate execution time. PTC alleviates this by caching
+recently freed buffers in thread-local storage for reuse by subsequent
+allocations within the same thread.
+
+### How it works
+
+Each thread maintains a private `tmem_t` structure containing:
+
+- `tm_size`: the total number of bytes currently cached by this thread
+- `tm_roots[16]`: an array of 16 linked-list heads, one per cache size
+
+Each root corresponds to a umem cache. When free() is called, instead of
+returning the buffer to the umem cache (which requires a lock), the buffer
+is placed on the appropriate per-thread linked list. When malloc() is called,
+the per-thread list is checked first; if a buffer is available, it is returned
+directly without any locking.
+
+When a thread exits, all buffers in its per-thread cache are returned to the
+appropriate umem caches.
+
+### Allocation size coverage
+
+PTC covers the first 16 umem cache sizes. The exact sizes depend on whether
+the system is 32-bit or 64-bit:
+
+**64-bit (LP64):** allocations up to 448 bytes
+  - Cache sizes: 8, 16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256,
+    320, 384, 448
+
+**32-bit (ILP32):** allocations up to 256 bytes
+  - Cache sizes: 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160,
+    192, 224, 256
+
+Allocations larger than these thresholds fall through to the standard
+libumem allocation path.
+
+### How PTC is implemented
+
+At initialization time, libumem dynamically generates optimized assembly
+implementations of malloc() and free() (called `ptcmalloc` and `ptcfree`)
+that are patched into the PLT (Procedure Linkage Table). These generated
+functions handle the per-thread cache operations directly in a small number
+of instructions, falling back to the standard libumem malloc/free when
+the allocation is not serviceable by the per-thread cache.
+
+
+Platform Support
+----------------
+
+PTC requires architecture-specific assembly code generation. The following
+platforms are supported:
+
+| Architecture | PTC Support | Notes                            |
+|--------------|-------------|----------------------------------|
+| x86_64       | Full        | amd64 genasm implementation      |
+| i386         | Full        | i386 genasm implementation       |
+| SPARC        | None        | No genasm implementation         |
+| ARM/AArch64  | None        | No genasm implementation         |
+| Other        | None        | Not implemented                  |
+
+On unsupported architectures, libumem falls back to the standard malloc/free
+path with no per-thread caching. The library remains fully functional; only
+the PTC optimization is unavailable.
+
+
+Configuration
+-------------
+
+PTC is configured through the `UMEM_OPTIONS` environment variable using
+the `perthread_cache` option, which sets the maximum number of bytes each
+thread is allowed to cache.
+
+### Enable with default cache size (1 MB per thread)
+
+PTC is enabled by default on supported architectures. No configuration
+is needed:
+
+    # PTC is active automatically on x86/x86_64
+    ./my_application
+
+### Set a custom per-thread cache size
+
+The value accepts optional size suffixes (k, m, g):
+
+    # 512 KB per-thread cache
+    UMEM_OPTIONS=perthread_cache=512k ./my_application
+
+    # 2 MB per-thread cache
+    UMEM_OPTIONS=perthread_cache=2m ./my_application
+
+    # Exact byte value (262144 bytes = 256 KB)
+    UMEM_OPTIONS=perthread_cache=262144 ./my_application
+
+### Disable per-thread caching
+
+    # Disable PTC by setting cache size to zero
+    UMEM_OPTIONS=perthread_cache=0 ./my_application
+
+### Combine with other UMEM_OPTIONS
+
+Options are separated by commas:
+
+    # Custom cache size with mmap backend
+    UMEM_OPTIONS=perthread_cache=512k,backend=mmap ./my_application
+
+
+When to Use PTC
+---------------
+
+PTC provides the greatest benefit when:
+
+- **High-frequency small allocations:** The application performs many
+  malloc/free calls per second for objects <= 448 bytes (64-bit) or
+  <= 256 bytes (32-bit).
+
+- **Multi-threaded workloads:** Multiple threads are allocating and freeing
+  memory concurrently. PTC eliminates lock contention on the per-CPU
+  magazine locks for small allocations.
+
+- **Allocation-free hot paths are impractical:** When object pooling or
+  arena allocation are not options and the application must rely on
+  malloc/free in performance-critical sections.
+
+PTC is less beneficial or unnecessary when:
+
+- The application primarily allocates large objects (above the PTC size
+  thresholds).
+
+- The application is single-threaded (lock contention is not an issue).
+
+- Memory usage must be kept to an absolute minimum (PTC adds per-thread
+  overhead).
+
+
+Limitations
+-----------
+
+- **Debug mode disables PTC.** When `UMEM_DEBUG` is set, PTC is
+  automatically disabled to allow the full debugging infrastructure
+  (auditing, guards, redzone checking) to function correctly.
+
+- **nomagazines disables PTC.** Setting `nomagazines` in `UMEM_OPTIONS`
+  disables all caching including PTC.
+
+- **Architecture restrictions.** PTC is only available on x86 and x86_64.
+  On other architectures, libumem operates normally but without the
+  per-thread caching optimization.
+
+- **Per-thread memory overhead.** Each thread can cache up to
+  `perthread_cache` bytes (default 1 MB). In applications with many threads,
+  this can result in significant memory being held in per-thread caches
+  rather than being returned to the system. Tune `perthread_cache` downward
+  if this is a concern.
+
+- **No runtime reconfiguration.** Once libumem is initialized, the PTC
+  cache size cannot be changed without restarting the process.
+
+- **Thread exit releases cached memory.** Buffers cached by a thread are
+  only returned to the umem caches when that thread exits. Long-lived
+  threads will hold onto their cached memory for the duration of their
+  lifetime.
 

@@ -1651,7 +1651,7 @@ vmem_hash_rescale(vmem_t *vmp)
  */
 /*ARGSUSED*/
 void
-vmem_update(void *dummy)
+vmem_update(void *dummy __attribute__((unused)))
 {
 	vmem_t *vmp;
 

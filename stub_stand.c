@@ -35,7 +35,11 @@
 
 #include "config.h"
 #include <string.h>
+#ifdef __sun
 #include <thread.h>
+#else
+#include <pthread.h>
+#endif
 
 #include "misc.h"
 

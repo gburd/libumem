@@ -180,12 +180,117 @@ will be used.
 \fB\fBperthread_cache\fR=\fBsize\fR\fR
 .ad
 .RS 16n
-libumem allows for each thread to cache recently freed small allocations for
-future allocations. The size argument, which accepts k, m, g, and t, suffixes
-denotes the maximum amount of memory each thread can use for this purpose. The
-default amount used is 1 MB. Any buffers in the per-thread cache are freed when
-the thread exits. The efficacy of the per-thread cache can be determined with
-the \fB::umastat\fR \fBmdb\fR(1) \fIdcmd\fR debugger command.
+Per-thread caching (PTC) allows each thread to cache recently freed small
+allocations in thread-local storage for reuse by subsequent calls to
+\fBmalloc\fR(). This eliminates the per-CPU lock acquisition that libumem
+normally requires for each allocation, providing a lock-free fast path for
+small, frequent allocations.
+.sp
+The \fIsize\fR argument sets the maximum number of bytes each thread is
+allowed to cache. It accepts \fBk\fR, \fBm\fR, \fBg\fR, and \fBt\fR
+suffixes. The default is 1 MB (\fB1048576\fR bytes). Setting \fIsize\fR
+to \fB0\fR disables per-thread caching.
+.sp
+.B "Allocation Size Coverage"
+.sp
+PTC covers the first 16 umem cache sizes. Allocations larger than the
+maximum covered size use the standard libumem allocation path. The covered
+sizes depend on the data model:
+.sp
+.RS 4n
+.PD 0
+.TP 16n
+.B "64-bit (LP64)"
+allocations up to 448 bytes (cache sizes: 8, 16, 32, 48, 64, 80, 96,
+112, 128, 160, 192, 224, 256, 320, 384, 448)
+.TP
+.B "32-bit (ILP32)"
+allocations up to 256 bytes (cache sizes: 8, 16, 24, 32, 40, 48, 56,
+64, 80, 96, 112, 128, 160, 192, 224, 256)
+.PD
+.RE
+.sp
+.B "Platform Support"
+.sp
+PTC requires architecture-specific generated assembly and is available on
+\fBx86_64\fR (amd64) and \fBi386\fR only. On unsupported architectures
+(SPARC, ARM, and others), libumem operates normally but without the
+per-thread caching optimization.
+.sp
+.B "Configuration Examples"
+.sp
+.RS 4n
+.nf
+# Default (1 MB per-thread cache, enabled automatically)
+UMEM_OPTIONS=perthread_cache=1m ./my_application
+
+# Reduce to 512 KB per thread
+UMEM_OPTIONS=perthread_cache=512k ./my_application
+
+# Disable per-thread caching
+UMEM_OPTIONS=perthread_cache=0 ./my_application
+
+# Combine with other options
+UMEM_OPTIONS=perthread_cache=512k,backend=mmap ./my_application
+.fi
+.RE
+.sp
+.B "Interaction with Other Options"
+.sp
+PTC is automatically disabled under the following conditions:
+.sp
+.RS 4n
+.PD 0
+.TP 4n
+\(bu
+\fBUMEM_DEBUG\fR is set. Debug features (auditing, guards, redzone
+checking) require that all allocations pass through the full umem
+infrastructure, which is incompatible with the per-thread fast path.
+.TP
+\(bu
+The \fBnomagazines\fR option is set in \fBUMEM_OPTIONS\fR. This disables
+all caching layers including per-thread caches.
+.TP
+\(bu
+The architecture does not support generated assembly (any platform
+other than x86 or x86_64).
+.PD
+.RE
+.sp
+.B "Troubleshooting"
+.sp
+If PTC does not appear to be active, verify the following:
+.sp
+.RS 4n
+.PD 0
+.TP 4n
+\(bu
+The application is running on x86 or x86_64 hardware.
+.TP
+\(bu
+\fBUMEM_DEBUG\fR is not set in the environment.
+.TP
+\(bu
+The \fBnomagazines\fR option is not present in \fBUMEM_OPTIONS\fR.
+.TP
+\(bu
+The \fBperthread_cache\fR value is not set to \fB0\fR.
+.PD
+.RE
+.sp
+.B "Memory Overhead"
+.sp
+Each thread may cache up to \fIsize\fR bytes (default 1 MB). In applications
+with many threads, this can result in significant memory held in per-thread
+caches. Cached buffers are only returned to the umem caches when the thread
+exits or when a free would exceed the per-thread limit. Tune \fIsize\fR
+downward if per-thread memory overhead is a concern.
+.sp
+The per-thread cache size cannot be reconfigured after libumem has been
+initialized; the process must be restarted to change it.
+.sp
+The efficacy of the per-thread cache can be determined with the
+\fB::umastat\fR \fBmdb\fR(1) \fIdcmd\fR debugger command.
 .RE
 
 .ne 2

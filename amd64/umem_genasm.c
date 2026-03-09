@@ -62,20 +62,55 @@
  * Each block of assembly has psuedocode that describes its purpose.
  */
 
-#include <atomic.h>
 #include <inttypes.h>
 #include <sys/types.h>
+#include <string.h>
 #include <strings.h>
 #include <umem_impl.h>
 #include "umem_base.h"
 
+#ifndef __sun
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
+
+#include <atomic.h>
+
 const int umem_genasm_supported = 1;
+
+/*
+ * On Solaris, _malloc/_free are in writable text segments (via linker mapfile).
+ * On Linux, we allocate RW memory via mmap, generate code into it, then
+ * mprotect to RX.  The function pointers umem_genasm_mptr/fptr point to
+ * these buffers.
+ *
+ * umem_genasm_omptr/ofptr are the addresses of the fallback malloc/free
+ * implementations that the generated code jumps to for cases it can't handle.
+ */
+#ifdef __sun
 static uintptr_t umem_genasm_mptr = (uintptr_t)&_malloc;
 static size_t umem_genasm_msize = 576;
 static uintptr_t umem_genasm_fptr = (uintptr_t)&_free;
 static size_t umem_genasm_fsize = 576;
+#else
+static uintptr_t umem_genasm_mptr;
+static size_t umem_genasm_msize = 576;
+static uintptr_t umem_genasm_fptr;
+static size_t umem_genasm_fsize = 576;
+static void *umem_genasm_mmap_base;
+static size_t umem_genasm_mmap_size;
+#endif
 static uintptr_t umem_genasm_omptr = (uintptr_t)umem_malloc;
 static uintptr_t umem_genasm_ofptr = (uintptr_t)umem_malloc_free;
+
+/*
+ * On Linux, after genasm succeeds, we update these function pointers so that
+ * malloc()/free() in malloc.c call through to the generated code.
+ */
+#ifndef __sun
+void *(*umem_genasm_malloc_ptr)(size_t) = NULL;
+void (*umem_genasm_free_ptr)(void *) = NULL;
+#endif
 
 #define	UMEM_GENASM_MAX64	(UINT32_MAX / sizeof (uintptr_t))
 #define	PTC_JMPADDR(dest, src)	(dest - (src + 4))
@@ -374,7 +409,7 @@ genasm_gencache(uint8_t *bp, int num, uint32_t csize, uint32_t ap)
 	uint32_t addr;
 	uint32_t coff;
 
-	ASSERT(UINT32_MAX / PTC_ROOT_SIZE > num);
+	ASSERT(UINT32_MAX / PTC_ROOT_SIZE > (unsigned int)num);
 	ASSERT(num != 0);
 	bcopy(gencache, bp, sizeof (gencache));
 	bcopy(&csize, bp + PTC_GENCACHE_CMP, sizeof (csize));
@@ -394,7 +429,7 @@ genasm_lastcache(uint8_t *bp, int num, uint32_t csize, uint32_t ep)
 	uint32_t coff;
 
 	ASSERT(ep <= 0xff && ep > 7);
-	ASSERT(UINT32_MAX / PTC_ROOT_SIZE > num);
+	ASSERT(UINT32_MAX / PTC_ROOT_SIZE > (unsigned int)num);
 	bcopy(fincache, bp, sizeof (fincache));
 	bcopy(&csize, bp + PTC_FINCACHE_CMP, sizeof (csize));
 	bcopy(&csize, bp + PTC_FINCACHE_SIZE, sizeof (csize));
@@ -543,6 +578,100 @@ genasm_free(void *base, size_t len, int nents, int *umem_alloc_sizes)
 	return (0);
 }
 
+#ifndef __sun
+/*
+ * On Linux, allocate RW memory for the generated PTC code buffers.
+ * We try to allocate near the library's text to ensure jmp rel32
+ * instructions can reach the fallback malloc/free implementations.
+ *
+ * The buffers are laid out as:
+ *   [5-byte jmp to fallback][nop space for generated code]
+ *
+ * Returns 0 on success, 1 on failure.
+ */
+static int
+genasm_alloc_buffers(void)
+{
+	long page_size = sysconf(_SC_PAGESIZE);
+	size_t alloc_size;
+	void *hint;
+	uint8_t *base;
+	int32_t rel;
+
+	if (page_size <= 0)
+		page_size = 4096;
+
+	/*
+	 * We need space for both malloc and free buffers.
+	 * Round up to page size.
+	 */
+	alloc_size = umem_genasm_msize + umem_genasm_fsize;
+	alloc_size = (alloc_size + page_size - 1) & ~(page_size - 1);
+
+	/*
+	 * Try to mmap near umem_malloc so jmp rel32 can reach it.
+	 * Use the address of umem_malloc as a hint.
+	 */
+	hint = (void *)((uintptr_t)umem_malloc & ~(page_size - 1));
+	base = (uint8_t *)mmap(hint, alloc_size,
+	    PROT_READ | PROT_WRITE | PROT_EXEC,
+	    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+	if (base == MAP_FAILED) {
+		/* Try without a hint */
+		base = (uint8_t *)mmap(NULL, alloc_size,
+		    PROT_READ | PROT_WRITE | PROT_EXEC,
+		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (base == MAP_FAILED)
+			return (1);
+	}
+
+	/*
+	 * Verify that the fallback targets are reachable via jmp rel32
+	 * (must be within +/- 2GB).
+	 */
+	rel = (int64_t)umem_genasm_omptr -
+	    (int64_t)(uintptr_t)(base + umem_genasm_msize);
+	if ((int64_t)rel != (int64_t)(int32_t)rel) {
+		munmap(base, alloc_size);
+		return (1);
+	}
+	rel = (int64_t)umem_genasm_ofptr -
+	    (int64_t)(uintptr_t)(base + umem_genasm_msize + umem_genasm_fsize);
+	if ((int64_t)rel != (int32_t)rel) {
+		munmap(base, alloc_size);
+		return (1);
+	}
+
+	umem_genasm_mmap_base = base;
+	umem_genasm_mmap_size = alloc_size;
+
+	/*
+	 * Set up malloc buffer: 5-byte jmp to umem_malloc, then nops.
+	 * Layout: [0xe9][rel32 to umem_malloc][nop fill]
+	 */
+	umem_genasm_mptr = (uintptr_t)base;
+	memset(base, 0x90, umem_genasm_msize);  /* fill with nops */
+	base[0] = 0xe9;  /* jmp rel32 */
+	rel = (int32_t)((int64_t)umem_genasm_omptr -
+	    (int64_t)(uintptr_t)(base + 5));
+	memcpy(base + 1, &rel, 4);
+
+	/*
+	 * Set up free buffer: 5-byte jmp to umem_malloc_free, then nops.
+	 */
+	base += umem_genasm_msize;
+	umem_genasm_fptr = (uintptr_t)base;
+	memset(base, 0x90, umem_genasm_fsize);
+	base[0] = 0xe9;  /* jmp rel32 */
+	rel = (int32_t)((int64_t)umem_genasm_ofptr -
+	    (int64_t)(uintptr_t)(base + 5));
+	memcpy(base + 1, &rel, 4);
+
+	return (0);
+}
+#endif /* !__sun */
+
 /*ARGSUSED*/
 int
 umem_genasm(int *cp, umem_cache_t **caches, int nc)
@@ -551,6 +680,14 @@ umem_genasm(int *cp, umem_cache_t **caches, int nc)
 	uint8_t *mptr;
 	uint8_t *fptr;
 	uint64_t v, *vptr;
+
+#ifndef __sun
+	/*
+	 * On Linux, allocate mmap'd RWX buffers for the generated code.
+	 */
+	if (genasm_alloc_buffers() != 0)
+		return (1);
+#endif
 
 	mptr = (void *)((uintptr_t)umem_genasm_mptr + 5);
 	fptr = (void *)((uintptr_t)umem_genasm_fptr + 5);
@@ -567,7 +704,7 @@ umem_genasm(int *cp, umem_cache_t **caches, int nc)
 	 */
 	nents = _tmem_get_nentries();
 
-	if (UMEM_GENASM_MAX64 < nents)
+	if (UMEM_GENASM_MAX64 < (unsigned)nents)
 		nents = UMEM_GENASM_MAX64;
 
 	if (nc < nents)
@@ -594,6 +731,21 @@ umem_genasm(int *cp, umem_cache_t **caches, int nc)
 	v = MULTINOP;
 	v |= *vptr & (0xffffffULL << 40);
 	(void) atomic_swap_64(vptr, v);
+
+#ifndef __sun
+	/*
+	 * On Linux, make the generated code read-only + executable.
+	 * Also set up function pointers so malloc.c can redirect through them.
+	 */
+	if (umem_genasm_mmap_base != NULL) {
+		mprotect(umem_genasm_mmap_base, umem_genasm_mmap_size,
+		    PROT_READ | PROT_EXEC);
+	}
+	umem_genasm_malloc_ptr =
+	    (void *(*)(size_t))(uintptr_t)umem_genasm_mptr;
+	umem_genasm_free_ptr =
+	    (void (*)(void *))(uintptr_t)umem_genasm_fptr;
+#endif
 
 	for (i = 0; i < nents; i++)
 		caches[i]->cache_flags |= UMF_PTC;

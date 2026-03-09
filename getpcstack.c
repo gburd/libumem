@@ -75,6 +75,9 @@ int
 getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_signal)
 {
 #ifdef EC_UMEM_DUMMY_PCSTACK
+  (void) pcstack;
+  (void) pcstack_limit;
+  (void) check_signal;
   return 0;
 #else
 	struct frame *fp;

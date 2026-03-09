@@ -3327,7 +3327,7 @@ umem_cache_init(void)
 #ifdef UMEM_STANDALONE
 void
 #else
-#pragma init(umem_startup)
+/* #pragma init(umem_startup) -- handled via __attribute__((constructor)) */
 static void
 #endif
 umem_startup(caddr_t start, size_t len, size_t pagesize, caddr_t minstack,
@@ -3344,6 +3344,10 @@ umem_startup(caddr_t start, size_t len, size_t pagesize, caddr_t minstack,
 #ifdef __lint
 	/* make lint happy */
 	minstack = maxstack;
+#endif
+#ifndef UMEM_STANDALONE
+	(void) minstack;
+	(void) maxstack;
 #endif
 
 #ifdef UMEM_STANDALONE

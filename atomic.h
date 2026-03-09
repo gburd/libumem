@@ -8,6 +8,7 @@
 /* Linux - use GCC/Clang builtins */
 #include <stddef.h>
 #include <stdint.h>
+#include <limits.h>
 
 /* Define uint_t to match sol_compat.h */
 #ifndef uint_t
@@ -29,12 +30,11 @@ typedef unsigned char uchar_t;
 #define atomic_inc_64(p) __sync_add_and_fetch((p), 1)
 #define atomic_dec_64(p) __sync_sub_and_fetch((p), 1)
 
-/* Atomic add */
-#ifndef atomic_add_64
+/* Atomic add - undefine sol_compat.h version and override on Linux */
+#undef atomic_add_64
 #define atomic_add_64(p, v) __sync_add_and_fetch((p), (v))
-#endif
 
-/* Atomic swap - missing from original */
+/* Atomic swap */
 #define atomic_swap_64(target, new) \
 	__sync_lock_test_and_set((target), (new))
 

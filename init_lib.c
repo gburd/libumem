@@ -85,7 +85,9 @@ vmem_heap_init(void)
 
 /*ARGSUSED*/
 void
-umem_type_init(caddr_t start, size_t len, size_t pgsize)
+umem_type_init(caddr_t start __attribute__((unused)),
+    size_t len __attribute__((unused)),
+    size_t pgsize __attribute__((unused)))
 {
 #ifdef _WIN32
 	SYSTEM_INFO info;
