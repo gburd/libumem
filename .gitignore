@@ -45,8 +45,6 @@ m4/
 
 # Development environment files
 .envrc
-flake.nix
-flake.lock
 shell.nix
 *.patch
 
