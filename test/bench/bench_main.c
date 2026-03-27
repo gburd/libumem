@@ -60,9 +60,11 @@ int main(int argc, char *argv[]) {
             csv_output = true;
             break;
         case 'h':
+            print_usage(argv[0]);
+            return 0;
         default:
             print_usage(argv[0]);
-            return (opt == 'h') ? 0 : 1;
+            return 1;
         }
     }
 

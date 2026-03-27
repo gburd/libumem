@@ -884,7 +884,8 @@ munit_clock_get_elapsed(struct PsnipClockTimespec *start,
 #elif defined(HAVE_STDATOMIC)
 #include <stdatomic.h>
 #define ATOMIC_UINT32_T _Atomic uint32_t
-#define ATOMIC_UINT32_INIT(x) ATOMIC_VAR_INIT(x)
+/* ATOMIC_VAR_INIT is deprecated in C17, use direct initialization */
+#define ATOMIC_UINT32_INIT(x) (x)
 #elif defined(HAVE_CLANG_ATOMICS)
 #define ATOMIC_UINT32_T _Atomic uint32_t
 #define ATOMIC_UINT32_INIT(x) (x)

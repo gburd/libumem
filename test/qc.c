@@ -386,7 +386,8 @@ QCC_showSimpleArray(void *value, size_t elemSize, QCC_showValue showValue, int l
 static char *
 QCC_showByte(void *value, int len)
 {
-  return QCC_showSimpleValue(value, BYTE, 3, "'%x'");
+  /* Buffer needs space for: ' + up to 2 hex digits + ' + null = 5 chars */
+  return QCC_showSimpleValue(value, BYTE, 4, "'%x'");
 }
 
 static char *
