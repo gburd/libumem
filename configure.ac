@@ -39,6 +39,16 @@ case "$host_cpu" in
     GENASM_DIR="sparc"
     AC_DEFINE(ARCH_SPARC, [1], [sparc architecture])
     ;;
+  riscv64)
+    AC_MSG_RESULT(riscv64)
+    GENASM_DIR="riscv64"
+    AC_DEFINE(ARCH_RISCV64, [1], [RISC-V 64-bit architecture])
+    ;;
+  aarch64|arm64)
+    AC_MSG_RESULT(aarch64)
+    GENASM_DIR="aarch64"
+    AC_DEFINE(ARCH_AARCH64, [1], [ARM64 architecture])
+    ;;
   *)
     AC_MSG_RESULT($host_cpu)
     AC_MSG_WARN([Unsupported architecture: $host_cpu, defaulting to generic])
@@ -67,7 +77,78 @@ AC_CHECK_LIB(dl,dlopen)
 AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h])
 AC_CHECK_FUNCS([issetugid mallinfo malloc_stats])
 
+# Coverage support
+AC_ARG_ENABLE([coverage],
+    [AS_HELP_STRING([--enable-coverage], [Enable coverage reporting with gcov/lcov])],
+    [coverage=$enableval], [coverage=no])
+
+AM_CONDITIONAL([ENABLE_COVERAGE], [test "x$coverage" = "xyes"])
+
+if test "x$coverage" = "xyes"; then
+    AC_MSG_NOTICE([Coverage reporting enabled])
+    COVERAGE_CFLAGS="--coverage -fprofile-arcs -ftest-coverage"
+    COVERAGE_LDFLAGS="--coverage -lgcov"
+    AC_SUBST(COVERAGE_CFLAGS)
+    AC_SUBST(COVERAGE_LDFLAGS)
+fi
+
+# AddressSanitizer support
+AC_ARG_ENABLE([asan],
+    [AS_HELP_STRING([--enable-asan], [Enable AddressSanitizer for memory error detection])],
+    [asan=$enableval], [asan=no])
+
+AM_CONDITIONAL([ENABLE_ASAN], [test "x$asan" = "xyes"])
+
+if test "x$asan" = "xyes"; then
+    AC_MSG_NOTICE([AddressSanitizer enabled])
+    ASAN_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
+    ASAN_LDFLAGS="-fsanitize=address"
+    AC_SUBST(ASAN_CFLAGS)
+    AC_SUBST(ASAN_LDFLAGS)
+fi
+
+# UndefinedBehaviorSanitizer support
+AC_ARG_ENABLE([ubsan],
+    [AS_HELP_STRING([--enable-ubsan], [Enable UndefinedBehaviorSanitizer])],
+    [ubsan=$enableval], [ubsan=no])
+
+AM_CONDITIONAL([ENABLE_UBSAN], [test "x$ubsan" = "xyes"])
+
+if test "x$ubsan" = "xyes"; then
+    AC_MSG_NOTICE([UndefinedBehaviorSanitizer enabled])
+    UBSAN_CFLAGS="-fsanitize=undefined -fno-omit-frame-pointer -g"
+    UBSAN_LDFLAGS="-fsanitize=undefined"
+    AC_SUBST(UBSAN_CFLAGS)
+    AC_SUBST(UBSAN_LDFLAGS)
+fi
+
+# ThreadSanitizer support
+AC_ARG_ENABLE([tsan],
+    [AS_HELP_STRING([--enable-tsan], [Enable ThreadSanitizer for race detection])],
+    [tsan=$enableval], [tsan=no])
+
+AM_CONDITIONAL([ENABLE_TSAN], [test "x$tsan" = "xyes"])
+
+if test "x$tsan" = "xyes"; then
+    AC_MSG_NOTICE([ThreadSanitizer enabled])
+    TSAN_CFLAGS="-fsanitize=thread -fno-omit-frame-pointer -g"
+    TSAN_LDFLAGS="-fsanitize=thread"
+    AC_SUBST(TSAN_CFLAGS)
+    AC_SUBST(TSAN_LDFLAGS)
+fi
+
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile Doxyfile umem.spec])
 
 AC_OUTPUT
+
+# Summary
+echo "
+Configuration summary:
+  Architecture:     $host_cpu ($GENASM_DIR)
+  OS:               $host_os
+  Coverage:         $coverage
+  AddressSanitizer: $asan
+  UBSanitizer:      $ubsan
+  ThreadSanitizer:  $tsan
+"

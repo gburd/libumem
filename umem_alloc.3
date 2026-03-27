@@ -24,6 +24,16 @@ cc [ \fIflag \&.\|.\|.\fR ] \fIfile\fR\&.\|.\|. \fB-lumem\fR [ \fIlibrary \&.\|.
 
 .LP
 .nf
+\fBvoid *\fR\fBumem_alloc_align\fR(\fBsize_t\fR \fIsize\fR, \fBsize_t\fR \fIalign\fR, \fBint\fR \fIflags\fR);
+.fi
+
+.LP
+.nf
+\fBvoid\fR \fBumem_free_align\fR(\fBvoid *\fR\fIbuf\fR, \fBsize_t\fR \fIsize\fR);
+.fi
+
+.LP
+.nf
 \fBvoid\fR \fBumem_free\fR(\fBvoid *\fR\fIbuf\fR, \fBsize_t\fR \fIsize\fR);
 .fi
 
@@ -131,6 +141,18 @@ The function call \fBumem_free\fR(\fINULL\fR, 0) is allowed.
 .LP
 The \fBumem_zalloc()\fR function has the same semantics as \fBumem_alloc()\fR,
 but the block of memory is initialized to zeros before it is returned.
+.sp
+.LP
+The \fBumem_alloc_align()\fR function allocates \fIsize\fR bytes aligned to the
+\fIalign\fR boundary. The \fIalign\fR argument must be a power of two. The returned
+pointer will be a multiple of \fIalign\fR. This function is useful for allocating
+buffers that must be aligned for hardware DMA, cache line optimization, or SIMD
+operations. The \fIflags\fR argument has the same semantics as \fBumem_alloc()\fR.
+.sp
+.LP
+The \fBumem_free_align()\fR function frees blocks previously allocated using
+\fBumem_alloc_align()\fR. The buffer address and size must exactly match the
+original allocation.
 .sp
 .LP
 The \fBumem_free()\fR function frees blocks previously allocated using

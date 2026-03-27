@@ -23,12 +23,17 @@ static __thread tmem_t _tmem __attribute__((tls_model("initial-exec")));
 static __thread void (*_tmem_cleanup_func)(void *, int) = NULL;
 
 /*
- * Return the %fs-relative offset of the tmem structure.
+ * Return the thread-pointer-relative offset of the tmem structure.
  *
  * On Linux x86_64, __thread variables with initial-exec TLS model are
  * accessed at fixed negative offsets from %fs:0 (the thread pointer).
  * We compute this offset by taking the difference between the variable's
  * address and the value of %fs:0.
+ *
+ * Similar mechanisms exist for other architectures:
+ * - i386: %gs:0 thread pointer
+ * - RISC-V: tp (x4) register
+ * - aarch64: TPIDR_EL0 special register
  *
  * On Solaris, this would return the offset within the ulwp_t.
  */
@@ -43,6 +48,14 @@ _tmem_get_base(void)
 	uintptr_t gs_base;
 	__asm__ __volatile__("movl %%gs:0, %0" : "=r" (gs_base));
 	return (uintptr_t)&_tmem - gs_base;
+#elif defined(__riscv) && (__riscv_xlen == 64)
+	uintptr_t tp;
+	__asm__ __volatile__("mv %0, tp" : "=r" (tp));
+	return (uintptr_t)&_tmem - tp;
+#elif defined(__aarch64__) || defined(__arm64__)
+	uintptr_t tp;
+	__asm__ __volatile__("mrs %0, tpidr_el0" : "=r" (tp));
+	return (uintptr_t)&_tmem - tp;
 #else
 	return 0;
 #endif
