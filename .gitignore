@@ -40,6 +40,14 @@ umem_ptc_fork_test
 umem_ptc_bench
 core.*
 
+# Benchmark artifacts
+test/bench/bench_allocators
+test/bench/bench_main
+test/bench/results/
+test/test_main
+test/property/prop_alloc_free
+test/property/prop_alloc_free2
+
 # Nix build outputs
 result
 result-*
