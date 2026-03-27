@@ -40,6 +40,14 @@ umem_ptc_fork_test
 umem_ptc_bench
 core.*
 
+# Nix build outputs
+result
+result-*
+
+# Automake artifacts
+.dirstamp
+*.dirstamp
+
 # Generated m4 macros (created by libtoolize)
 m4/
 
