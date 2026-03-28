@@ -283,6 +283,63 @@
             '';
           };
 
+          # FreeBSD-specific development shell
+          freebsd = pkgs.mkShell {
+            inputsFrom = [ self.packages.${system}.libumem ];
+
+            packages = with pkgs; [
+              # Documentation
+              doxygen
+              graphviz
+
+              # Development and debugging tools
+              gdb
+              lldb
+
+              # Code quality
+              clang-tools
+              cppcheck
+
+              # Coverage and sanitizers (ASan/UBSan work on FreeBSD)
+              lcov
+
+              # Python for debugger extensions
+              python3
+
+              # FreeBSD typically uses gmake
+            ] ++ lib.optionals pkgs.stdenv.isFreeBSD [
+              gmake
+            ];
+
+            shellHook = ''
+              echo "╔════════════════════════════════════════════╗"
+              echo "║  libumem FreeBSD development environment  ║"
+              echo "║  Platform: ${system}                      ║"
+              echo "╚════════════════════════════════════════════╝"
+              echo ""
+              echo "Build:           ./autogen.sh && ./configure && gmake"
+              echo "Test:            gmake check"
+              echo "Coverage:        ./scripts/run-coverage.sh (use gmake)"
+              echo "Sanitizers:      ./scripts/run-sanitizers.sh (ASan/UBSan)"
+              echo "Benchmarks:      cd test/bench && gmake && ./bench_allocators.sh"
+              echo "Docs:            gmake html-local"
+              echo ""
+              echo "GDB extension:   source tools/gdb/umem_gdb.py"
+              echo "LLDB extension:  command script import tools/lldb/umem_lldb.py"
+              echo ""
+              echo "FreeBSD notes:"
+              echo "  - Use 'gmake' instead of 'make' (BSD make differs)"
+              echo "  - valgrind not available (use LLDB or sanitizers)"
+              echo "  - ASan/UBSan fully supported"
+              echo "  - ThreadSanitizer may have limited support"
+              echo ""
+              echo "Available tools: gdb, lldb, lcov, clang-tools, cppcheck, gmake"
+              echo ""
+              echo "See FREEBSD_SUPPORT.md for full FreeBSD documentation"
+              echo ""
+            '';
+          };
+
           # Multi-architecture testing shell
           test-all = pkgs.mkShell {
             packages = with pkgs; [
