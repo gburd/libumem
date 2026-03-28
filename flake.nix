@@ -1,5 +1,5 @@
 {
-  description = "Port of Solaris umem slab allocator with multi-architecture support";
+  description = "Port of Solaris umem slab allocator with multi-architecture and multi-OS support";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -107,8 +107,9 @@
           meta = with lib; {
             description = "Port of Solaris umem slab allocator (${targetName})";
             longDescription = ''
-              libumem is a port of Solaris umem to Linux. Provides high-performance
-              slab allocation with per-thread caching (PTC) on supported architectures.
+              libumem is a port of Solaris umem to Unix systems (Linux, FreeBSD, etc.).
+              Provides high-performance slab allocation with per-thread caching (PTC)
+              on supported architectures.
 
               Target architecture: ${targetName}
 
@@ -122,7 +123,7 @@
             '';
             homepage = "https://codeberg.org/gregburd/libumem";
             license = licenses.cddl;
-            platforms = platforms.linux;
+            platforms = platforms.unix;
             maintainers = [ ];
           };
         });
@@ -155,7 +156,6 @@
               # Development and debugging tools
               gdb
               lldb
-              valgrind
 
               # Code quality
               clang-tools
@@ -167,6 +167,9 @@
 
               # Python for debugger extensions
               python3
+            ] ++ lib.optionals pkgs.stdenv.isLinux [
+              # valgrind is Linux-only
+              valgrind
             ];
 
             shellHook = ''
@@ -185,7 +188,13 @@
               echo "GDB extension:   source tools/gdb/umem_gdb.py"
               echo "LLDB extension:  command script import tools/lldb/umem_lldb.py"
               echo ""
+              ${lib.optionalString pkgs.stdenv.isLinux ''
               echo "Available tools: gdb, lldb, valgrind, lcov, clang-tools, cppcheck"
+              ''}
+              ${lib.optionalString (!pkgs.stdenv.isLinux) ''
+              echo "Available tools: gdb, lldb, lcov, clang-tools, cppcheck"
+              echo "Note: valgrind not available on this platform"
+              ''}
               echo ""
             '';
           };
@@ -319,7 +328,7 @@
           # Native integration test
           integration = pkgs.runCommand "libumem-integration-test"
             {
-              buildInputs = [ self.packages.${system}.libumem pkgs.gcc ];
+              buildInputs = [ self.packages.${system}.libumem pkgs.stdenv.cc ];
             }
             ''
               cat > test.c <<EOF
@@ -358,13 +367,17 @@
               }
               EOF
 
-              gcc test.c \
+              $CC test.c \
                 -I${self.packages.${system}.libumem.dev}/include \
                 -L${self.packages.${system}.libumem.out}/lib \
                 -lumem \
                 -o test
 
-              export LD_LIBRARY_PATH="${self.packages.${system}.libumem.out}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              ${if pkgs.stdenv.isFreeBSD then ''
+                export LD_LIBRARY_PATH="${self.packages.${system}.libumem.out}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              '' else ''
+                export LD_LIBRARY_PATH="${self.packages.${system}.libumem.out}/lib:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              ''}
               ./test
 
               touch $out
