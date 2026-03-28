@@ -7,7 +7,17 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    flake-utils.lib.eachSystem [
+      # Linux
+      "x86_64-linux"
+      "aarch64-linux"
+      # Darwin (macOS)
+      "x86_64-darwin"
+      "aarch64-darwin"
+      # FreeBSD
+      "x86_64-freebsd"
+      "aarch64-freebsd"
+    ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         lib = pkgs.lib;
@@ -135,8 +145,8 @@
 
           # Native build
           libumem = mkLibumem pkgs "native";
-
-          # Cross-compiled builds
+        } // lib.optionalAttrs pkgs.stdenv.isLinux {
+          # Cross-compiled builds (Linux only)
           libumem-riscv64 = mkLibumem pkgsRiscV64 "riscv64";
           libumem-aarch64 = mkLibumem pkgsAarch64 "aarch64";
         };
@@ -199,7 +209,8 @@
             '';
           };
 
-          # RISC-V cross-compilation shell
+        } // lib.optionalAttrs pkgs.stdenv.isLinux {
+          # RISC-V cross-compilation shell (Linux only)
           riscv64 = pkgs.mkShell {
             packages = with pkgs; [
               # Cross-compilation toolchain
@@ -340,7 +351,7 @@
             '';
           };
 
-          # Multi-architecture testing shell
+          # Multi-architecture testing shell (Linux only)
           test-all = pkgs.mkShell {
             packages = with pkgs; [
               # QEMU for all architectures
@@ -440,7 +451,8 @@
               touch $out
             '';
 
-          # Build checks for cross-compiled versions
+        } // lib.optionalAttrs pkgs.stdenv.isLinux {
+          # Build checks for cross-compiled versions (Linux only)
           build-riscv64 = self.packages.${system}.libumem-riscv64;
           build-aarch64 = self.packages.${system}.libumem-aarch64;
         };
@@ -456,8 +468,8 @@
               echo "✓ Native tests passed"
             '';
           };
-
-          # Test RISC-V with QEMU
+        } // lib.optionalAttrs pkgs.stdenv.isLinux {
+          # Test RISC-V with QEMU (Linux only)
           test-riscv64 = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "test-riscv64" ''
               set -e
@@ -470,7 +482,7 @@
             '';
           };
 
-          # Test aarch64 with QEMU
+          # Test aarch64 with QEMU (Linux only)
           test-aarch64 = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "test-aarch64" ''
               set -e
