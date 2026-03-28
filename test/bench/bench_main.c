@@ -17,6 +17,7 @@ static void print_usage(const char *prog) {
     printf("  -n COUNT      Operation count (default: 1000000)\n");
     printf("  -s MIN:MAX    Size range in bytes (default: 16:1024)\n");
     printf("  -c            Output CSV format\n");
+    printf("  -H            Print CSV header only and exit\n");
     printf("  -h            Show this help\n");
     printf("\nExample:\n");
     printf("  %s -a umem -w multi -t 8 -n 10000000\n", prog);
@@ -31,8 +32,9 @@ int main(int argc, char *argv[]) {
     size_t min_size = 16;
     size_t max_size = 1024;
     bool csv_output = false;
+    bool header_only = false;
 
-    while ((opt = getopt(argc, argv, "a:w:t:n:s:ch")) != -1) {
+    while ((opt = getopt(argc, argv, "a:w:t:n:s:cHh")) != -1) {
         switch (opt) {
         case 'a':
             allocator_name = optarg;
@@ -59,6 +61,10 @@ int main(int argc, char *argv[]) {
         case 'c':
             csv_output = true;
             break;
+        case 'H':
+            header_only = true;
+            csv_output = true;  /* Header output requires CSV mode */
+            break;
         case 'h':
             print_usage(argv[0]);
             return 0;
@@ -66,6 +72,12 @@ int main(int argc, char *argv[]) {
             print_usage(argv[0]);
             return 1;
         }
+    }
+
+    /* If header-only requested, print and exit */
+    if (header_only) {
+        bench_print_csv_header();
+        return 0;
     }
 
     /* Define allocators to test */

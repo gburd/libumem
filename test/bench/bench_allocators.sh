@@ -120,8 +120,7 @@ if [[ ! -f ./bench_allocators ]]; then
 fi
 
 # Write CSV header
-# Run with invalid allocator to get CSV header only
-./bench_allocators -c -a none 2>/dev/null | head -1 > "$RESULT_FILE"
+./bench_allocators -H > "$RESULT_FILE"
 
 # Run benchmarks
 total_runs=$((${#ALLOCATORS[@]} * 4 * ${#THREAD_COUNTS[@]}))
