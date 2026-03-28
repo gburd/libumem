@@ -37,8 +37,11 @@ ls -lh result/lib/libumem.so
 ### Development Shell
 
 ```bash
-# Enter development environment
+# Default development environment (auto-adapts to FreeBSD)
 nix develop
+
+# Or use FreeBSD-specific shell with gmake and FreeBSD guidance
+nix develop .#freebsd
 
 # Build traditionally
 ./autogen.sh
@@ -49,11 +52,34 @@ gmake -j$(sysctl -n hw.ncpu)
 gmake check
 ```
 
+**Note**: Cross-compilation devshells (`.#riscv64`, `.#aarch64`, `.#test-all`) are Linux-only and not available on FreeBSD.
+
 ## FreeBSD-Specific Changes
+
+### Nix Flake Support
+
+The flake explicitly supports FreeBSD systems:
+- `x86_64-freebsd` - FreeBSD on x86-64
+- `aarch64-freebsd` - FreeBSD on ARM64
+
+**Available on FreeBSD**:
+- ✅ `nix build .#libumem` - Native build
+- ✅ `nix develop` - Default devshell
+- ✅ `nix develop .#freebsd` - FreeBSD-specific devshell
+- ✅ `nix run .#test-native` - Run native tests
+
+**Not Available on FreeBSD** (Linux cross-compilation targets):
+- ❌ `nix build .#libumem-riscv64` - Linux cross-target
+- ❌ `nix build .#libumem-aarch64` - Linux cross-target
+- ❌ `nix develop .#riscv64` - Linux cross-compilation shell
+- ❌ `nix develop .#aarch64` - Linux cross-compilation shell
+- ❌ `nix develop .#test-all` - Multi-arch testing (Linux)
+- ❌ `nix run .#test-riscv64` - QEMU testing (Linux)
+- ❌ `nix run .#test-aarch64` - QEMU testing (Linux)
 
 ### Platform Detection
 
-The flake now uses `platforms.unix` instead of `platforms.linux`, enabling:
+The flake uses `platforms.unix` for broad compatibility:
 - FreeBSD (amd64, aarch64)
 - OpenBSD
 - NetBSD
