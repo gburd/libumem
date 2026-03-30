@@ -156,9 +156,13 @@
 
           # Native development shell
           native = pkgs.mkShell {
-            inputsFrom = [ self.packages.${system}.libumem ];
-
             packages = with pkgs; [
+              # Build tools
+              autoconf
+              automake
+              libtool
+              pkg-config
+
               # Documentation
               doxygen
               graphviz
@@ -296,9 +300,13 @@
 
           # FreeBSD-specific development shell
           freebsd = pkgs.mkShell {
-            inputsFrom = [ self.packages.${system}.libumem ];
-
             packages = with pkgs; [
+              # Build tools
+              autoconf
+              automake
+              libtool
+              pkg-config
+
               # Documentation
               doxygen
               graphviz
