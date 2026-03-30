@@ -123,7 +123,10 @@ fi
 ./bench_allocators -H > "$RESULT_FILE"
 
 # Run benchmarks
-total_runs=$((${#ALLOCATORS[@]} * 4 * ${#THREAD_COUNTS[@]}))
+# Calculate total: single-threaded + multi-threaded runs
+single_threaded_runs=$((${#ALLOCATORS[@]} * ${#SIZE_RANGES[@]}))
+multi_threaded_runs=$((${#ALLOCATORS[@]} * ${#THREAD_COUNTS[@]} * ${#SIZE_RANGES[@]}))
+total_runs=$((single_threaded_runs + multi_threaded_runs))
 current_run=0
 
 for allocator in "${ALLOCATORS[@]}"; do

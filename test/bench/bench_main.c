@@ -131,9 +131,7 @@ int main(int argc, char *argv[]) {
     };
     int num_workloads = sizeof(workloads) / sizeof(workloads[0]);
 
-    if (csv_output) {
-        bench_print_csv_header();
-    }
+    /* Don't print header here - use -H flag for header-only output */
 
     /* Run benchmarks */
     for (int i = 0; allocators[i] != NULL; i++) {
