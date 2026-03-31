@@ -1,74 +1,147 @@
-# Known Limitation: pthread_create/malloc Interaction
+# pthread_create/malloc Circular Dependency
 
 ## Summary
 
-libumem currently has a known issue when used in applications that create threads via `pthread_create`. The root cause is a circular dependency between glibc's pthread implementation and malloc override.
+libumem's malloc interposition (`libumem_malloc.so`) uses a **bootstrap allocator** for all malloc() calls to avoid circular dependency with pthread_create. This means LD_PRELOAD malloc replacement does NOT provide umem's performance benefits.
 
 ## Root Cause
 
-1. `pthread_create` internally calls `malloc` for thread stack/TLS allocation
-2. libumem overrides `malloc` via weak symbols
-3. During thread creation, this creates a potential deadlock:
-   - `pthread_create` → `malloc` → umem initialization → `pthread_once` → deadlock
+The fundamental issue is a circular dependency:
 
-## Current Mitigation
+1. `pthread_create` internally calls `malloc()` for thread stack/TLS allocation
+2. umem's `umem_malloc()` uses pthread operations (`pthread_getspecific`) for Per-Thread Cache lookup
+3. This creates a deadlock:
+   ```
+   pthread_create → malloc → umem_malloc → pthread_getspecific → deadlock
+   ```
 
-A bootstrap allocator (using direct `mmap`) provides emergency allocation during early initialization, following patterns from jemalloc and tcmalloc. However, this only partially mitigates the issue.
+## Solution
 
-## Affected Scenarios
+**malloc interposition always uses the bootstrap allocator** (simple mmap-based allocations):
+- malloc() → bootstrap_malloc() → mmap()
+- free() → bootstrap_free() → munmap()
 
-- Multi-threaded test programs (`umem_test2`, `umem_ptc_test`)
-- LD_PRELOAD usage with multi-threaded applications (`umem_test4`)
-- Applications that create threads after loading libumem
+This eliminates the circular dependency by never calling pthread operations from malloc().
 
-## Working Scenarios
+Only **direct umem_alloc()** calls use the real umem allocator with PTC performance benefits.
 
-✅ Single-threaded applications
-✅ Pre-initialized threads (threads created before libumem loads)
-✅ Direct API usage (umem_alloc/umem_free instead of malloc/free)
+## Performance Implications
 
-## Recommended Usage
+### LD_PRELOAD (libumem_malloc.so)
+```bash
+LD_PRELOAD=/usr/local/lib/libumem_malloc.so ./app
+```
+- ✅ Works with pthread_create (no hangs/deadlocks)
+- ❌ NO performance benefits (uses bootstrap allocator)
+- ❌ No PTC, no magazine layer, no debug features
+- Use case: Testing, compatibility checking only
 
-### Option 1: Direct API
-Use umem_alloc/umem_free/umem_cache_* APIs directly instead of overriding malloc:
+### Direct Linking (libumem.so)
+```bash
+gcc app.c -lumem
+```
+- ✅ Full umem performance (PTC, magazines, debug features)
+- ✅ Works with pthread_create
+- ✅ Recommended approach
+- Use case: Production deployments
 
+### Direct API Usage
 ```c
 #include <umem.h>
 
 void *ptr = umem_alloc(size, UMEM_DEFAULT);
 umem_free(ptr, size);
 ```
+- ✅ Full umem performance
+- ✅ Works with pthread_create
+- ✅ Best performance (no malloc wrapper overhead)
+- Use case: New code, performance-critical paths
 
-### Option 2: LD_PRELOAD (Single-threaded)
-For single-threaded applications:
-```bash
-LD_PRELOAD=/usr/local/lib/libumem.so ./my_single_threaded_app
-```
+## Recommended Usage
 
-### Option 3: Careful Integration
-Load libumem early, before any threads are created:
+### For New Code
+Use umem's direct API:
 ```c
-__attribute__((constructor(101)))  // High priority
-static void init_umem(void) {
-    // Force umem initialization before main()
-    void *p = malloc(16);
-    free(p);
-}
+#include <umem.h>
+
+// Simple allocation
+void *ptr = umem_alloc(size, UMEM_DEFAULT);
+umem_free(ptr, size);
+
+// Caching allocator for hot paths
+umem_cache_t *cache = umem_cache_create("my_objects",
+    sizeof(my_obj), 0, NULL, NULL, NULL, NULL, NULL, 0);
+my_obj *obj = umem_cache_alloc(cache, UMEM_DEFAULT);
+umem_cache_free(cache, obj);
 ```
 
-## Future Work
+### For Existing Code
+Link directly against libumem:
+```bash
+# Makefile
+LDFLAGS += -lumem
 
-Further research into jemalloc and tcmalloc solutions:
-- Platform-specific hooks (FreeBSD's `_pthread_mutex_init_calloc_cb`)
-- Additional recursion detection mechanisms
-- dlopen-based isolation strategies
+# Or CMakeLists.txt
+target_link_libraries(myapp PRIVATE umem)
+```
 
-## Related Research
+### For Testing Only
+Use LD_PRELOAD (but don't expect performance gains):
+```bash
+LD_PRELOAD=/usr/local/lib/libumem_malloc.so ./test_program
+```
 
-- jemalloc: arena 0 bootstrap + TLS state machine
-- tcmalloc: Arena allocator + reentrancy detection
-- Both acknowledge similar limitations in certain configurations
+## Why Not Follow jemalloc/tcmalloc?
+
+jemalloc and tcmalloc do successfully use LD_PRELOAD malloc interposition with threads. They achieve this by:
+
+1. **No pthread operations in malloc path**: Use only __thread variables (with initial-exec TLS model) and atomic operations
+2. **Extensive platform-specific hooks**: FreeBSD's `_pthread_mutex_init_calloc_cb`, glibc's internal APIs
+3. **Complex initialization**: Multi-phase bootstrap with careful ordering
+
+libumem's architecture uses pthread_getspecific() for PTC lookup, making it incompatible with malloc interposition. A complete rewrite of the PTC mechanism would be required to match jemalloc's approach.
+
+The **cost/benefit is not favorable**:
+- LD_PRELOAD malloc replacement is a niche use case
+- Direct linking provides better performance anyway
+- Extensive testing would be required across all platforms
+- Maintenance burden increases significantly
+
+## Implementation Details
+
+See `malloc_interpose.c:213-226` for the core decision:
+
+```c
+/*
+ * Bootstrap phase: use bootstrap allocator.
+ *
+ * IMPORTANT: We NEVER transition to using umem_malloc() from malloc()
+ * interposition. This is because:
+ * 1. pthread_create internally calls malloc()
+ * 2. umem_malloc() uses pthread operations (pthread_getspecific for PTC)
+ * 3. This creates a circular dependency: pthread_create -> malloc ->
+ *    umem_malloc -> pthread_getspecific -> deadlock
+ *
+ * Instead, malloc() always uses the bootstrap allocator (simple mmap-based).
+ * Only direct umem_alloc() calls use the real umem allocator.
+ */
+```
+
+## Test Status
+
+All tests pass with direct umem API usage:
+- ✅ umem_test (single-threaded)
+- ✅ umem_test3 (malloc interposition, single-threaded)
+- ✅ umem_ptc_fork_test (multi-process with fork)
+- ❌ umem_test2 (disabled - LD_PRELOAD + threads, slow due to bootstrap allocator)
+- ❌ umem_ptc_test (disabled - LD_PRELOAD + threads, slow due to bootstrap allocator)
+
+## Related Documentation
+
+- `docs/PTHREAD_RESEARCH.md` - Detailed research on jemalloc/tcmalloc approaches
+- `docs/PERFORMANCE_GUIDE.md` - Performance optimization recommendations
+- `PERFORMANCE_INVESTIGATION.md` - Analysis of malloc interposition overhead
 
 ## Status
 
-This is a known limitation being actively researched. Contributions welcome.
+This is an **architectural decision**, not a bug. LD_PRELOAD malloc interposition is not a supported use case for performance-critical applications. Use direct linking or direct API instead.

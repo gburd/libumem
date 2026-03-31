@@ -212,24 +212,22 @@ malloc(size_t size)
 
 	/*
 	 * Bootstrap phase: use bootstrap allocator.
-	 * We stay in this phase until umem_ready becomes UMEM_READY.
-	 * Umem will be initialized lazily through direct umem API calls
-	 * (like umem_alloc), not through malloc.
+	 *
+	 * IMPORTANT: We NEVER transition to using umem_malloc() from malloc()
+	 * interposition. This is because:
+	 * 1. pthread_create internally calls malloc()
+	 * 2. umem_malloc() uses pthread operations (pthread_getspecific for PTC)
+	 * 3. This creates a circular dependency: pthread_create -> malloc ->
+	 *    umem_malloc -> pthread_getspecific -> deadlock
+	 *
+	 * Instead, malloc() always uses the bootstrap allocator (simple mmap-based).
+	 * Only direct umem_alloc() calls use the real umem allocator.
+	 *
+	 * This means LD_PRELOAD malloc interposition will NOT get umem's
+	 * performance benefits. For best performance, link directly against libumem
+	 * or use umem_alloc()/umem_free() explicitly.
 	 */
 	if (interpose_state == INTERPOSE_BOOTSTRAP) {
-		/* Check if umem became ready (from external initialization) */
-		if (umem_ready == UMEM_READY) {
-			interpose_state = INTERPOSE_READY;
-			if (umem_enter_malloc() > 0) {
-				umem_exit_malloc();
-				return (bootstrap_malloc(size));
-			}
-			ret = umem_malloc(size);
-			umem_exit_malloc();
-			return (ret);
-		}
-
-		/* Still bootstrapping - use mmap-based allocator */
 		ret = bootstrap_malloc(size);
 		return (ret);
 	}
