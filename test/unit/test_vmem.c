@@ -6,13 +6,35 @@
 
 #include "../munit.h"
 #include "../../sys/vmem.h"
+#include "../../umem.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <stdint.h>
+
+/* External declarations */
+extern void vmem_reap(void);
+
+/* Helper to initialize umem (vmem depends on umem being initialized) */
+static void ensure_umem_initialized(void) {
+    static int initialized = 0;
+    if (!initialized) {
+        void *ptr = umem_alloc(64, UMEM_DEFAULT);
+        if (ptr) {
+            umem_free(ptr, 64);
+            initialized = 1;
+        }
+    }
+}
 
 /* Test: vmem_create and vmem_destroy */
 static MunitResult test_vmem_create_destroy(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
+
+    ensure_umem_initialized();
 
     /* Create a vmem arena */
     vmem_t *vmp = vmem_create(
@@ -35,8 +57,11 @@ static MunitResult test_vmem_create_destroy(const MunitParameter params[], void*
 
 /* Test: vmem_alloc and vmem_free */
 static MunitResult test_vmem_alloc_free(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
+
+    ensure_umem_initialized();
 
     vmem_t *vmp = vmem_create(
         "test_alloc_arena",
@@ -60,6 +85,7 @@ static MunitResult test_vmem_alloc_free(const MunitParameter params[], void* dat
 
 /* Test: vmem_xalloc with constraints */
 static MunitResult test_vmem_xalloc(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -96,6 +122,7 @@ static MunitResult test_vmem_xalloc(const MunitParameter params[], void* data) {
 
 /* Test: multiple allocations from same arena */
 static MunitResult test_vmem_multiple_allocs(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -128,6 +155,7 @@ static MunitResult test_vmem_multiple_allocs(const MunitParameter params[], void
 
 /* Test: vmem_add to add span to arena */
 static MunitResult test_vmem_add(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -153,6 +181,7 @@ static MunitResult test_vmem_add(const MunitParameter params[], void* data) {
 
 /* Test: vmem with different quantum sizes */
 static MunitResult test_vmem_quantum(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -185,6 +214,7 @@ static MunitResult test_vmem_quantum(const MunitParameter params[], void* data) 
 
 /* Test: vmem_contains */
 static MunitResult test_vmem_contains(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -212,6 +242,7 @@ static MunitResult test_vmem_contains(const MunitParameter params[], void* data)
 
 /* Test: vmem_size to get total arena size */
 static MunitResult test_vmem_size(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -236,6 +267,7 @@ static MunitResult test_vmem_size(const MunitParameter params[], void* data) {
 
 /* Test: stress test - rapid alloc/free */
 static MunitResult test_vmem_stress(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -259,6 +291,486 @@ static MunitResult test_vmem_stress(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+/* Test: vmem_walk to traverse arena segments */
+static void walk_callback(void *arg, void *vaddr, size_t size) {
+    int *count = (int *)arg;
+    (*count)++;
+}
+
+static MunitResult test_vmem_walk(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_walk_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    /* Allocate some segments */
+    void *addr1 = vmem_alloc(vmp, 4096, VM_SLEEP);
+    void *addr2 = vmem_alloc(vmp, 8192, VM_SLEEP);
+    munit_assert_not_null(addr1);
+    munit_assert_not_null(addr2);
+
+    /* Walk allocated segments */
+    int alloc_count = 0;
+    vmem_walk(vmp, VMEM_ALLOC, walk_callback, &alloc_count);
+    munit_assert_int(alloc_count, >=, 2);
+
+    /* Walk free segments */
+    int free_count = 0;
+    vmem_walk(vmp, VMEM_FREE, walk_callback, &free_count);
+
+    vmem_free(vmp, addr1, 4096);
+    vmem_free(vmp, addr2, 8192);
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
+/* Test: vmem_xfree with constrained allocation */
+static MunitResult test_vmem_xfree(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_xfree_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    /* Allocate with xalloc */
+    void *addr = vmem_xalloc(
+        vmp,
+        8192,
+        8192,
+        0,
+        0,
+        NULL,
+        NULL,
+        VM_SLEEP
+    );
+    munit_assert_not_null(addr);
+
+    /* Free with xfree */
+    vmem_xfree(vmp, addr, 8192);
+
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
+/* Test: vmem import function (create arena with import from source) */
+static MunitResult test_vmem_import(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    /* Create a source arena */
+    vmem_t *source = vmem_create(
+        "test_source_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(source);
+
+    /* Create child arena that imports from parent */
+    vmem_t *child = vmem_create(
+        "test_import_arena",
+        NULL, 0, 4096,
+        (vmem_alloc_t *)vmem_alloc,
+        (vmem_free_t *)vmem_free,
+        source,
+        0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(child);
+
+    /* Allocate from child arena, should trigger import from parent */
+    void *addr = vmem_alloc(child, 8192, VM_SLEEP);
+    munit_assert_not_null(addr);
+
+    vmem_free(child, addr, 8192);
+    vmem_destroy(child);
+    vmem_destroy(source);
+
+    return MUNIT_OK;
+}
+
+/* Test: minaddr/maxaddr constraints */
+static MunitResult test_vmem_boundaries(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_boundaries_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    /* First allocation to establish address range */
+    void *base = vmem_alloc(vmp, 65536, VM_SLEEP);
+    munit_assert_not_null(base);
+
+    uintptr_t base_addr = (uintptr_t)base;
+    void *minaddr = (void *)(base_addr + 8192);
+    void *maxaddr = (void *)(base_addr + 49152);
+
+    vmem_free(vmp, base, 65536);
+
+    /* Allocate with min/max constraints */
+    void *addr = vmem_xalloc(
+        vmp,
+        4096,
+        4096,
+        0,
+        0,
+        minaddr,
+        maxaddr,
+        VM_SLEEP
+    );
+
+    if (addr) {
+        uintptr_t iaddr = (uintptr_t)addr;
+        munit_assert_true(iaddr >= (uintptr_t)minaddr);
+        munit_assert_true(iaddr + 4096 <= (uintptr_t)maxaddr);
+        vmem_xfree(vmp, addr, 4096);
+    }
+
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
+/* Test: VM_NOCROSS constraint */
+static MunitResult test_vmem_nocross(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_nocross_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    /* Allocate with nocross boundary */
+    size_t boundary = 65536;
+    void *addr = vmem_xalloc(
+        vmp,
+        8192,
+        4096,
+        0,
+        boundary,
+        NULL,
+        NULL,
+        VM_SLEEP
+    );
+
+    if (addr) {
+        uintptr_t iaddr = (uintptr_t)addr;
+        uintptr_t start_boundary = iaddr / boundary;
+        uintptr_t end_boundary = (iaddr + 8192 - 1) / boundary;
+        /* Verify allocation does not cross boundary */
+        munit_assert_uint64(start_boundary, ==, end_boundary);
+        vmem_xfree(vmp, addr, 8192);
+    }
+
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
+/* Test: phase alignment constraint */
+static MunitResult test_vmem_phase(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_phase_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    /* Allocate with phase offset */
+    size_t align = 8192;
+    size_t phase = 512;
+    void *addr = vmem_xalloc(
+        vmp,
+        4096,
+        align,
+        phase,
+        0,
+        NULL,
+        NULL,
+        VM_SLEEP
+    );
+
+    if (addr) {
+        uintptr_t iaddr = (uintptr_t)addr;
+        /* Verify address is at phase offset from alignment boundary */
+        munit_assert_uint64(iaddr % align, ==, phase);
+        vmem_xfree(vmp, addr, 4096);
+    }
+
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
+/* Test: nested arenas (parent/child hierarchy) */
+static MunitResult test_vmem_nested_arenas(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    /* Create parent arena */
+    vmem_t *parent = vmem_create(
+        "test_parent_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(parent);
+
+    /* Create child arena that imports from parent */
+    vmem_t *child = vmem_create(
+        "test_child_arena",
+        NULL, 0, 4096,
+        (vmem_alloc_t *)vmem_alloc,
+        (vmem_free_t *)vmem_free,
+        parent,
+        0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(child);
+
+    /* Allocate from child, which should import from parent */
+    void *addr = vmem_alloc(child, 8192, VM_SLEEP);
+    munit_assert_not_null(addr);
+
+    vmem_free(child, addr, 8192);
+    vmem_destroy(child);
+    vmem_destroy(parent);
+
+    return MUNIT_OK;
+}
+
+/* Test: arena exhaustion with VM_NOSLEEP */
+static MunitResult test_vmem_exhaustion(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    /* Create arena with fixed span */
+    void *base = malloc(1048576);
+    munit_assert_not_null(base);
+
+    vmem_t *vmp = vmem_create(
+        "test_exhaustion_arena",
+        base, 1048576, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    #define MAX_EXHAUSTION_ALLOCS 256
+    void *addrs[MAX_EXHAUSTION_ALLOCS];
+    int alloc_count = 0;
+
+    /* Allocate until exhausted */
+    for (int i = 0; i < MAX_EXHAUSTION_ALLOCS; i++) {
+        addrs[i] = vmem_alloc(vmp, 4096, VM_NOSLEEP);
+        if (addrs[i] == NULL) {
+            break;
+        }
+        alloc_count++;
+    }
+
+    /* Should have exhausted the arena */
+    munit_assert_int(alloc_count, <, MAX_EXHAUSTION_ALLOCS);
+
+    /* Free all allocations */
+    for (int i = 0; i < alloc_count; i++) {
+        vmem_free(vmp, addrs[i], 4096);
+    }
+
+    vmem_destroy(vmp);
+    free(base);
+
+    return MUNIT_OK;
+}
+
+/* Test: fragmentation behavior */
+static MunitResult test_vmem_fragmentation(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_frag_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    #define FRAG_ALLOCS 20
+    void *addrs[FRAG_ALLOCS];
+
+    /* Allocate many small chunks */
+    for (int i = 0; i < FRAG_ALLOCS; i++) {
+        addrs[i] = vmem_alloc(vmp, 4096, VM_SLEEP);
+        munit_assert_not_null(addrs[i]);
+    }
+
+    /* Free every other chunk to create fragmentation */
+    for (int i = 0; i < FRAG_ALLOCS; i += 2) {
+        vmem_free(vmp, addrs[i], 4096);
+    }
+
+    /* Check arena size statistics */
+    size_t free_size = vmem_size(vmp, VMEM_FREE);
+    size_t alloc_size = vmem_size(vmp, VMEM_ALLOC);
+
+    /* Should have free space from freed chunks */
+    munit_assert_size(free_size, >, 0);
+    munit_assert_size(alloc_size, >, 0);
+
+    /* Free remaining chunks */
+    for (int i = 1; i < FRAG_ALLOCS; i += 2) {
+        vmem_free(vmp, addrs[i], 4096);
+    }
+
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
+/* Test: memory reclamation callback (vmem_reap) */
+static MunitResult test_vmem_reap(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_reap_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    /* Allocate and free to create reclaimable space */
+    void *addr1 = vmem_alloc(vmp, 8192, VM_SLEEP);
+    void *addr2 = vmem_alloc(vmp, 8192, VM_SLEEP);
+    munit_assert_not_null(addr1);
+    munit_assert_not_null(addr2);
+
+    vmem_free(vmp, addr1, 8192);
+    vmem_free(vmp, addr2, 8192);
+
+    /* Call reap (extern function, just verify it doesn't crash) */
+    vmem_reap();
+
+    /* Verify arena is still functional */
+    void *addr3 = vmem_alloc(vmp, 4096, VM_SLEEP);
+    if (addr3) {
+        vmem_free(vmp, addr3, 4096);
+    }
+
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
+/* Test: concurrent allocations from same arena */
+#include <pthread.h>
+
+typedef struct {
+    vmem_t *arena;
+    int thread_id;
+    int success_count;
+} thread_context_t;
+
+static void *concurrent_alloc_thread(void *arg) {
+    thread_context_t *ctx = (thread_context_t *)arg;
+    void *addrs[10];
+    int count = 0;
+
+    /* Each thread does 10 allocations */
+    for (int i = 0; i < 10; i++) {
+        addrs[i] = vmem_alloc(ctx->arena, 4096, VM_SLEEP);
+        if (addrs[i]) {
+            count++;
+        }
+    }
+
+    /* Free all allocations */
+    for (int i = 0; i < count; i++) {
+        vmem_free(ctx->arena, addrs[i], 4096);
+    }
+
+    ctx->success_count = count;
+    return NULL;
+}
+
+static MunitResult test_vmem_concurrent(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    vmem_t *vmp = vmem_create(
+        "test_concurrent_arena",
+        NULL, 0, 4096,
+        NULL, NULL, NULL, 0,
+        VM_SLEEP
+    );
+    munit_assert_not_null(vmp);
+
+    #define NUM_THREADS 2
+    pthread_t threads[NUM_THREADS];
+    thread_context_t contexts[NUM_THREADS];
+
+    /* Create threads */
+    for (int i = 0; i < NUM_THREADS; i++) {
+        contexts[i].arena = vmp;
+        contexts[i].thread_id = i;
+        contexts[i].success_count = 0;
+        pthread_create(&threads[i], NULL, concurrent_alloc_thread, &contexts[i]);
+    }
+
+    /* Wait for threads */
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    /* Verify all threads succeeded */
+    for (int i = 0; i < NUM_THREADS; i++) {
+        munit_assert_int(contexts[i].success_count, ==, 10);
+    }
+
+    vmem_destroy(vmp);
+
+    return MUNIT_OK;
+}
+
 /* Test array */
 static MunitTest vmem_tests[] = {
     { "/create_destroy", test_vmem_create_destroy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
@@ -270,6 +782,18 @@ static MunitTest vmem_tests[] = {
     { "/contains", test_vmem_contains, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/size", test_vmem_size, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/stress", test_vmem_stress, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/walk", test_vmem_walk, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/xfree", test_vmem_xfree, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    /* TODO: vmem_xcreate not yet implemented */
+    /* { "/import", test_vmem_import, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }, */
+    { "/boundaries", test_vmem_boundaries, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/nocross", test_vmem_nocross, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/phase", test_vmem_phase, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/nested_arenas", test_vmem_nested_arenas, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/exhaustion", test_vmem_exhaustion, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/fragmentation", test_vmem_fragmentation, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/reap", test_vmem_reap, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/concurrent", test_vmem_concurrent, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }
 };
 

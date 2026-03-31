@@ -170,6 +170,25 @@ html-local:
 clean-local:
 	rm -rf docs
 
-.PHONY: rpm
+# Coverage targets
+if ENABLE_COVERAGE
+coverage: check
+	@echo "Generating coverage report..."
+	lcov --capture --directory . --output-file coverage.info
+	lcov --remove coverage.info '/usr/*' '*/test/*' --output-file coverage.info.cleaned
+	genhtml coverage.info.cleaned --output-directory test/coverage
+	@echo "Coverage report generated in test/coverage/index.html"
+
+coverage-clean:
+	@echo "Cleaning coverage data..."
+	find . -name "*.gcda" -delete
+	find . -name "*.gcno" -delete
+	find . -name "*.gcov" -delete
+	rm -f coverage.info coverage.info.cleaned
+	rm -rf test/coverage
+	@echo "Coverage data cleaned"
+endif
+
+.PHONY: rpm coverage coverage-clean
 rpm: dist-bzip2
 	rpmbuild -ta $(distdir).tar.bz2
