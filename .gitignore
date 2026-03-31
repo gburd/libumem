@@ -47,6 +47,9 @@ test/bench/results/
 test/test_main
 test/property/prop_alloc_free
 test/property/prop_alloc_free2
+test/property/prop_cache
+test/property/prop_fragmentation
+test/property/prop_fragmentation_test
 
 # Nix build outputs
 result
