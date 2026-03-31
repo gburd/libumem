@@ -39,8 +39,77 @@
 #endif
 
 #include "umem_base.h"
+#include "umem_impl.h"
 
 #include "misc.h"
+
+/* External: umem readiness state */
+extern int umem_ready;
+
+#include <sys/mman.h>
+
+/*
+ * Bootstrap allocator: Used during early initialization to avoid deadlock
+ * when pthread_create/pthread_setspecific call malloc before umem is ready.
+ *
+ * Based on jemalloc's arena 0 and tcmalloc's Arena pattern:
+ * - Uses direct mmap (no umem dependency)
+ * - No TLS access required
+ * - Marked allocations for detection during free
+ *
+ * This breaks the circular dependency:
+ *   pthread_create -> malloc -> umem_init -> pthread_once -> malloc
+ */
+#define BOOTSTRAP_MAGIC 0xB007B007B007B007ULL
+
+typedef struct bootstrap_header {
+	uint64_t magic;
+	size_t size;
+} bootstrap_header_t;
+
+
+static void *
+bootstrap_malloc(size_t size)
+{
+	bootstrap_header_t *hdr;
+	size_t total_size = size + sizeof(bootstrap_header_t);
+
+	hdr = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
+	    MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (hdr == MAP_FAILED)
+		return (NULL);
+
+	hdr->magic = BOOTSTRAP_MAGIC;
+	hdr->size = total_size;
+	return (void *)(hdr + 1);
+}
+
+static int
+is_bootstrap_pointer(void *buf)
+{
+	bootstrap_header_t *hdr;
+
+	if (buf == NULL)
+		return (0);
+
+	hdr = (bootstrap_header_t *)buf - 1;
+	return (hdr->magic == BOOTSTRAP_MAGIC);
+}
+
+static void
+bootstrap_free(void *buf)
+{
+	bootstrap_header_t *hdr;
+
+	if (buf == NULL)
+		return;
+
+	hdr = (bootstrap_header_t *)buf - 1;
+	if (hdr->magic != BOOTSTRAP_MAGIC)
+		return;
+
+	(void) munmap(hdr, hdr->size);
+}
 
 /*
  * malloc_data_t is an 8-byte structure which is located "before" the pointer
@@ -94,8 +163,16 @@ umem_malloc(size_t size_arg)
 	uint32_t high_size = 0;
 #endif
 	size_t size;
-
 	malloc_data_t *ret;
+
+	/*
+	 * Use bootstrap allocator if umem is not fully initialized.
+	 * Based on jemalloc's arena 0 pattern - provides emergency allocation
+	 * during initialization without requiring TLS or umem infrastructure.
+	 */
+	if (umem_ready != UMEM_READY)
+		return (bootstrap_malloc(size_arg));
+
 	size = size_arg + sizeof (malloc_data_t);
 
 #ifdef _LP64
@@ -146,6 +223,7 @@ umem_malloc(size_t size_arg)
 		ret->malloc_stat = UMEM_MALLOC_ENCODE(MALLOC_MAGIC, size);
 		ret++;
 	}
+
 	return ((void *)ret);
 }
 
@@ -427,6 +505,15 @@ umem_malloc_free(void *buf)
 {
 	if (buf == NULL)
 		return;
+
+	/*
+	 * Check if this is a bootstrap allocation (from before umem was ready).
+	 * These use direct mmap and must be freed with munmap, not umem.
+	 */
+	if (is_bootstrap_pointer(buf)) {
+		bootstrap_free(buf);
+		return;
+	}
 
 	/*
 	 * Process buf, freeing it if it is not corrupt.

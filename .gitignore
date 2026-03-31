@@ -85,3 +85,5 @@ shell.nix
 # Temporary files
 hello.c
 test.c
+.idea/
+.vscode/

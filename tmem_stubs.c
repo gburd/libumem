@@ -19,7 +19,7 @@ typedef struct tmem {
 	void		*tm_roots[TMEM_NENTRIES];
 } tmem_t;
 
-static __thread tmem_t _tmem __attribute__((tls_model("initial-exec")));
+static __thread tmem_t _tmem;
 static __thread void (*_tmem_cleanup_func)(void *, int) = NULL;
 
 /*

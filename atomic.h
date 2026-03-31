@@ -21,6 +21,9 @@ typedef unsigned char uchar_t;
 #define atomic_cas_ptr(target, cmp, new) \
 	__sync_val_compare_and_swap((target), (cmp), (new))
 
+#define atomic_cas_uint(target, cmp, new) \
+	__sync_val_compare_and_swap((target), (cmp), (new))
+
 #define atomic_cas_ulong(target, cmp, new) \
 	__sync_val_compare_and_swap((target), (cmp), (new))
 
@@ -35,6 +38,9 @@ typedef unsigned char uchar_t;
 #define atomic_add_64(p, v) __sync_add_and_fetch((p), (v))
 
 /* Atomic swap */
+#define atomic_swap_uint(target, new) \
+	__sync_lock_test_and_set((target), (new))
+
 #define atomic_swap_64(target, new) \
 	__sync_lock_test_and_set((target), (new))
 
