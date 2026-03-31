@@ -45,7 +45,61 @@
 
 #include <stdio.h>
 
-#if defined(__MACH__)
+#if defined(__aarch64__) || defined(__arm64__)
+/*
+ * ARM64 (aarch64) stack unwinding
+ *
+ * Frame pointer (fp/x29) points to {previous_fp, return_address} pair.
+ * We use direct pointer arithmetic instead of struct frame.
+ */
+
+/*ARGSUSED*/
+int
+getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
+{
+	uintptr_t *fp;
+	uintptr_t *nextfp;
+	int depth = 0;
+
+	if (check_sigthread) {
+		/* Skip if in signal handler - not safe */
+		return (0);
+	}
+
+	/* Get current frame pointer (x29) */
+	__asm__ __volatile__(
+		"mov %0, x29"
+		: "=r" (fp)
+	);
+
+	/* Walk the frame pointer chain */
+	while (depth < pcstack_limit && fp != NULL) {
+		/* Validate frame pointer alignment (16-byte on ARM64) */
+		if ((uintptr_t)fp & 0xf) {
+			break;
+		}
+
+		/* nextfp = *fp (previous frame pointer at [fp + 0]) */
+		nextfp = (uintptr_t *)(*fp);
+
+		/* return_address = *(fp + 1) (at [fp + 8]) */
+		if (depth < pcstack_limit) {
+			pcstack[depth] = *(fp + 1);
+			depth++;
+		}
+
+		/* Stop if frame pointer doesn't advance */
+		if (nextfp <= fp) {
+			break;
+		}
+
+		fp = nextfp;
+	}
+
+	return (depth);
+}
+
+#elif defined(__MACH__)
 /*
  * Darwin doesn't have any exposed frame info, so give it some space.
  */
@@ -62,13 +116,23 @@ extern void flush_windows(void);
  */
 #define	UMEM_FRAMESIZE	(sizeof (struct frame))
 
+#elif defined(__aarch64__) || defined(__arm64__)
+/*
+ * ARM64 uses direct frame pointer walking, frame size is 16 bytes
+ * (previous fp + return address, both 64-bit)
+ */
+#define	UMEM_FRAMESIZE	(2 * sizeof(void *))
+
 #elif !defined(EC_UMEM_DUMMY_PCSTACK)
 #error needs update for new architecture
 #endif
 
+#if !(defined(__aarch64__) || defined(__arm64__))
 /*
  * Get a pc-only stacktrace.  Used for kmem_alloc() buffer ownership tracking.
  * Returns MIN(current stack depth, pcstack_limit).
+ *
+ * Note: ARM64 has its own implementation above.
  */
 /*ARGSUSED*/
 int
@@ -212,3 +276,4 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_signal)
 	return (depth);
 #endif
 }
+#endif /* !(defined(__aarch64__) || defined(__arm64__)) */

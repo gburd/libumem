@@ -36,6 +36,10 @@ case "$host_os" in
 esac
 
 AC_MSG_CHECKING([system architecture])
+# Note: Cross-compilation support can be enhanced in future by:
+#   - Checking for cross-compilation tools (AS_IF([test "$cross_compiling" = yes]))
+#   - Using host_cpu, build_cpu, and target_cpu appropriately
+#   - Validating TLS model compatibility across architectures
 case "$host_cpu" in
   x86_64|amd64)
     AC_MSG_RESULT(amd64)
@@ -60,7 +64,8 @@ case "$host_cpu" in
   aarch64|arm64)
     AC_MSG_RESULT(aarch64)
     GENASM_DIR="aarch64"
-    AC_DEFINE(ARCH_AARCH64, [1], [ARM64 architecture])
+    AC_DEFINE(ARCH_AARCH64, [1], [ARM64 64-bit architecture])
+    AC_MSG_NOTICE([Configuring for ARM64 (aarch64) architecture])
     ;;
   *)
     AC_MSG_RESULT($host_cpu)
@@ -70,6 +75,34 @@ case "$host_cpu" in
 esac
 
 AC_SUBST(GENASM_DIR)
+
+# aarch64-specific checks
+if test "$GENASM_DIR" = "aarch64"; then
+    # Check for ARM-specific features
+    AC_MSG_CHECKING([for ARM64 NEON support])
+    AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM([[#include <arm_neon.h>]], [[]])],
+        [AC_MSG_RESULT([yes])
+         AC_DEFINE([HAVE_NEON], [1], [ARM64 NEON SIMD support available])],
+        [AC_MSG_RESULT([no])]
+    )
+
+    # Check TLS support
+    AC_MSG_CHECKING([for ARM64 TLS support])
+    AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM([[
+            __thread int test_var = 0;
+            int test_tls(void) {
+                unsigned long tp;
+                __asm__ __volatile__("mrs %0, tpidr_el0" : "=r" (tp));
+                return (int)tp;
+            }
+        ]], [[test_tls();]])],
+        [AC_MSG_RESULT([yes])],
+        [AC_MSG_RESULT([no])
+         AC_MSG_ERROR([ARM64 TLS support required but not available])]
+    )
+fi
 
 AC_MSG_CHECKING([whether pthread_mutex_t is larger than 24 bytes])
 AC_RUN_IFELSE(
