@@ -1,0 +1,377 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - coverage.info.cleaned - libumem/misc.c</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../index.html" title="Click to go to top-level">top level</a> - <a href="index.html" title="Click to go to directory libumem">libumem</a> - misc.c<span style="font-size: 80%;"> (source / <a href="misc.c.func-c.html" title="Click to go to function table">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">coverage.info.cleaned</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryLo">28.1&nbsp;%</td>
+            <td class="headerCovTableEntry">96</td>
+            <td class="headerCovTableEntry">27</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">1980-01-01 00:00:00</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryLo">18.2&nbsp;%</td>
+            <td class="headerCovTableEntry">11</td>
+            <td class="headerCovTableEntry">2</td>
+          </tr>
+                  <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">            Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>              : /*</span>
+<span id="L2"><span class="lineNum">       2</span>              :  * CDDL HEADER START</span>
+<span id="L3"><span class="lineNum">       3</span>              :  *</span>
+<span id="L4"><span class="lineNum">       4</span>              :  * The contents of this file are subject to the terms of the</span>
+<span id="L5"><span class="lineNum">       5</span>              :  * Common Development and Distribution License, Version 1.0 only</span>
+<span id="L6"><span class="lineNum">       6</span>              :  * (the &quot;License&quot;).  You may not use this file except in compliance</span>
+<span id="L7"><span class="lineNum">       7</span>              :  * with the License.</span>
+<span id="L8"><span class="lineNum">       8</span>              :  *</span>
+<span id="L9"><span class="lineNum">       9</span>              :  * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE</span>
+<span id="L10"><span class="lineNum">      10</span>              :  * or http://www.opensolaris.org/os/licensing.</span>
+<span id="L11"><span class="lineNum">      11</span>              :  * See the License for the specific language governing permissions</span>
+<span id="L12"><span class="lineNum">      12</span>              :  * and limitations under the License.</span>
+<span id="L13"><span class="lineNum">      13</span>              :  *</span>
+<span id="L14"><span class="lineNum">      14</span>              :  * When distributing Covered Code, include this CDDL HEADER in each</span>
+<span id="L15"><span class="lineNum">      15</span>              :  * file and include the License file at usr/src/OPENSOLARIS.LICENSE.</span>
+<span id="L16"><span class="lineNum">      16</span>              :  * If applicable, add the following below this CDDL HEADER, with the</span>
+<span id="L17"><span class="lineNum">      17</span>              :  * fields enclosed by brackets &quot;[]&quot; replaced with your own identifying</span>
+<span id="L18"><span class="lineNum">      18</span>              :  * information: Portions Copyright [yyyy] [name of copyright owner]</span>
+<span id="L19"><span class="lineNum">      19</span>              :  *</span>
+<span id="L20"><span class="lineNum">      20</span>              :  * CDDL HEADER END</span>
+<span id="L21"><span class="lineNum">      21</span>              :  */</span>
+<span id="L22"><span class="lineNum">      22</span>              : </span>
+<span id="L23"><span class="lineNum">      23</span>              : /*</span>
+<span id="L24"><span class="lineNum">      24</span>              :  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.</span>
+<span id="L25"><span class="lineNum">      25</span>              :  * Use is subject to license terms.</span>
+<span id="L26"><span class="lineNum">      26</span>              :  *</span>
+<span id="L27"><span class="lineNum">      27</span>              :  * Portions Copyright 2006-2008 Message Systems, Inc. All rights reserved.</span>
+<span id="L28"><span class="lineNum">      28</span>              :  */</span>
+<span id="L29"><span class="lineNum">      29</span>              : </span>
+<span id="L30"><span class="lineNum">      30</span>              : /* #pragma ident        &quot;@(#)misc.c        1.6     05/06/08 SMI&quot; */</span>
+<span id="L31"><span class="lineNum">      31</span>              : </span>
+<span id="L32"><span class="lineNum">      32</span>              : #define _BUILDING_UMEM_MISC_C</span>
+<span id="L33"><span class="lineNum">      33</span>              : #include &quot;config.h&quot;</span>
+<span id="L34"><span class="lineNum">      34</span>              : /* #include &quot;mtlib.h&quot; */</span>
+<span id="L35"><span class="lineNum">      35</span>              : #if HAVE_UNISTD_H</span>
+<span id="L36"><span class="lineNum">      36</span>              : #include &lt;unistd.h&gt;</span>
+<span id="L37"><span class="lineNum">      37</span>              : #endif</span>
+<span id="L38"><span class="lineNum">      38</span>              : #if HAVE_DLFCN_H</span>
+<span id="L39"><span class="lineNum">      39</span>              : #include &lt;dlfcn.h&gt;</span>
+<span id="L40"><span class="lineNum">      40</span>              : #endif</span>
+<span id="L41"><span class="lineNum">      41</span>              : #include &lt;signal.h&gt;</span>
+<span id="L42"><span class="lineNum">      42</span>              : #include &lt;stdarg.h&gt;</span>
+<span id="L43"><span class="lineNum">      43</span>              : #include &lt;stdio.h&gt;</span>
+<span id="L44"><span class="lineNum">      44</span>              : #include &lt;string.h&gt;</span>
+<span id="L45"><span class="lineNum">      45</span>              : </span>
+<span id="L46"><span class="lineNum">      46</span>              : #if HAVE_SYS_MACHELF_H</span>
+<span id="L47"><span class="lineNum">      47</span>              : #include &lt;sys/machelf.h&gt;</span>
+<span id="L48"><span class="lineNum">      48</span>              : #endif</span>
+<span id="L49"><span class="lineNum">      49</span>              : </span>
+<span id="L50"><span class="lineNum">      50</span>              : #include &lt;umem_impl.h&gt;</span>
+<span id="L51"><span class="lineNum">      51</span>              : #include &quot;misc.h&quot;</span>
+<span id="L52"><span class="lineNum">      52</span>              : </span>
+<span id="L53"><span class="lineNum">      53</span>              : #define UMEM_ERRFD      2       /* goes to standard error */</span>
+<span id="L54"><span class="lineNum">      54</span>              : #define UMEM_MAX_ERROR_SIZE 4096 /* error messages are truncated to this */</span>
+<span id="L55"><span class="lineNum">      55</span>              : </span>
+<span id="L56"><span class="lineNum">      56</span>              : /*</span>
+<span id="L57"><span class="lineNum">      57</span>              :  * This is a circular buffer for holding error messages.</span>
+<span id="L58"><span class="lineNum">      58</span>              :  * umem_error_enter appends to the buffer, adding &quot;...&quot; to the beginning</span>
+<span id="L59"><span class="lineNum">      59</span>              :  * if data has been lost.</span>
+<span id="L60"><span class="lineNum">      60</span>              :  */</span>
+<span id="L61"><span class="lineNum">      61</span>              : </span>
+<span id="L62"><span class="lineNum">      62</span>              : #define ERR_SIZE 8192           /* must be a power of 2 */</span>
+<span id="L63"><span class="lineNum">      63</span>              : </span>
+<span id="L64"><span class="lineNum">      64</span>              : static mutex_t umem_error_lock = DEFAULTMUTEX;</span>
+<span id="L65"><span class="lineNum">      65</span>              : #ifdef NEED_64_LOCK</span>
+<span id="L66"><span class="lineNum">      66</span>              : pthread_mutex_t umem_ppc_64inc_lock = PTHREAD_MUTEX_INITIALIZER;</span>
+<span id="L67"><span class="lineNum">      67</span>              : #endif</span>
+<span id="L68"><span class="lineNum">      68</span>              : </span>
+<span id="L69"><span class="lineNum">      69</span>              : static char umem_error_buffer[ERR_SIZE] = &quot;&quot;;</span>
+<span id="L70"><span class="lineNum">      70</span>              : static uint_t umem_error_begin = 0;</span>
+<span id="L71"><span class="lineNum">      71</span>              : static uint_t umem_error_end = 0;</span>
+<span id="L72"><span class="lineNum">      72</span>              : </span>
+<span id="L73"><span class="lineNum">      73</span>              : #define WRITE_IGNORE(fd, buf, len) \</span>
+<span id="L74"><span class="lineNum">      74</span>              :         do { \</span>
+<span id="L75"><span class="lineNum">      75</span>              :                 ssize_t __attribute__((unused)) _ret; \</span>
+<span id="L76"><span class="lineNum">      76</span>              :                 _ret = write((fd), (buf), (len)); \</span>
+<span id="L77"><span class="lineNum">      77</span>              :         } while (0)</span>
+<span id="L78"><span class="lineNum">      78</span>              : </span>
+<span id="L79"><span class="lineNum">      79</span>              : #define WRITE_AND_INC(var, value) { \</span>
+<span id="L80"><span class="lineNum">      80</span>              :         umem_error_buffer[(var)++] = (value); \</span>
+<span id="L81"><span class="lineNum">      81</span>              :         var = P2PHASE((var), ERR_SIZE); \</span>
+<span id="L82"><span class="lineNum">      82</span>              : }</span>
+<span id="L83"><span class="lineNum">      83</span>              : </span>
+<span id="L84"><span class="lineNum">      84</span>              : static void</span>
+<span id="L85"><span class="lineNum">      85</span> <span class="tlaUNC">           0 : umem_log_enter(const char *error_str)</span></span>
+<span id="L86"><span class="lineNum">      86</span>              : {</span>
+<span id="L87"><span class="lineNum">      87</span> <span class="tlaUNC">           0 :         int looped;</span></span>
+<span id="L88"><span class="lineNum">      88</span> <span class="tlaUNC">           0 :         char c;</span></span>
+<span id="L89"><span class="lineNum">      89</span>              : </span>
+<span id="L90"><span class="lineNum">      90</span> <span class="tlaUNC">           0 :         looped = 0;</span></span>
+<span id="L91"><span class="lineNum">      91</span>              : </span>
+<span id="L92"><span class="lineNum">      92</span> <span class="tlaUNC">           0 :         (void) mutex_lock(&amp;umem_error_lock);</span></span>
+<span id="L93"><span class="lineNum">      93</span>              : </span>
+<span id="L94"><span class="lineNum">      94</span> <span class="tlaUNC">           0 :         while ((c = *error_str++) != '\0') {</span></span>
+<span id="L95"><span class="lineNum">      95</span> <span class="tlaUNC">           0 :                 WRITE_AND_INC(umem_error_end, c);</span></span>
+<span id="L96"><span class="lineNum">      96</span> <span class="tlaUNC">           0 :                 if (umem_error_end == umem_error_begin)</span></span>
+<span id="L97"><span class="lineNum">      97</span> <span class="tlaUNC">           0 :                         looped = 1;</span></span>
+<span id="L98"><span class="lineNum">      98</span>              :         }</span>
+<span id="L99"><span class="lineNum">      99</span>              : </span>
+<span id="L100"><span class="lineNum">     100</span> <span class="tlaUNC">           0 :         umem_error_buffer[umem_error_end] = 0;</span></span>
+<span id="L101"><span class="lineNum">     101</span>              : </span>
+<span id="L102"><span class="lineNum">     102</span> <span class="tlaUNC">           0 :         if (looped) {</span></span>
+<span id="L103"><span class="lineNum">     103</span> <span class="tlaUNC">           0 :                 uint_t idx;</span></span>
+<span id="L104"><span class="lineNum">     104</span> <span class="tlaUNC">           0 :                 umem_error_begin = P2PHASE(umem_error_end + 1, ERR_SIZE);</span></span>
+<span id="L105"><span class="lineNum">     105</span>              : </span>
+<span id="L106"><span class="lineNum">     106</span> <span class="tlaUNC">           0 :                 idx = umem_error_begin;</span></span>
+<span id="L107"><span class="lineNum">     107</span> <span class="tlaUNC">           0 :                 WRITE_AND_INC(idx, '.');</span></span>
+<span id="L108"><span class="lineNum">     108</span> <span class="tlaUNC">           0 :                 WRITE_AND_INC(idx, '.');</span></span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaUNC">           0 :                 WRITE_AND_INC(idx, '.');</span></span>
+<span id="L110"><span class="lineNum">     110</span>              :         }</span>
+<span id="L111"><span class="lineNum">     111</span>              : </span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaUNC">           0 :         (void) mutex_unlock(&amp;umem_error_lock);</span></span>
+<span id="L113"><span class="lineNum">     113</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L114"><span class="lineNum">     114</span>              : </span>
+<span id="L115"><span class="lineNum">     115</span>              : void</span>
+<span id="L116"><span class="lineNum">     116</span> <span class="tlaUNC">           0 : umem_error_enter(const char *error_str)</span></span>
+<span id="L117"><span class="lineNum">     117</span>              : {</span>
+<span id="L118"><span class="lineNum">     118</span>              : #ifndef UMEM_STANDALONE</span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaUNC">           0 :         if (umem_output &amp;&amp; !issetugid())</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaUNC">           0 :                 WRITE_IGNORE(UMEM_ERRFD, error_str, strlen(error_str));</span></span>
+<span id="L121"><span class="lineNum">     121</span>              : #endif</span>
+<span id="L122"><span class="lineNum">     122</span>              : </span>
+<span id="L123"><span class="lineNum">     123</span> <span class="tlaUNC">           0 :         umem_log_enter(error_str);</span></span>
+<span id="L124"><span class="lineNum">     124</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L125"><span class="lineNum">     125</span>              : </span>
+<span id="L126"><span class="lineNum">     126</span>              : int</span>
+<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">        2539 : highbit(ulong_t i)</span></span>
+<span id="L128"><span class="lineNum">     128</span>              : {</span>
+<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">        2539 :         register int h = 1;</span></span>
+<span id="L130"><span class="lineNum">     130</span>              : </span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">        2539 :         if (i == 0)</span></span>
+<span id="L132"><span class="lineNum">     132</span>              :                 return (0);</span>
+<span id="L133"><span class="lineNum">     133</span>              : #ifdef _LP64</span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">        2539 :         if (i &amp; 0xffffffff00000000ul) {</span></span>
+<span id="L135"><span class="lineNum">     135</span> <span class="tlaUNC">           0 :                 h += 32; i &gt;&gt;= 32;</span></span>
+<span id="L136"><span class="lineNum">     136</span>              :         }</span>
+<span id="L137"><span class="lineNum">     137</span>              : #endif</span>
+<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">        2539 :         if (i &amp; 0xffff0000) {</span></span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">          72 :                 h += 16; i &gt;&gt;= 16;</span></span>
+<span id="L140"><span class="lineNum">     140</span>              :         }</span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">        2539 :         if (i &amp; 0xff00) {</span></span>
+<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">        2202 :                 h += 8; i &gt;&gt;= 8;</span></span>
+<span id="L143"><span class="lineNum">     143</span>              :         }</span>
+<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">        2539 :         if (i &amp; 0xf0) {</span></span>
+<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">        1929 :                 h += 4; i &gt;&gt;= 4;</span></span>
+<span id="L146"><span class="lineNum">     146</span>              :         }</span>
+<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">        2539 :         if (i &amp; 0xc) {</span></span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">         713 :                 h += 2; i &gt;&gt;= 2;</span></span>
+<span id="L149"><span class="lineNum">     149</span>              :         }</span>
+<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">        2539 :         if (i &amp; 0x2) {</span></span>
+<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">        1347 :                 h += 1;</span></span>
+<span id="L152"><span class="lineNum">     152</span>              :         }</span>
+<span id="L153"><span class="lineNum">     153</span>              :         return (h);</span>
+<span id="L154"><span class="lineNum">     154</span>              : }</span>
+<span id="L155"><span class="lineNum">     155</span>              : </span>
+<span id="L156"><span class="lineNum">     156</span>              : int</span>
+<span id="L157"><span class="lineNum">     157</span> <span class="tlaGNC">        1560 : lowbit(ulong_t i)</span></span>
+<span id="L158"><span class="lineNum">     158</span>              : {</span>
+<span id="L159"><span class="lineNum">     159</span> <span class="tlaGNC">        1560 :         register int h = 1;</span></span>
+<span id="L160"><span class="lineNum">     160</span>              : </span>
+<span id="L161"><span class="lineNum">     161</span> <span class="tlaGNC">        1560 :         if (i == 0)</span></span>
+<span id="L162"><span class="lineNum">     162</span>              :                 return (0);</span>
+<span id="L163"><span class="lineNum">     163</span>              : #ifdef _LP64</span>
+<span id="L164"><span class="lineNum">     164</span> <span class="tlaGNC">         117 :         if (!(i &amp; 0xffffffff)) {</span></span>
+<span id="L165"><span class="lineNum">     165</span> <span class="tlaUNC">           0 :                 h += 32; i &gt;&gt;= 32;</span></span>
+<span id="L166"><span class="lineNum">     166</span>              :         }</span>
+<span id="L167"><span class="lineNum">     167</span>              : #endif</span>
+<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">         117 :         if (!(i &amp; 0xffff)) {</span></span>
+<span id="L169"><span class="lineNum">     169</span> <span class="tlaUNC">           0 :                 h += 16; i &gt;&gt;= 16;</span></span>
+<span id="L170"><span class="lineNum">     170</span>              :         }</span>
+<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">         117 :         if (!(i &amp; 0xff)) {</span></span>
+<span id="L172"><span class="lineNum">     172</span> <span class="tlaGNC">         117 :                 h += 8; i &gt;&gt;= 8;</span></span>
+<span id="L173"><span class="lineNum">     173</span>              :         }</span>
+<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">         117 :         if (!(i &amp; 0xf)) {</span></span>
+<span id="L175"><span class="lineNum">     175</span> <span class="tlaGNC">          15 :                 h += 4; i &gt;&gt;= 4;</span></span>
+<span id="L176"><span class="lineNum">     176</span>              :         }</span>
+<span id="L177"><span class="lineNum">     177</span> <span class="tlaGNC">         117 :         if (!(i &amp; 0x3)) {</span></span>
+<span id="L178"><span class="lineNum">     178</span> <span class="tlaGNC">          93 :                 h += 2; i &gt;&gt;= 2;</span></span>
+<span id="L179"><span class="lineNum">     179</span>              :         }</span>
+<span id="L180"><span class="lineNum">     180</span> <span class="tlaGNC">         117 :         if (!(i &amp; 0x1)) {</span></span>
+<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">          84 :                 h += 1;</span></span>
+<span id="L182"><span class="lineNum">     182</span>              :         }</span>
+<span id="L183"><span class="lineNum">     183</span>              :         return (h);</span>
+<span id="L184"><span class="lineNum">     184</span>              : }</span>
+<span id="L185"><span class="lineNum">     185</span>              : </span>
+<span id="L186"><span class="lineNum">     186</span>              : void</span>
+<span id="L187"><span class="lineNum">     187</span> <span class="tlaUNC">           0 : hrt2ts(hrtime_t hrt, timestruc_t *tsp)</span></span>
+<span id="L188"><span class="lineNum">     188</span>              : {</span>
+<span id="L189"><span class="lineNum">     189</span> <span class="tlaUNC">           0 :         tsp-&gt;tv_sec = hrt / NANOSEC;</span></span>
+<span id="L190"><span class="lineNum">     190</span> <span class="tlaUNC">           0 :         tsp-&gt;tv_nsec = hrt % NANOSEC;</span></span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L192"><span class="lineNum">     192</span>              : </span>
+<span id="L193"><span class="lineNum">     193</span>              : void</span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaUNC">           0 : log_message(const char *format, ...)</span></span>
+<span id="L195"><span class="lineNum">     195</span>              : {</span>
+<span id="L196"><span class="lineNum">     196</span> <span class="tlaUNC">           0 :         char buf[UMEM_MAX_ERROR_SIZE] = &quot;&quot;;</span></span>
+<span id="L197"><span class="lineNum">     197</span>              : </span>
+<span id="L198"><span class="lineNum">     198</span> <span class="tlaUNC">           0 :         va_list va;</span></span>
+<span id="L199"><span class="lineNum">     199</span>              : </span>
+<span id="L200"><span class="lineNum">     200</span> <span class="tlaUNC">           0 :         va_start(va, format);</span></span>
+<span id="L201"><span class="lineNum">     201</span> <span class="tlaUNC">           0 :         (void) vsnprintf(buf, UMEM_MAX_ERROR_SIZE-1, format, va);</span></span>
+<span id="L202"><span class="lineNum">     202</span> <span class="tlaUNC">           0 :         va_end(va);</span></span>
+<span id="L203"><span class="lineNum">     203</span>              : </span>
+<span id="L204"><span class="lineNum">     204</span>              : #ifndef UMEM_STANDALONE</span>
+<span id="L205"><span class="lineNum">     205</span> <span class="tlaUNC">           0 :         if (umem_output &gt; 1)</span></span>
+<span id="L206"><span class="lineNum">     206</span> <span class="tlaUNC">           0 :                 WRITE_IGNORE(UMEM_ERRFD, buf, strlen(buf));</span></span>
+<span id="L207"><span class="lineNum">     207</span>              : #endif</span>
+<span id="L208"><span class="lineNum">     208</span>              : </span>
+<span id="L209"><span class="lineNum">     209</span> <span class="tlaUNC">           0 :         umem_log_enter(buf);</span></span>
+<span id="L210"><span class="lineNum">     210</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L211"><span class="lineNum">     211</span>              : </span>
+<span id="L212"><span class="lineNum">     212</span>              : #ifndef UMEM_STANDALONE</span>
+<span id="L213"><span class="lineNum">     213</span>              : void</span>
+<span id="L214"><span class="lineNum">     214</span> <span class="tlaUNC">           0 : debug_printf(const char *format, ...)</span></span>
+<span id="L215"><span class="lineNum">     215</span>              : {</span>
+<span id="L216"><span class="lineNum">     216</span> <span class="tlaUNC">           0 :         char buf[UMEM_MAX_ERROR_SIZE] = &quot;&quot;;</span></span>
+<span id="L217"><span class="lineNum">     217</span>              : </span>
+<span id="L218"><span class="lineNum">     218</span> <span class="tlaUNC">           0 :         va_list va;</span></span>
+<span id="L219"><span class="lineNum">     219</span>              : </span>
+<span id="L220"><span class="lineNum">     220</span> <span class="tlaUNC">           0 :         va_start(va, format);</span></span>
+<span id="L221"><span class="lineNum">     221</span> <span class="tlaUNC">           0 :         (void) vsnprintf(buf, UMEM_MAX_ERROR_SIZE-1, format, va);</span></span>
+<span id="L222"><span class="lineNum">     222</span> <span class="tlaUNC">           0 :         va_end(va);</span></span>
+<span id="L223"><span class="lineNum">     223</span>              : </span>
+<span id="L224"><span class="lineNum">     224</span> <span class="tlaUNC">           0 :         WRITE_IGNORE(UMEM_ERRFD, buf, strlen(buf));</span></span>
+<span id="L225"><span class="lineNum">     225</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L226"><span class="lineNum">     226</span>              : #endif</span>
+<span id="L227"><span class="lineNum">     227</span>              : </span>
+<span id="L228"><span class="lineNum">     228</span>              : void</span>
+<span id="L229"><span class="lineNum">     229</span> <span class="tlaUNC">           0 : umem_vprintf(const char *format, va_list va)</span></span>
+<span id="L230"><span class="lineNum">     230</span>              : {</span>
+<span id="L231"><span class="lineNum">     231</span> <span class="tlaUNC">           0 :         char buf[UMEM_MAX_ERROR_SIZE] = &quot;&quot;;</span></span>
+<span id="L232"><span class="lineNum">     232</span>              : </span>
+<span id="L233"><span class="lineNum">     233</span> <span class="tlaUNC">           0 :         (void) vsnprintf(buf, UMEM_MAX_ERROR_SIZE-1, format, va);</span></span>
+<span id="L234"><span class="lineNum">     234</span>              : </span>
+<span id="L235"><span class="lineNum">     235</span> <span class="tlaUNC">           0 :         umem_error_enter(buf);</span></span>
+<span id="L236"><span class="lineNum">     236</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L237"><span class="lineNum">     237</span>              : </span>
+<span id="L238"><span class="lineNum">     238</span>              : void</span>
+<span id="L239"><span class="lineNum">     239</span> <span class="tlaUNC">           0 : umem_printf(const char *format, ...)</span></span>
+<span id="L240"><span class="lineNum">     240</span>              : {</span>
+<span id="L241"><span class="lineNum">     241</span> <span class="tlaUNC">           0 :         va_list va;</span></span>
+<span id="L242"><span class="lineNum">     242</span>              : </span>
+<span id="L243"><span class="lineNum">     243</span> <span class="tlaUNC">           0 :         va_start(va, format);</span></span>
+<span id="L244"><span class="lineNum">     244</span> <span class="tlaUNC">           0 :         umem_vprintf(format, va);</span></span>
+<span id="L245"><span class="lineNum">     245</span> <span class="tlaUNC">           0 :         va_end(va);</span></span>
+<span id="L246"><span class="lineNum">     246</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L247"><span class="lineNum">     247</span>              : </span>
+<span id="L248"><span class="lineNum">     248</span>              : /*ARGSUSED*/</span>
+<span id="L249"><span class="lineNum">     249</span>              : void</span>
+<span id="L250"><span class="lineNum">     250</span> <span class="tlaUNC">           0 : umem_printf_warn(void *ignored __attribute__((unused)), const char *format, ...)</span></span>
+<span id="L251"><span class="lineNum">     251</span>              : {</span>
+<span id="L252"><span class="lineNum">     252</span> <span class="tlaUNC">           0 :         va_list va;</span></span>
+<span id="L253"><span class="lineNum">     253</span>              : </span>
+<span id="L254"><span class="lineNum">     254</span> <span class="tlaUNC">           0 :         va_start(va, format);</span></span>
+<span id="L255"><span class="lineNum">     255</span> <span class="tlaUNC">           0 :         umem_vprintf(format, va);</span></span>
+<span id="L256"><span class="lineNum">     256</span> <span class="tlaUNC">           0 :         va_end(va);</span></span>
+<span id="L257"><span class="lineNum">     257</span> <span class="tlaUNC">           0 : }</span></span>
+<span id="L258"><span class="lineNum">     258</span>              : </span>
+<span id="L259"><span class="lineNum">     259</span>              : /*</span>
+<span id="L260"><span class="lineNum">     260</span>              :  * print_sym tries to print out the symbol and offset of a pointer</span>
+<span id="L261"><span class="lineNum">     261</span>              :  */</span>
+<span id="L262"><span class="lineNum">     262</span>              : int</span>
+<span id="L263"><span class="lineNum">     263</span> <span class="tlaUNC">           0 : print_sym(void *pointer)</span></span>
+<span id="L264"><span class="lineNum">     264</span>              : {</span>
+<span id="L265"><span class="lineNum">     265</span>              : #if HAVE_SYS_MACHELF_H</span>
+<span id="L266"><span class="lineNum">     266</span>              :         int result;</span>
+<span id="L267"><span class="lineNum">     267</span>              :         Dl_info sym_info;</span>
+<span id="L268"><span class="lineNum">     268</span>              : </span>
+<span id="L269"><span class="lineNum">     269</span>              :         uintptr_t end = NULL;</span>
+<span id="L270"><span class="lineNum">     270</span>              : </span>
+<span id="L271"><span class="lineNum">     271</span>              :         Sym *ext_info = NULL;</span>
+<span id="L272"><span class="lineNum">     272</span>              : </span>
+<span id="L273"><span class="lineNum">     273</span>              :         result = dladdr1(pointer, &amp;sym_info, (void **)&amp;ext_info,</span>
+<span id="L274"><span class="lineNum">     274</span>              :             RTLD_DL_SYMENT);</span>
+<span id="L275"><span class="lineNum">     275</span>              : </span>
+<span id="L276"><span class="lineNum">     276</span>              :         if (result != 0) {</span>
+<span id="L277"><span class="lineNum">     277</span>              :                 const char *endpath;</span>
+<span id="L278"><span class="lineNum">     278</span>              : </span>
+<span id="L279"><span class="lineNum">     279</span>              :                 end = (uintptr_t)sym_info.dli_saddr + ext_info-&gt;st_size;</span>
+<span id="L280"><span class="lineNum">     280</span>              : </span>
+<span id="L281"><span class="lineNum">     281</span>              :                 endpath = strrchr(sym_info.dli_fname, '/');</span>
+<span id="L282"><span class="lineNum">     282</span>              :                 if (endpath)</span>
+<span id="L283"><span class="lineNum">     283</span>              :                         endpath++;</span>
+<span id="L284"><span class="lineNum">     284</span>              :                 else</span>
+<span id="L285"><span class="lineNum">     285</span>              :                         endpath = sym_info.dli_fname;</span>
+<span id="L286"><span class="lineNum">     286</span>              :                 umem_printf(&quot;%s'&quot;, endpath);</span>
+<span id="L287"><span class="lineNum">     287</span>              :         }</span>
+<span id="L288"><span class="lineNum">     288</span>              : </span>
+<span id="L289"><span class="lineNum">     289</span>              :         if (result == 0 || (uintptr_t)pointer &gt; end) {</span>
+<span id="L290"><span class="lineNum">     290</span>              :                 umem_printf(&quot;?? (0x%p)&quot;, pointer);</span>
+<span id="L291"><span class="lineNum">     291</span>              :                 return (0);</span>
+<span id="L292"><span class="lineNum">     292</span>              :         } else {</span>
+<span id="L293"><span class="lineNum">     293</span>              :                 umem_printf(&quot;%s+0x%p&quot;, sym_info.dli_sname,</span>
+<span id="L294"><span class="lineNum">     294</span>              :                     (char *)pointer - (char *)sym_info.dli_saddr);</span>
+<span id="L295"><span class="lineNum">     295</span>              :                 return (1);</span>
+<span id="L296"><span class="lineNum">     296</span>              :         }</span>
+<span id="L297"><span class="lineNum">     297</span>              : #else</span>
+<span id="L298"><span class="lineNum">     298</span> <span class="tlaUNC">           0 :         umem_printf(&quot;?? (0x%p)&quot;, pointer);</span></span>
+<span id="L299"><span class="lineNum">     299</span> <span class="tlaUNC">           0 :         return 0;</span></span>
+<span id="L300"><span class="lineNum">     300</span>              : #endif</span>
+<span id="L301"><span class="lineNum">     301</span>              : }</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com//linux-test-project/lcov" target="_parent">LCOV version 2.3.2-1</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>

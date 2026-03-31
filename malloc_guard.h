@@ -41,7 +41,15 @@
  *
  * Limitation: Only works with LD_PRELOAD, not dlopen().
  * See: docs/PTHREAD_RESEARCH.md section 4 for details.
+ *
+ * PERFORMANCE NOTE: The recursion guard adds overhead (30-40%) to every
+ * malloc/free call. If your application does not mix pthread operations
+ * with malloc during thread creation, you can disable the guard with
+ * --disable-recursion-guard at configure time for better performance.
  */
+
+#ifdef UMEM_ENABLE_RECURSION_GUARD
+#define UMEM_GUARD_ENABLED 1
 
 extern __thread int umem_malloc_recursion_depth
     __attribute__((tls_model("initial-exec")));
@@ -75,5 +83,31 @@ umem_in_malloc(void)
 {
 	return umem_malloc_recursion_depth > 0;
 }
+
+#else
+#define UMEM_GUARD_ENABLED 0
+
+/*
+ * No-op versions when guard is disabled.
+ * These compile to nothing, eliminating all overhead.
+ */
+static inline int
+umem_enter_malloc(void)
+{
+	return 0;
+}
+
+static inline void
+umem_exit_malloc(void)
+{
+}
+
+static inline int
+umem_in_malloc(void)
+{
+	return 0;
+}
+
+#endif /* UMEM_ENABLE_RECURSION_GUARD */
 
 #endif /* MALLOC_GUARD_H */

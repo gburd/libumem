@@ -45,6 +45,12 @@ umem_lockup_cache(umem_cache_t *cp)
 	for (idx = 0; idx < ncpus; idx++)
 		(void) mutex_lock(&cp->cache_cpu[idx].cc_lock);
 
+	/*
+	 * Lock all depot stripes for fork safety.
+	 */
+	for (idx = 0; idx < UMEM_DEPOT_STRIPES; idx++)
+		(void) mutex_lock(&cp->cache_depot[idx].ds_lock);
+
 	(void) mutex_lock(&cp->cache_depot_lock);
 	(void) mutex_lock(&cp->cache_lock);
 }
@@ -57,6 +63,12 @@ umem_release_cache(umem_cache_t *cp)
 
 	(void) mutex_unlock(&cp->cache_lock);
 	(void) mutex_unlock(&cp->cache_depot_lock);
+
+	/*
+	 * Unlock all depot stripes.
+	 */
+	for (idx = 0; idx < UMEM_DEPOT_STRIPES; idx++)
+		(void) mutex_unlock(&cp->cache_depot[idx].ds_lock);
 
 	for (idx = 0; idx < ncpus; idx++)
 		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);

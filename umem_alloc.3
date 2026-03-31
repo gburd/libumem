@@ -476,6 +476,57 @@ if (status == NULL) {
 .fi
 .in -2
 
+.LP
+\fBExample 5 \fRUsing aligned allocations
+.sp
+.in +2
+.nf
+#include <stdio.h>
+#include <umem.h>
+
+/* Allocate a buffer aligned to 64-byte cache line */
+char *buf = umem_alloc_align(4096, 64, UMEM_DEFAULT);
+
+if (buf == NULL) {
+    fprintf(stderr, "allocation failed\en");
+    return (1);
+}
+
+/* Verify alignment */
+assert(((uintptr_t)buf & 63) == 0);
+
+/* Use the buffer for DMA or cache-optimized operations */
+\&...
+
+/* Free with matching size */
+umem_free_align(buf, 4096);
+\&...
+.fi
+.in -2
+
+.LP
+\fBExample 6 \fRComparing standard malloc with umem_alloc
+.sp
+.in +2
+.nf
+/* Traditional malloc/free */
+char *buf1 = malloc(1024);
+/* ... use buf1 ... */
+free(buf1);
+
+/* umem equivalent - requires size on free */
+char *buf2 = umem_alloc(1024, UMEM_DEFAULT);
+/* ... use buf2 ... */
+umem_free(buf2, 1024);
+
+/* umem with zero initialization */
+char *buf3 = umem_zalloc(1024, UMEM_DEFAULT);
+/* buf3 is guaranteed to contain zeros */
+umem_free(buf3, 1024);
+\&...
+.fi
+.in -2
+
 .SH ATTRIBUTES
 .sp
 .LP
@@ -507,11 +558,21 @@ For \fBmalloc()\fR, \fBcalloc()\fR, \fBfree()\fR, \fBrealloc()\fR, and
 \fBlibumem\fR(3LIB), \fBlongjmp\fR(3C), \fBmalloc\fR(3C),
 \fBmalloc\fR(3MALLOC), \fBmapmalloc\fR(3MALLOC), \fBpthread_exit\fR(3C),
 \fBthr_exit\fR(3C), \fBumem_cache_create\fR(3MALLOC),
-\fBumem_debug\fR(3MALLOC), \fBwatchmalloc\fR(3MALLOC), \fBattributes\fR(5),
+\fBumem_debug\fR(3MALLOC), \fBumem_hooks\fR(3MALLOC),
+\fBumem_debugging\fR(7), \fBwatchmalloc\fR(3MALLOC), \fBattributes\fR(5),
 \fBstandards\fR(5)
 .sp
 .LP
 \fISolaris Modular Debugger Guide\fR
+.sp
+.LP
+Bonwick, Jeff, "The Slab Allocator: An Object-Caching Kernel Memory Allocator",
+Proceedings of the Summer 1994 Usenix Conference.
+.sp
+.LP
+Bonwick, Jeff and Jonathan Adams, "Magazines and vmem: Extending the Slab
+Allocator to Many CPUs and Arbitrary Resources", Proceedings of the Summer 2001
+Usenix Conference
 .SH WARNINGS
 .sp
 .LP
@@ -597,3 +658,33 @@ The \fBlibumem\fR functions provide a fast, concurrent allocation
 implementation that in most cases is more space-efficient than
 \fBmtmalloc\fR(3MALLOC).
 .RE
+.sp
+.SS "Direct Linking vs. LD_PRELOAD"
+.sp
+.LP
+\fBlibumem\fR can be used in two ways:
+.RS +4
+.TP
+.ie t \(bu
+.el o
+\fBDirect linking\fR (recommended): Link your application against
+\fB-lumem\fR and use the native umem API (\fBumem_alloc\fR,
+\fBumem_cache_create\fR, etc.). This provides full performance benefits
+including Per-Thread Caching (PTC), magazine-layer caching, and all
+debugging features.
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+\fBLD_PRELOAD\fR (limited): Use \fBlibumem_malloc.so\fR with LD_PRELOAD to
+intercept \fBmalloc\fR(3C) calls. This mode uses a bootstrap allocator to
+avoid circular dependencies with \fBpthread_create\fR(3C) and does NOT
+provide umem's performance optimizations. Use this only for compatibility
+testing, not production deployments.
+.RE
+.sp
+.LP
+For best performance, always use direct linking with the native umem API.
+See \fBPTHREAD_LIMITATION.md\fR for technical details on the LD_PRELOAD
+limitation

@@ -90,3 +90,13 @@ hello.c
 test.c
 .idea/
 .vscode/
+
+# Coverage artifacts
+*.gcno
+*.gcda
+*.gcov
+
+# Test executables in root (from test runs)
+/test_oom
+/test_pthread_simple
+/test_signals

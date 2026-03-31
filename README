@@ -137,6 +137,16 @@ Options are separated by commas:
     # Custom cache size with mmap backend
     UMEM_OPTIONS=perthread_cache=512k,backend=mmap ./my_application
 
+### Verifying PTC is Active
+
+To verify that PTC is enabled and working, run the included benchmark:
+
+    ./umem_ptc_bench
+
+Look for the malloc/free results with small allocation sizes (16-32 bytes).
+If PTC is active, you should see throughput around 20M ops/s with ~50ns latency.
+If PTC is disabled, throughput will be much lower (around 3-5M ops/s).
+
 
 When to Use PTC
 ---------------

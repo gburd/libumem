@@ -1,0 +1,55 @@
+# LLDB test script for umem debugger extension
+#
+# Usage:
+#   lldb -s test_lldb.script ./test_lldb_extension
+#
+# Or interactively:
+#   lldb ./test_lldb_extension
+#   (lldb) command source test_lldb.script
+
+# Load the umem LLDB extension
+command script import ../../tools/lldb/umem_lldb.py
+
+# Set breakpoints
+b main
+b test_allocations
+b test_cleanup
+
+# Start program
+run
+
+# Continue to first breakpoint (after allocations)
+continue
+
+# Test umem-cache-list command
+script print("\n=== Testing umem-cache-list ===")
+umem-cache-list
+
+# Test umem-whatis command
+script print("\n=== Testing umem-whatis ===")
+script print("Checking address of p1:")
+umem-whatis p1
+
+# Test umem-bufinfo command
+script print("\n=== Testing umem-bufinfo ===")
+script print("Buffer info for p1:")
+umem-bufinfo p1
+
+# Test umem-stats command
+script print("\n=== Testing umem-stats ===")
+umem-stats
+
+# Continue to next breakpoint (after some frees)
+continue
+
+# Test umem-leak-detect command
+script print("\n=== Testing umem-leak-detect ===")
+umem-leak-detect
+
+# Show help
+script print("\n=== Testing umem-help ===")
+umem-help
+
+script print("\n=== Test Complete ===")
+script print("You can now explore interactively.")
+script print("Type 'quit' to exit LLDB.")

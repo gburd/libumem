@@ -120,6 +120,23 @@ static size_t dlsym_buffer_used = 0;
 static int in_dlsym = 0;
 
 /*
+ * Static buffer for calloc recursion.
+ * During pthread_create, allocate_dtv() calls calloc() for TLS initialization.
+ * Our calloc() calls malloc(), which may trigger another calloc() through
+ * memset() or TLS operations, creating infinite recursion.
+ * We use a separate static buffer to break this cycle.
+ *
+ * NOTE: in_calloc is NOT __thread because we use it to detect TLS initialization.
+ * Using __thread here would create a chicken-and-egg problem: we'd need TLS
+ * to be initialized to access in_calloc, but we're using in_calloc to handle
+ * the malloc calls that happen during TLS initialization.
+ */
+#define CALLOC_BUFFER_SIZE 2048
+static char calloc_buffer[CALLOC_BUFFER_SIZE];
+static size_t calloc_buffer_used = 0;
+static volatile int in_calloc = 0;
+
+/*
  * Resolve libc malloc functions using dlsym(RTLD_NEXT)
  */
 static void
@@ -192,13 +209,20 @@ malloc(size_t size)
 		 * Check for recursive malloc (pthread_create -> malloc ->
 		 * pthread_getspecific -> malloc). Use bootstrap allocator
 		 * to break the cycle.
+		 *
+		 * When UMEM_ENABLE_RECURSION_GUARD is not defined, these
+		 * calls compile to nothing (no overhead).
 		 */
+#if UMEM_GUARD_ENABLED
 		if (umem_enter_malloc() > 0) {
 			umem_exit_malloc();
 			return (bootstrap_malloc(size));
 		}
+#endif
 		ret = umem_malloc(size);
+#if UMEM_GUARD_ENABLED
 		umem_exit_malloc();
+#endif
 		return (ret);
 	}
 
@@ -252,6 +276,16 @@ free(void *ptr)
 	if (ptr >= (void *)dlsym_buffer &&
 	    ptr < (void *)(dlsym_buffer + DLSYM_BUFFER_SIZE)) {
 		/* Ignore frees of dlsym buffer allocations */
+		return;
+	}
+
+	/*
+	 * Check if this is from the calloc recursion buffer.
+	 * These allocations cannot be freed.
+	 */
+	if (ptr >= (void *)calloc_buffer &&
+	    ptr < (void *)(calloc_buffer + CALLOC_BUFFER_SIZE)) {
+		/* Ignore frees of calloc buffer allocations */
 		return;
 	}
 
@@ -312,6 +346,24 @@ calloc(size_t nelem, size_t elsize)
 		return (NULL);
 	}
 
+	/*
+	 * Handle recursive calloc during pthread TLS initialization.
+	 * pthread_create -> allocate_dtv() -> calloc() -> malloc() ->
+	 * memset/TLS ops -> calloc() creates infinite recursion.
+	 * Use static buffer to break the cycle.
+	 */
+	if (in_calloc > 0) {
+		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
+		if (calloc_buffer_used + aligned_size <= CALLOC_BUFFER_SIZE) {
+			ret = &calloc_buffer[calloc_buffer_used];
+			calloc_buffer_used += aligned_size;
+			(void) memset(ret, 0, size);
+			return (ret);
+		}
+		/* Buffer exhausted */
+		return (NULL);
+	}
+
 	/* Check for overflow */
 	if (nelem > 0 && elsize > 0 && size / nelem != elsize) {
 		errno = ENOMEM;
@@ -319,12 +371,14 @@ calloc(size_t nelem, size_t elsize)
 	}
 
 	/*
-	 * Note: We call malloc() which will handle recursion guards internally.
-	 * We don't need to add another layer of recursion tracking here.
+	 * Set recursion guard before calling malloc() and memset().
+	 * This prevents infinite recursion during pthread TLS initialization.
 	 */
+	in_calloc = 1;
 	ret = malloc(size);
 	if (ret != NULL)
 		(void) memset(ret, 0, size);
+	in_calloc = 0;
 
 	return (ret);
 }

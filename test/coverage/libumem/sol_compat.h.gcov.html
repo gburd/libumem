@@ -1,0 +1,332 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - coverage.info.cleaned - libumem/sol_compat.h</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../index.html" title="Click to go to top-level">top level</a> - <a href="index.html" title="Click to go to directory libumem">libumem</a> - sol_compat.h<span style="font-size: 80%;"> (source / <a href="sol_compat.h.func-c.html" title="Click to go to function table">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">coverage.info.cleaned</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryLo">61.5&nbsp;%</td>
+            <td class="headerCovTableEntry">26</td>
+            <td class="headerCovTableEntry">16</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">1980-01-01 00:00:00</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryHi">100.0&nbsp;%</td>
+            <td class="headerCovTableEntry">1</td>
+            <td class="headerCovTableEntry">1</td>
+          </tr>
+                  <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">            Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>              : /*</span>
+<span id="L2"><span class="lineNum">       2</span>              :  * Copyright (c) 2006-2008 Message Systems, Inc. All rights reserved</span>
+<span id="L3"><span class="lineNum">       3</span>              :  * This header file distributed under the terms of the CDDL.</span>
+<span id="L4"><span class="lineNum">       4</span>              :  * Portions Copyright 2004 Sun Microsystems, Inc. All Rights reserved.</span>
+<span id="L5"><span class="lineNum">       5</span>              :  */</span>
+<span id="L6"><span class="lineNum">       6</span>              : #ifndef _EC_UMEM_SOL_COMPAT_H_</span>
+<span id="L7"><span class="lineNum">       7</span>              : #define _EC_UMEM_SOL_COMPAT_H_</span>
+<span id="L8"><span class="lineNum">       8</span>              : </span>
+<span id="L9"><span class="lineNum">       9</span>              : #include &quot;config.h&quot;</span>
+<span id="L10"><span class="lineNum">      10</span>              : </span>
+<span id="L11"><span class="lineNum">      11</span>              : #include &lt;stdint.h&gt;</span>
+<span id="L12"><span class="lineNum">      12</span>              : #include &lt;pthread.h&gt;</span>
+<span id="L13"><span class="lineNum">      13</span>              : </span>
+<span id="L14"><span class="lineNum">      14</span>              : #ifdef HAVE_SYS_TIME_H</span>
+<span id="L15"><span class="lineNum">      15</span>              : #include &lt;sys/time.h&gt;</span>
+<span id="L16"><span class="lineNum">      16</span>              : #endif</span>
+<span id="L17"><span class="lineNum">      17</span>              : </span>
+<span id="L18"><span class="lineNum">      18</span>              : #ifdef _WIN32</span>
+<span id="L19"><span class="lineNum">      19</span>              : # define THR_RETURN DWORD</span>
+<span id="L20"><span class="lineNum">      20</span>              : # define THR_API WINAPI</span>
+<span id="L21"><span class="lineNum">      21</span>              : # define INLINE __inline</span>
+<span id="L22"><span class="lineNum">      22</span>              : #else</span>
+<span id="L23"><span class="lineNum">      23</span>              : # define THR_RETURN void *</span>
+<span id="L24"><span class="lineNum">      24</span>              : # define THR_API</span>
+<span id="L25"><span class="lineNum">      25</span>              : # define INLINE inline</span>
+<span id="L26"><span class="lineNum">      26</span>              : #endif</span>
+<span id="L27"><span class="lineNum">      27</span>              : </span>
+<span id="L28"><span class="lineNum">      28</span>              : #if defined(__MACH__) || defined(_WIN32)</span>
+<span id="L29"><span class="lineNum">      29</span>              : #define NO_WEAK_SYMBOLS</span>
+<span id="L30"><span class="lineNum">      30</span>              : #define _umem_cache_alloc(a,b) umem_cache_alloc(a,b)</span>
+<span id="L31"><span class="lineNum">      31</span>              : #define _umem_cache_free(a,b) umem_cache_free(a,b)</span>
+<span id="L32"><span class="lineNum">      32</span>              : #define _umem_zalloc(a,b) umem_zalloc(a,b)</span>
+<span id="L33"><span class="lineNum">      33</span>              : #define _umem_alloc(a,b) umem_alloc(a,b)</span>
+<span id="L34"><span class="lineNum">      34</span>              : #define _umem_alloc_align(a,b,c) umem_alloc_align(a,b,c)</span>
+<span id="L35"><span class="lineNum">      35</span>              : #define _umem_free(a,b) umem_free(a,b)</span>
+<span id="L36"><span class="lineNum">      36</span>              : #define _umem_free_align(a,b) umem_free_align(a,b)</span>
+<span id="L37"><span class="lineNum">      37</span>              : #endif</span>
+<span id="L38"><span class="lineNum">      38</span>              : </span>
+<span id="L39"><span class="lineNum">      39</span>              : #ifdef _WIN32</span>
+<span id="L40"><span class="lineNum">      40</span>              : #define bcopy(s, d, n)          memcpy(d, s, n)</span>
+<span id="L41"><span class="lineNum">      41</span>              : #define bzero(m, s)                     memset(m, 0, s)</span>
+<span id="L42"><span class="lineNum">      42</span>              : #endif</span>
+<span id="L43"><span class="lineNum">      43</span>              : </span>
+<span id="L44"><span class="lineNum">      44</span>              : typedef pthread_t thread_t;</span>
+<span id="L45"><span class="lineNum">      45</span>              : typedef pthread_mutex_t mutex_t;</span>
+<span id="L46"><span class="lineNum">      46</span>              : typedef pthread_cond_t cond_t;</span>
+<span id="L47"><span class="lineNum">      47</span>              : typedef uint64_t hrtime_t;</span>
+<span id="L48"><span class="lineNum">      48</span>              : typedef uint32_t uint_t;</span>
+<span id="L49"><span class="lineNum">      49</span>              : typedef unsigned long ulong_t;</span>
+<span id="L50"><span class="lineNum">      50</span>              : typedef struct timespec timestruc_t;</span>
+<span id="L51"><span class="lineNum">      51</span>              : typedef long long longlong_t;</span>
+<span id="L52"><span class="lineNum">      52</span>              : typedef struct timespec timespec_t;</span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">         438 : static INLINE hrtime_t gethrtime(void) {</span></span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         438 :   struct timeval tv;</span></span>
+<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">         438 :   gettimeofday(&amp;tv, NULL);</span></span>
+<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">         439 :   return (((uint64_t)tv.tv_sec) &lt;&lt; 32) | tv.tv_usec;</span></span>
+<span id="L57"><span class="lineNum">      57</span>              : }</span>
+<span id="L58"><span class="lineNum">      58</span>              : # define thr_self()                pthread_self()</span>
+<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">       40336 : static INLINE thread_t _thr_self(void) {</span></span>
+<span id="L60"><span class="lineNum">      60</span> <span class="tlaGNC">       40336 :   return thr_self();</span></span>
+<span id="L61"><span class="lineNum">      61</span>              : }</span>
+<span id="L62"><span class="lineNum">      62</span>              : #if defined(__MACH__)</span>
+<span id="L63"><span class="lineNum">      63</span>              : #define CPUHINT() (pthread_mach_thread_np(pthread_self()))</span>
+<span id="L64"><span class="lineNum">      64</span>              : #endif</span>
+<span id="L65"><span class="lineNum">      65</span>              : # define thr_sigsetmask            pthread_sigmask</span>
+<span id="L66"><span class="lineNum">      66</span>              : </span>
+<span id="L67"><span class="lineNum">      67</span>              : #define THR_BOUND     1</span>
+<span id="L68"><span class="lineNum">      68</span>              : #define THR_DETACHED  2</span>
+<span id="L69"><span class="lineNum">      69</span>              : #define THR_DAEMON    4</span>
+<span id="L70"><span class="lineNum">      70</span>              : </span>
+<span id="L71"><span class="lineNum">      71</span>              : static INLINE int thr_create(void *stack_base __attribute__((unused)),</span>
+<span id="L72"><span class="lineNum">      72</span>              :   size_t stack_size __attribute__((unused)),</span>
+<span id="L73"><span class="lineNum">      73</span>              :   THR_RETURN (THR_API *start_func)(void*),</span>
+<span id="L74"><span class="lineNum">      74</span>              :   void *arg, long flags, thread_t *new_thread_ID)</span>
+<span id="L75"><span class="lineNum">      75</span>              : {</span>
+<span id="L76"><span class="lineNum">      76</span>              :   int ret;</span>
+<span id="L77"><span class="lineNum">      77</span>              :   pthread_attr_t attr;</span>
+<span id="L78"><span class="lineNum">      78</span>              : </span>
+<span id="L79"><span class="lineNum">      79</span>              :   pthread_attr_init(&amp;attr);</span>
+<span id="L80"><span class="lineNum">      80</span>              : </span>
+<span id="L81"><span class="lineNum">      81</span>              :   if (flags &amp; THR_DETACHED) {</span>
+<span id="L82"><span class="lineNum">      82</span>              :     pthread_attr_setdetachstate(&amp;attr, PTHREAD_CREATE_DETACHED);</span>
+<span id="L83"><span class="lineNum">      83</span>              :   }</span>
+<span id="L84"><span class="lineNum">      84</span>              :   ret = pthread_create(new_thread_ID, &amp;attr, start_func, arg);</span>
+<span id="L85"><span class="lineNum">      85</span>              :   pthread_attr_destroy(&amp;attr);</span>
+<span id="L86"><span class="lineNum">      86</span>              :   return ret;</span>
+<span id="L87"><span class="lineNum">      87</span>              : }</span>
+<span id="L88"><span class="lineNum">      88</span>              : </span>
+<span id="L89"><span class="lineNum">      89</span>              : </span>
+<span id="L90"><span class="lineNum">      90</span>              : # define mutex_init(mp, type, arg) pthread_mutex_init(mp, NULL)</span>
+<span id="L91"><span class="lineNum">      91</span>              : # define mutex_lock(mp)            pthread_mutex_lock(mp)</span>
+<span id="L92"><span class="lineNum">      92</span>              : # define mutex_unlock(mp)          pthread_mutex_unlock(mp)</span>
+<span id="L93"><span class="lineNum">      93</span>              : # define mutex_destroy(mp)         pthread_mutex_destroy(mp)</span>
+<span id="L94"><span class="lineNum">      94</span>              : # define mutex_trylock(mp)         pthread_mutex_trylock(mp)</span>
+<span id="L95"><span class="lineNum">      95</span>              : # define DEFAULTMUTEX              PTHREAD_MUTEX_INITIALIZER</span>
+<span id="L96"><span class="lineNum">      96</span>              : # define DEFAULTCV                                 PTHREAD_COND_INITIALIZER</span>
+<span id="L97"><span class="lineNum">      97</span>              : # define MUTEX_HELD(mp)            1 /* not really, but only used in an assert */</span>
+<span id="L98"><span class="lineNum">      98</span>              : </span>
+<span id="L99"><span class="lineNum">      99</span>              : # define cond_init(c, type, arg)   pthread_cond_init(c, NULL)</span>
+<span id="L100"><span class="lineNum">     100</span>              : # define cond_wait(c, m)           pthread_cond_wait(c, m)</span>
+<span id="L101"><span class="lineNum">     101</span>              : # define _cond_wait(c, m)          pthread_cond_wait(c, m)</span>
+<span id="L102"><span class="lineNum">     102</span>              : # define cond_signal(c)            pthread_cond_signal(c)</span>
+<span id="L103"><span class="lineNum">     103</span>              : # define cond_broadcast(c)         pthread_cond_broadcast(c)</span>
+<span id="L104"><span class="lineNum">     104</span>              : # define cond_destroy(c)           pthread_cond_destroy(c)</span>
+<span id="L105"><span class="lineNum">     105</span>              : # define cond_timedwait            pthread_cond_timedwait</span>
+<span id="L106"><span class="lineNum">     106</span>              : # define _cond_timedwait           pthread_cond_timedwait</span>
+<span id="L107"><span class="lineNum">     107</span>              : </span>
+<span id="L108"><span class="lineNum">     108</span>              : #ifndef RTLD_FIRST</span>
+<span id="L109"><span class="lineNum">     109</span>              : # define RTLD_FIRST 0</span>
+<span id="L110"><span class="lineNum">     110</span>              : #endif</span>
+<span id="L111"><span class="lineNum">     111</span>              : </span>
+<span id="L112"><span class="lineNum">     112</span>              : #ifdef ECELERITY</span>
+<span id="L113"><span class="lineNum">     113</span>              : # include &quot;umem_atomic.h&quot;</span>
+<span id="L114"><span class="lineNum">     114</span>              : #else</span>
+<span id="L115"><span class="lineNum">     115</span>              : # ifdef _WIN32</span>
+<span id="L116"><span class="lineNum">     116</span>              : #  define umem_atomic_inc(a)            InterlockedIncrement(a)</span>
+<span id="L117"><span class="lineNum">     117</span>              : #  define umem_atomic_inc64(a)    InterlockedIncrement64(a)</span>
+<span id="L118"><span class="lineNum">     118</span>              : # elif defined(__MACH__)</span>
+<span id="L119"><span class="lineNum">     119</span>              : #  include &lt;libkern/OSAtomic.h&gt;</span>
+<span id="L120"><span class="lineNum">     120</span>              : #  define umem_atomic_inc(x) OSAtomicIncrement32Barrier((int32_t*)x)</span>
+<span id="L121"><span class="lineNum">     121</span>              : #  if !defined(__ppc__)</span>
+<span id="L122"><span class="lineNum">     122</span>              : #   define umem_atomic_inc64(x) OSAtomicIncrement64Barrier((int64_t*)x)</span>
+<span id="L123"><span class="lineNum">     123</span>              : #  endif</span>
+<span id="L124"><span class="lineNum">     124</span>              : # elif (defined(__i386__) || defined(__x86_64__)) &amp;&amp; defined(__GNUC__)</span>
+<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">          60 : static INLINE uint_t umem_atomic_cas(uint_t *mem, uint_t with, uint_t cmp)</span></span>
+<span id="L126"><span class="lineNum">     126</span>              : {</span>
+<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">          60 :   uint_t prev;</span></span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">         120 :   asm volatile (&quot;lock; cmpxchgl %1, %2&quot;</span></span>
+<span id="L129"><span class="lineNum">     129</span>              :         : &quot;=a&quot; (prev)</span>
+<span id="L130"><span class="lineNum">     130</span>              :         : &quot;r&quot;    (with), &quot;m&quot; (*(mem)), &quot;0&quot; (cmp)</span>
+<span id="L131"><span class="lineNum">     131</span>              :         : &quot;memory&quot;);</span>
+<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">          60 :   return prev;</span></span>
+<span id="L133"><span class="lineNum">     133</span>              : }</span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaUNC">           0 : static INLINE uint64_t umem_atomic_cas64(uint64_t *mem, uint64_t with,</span></span>
+<span id="L135"><span class="lineNum">     135</span>              :   uint64_t cmp)</span>
+<span id="L136"><span class="lineNum">     136</span>              : {</span>
+<span id="L137"><span class="lineNum">     137</span> <span class="tlaUNC">           0 :   uint64_t prev;</span></span>
+<span id="L138"><span class="lineNum">     138</span>              : #  if defined(__x86_64__)</span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaUNC">           0 :   __asm__ volatile (&quot;lock; cmpxchgq %1, %2&quot;</span></span>
+<span id="L140"><span class="lineNum">     140</span>              :     : &quot;=a&quot; (prev)</span>
+<span id="L141"><span class="lineNum">     141</span>              :     : &quot;r&quot; (with), &quot;m&quot; (*(mem)), &quot;0&quot; (cmp)</span>
+<span id="L142"><span class="lineNum">     142</span>              :     : &quot;memory&quot;);</span>
+<span id="L143"><span class="lineNum">     143</span>              : #  else</span>
+<span id="L144"><span class="lineNum">     144</span>              :   __asm__ volatile (</span>
+<span id="L145"><span class="lineNum">     145</span>              :     &quot;pushl %%ebx;&quot;</span>
+<span id="L146"><span class="lineNum">     146</span>              :     &quot;mov 4+%1,%%ecx;&quot;</span>
+<span id="L147"><span class="lineNum">     147</span>              :     &quot;mov %1,%%ebx;&quot;</span>
+<span id="L148"><span class="lineNum">     148</span>              :     &quot;lock;&quot;</span>
+<span id="L149"><span class="lineNum">     149</span>              :     &quot;cmpxchg8b (%3);&quot;</span>
+<span id="L150"><span class="lineNum">     150</span>              :     &quot;popl %%ebx&quot;</span>
+<span id="L151"><span class="lineNum">     151</span>              :     : &quot;=A&quot; (prev)</span>
+<span id="L152"><span class="lineNum">     152</span>              :     : &quot;m&quot; (with), &quot;A&quot; (cmp), &quot;r&quot; (mem)</span>
+<span id="L153"><span class="lineNum">     153</span>              :     : &quot;%ecx&quot;, &quot;memory&quot;);</span>
+<span id="L154"><span class="lineNum">     154</span>              : #  endif</span>
+<span id="L155"><span class="lineNum">     155</span> <span class="tlaUNC">           0 :   return prev;</span></span>
+<span id="L156"><span class="lineNum">     156</span>              : }</span>
+<span id="L157"><span class="lineNum">     157</span> <span class="tlaUNC">           0 : static INLINE uint64_t umem_atomic_inc64(uint64_t *mem)</span></span>
+<span id="L158"><span class="lineNum">     158</span>              : {</span>
+<span id="L159"><span class="lineNum">     159</span> <span class="tlaUNC">           0 :   register uint64_t last;</span></span>
+<span id="L160"><span class="lineNum">     160</span> <span class="tlaUNC">           0 :   do {</span></span>
+<span id="L161"><span class="lineNum">     161</span> <span class="tlaUNC">           0 :     last = *mem;</span></span>
+<span id="L162"><span class="lineNum">     162</span> <span class="tlaUNC">           0 :   } while (umem_atomic_cas64(mem, last+1, last) != last);</span></span>
+<span id="L163"><span class="lineNum">     163</span> <span class="tlaUNC">           0 :   return ++last;</span></span>
+<span id="L164"><span class="lineNum">     164</span>              : }</span>
+<span id="L165"><span class="lineNum">     165</span>              : #  define umem_atomic_inc64 umem_atomic_inc64</span>
+<span id="L166"><span class="lineNum">     166</span>              : # else</span>
+<span id="L167"><span class="lineNum">     167</span>              : #  error no atomic solution for your platform</span>
+<span id="L168"><span class="lineNum">     168</span>              : # endif</span>
+<span id="L169"><span class="lineNum">     169</span>              : </span>
+<span id="L170"><span class="lineNum">     170</span>              : # ifndef umem_atomic_inc</span>
+<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">          48 : static INLINE uint_t umem_atomic_inc(uint_t *mem)</span></span>
+<span id="L172"><span class="lineNum">     172</span>              : {</span>
+<span id="L173"><span class="lineNum">     173</span> <span class="tlaGNC">          60 :   register uint_t last;</span></span>
+<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">          60 :   do {</span></span>
+<span id="L175"><span class="lineNum">     175</span> <span class="tlaGNC">          60 :     last = *mem;</span></span>
+<span id="L176"><span class="lineNum">     176</span> <span class="tlaGNC">          60 :   } while (umem_atomic_cas(mem, last+1, last) != last);</span></span>
+<span id="L177"><span class="lineNum">     177</span> <span class="tlaGNC">          60 :   return ++last;</span></span>
+<span id="L178"><span class="lineNum">     178</span>              : }</span>
+<span id="L179"><span class="lineNum">     179</span>              : # endif</span>
+<span id="L180"><span class="lineNum">     180</span>              : # ifndef umem_atomic_inc64</span>
+<span id="L181"><span class="lineNum">     181</span>              :    /* yeah, it's not great.  It's only used to bump failed allocation</span>
+<span id="L182"><span class="lineNum">     182</span>              :     * counts, so it is not critical right now. */</span>
+<span id="L183"><span class="lineNum">     183</span>              : extern pthread_mutex_t umem_ppc_64inc_lock;</span>
+<span id="L184"><span class="lineNum">     184</span>              : static INLINE uint64_t umem_atomic_inc64(uint64_t *val)</span>
+<span id="L185"><span class="lineNum">     185</span>              : {</span>
+<span id="L186"><span class="lineNum">     186</span>              :   uint64_t rval;</span>
+<span id="L187"><span class="lineNum">     187</span>              :   pthread_mutex_lock(&amp;umem_ppc_64inc_lock);</span>
+<span id="L188"><span class="lineNum">     188</span>              :   rval = *val + 1;</span>
+<span id="L189"><span class="lineNum">     189</span>              :   *val = rval;</span>
+<span id="L190"><span class="lineNum">     190</span>              :   pthread_mutex_unlock(&amp;umem_ppc_64inc_lock);</span>
+<span id="L191"><span class="lineNum">     191</span>              :   return rval;</span>
+<span id="L192"><span class="lineNum">     192</span>              : }</span>
+<span id="L193"><span class="lineNum">     193</span>              : #  define umem_atomic_inc64 umem_atomic_inc64</span>
+<span id="L194"><span class="lineNum">     194</span>              : #  define NEED_64_LOCK 1</span>
+<span id="L195"><span class="lineNum">     195</span>              : # endif</span>
+<span id="L196"><span class="lineNum">     196</span>              : </span>
+<span id="L197"><span class="lineNum">     197</span>              : #endif</span>
+<span id="L198"><span class="lineNum">     198</span>              : </span>
+<span id="L199"><span class="lineNum">     199</span>              : #define P2PHASE(x, align)    ((x) &amp; ((align) - 1))</span>
+<span id="L200"><span class="lineNum">     200</span>              : #define P2ALIGN(x, align)    ((x) &amp; -(align))</span>
+<span id="L201"><span class="lineNum">     201</span>              : #define P2NPHASE(x, align)    (-(x) &amp; ((align) - 1))</span>
+<span id="L202"><span class="lineNum">     202</span>              : #define P2ROUNDUP(x, align)   (-(-(x) &amp; -(align)))</span>
+<span id="L203"><span class="lineNum">     203</span>              : #define P2END(x, align)     (-(~(x) &amp; -(align)))</span>
+<span id="L204"><span class="lineNum">     204</span>              : #define P2PHASEUP(x, align, phase)  ((phase) - (((phase) - (x)) &amp; -(align)))</span>
+<span id="L205"><span class="lineNum">     205</span>              : #define P2CROSS(x, y, align)    (((x) ^ (y)) &gt; (align) - 1)</span>
+<span id="L206"><span class="lineNum">     206</span>              : #define P2SAMEHIGHBIT(x, y)    (((x) ^ (y)) &lt; ((x) &amp; (y)))</span>
+<span id="L207"><span class="lineNum">     207</span>              : #define IS_P2ALIGNED(v, a) ((((uintptr_t)(v)) &amp; ((uintptr_t)(a) - 1)) == 0)</span>
+<span id="L208"><span class="lineNum">     208</span>              : #define ISP2(x)    (((x) &amp; ((x) - 1)) == 0)</span>
+<span id="L209"><span class="lineNum">     209</span>              : /*</span>
+<span id="L210"><span class="lineNum">     210</span>              :  * return TRUE if adding len to off would cause it to cross an align</span>
+<span id="L211"><span class="lineNum">     211</span>              :  * boundary.</span>
+<span id="L212"><span class="lineNum">     212</span>              :  * eg, P2BOUNDARY(0x1234, 0xe0, 0x100) == TRUE (0x1234 + 0xe0 == 0x1314)</span>
+<span id="L213"><span class="lineNum">     213</span>              :  * eg, P2BOUNDARY(0x1234, 0x50, 0x100) == FALSE (0x1234 + 0x50 == 0x1284)</span>
+<span id="L214"><span class="lineNum">     214</span>              :  */</span>
+<span id="L215"><span class="lineNum">     215</span>              : #define P2BOUNDARY(off, len, align) \</span>
+<span id="L216"><span class="lineNum">     216</span>              :     (((off) ^ ((off) + (len) - 1)) &gt; (align) - 1)</span>
+<span id="L217"><span class="lineNum">     217</span>              : </span>
+<span id="L218"><span class="lineNum">     218</span>              : /* beware! umem only uses these atomic adds for incrementing by 1 */</span>
+<span id="L219"><span class="lineNum">     219</span>              : #ifndef atomic_add_64</span>
+<span id="L220"><span class="lineNum">     220</span>              : #define atomic_add_64(lvalptr, delta) umem_atomic_inc64(lvalptr)</span>
+<span id="L221"><span class="lineNum">     221</span>              : #endif</span>
+<span id="L222"><span class="lineNum">     222</span>              : #define atomic_add_32_nv(a, b)            umem_atomic_inc(a)</span>
+<span id="L223"><span class="lineNum">     223</span>              : </span>
+<span id="L224"><span class="lineNum">     224</span>              : #ifndef NANOSEC</span>
+<span id="L225"><span class="lineNum">     225</span>              : #define NANOSEC 1000000000</span>
+<span id="L226"><span class="lineNum">     226</span>              : #endif</span>
+<span id="L227"><span class="lineNum">     227</span>              : </span>
+<span id="L228"><span class="lineNum">     228</span>              : #ifdef _WIN32</span>
+<span id="L229"><span class="lineNum">     229</span>              : #define issetugid()               0</span>
+<span id="L230"><span class="lineNum">     230</span>              : #elif !HAVE_ISSETUGID</span>
+<span id="L231"><span class="lineNum">     231</span>              : #define issetugid()       (geteuid() == 0)</span>
+<span id="L232"><span class="lineNum">     232</span>              : #endif</span>
+<span id="L233"><span class="lineNum">     233</span>              : </span>
+<span id="L234"><span class="lineNum">     234</span>              : #define _sysconf(a) sysconf(a)</span>
+<span id="L235"><span class="lineNum">     235</span>              : #define __NORETURN  __attribute__ ((noreturn))</span>
+<span id="L236"><span class="lineNum">     236</span>              : </span>
+<span id="L237"><span class="lineNum">     237</span>              : #define EC_UMEM_DUMMY_PCSTACK 1</span>
+<span id="L238"><span class="lineNum">     238</span>              : static INLINE int __nthreads(void)</span>
+<span id="L239"><span class="lineNum">     239</span>              : {</span>
+<span id="L240"><span class="lineNum">     240</span>              :   /* or more; just to force multi-threaded mode */</span>
+<span id="L241"><span class="lineNum">     241</span>              :   return 2;</span>
+<span id="L242"><span class="lineNum">     242</span>              : }</span>
+<span id="L243"><span class="lineNum">     243</span>              : </span>
+<span id="L244"><span class="lineNum">     244</span>              : #if (SIZEOF_VOID_P == 8)</span>
+<span id="L245"><span class="lineNum">     245</span>              : # define _LP64 1</span>
+<span id="L246"><span class="lineNum">     246</span>              : #endif</span>
+<span id="L247"><span class="lineNum">     247</span>              : </span>
+<span id="L248"><span class="lineNum">     248</span>              : #ifndef MIN</span>
+<span id="L249"><span class="lineNum">     249</span>              : # define MIN(a,b) ((a) &lt; (b) ? (a) : (b))</span>
+<span id="L250"><span class="lineNum">     250</span>              : #endif</span>
+<span id="L251"><span class="lineNum">     251</span>              : #ifndef MAX</span>
+<span id="L252"><span class="lineNum">     252</span>              : # define MAX(a,b) ((a) &gt; (b) ? (a) : (b))</span>
+<span id="L253"><span class="lineNum">     253</span>              : #endif</span>
+<span id="L254"><span class="lineNum">     254</span>              : </span>
+<span id="L255"><span class="lineNum">     255</span>              : </span>
+<span id="L256"><span class="lineNum">     256</span>              : #endif</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com//linux-test-project/lcov" target="_parent">LCOV version 2.3.2-1</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>

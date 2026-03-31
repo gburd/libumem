@@ -137,8 +137,47 @@ This parameter must be \fINULL\fR.
 \fB\fIcflags\fR\fR
 .ad
 .RS 17n
-This parameter must be either 0 or \fBUMC_NODEBUG\fR. If \fBUMC_NODEBUG\fR, all
-debugging features are disabled for this cache. See \fBumem_debug\fR(3MALLOC).
+This parameter can be a bitwise-OR of the following flags:
+.sp
+.ne 2
+.na
+\fBUMC_NODEBUG\fR
+.ad
+.RS 16n
+Disable all debugging features for this cache, even if \fBUMEM_DEBUG\fR is set.
+This can improve performance for performance-critical caches.
+.RE
+.sp
+.ne 2
+.na
+\fBUMC_NOMAGAZINE\fR
+.ad
+.RS 16n
+Disable magazine-layer caching for this cache. Each allocation will go directly
+to the slab layer. Use this for caches where objects are rarely allocated or
+freed, or where strict allocation tracking is needed.
+.RE
+.sp
+.ne 2
+.na
+\fBUMC_NOHASH\fR
+.ad
+.RS 16n
+Disable the buffer address hash table for this cache. This saves memory but
+disables some debug features. Use this for caches with many small objects.
+.RE
+.sp
+.ne 2
+.na
+\fBUMC_NOTOUCH\fR
+.ad
+.RS 16n
+Do not touch the buffer contents during debugging. Use this for caches where
+the buffer contains hardware-mapped memory or special-purpose data that should
+not be modified by the allocator.
+.RE
+.sp
+If \fIcflags\fR is 0, all features are enabled. See \fBumem_debug\fR(3MALLOC).
 .RE
 
 .sp
@@ -557,6 +596,51 @@ umem_cache_free(my_obj_8k_cache, my_obj_8k);
 .LP
 See the \fBEXAMPLES\fR section of \fBumem_alloc\fR(3MALLOC) for examples
 involving the \fBUMEM_NOFAIL\fR flag.
+.sp
+.LP
+\fBExample 5 \fRUsing cache flags for performance
+.sp
+.in +2
+.nf
+#include <umem.h>
+
+/* High-performance cache with no debugging */
+umem_cache_t *fast_cache = umem_cache_create("fast_objects",
+    sizeof(fast_obj_t), 0, NULL, NULL, NULL, NULL, NULL,
+    UMC_NODEBUG);
+
+/* Cache for rarely-used objects, no magazine layer */
+umem_cache_t *rare_cache = umem_cache_create("rare_objects",
+    sizeof(rare_obj_t), 0, NULL, NULL, NULL, NULL, NULL,
+    UMC_NOMAGAZINE);
+
+/* Memory-efficient cache for many small objects */
+umem_cache_t *small_cache = umem_cache_create("small_objects",
+    sizeof(small_obj_t), 0, NULL, NULL, NULL, NULL, NULL,
+    UMC_NOHASH | UMC_NODEBUG);
+\&...
+.fi
+.in -2
+
+.LP
+\fBExample 6 \fRUsing alignment for cache-line optimization
+.sp
+.in +2
+.nf
+#include <umem.h>
+
+typedef struct cache_aligned_obj {
+    int data[16];  /* 64 bytes on most platforms */
+} cache_aligned_obj_t;
+
+/* Align to 64-byte cache lines to avoid false sharing */
+umem_cache_t *aligned_cache = umem_cache_create(
+    "cache_aligned", sizeof(cache_aligned_obj_t),
+    64,  /* 64-byte alignment */
+    NULL, NULL, NULL, NULL, NULL, 0);
+\&...
+.fi
+.in -2
 .SH ATTRIBUTES
 .sp
 .LP
@@ -680,3 +764,149 @@ underlying storage is returned.
 .LP
 No other guarantees are made. In particular, even if there are buffers recently
 freed to the cache, \fBumem_cache_alloc()\fR can fail.
+.SS "Performance Considerations"
+.sp
+.LP
+Object caches provide the best performance when:
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Objects are allocated and freed frequently
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Objects have expensive initialization (use constructors to amortize cost)
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Multiple threads allocate from the same cache (magazine layer reduces contention)
+.RE
+.sp
+.LP
+For optimal cache performance:
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Use appropriate alignment to avoid false sharing in multithreaded applications
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Consider UMC_NODEBUG for production caches after debugging
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Use UMC_NOMAGAZINE only when objects are rarely allocated
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Keep \fIbufsize\fR under 16KB for full debug support
+.RE
+.SS "Depot Striping"
+.sp
+.LP
+The magazine depot layer uses striped locks to reduce contention in
+multi-threaded applications. Each cache maintains 16 independent depot stripes,
+each with its own lock and magazine lists. Threads are assigned to stripes
+based on their thread ID using a hash function.
+.sp
+.LP
+The number of depot stripes is fixed at compile time (UMEM_DEPOT_STRIPES = 16).
+This value provides optimal performance for systems with up to 32 hardware
+threads. With depot striping enabled:
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Lock contention is distributed across 16 independent stripes
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Each stripe maintains separate full and empty magazine lists
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Thread-to-stripe mapping is deterministic based on thread ID
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+No additional configuration is required
+.RE
+.sp
+.LP
+Performance improvements from depot striping depend on thread count and
+allocation patterns:
+.RS +4
+.TP
+.ie t \(bu
+.el o
+1-4 threads: Minimal improvement (depot lock rarely contested)
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+8-16 threads: Moderate improvement (20-40% reduction in lock contention)
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+16+ threads: Significant improvement (50-150% throughput increase possible)
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+32+ threads: Maximum benefit (each stripe typically accessed by 2 threads)
+.RE
+.sp
+.LP
+Depot striping is most effective when:
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Multiple threads allocate from the same cache concurrently
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Per-thread caches (magazines) overflow frequently
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Workload has high allocation/free rates
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+Thread count exceeds 8
+.RE
+.sp
+.LP
+Depot striping is transparent to applications and requires no code changes.
+The implementation automatically balances magazine distribution across stripes.
+For debugging depot contention, see \fBumem_debug\fR(3MALLOC) for information
+on contention statistics.

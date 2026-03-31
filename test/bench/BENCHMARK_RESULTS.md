@@ -62,7 +62,7 @@ tools/measure_overhead          (raw overhead measurement)
 export UMEM_DEBUG=""
 
 # Default options
-export UMEM_OPTIONS=""  # Uses defaults: concurrency=CPU_count, perthread_cache=64k
+export UMEM_OPTIONS=""  # Uses defaults: concurrency=CPU_count, perthread_cache=1m
 
 # LD_PRELOAD for comparison tests
 export LD_PRELOAD=/home/gburd/ws/libumem/.libs/libumem_malloc.so

@@ -167,6 +167,71 @@ if test "x$tsan" = "xyes"; then
     AC_SUBST(TSAN_LDFLAGS)
 fi
 
+# Recursion guard support
+AC_ARG_ENABLE([recursion-guard],
+    [AS_HELP_STRING([--enable-recursion-guard],
+        [Enable malloc recursion guard (adds 30-40% overhead, needed only if pthread operations call malloc during thread creation)])],
+    [recursion_guard=$enableval], [recursion_guard=yes])
+
+AM_CONDITIONAL([ENABLE_RECURSION_GUARD], [test "x$recursion_guard" = "xyes"])
+
+if test "x$recursion_guard" = "xyes"; then
+    AC_MSG_NOTICE([Recursion guard enabled (default)])
+    AC_DEFINE([UMEM_ENABLE_RECURSION_GUARD], [1], [Enable malloc recursion guard])
+else
+    AC_MSG_NOTICE([Recursion guard disabled for maximum performance])
+fi
+
+# Per-CPU caching support (experimental)
+AC_ARG_ENABLE([percpu-caching],
+    [AS_HELP_STRING([--enable-percpu-caching],
+        [Enable experimental per-CPU magazine caching (provides 100-200% throughput improvement at high thread counts, disabled by default)])],
+    [percpu_caching=$enableval], [percpu_caching=no])
+
+AM_CONDITIONAL([ENABLE_PERCPU_CACHING], [test "x$percpu_caching" = "xyes"])
+
+if test "x$percpu_caching" = "xyes"; then
+    AC_MSG_NOTICE([Per-CPU caching enabled (experimental)])
+    AC_DEFINE([UMEM_PER_CPU_CACHE], [1], [Enable per-CPU magazine caching])
+
+    # Check for sched_getcpu on Linux
+    AC_CHECK_FUNCS([sched_getcpu], [
+        AC_DEFINE([HAVE_SCHED_GETCPU], [1], [Define if sched_getcpu is available])
+    ])
+
+    # Check for libnuma (optional NUMA support)
+    AC_CHECK_LIB([numa], [numa_available], [
+        AC_DEFINE([HAVE_LIBNUMA], [1], [Define if libnuma is available])
+        NUMA_LIBS="-lnuma"
+        AC_SUBST(NUMA_LIBS)
+    ])
+else
+    AC_MSG_NOTICE([Per-CPU caching disabled (default)])
+fi
+
+# Profile-Guided Optimization support
+AC_ARG_ENABLE([pgo],
+    [AS_HELP_STRING([--enable-pgo=generate|use],
+        [Enable Profile-Guided Optimization: generate creates instrumented build, use applies profile data])],
+    [pgo=$enableval], [pgo=no])
+
+AM_CONDITIONAL([ENABLE_PGO_GENERATE], [test "x$pgo" = "xgenerate"])
+AM_CONDITIONAL([ENABLE_PGO_USE], [test "x$pgo" = "xuse"])
+
+if test "x$pgo" = "xgenerate"; then
+    AC_MSG_NOTICE([PGO: Generating profile data (instrumented build)])
+    PGO_CFLAGS="-fprofile-generate"
+    PGO_LDFLAGS="-fprofile-generate"
+    AC_SUBST(PGO_CFLAGS)
+    AC_SUBST(PGO_LDFLAGS)
+elif test "x$pgo" = "xuse"; then
+    AC_MSG_NOTICE([PGO: Using profile data (optimized build)])
+    PGO_CFLAGS="-fprofile-use -fprofile-correction"
+    PGO_LDFLAGS="-fprofile-use"
+    AC_SUBST(PGO_CFLAGS)
+    AC_SUBST(PGO_LDFLAGS)
+fi
+
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile Doxyfile umem.spec])
 
@@ -177,6 +242,9 @@ echo "
 Configuration summary:
   Architecture:     $host_cpu ($GENASM_DIR)
   OS:               $host_os
+  Recursion guard:  $recursion_guard
+  Per-CPU caching:  $percpu_caching
+  PGO:              $pgo
   Coverage:         $coverage
   AddressSanitizer: $asan
   UBSanitizer:      $ubsan

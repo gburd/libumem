@@ -283,6 +283,20 @@ typedef struct umem_maglist {
 	uint64_t	ml_alloc;	/* allocations from this list */
 } umem_maglist_t;
 
+/*
+ * Depot striping for reduced lock contention.
+ * Each stripe has its own lock and magazine lists.
+ * Threads hash to a stripe based on thread ID.
+ */
+#define	UMEM_DEPOT_STRIPES	16
+
+typedef struct umem_depot_stripe {
+	mutex_t		ds_lock;	/* protects this stripe */
+	umem_maglist_t	ds_full;	/* full magazines */
+	umem_maglist_t	ds_empty;	/* empty magazines */
+	uint64_t	ds_contention;	/* contention count for this stripe */
+} umem_depot_stripe_t;
+
 #define	UMEM_CACHE_NAMELEN	31
 
 struct umem_cache {
@@ -344,10 +358,11 @@ struct umem_cache {
 	/*
 	 * Depot layer
 	 */
-	mutex_t		cache_depot_lock;	/* protects depot */
+	mutex_t		cache_depot_lock;	/* legacy, kept for compatibility */
 	umem_magtype_t	*cache_magtype;		/* magazine type */
-	umem_maglist_t	cache_full;		/* full magazines */
-	umem_maglist_t	cache_empty;		/* empty magazines */
+	umem_maglist_t	cache_full;		/* legacy full magazines */
+	umem_maglist_t	cache_empty;		/* legacy empty magazines */
+	umem_depot_stripe_t cache_depot[UMEM_DEPOT_STRIPES];	/* striped depot */
 
 	/*
 	 * Per-CPU layer

@@ -65,12 +65,52 @@ jobs:
           lcov --remove coverage.info '/usr/*' '*/test/*' --output-file coverage_filtered.info
           lcov --list coverage_filtered.info
 
+          # Generate HTML report
+          mkdir -p test/coverage
+          genhtml coverage_filtered.info --output-directory test/coverage
+
+          # Extract coverage percentage
+          COVERAGE=$(lcov --summary coverage_filtered.info 2>&1 | grep "lines" | awk '{print $2}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          echo "COVERAGE_PCT=${COVERAGE}" >> $GITHUB_ENV
+
+          # Check minimum threshold (80% for now, increase gradually)
+          MIN_COVERAGE=80
+          if (( $(echo "$COVERAGE < $MIN_COVERAGE" | bc -l) )); then
+            echo "::warning::Coverage ${COVERAGE}% is below target ${MIN_COVERAGE}%"
+            # Don't fail yet - we're improving coverage
+          else
+            echo "::notice::Coverage ${COVERAGE}% meets target (>=${MIN_COVERAGE}%)"
+          fi
+
+      - name: Upload coverage HTML report
+        if: matrix.mode == 'coverage'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-html
+          path: test/coverage/
+          retention-days: 30
+
       - name: Upload coverage to Codecov
         if: matrix.mode == 'coverage'
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage_filtered.info
           fail_ci_if_error: false
+
+      - name: Comment coverage on PR
+        if: matrix.mode == 'coverage' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coverage = process.env.COVERAGE_PCT;
+            const body = `## Coverage Report\n\nTotal coverage: **${coverage}%**\n\n[View detailed report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body: body
+            });
 
       - name: Upload test logs on failure
         if: failure()

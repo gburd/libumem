@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - coverage.info.cleaned - libumem/tmem_stubs.c</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../index.html" title="Click to go to top-level">top level</a> - <a href="index.html" title="Click to go to directory libumem">libumem</a> - tmem_stubs.c<span style="font-size: 80%;"> (source / <a href="tmem_stubs.c.func-c.html" title="Click to go to function table">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">coverage.info.cleaned</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryHi">100.0&nbsp;%</td>
+            <td class="headerCovTableEntry">9</td>
+            <td class="headerCovTableEntry">9</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">1980-01-01 00:00:00</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryHi">100.0&nbsp;%</td>
+            <td class="headerCovTableEntry">3</td>
+            <td class="headerCovTableEntry">3</td>
+          </tr>
+                  <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">            Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>              : #include &quot;config.h&quot;</span>
+<span id="L2"><span class="lineNum">       2</span>              : #include &lt;stddef.h&gt;</span>
+<span id="L3"><span class="lineNum">       3</span>              : #include &lt;stdint.h&gt;</span>
+<span id="L4"><span class="lineNum">       4</span>              : </span>
+<span id="L5"><span class="lineNum">       5</span>              : #define TMEM_NENTRIES 16</span>
+<span id="L6"><span class="lineNum">       6</span>              : </span>
+<span id="L7"><span class="lineNum">       7</span>              : /*</span>
+<span id="L8"><span class="lineNum">       8</span>              :  * The tmem_t structure provides per-thread caching for PTC (per-thread cache).</span>
+<span id="L9"><span class="lineNum">       9</span>              :  * On Solaris, this lives inside the ulwp_t at a known offset from the thread</span>
+<span id="L10"><span class="lineNum">      10</span>              :  * pointer (%fs:0).  On Linux, we use __thread storage and compute the %fs</span>
+<span id="L11"><span class="lineNum">      11</span>              :  * offset at runtime.</span>
+<span id="L12"><span class="lineNum">      12</span>              :  *</span>
+<span id="L13"><span class="lineNum">      13</span>              :  * The structure layout must match what genasm expects:</span>
+<span id="L14"><span class="lineNum">      14</span>              :  *   offset 0:   tm_size  (size_t) - total cached bytes for this thread</span>
+<span id="L15"><span class="lineNum">      15</span>              :  *   offset 8:   tm_roots (void*[NENTRIES]) - linked list heads per cache</span>
+<span id="L16"><span class="lineNum">      16</span>              :  */</span>
+<span id="L17"><span class="lineNum">      17</span>              : typedef struct tmem {</span>
+<span id="L18"><span class="lineNum">      18</span>              :         size_t          tm_size;</span>
+<span id="L19"><span class="lineNum">      19</span>              :         void            *tm_roots[TMEM_NENTRIES];</span>
+<span id="L20"><span class="lineNum">      20</span>              : } tmem_t;</span>
+<span id="L21"><span class="lineNum">      21</span>              : </span>
+<span id="L22"><span class="lineNum">      22</span>              : static __thread tmem_t _tmem;</span>
+<span id="L23"><span class="lineNum">      23</span>              : static __thread void (*_tmem_cleanup_func)(void *, int) = NULL;</span>
+<span id="L24"><span class="lineNum">      24</span>              : </span>
+<span id="L25"><span class="lineNum">      25</span>              : /*</span>
+<span id="L26"><span class="lineNum">      26</span>              :  * Return the thread-pointer-relative offset of the tmem structure.</span>
+<span id="L27"><span class="lineNum">      27</span>              :  *</span>
+<span id="L28"><span class="lineNum">      28</span>              :  * On Linux x86_64, __thread variables with initial-exec TLS model are</span>
+<span id="L29"><span class="lineNum">      29</span>              :  * accessed at fixed negative offsets from %fs:0 (the thread pointer).</span>
+<span id="L30"><span class="lineNum">      30</span>              :  * We compute this offset by taking the difference between the variable's</span>
+<span id="L31"><span class="lineNum">      31</span>              :  * address and the value of %fs:0.</span>
+<span id="L32"><span class="lineNum">      32</span>              :  *</span>
+<span id="L33"><span class="lineNum">      33</span>              :  * Similar mechanisms exist for other architectures:</span>
+<span id="L34"><span class="lineNum">      34</span>              :  * - i386: %gs:0 thread pointer</span>
+<span id="L35"><span class="lineNum">      35</span>              :  * - RISC-V: tp (x4) register</span>
+<span id="L36"><span class="lineNum">      36</span>              :  * - aarch64: TPIDR_EL0 special register</span>
+<span id="L37"><span class="lineNum">      37</span>              :  *</span>
+<span id="L38"><span class="lineNum">      38</span>              :  * On Solaris, this would return the offset within the ulwp_t.</span>
+<span id="L39"><span class="lineNum">      39</span>              :  */</span>
+<span id="L40"><span class="lineNum">      40</span>              : uintptr_t</span>
+<span id="L41"><span class="lineNum">      41</span> <span class="tlaGNC">           3 : _tmem_get_base(void)</span></span>
+<span id="L42"><span class="lineNum">      42</span>              : {</span>
+<span id="L43"><span class="lineNum">      43</span>              : #if defined(__x86_64__) || defined(__amd64__)</span>
+<span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">           3 :         uintptr_t fs_base;</span></span>
+<span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">           3 :         __asm__ __volatile__(&quot;movq %%fs:0, %0&quot; : &quot;=r&quot; (fs_base));</span></span>
+<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">           3 :         return (uintptr_t)&amp;_tmem - fs_base;</span></span>
+<span id="L47"><span class="lineNum">      47</span>              : #elif defined(__i386__)</span>
+<span id="L48"><span class="lineNum">      48</span>              :         uintptr_t gs_base;</span>
+<span id="L49"><span class="lineNum">      49</span>              :         __asm__ __volatile__(&quot;movl %%gs:0, %0&quot; : &quot;=r&quot; (gs_base));</span>
+<span id="L50"><span class="lineNum">      50</span>              :         return (uintptr_t)&amp;_tmem - gs_base;</span>
+<span id="L51"><span class="lineNum">      51</span>              : #elif defined(__riscv) &amp;&amp; (__riscv_xlen == 64)</span>
+<span id="L52"><span class="lineNum">      52</span>              :         uintptr_t tp;</span>
+<span id="L53"><span class="lineNum">      53</span>              :         __asm__ __volatile__(&quot;mv %0, tp&quot; : &quot;=r&quot; (tp));</span>
+<span id="L54"><span class="lineNum">      54</span>              :         return (uintptr_t)&amp;_tmem - tp;</span>
+<span id="L55"><span class="lineNum">      55</span>              : #elif defined(__aarch64__) || defined(__arm64__)</span>
+<span id="L56"><span class="lineNum">      56</span>              :         uintptr_t tp;</span>
+<span id="L57"><span class="lineNum">      57</span>              :         __asm__ __volatile__(&quot;mrs %0, tpidr_el0&quot; : &quot;=r&quot; (tp));</span>
+<span id="L58"><span class="lineNum">      58</span>              :         return (uintptr_t)&amp;_tmem - tp;</span>
+<span id="L59"><span class="lineNum">      59</span>              : #else</span>
+<span id="L60"><span class="lineNum">      60</span>              :         return 0;</span>
+<span id="L61"><span class="lineNum">      61</span>              : #endif</span>
+<span id="L62"><span class="lineNum">      62</span>              : }</span>
+<span id="L63"><span class="lineNum">      63</span>              : </span>
+<span id="L64"><span class="lineNum">      64</span>              : void</span>
+<span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">           3 : _tmem_set_cleanup(void (*f)(void *, int))</span></span>
+<span id="L66"><span class="lineNum">      66</span>              : {</span>
+<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">           3 :         _tmem_cleanup_func = f;</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">           3 : }</span></span>
+<span id="L69"><span class="lineNum">      69</span>              : </span>
+<span id="L70"><span class="lineNum">      70</span>              : int</span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">           3 : _tmem_get_nentries(void)</span></span>
+<span id="L72"><span class="lineNum">      72</span>              : {</span>
+<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">           3 :         return TMEM_NENTRIES;</span></span>
+<span id="L74"><span class="lineNum">      74</span>              : }</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com//linux-test-project/lcov" target="_parent">LCOV version 2.3.2-1</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>

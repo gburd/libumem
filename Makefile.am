@@ -9,11 +9,12 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/property/prop_cache \
 		  test/property/prop_fragmentation \
 		  test/bench/bench_main \
+		  test/bench/bench_depot_contention \
 		  test/integration/test_signals \
 		  test/integration/test_oom \
 		  test/integration/test_multithreaded
 
-libumem_la_LDFLAGS = -lpthread
+libumem_la_LDFLAGS = -lpthread $(NUMA_LIBS)
 
 # Conditionally include stub_stand.c and genasm for Solaris/Illumos
 if SOLARIS_BUILD
@@ -29,6 +30,13 @@ if FREEBSD_BUILD
 FREEBSD_SOURCES = freebsd_pthread_hooks.c
 else
 FREEBSD_SOURCES =
+endif
+
+# Conditionally include per-CPU caching
+if ENABLE_PERCPU_CACHING
+PERCPU_SOURCES = umem_percpu.c umem_percpu.h
+else
+PERCPU_SOURCES =
 endif
 
 libumem_la_SOURCES = init_lib.c \
@@ -61,9 +69,10 @@ libumem_la_SOURCES = init_lib.c \
 			umem_hooks.h \
 			$(GENASM_SOURCES) \
 			$(STUB_SOURCES) \
-			$(FREEBSD_SOURCES)
+			$(FREEBSD_SOURCES) \
+			$(PERCPU_SOURCES)
 
-libumem_malloc_la_SOURCES = malloc_interpose.c malloc_guard.c malloc_guard.h
+libumem_malloc_la_SOURCES = malloc_interpose.c malloc_guard.h
 libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir)
 libumem_malloc_la_LIBADD = libumem.la
 
@@ -91,6 +100,17 @@ endif
 if ENABLE_TSAN
 AM_CFLAGS += $(TSAN_CFLAGS)
 AM_LDFLAGS += $(TSAN_LDFLAGS)
+endif
+
+# Add PGO flags if enabled
+if ENABLE_PGO_GENERATE
+AM_CFLAGS += $(PGO_CFLAGS)
+AM_LDFLAGS += $(PGO_LDFLAGS)
+endif
+
+if ENABLE_PGO_USE
+AM_CFLAGS += $(PGO_CFLAGS)
+AM_LDFLAGS += $(PGO_LDFLAGS)
 endif
 
 umem_test_SOURCES = umem_test.c
@@ -121,7 +141,14 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_umem_cache.c \
 			 test/unit/test_umem_align.c \
 			 test/unit/test_umem_debug.c \
-			 test/unit/test_vmem.c
+			 test/unit/test_vmem.c \
+			 test/unit/test_error_paths.c \
+			 test/unit/test_rare_flags.c \
+			 test/unit/test_boundary_conditions.c \
+			 test/unit/test_umem_audit.c \
+			 test/unit/test_malloc.c \
+			 test/unit/test_envvar.c \
+			 test/unit/test_umem_fail.c
 test_test_main_LDADD = libumem.la libumem_malloc.la
 test_test_main_LDFLAGS = -pthread
 
@@ -143,6 +170,10 @@ test_bench_bench_main_SOURCES = test/bench/bench_main.c test/bench/bench_framewo
 				test/bench/allocators.c test/tdigest.c
 test_bench_bench_main_LDADD = libumem.la
 test_bench_bench_main_LDFLAGS = -pthread -lm
+
+test_bench_bench_depot_contention_SOURCES = test/bench/bench_depot_contention.c test/tdigest.c
+test_bench_bench_depot_contention_LDADD = libumem.la
+test_bench_bench_depot_contention_LDFLAGS = -pthread -lm
 
 # Integration tests
 test_integration_test_multithreaded_SOURCES = test/integration/test_multithreaded.c test/munit.c
@@ -172,6 +203,10 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 
 nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h
 
+if ENABLE_PERCPU_CACHING
+nobase_include_HEADERS += umem_percpu.h
+endif
+
 # Tests - pthread_create/malloc deadlock limitation
 # Working tests:
 #   umem_test           - Single-threaded, direct umem_alloc() API
@@ -187,7 +222,7 @@ nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h
 # -> pthread_getspecific -> deadlock. This is an architectural limitation.
 #
 # See PTHREAD_LIMITATION.md and PTHREAD_STATUS.md for details and alternatives.
-TESTS = umem_test umem_test3 umem_ptc_fork_test
+TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test
 
 html-local:
 	mkdir -p docs
@@ -215,6 +250,33 @@ coverage-clean:
 	@echo "Coverage data cleaned"
 endif
 
-.PHONY: rpm coverage coverage-clean
+# PGO targets
+# Usage:
+#   1. make pgo-generate  - Build instrumented version and collect profile
+#   2. make pgo-use       - Build optimized version using profile data
+#   3. make pgo-clean     - Remove profile data
+pgo-generate:
+	@echo "PGO Step 1: Building instrumented version..."
+	$(MAKE) clean
+	./configure --enable-pgo=generate
+	$(MAKE) all
+	@echo "PGO Step 2: Running benchmarks to collect profile data..."
+	$(MAKE) check
+	./test/bench/bench_main || true
+	@echo "Profile data generated. Run 'make pgo-use' to build optimized version."
+
+pgo-use:
+	@echo "PGO Step 3: Building optimized version with profile data..."
+	./configure --enable-pgo=use
+	$(MAKE) all
+	@echo "PGO build complete. This version is optimized for your workload."
+
+pgo-clean:
+	@echo "Cleaning PGO profile data..."
+	find . -name "*.gcda" -delete
+	rm -rf pgo-data
+	@echo "PGO data cleaned"
+
+.PHONY: rpm coverage coverage-clean pgo-generate pgo-use pgo-clean
 rpm: dist-bzip2
 	rpmbuild -ta $(distdir).tar.bz2

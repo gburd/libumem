@@ -1,0 +1,55 @@
+# GDB test script for umem debugger extension
+#
+# Usage:
+#   gdb -x test_gdb.script ./test_gdb_extension
+#
+# Or interactively:
+#   gdb ./test_gdb_extension
+#   (gdb) source test_gdb.script
+
+# Load the umem GDB extension
+source ../../tools/gdb/umem_gdb.py
+
+# Set breakpoints
+break main
+break test_allocations
+break test_cleanup
+
+# Start program
+run
+
+# Continue to first breakpoint (after allocations)
+continue
+
+# Test umem-cache-list command
+printf "\n=== Testing umem-cache-list ===\n"
+umem-cache-list
+
+# Test umem-whatis command
+printf "\n=== Testing umem-whatis ===\n"
+printf "Checking address of p1:\n"
+umem-whatis p1
+
+# Test umem-bufinfo command
+printf "\n=== Testing umem-bufinfo ===\n"
+printf "Buffer info for p1:\n"
+umem-bufinfo p1
+
+# Test umem-stats command
+printf "\n=== Testing umem-stats ===\n"
+umem-stats
+
+# Continue to next breakpoint (after some frees)
+continue
+
+# Test umem-leak-detect command
+printf "\n=== Testing umem-leak-detect ===\n"
+umem-leak-detect
+
+# Show help
+printf "\n=== Testing umem-help ===\n"
+umem-help
+
+printf "\n=== Test Complete ===\n"
+printf "You can now explore interactively.\n"
+printf "Type 'quit' to exit GDB.\n"

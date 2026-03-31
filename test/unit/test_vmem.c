@@ -55,7 +55,14 @@ static MunitResult test_vmem_create_destroy(const MunitParameter params[], void*
     return MUNIT_OK;
 }
 
-/* Test: vmem_alloc and vmem_free */
+/* Test: vmem_alloc and vmem_free
+ *
+ * NOTE: This test creates an arena with an initial span. Creating an arena
+ * with NULL base and 0 size would result in an empty arena with no source,
+ * which cannot satisfy allocations. While VM_SLEEP allocations may eventually
+ * succeed if another thread frees memory or vmem_update wakes the waiting
+ * thread, it's better to provide an initial span for predictable behavior.
+ */
 static MunitResult test_vmem_alloc_free(const MunitParameter params[], void* data) {
     ensure_umem_initialized();
     (void)params;
@@ -63,9 +70,14 @@ static MunitResult test_vmem_alloc_free(const MunitParameter params[], void* dat
 
     ensure_umem_initialized();
 
+    /* Create arena with initial span */
+    size_t span_size = 1048576;  /* 1MB */
+    void *base = malloc(span_size);
+    munit_assert_not_null(base);
+
     vmem_t *vmp = vmem_create(
         "test_alloc_arena",
-        NULL, 0, 4096,
+        base, span_size, 4096,
         NULL, NULL, NULL, 0,
         VM_SLEEP
     );
@@ -79,6 +91,7 @@ static MunitResult test_vmem_alloc_free(const MunitParameter params[], void* dat
     vmem_free(vmp, addr, 8192);
 
     vmem_destroy(vmp);
+    free(base);
 
     return MUNIT_OK;
 }

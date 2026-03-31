@@ -25,6 +25,7 @@
  * Use is subject to license terms.
  */
 
+#include "config.h"
 #include "malloc_guard.h"
 
 /*
@@ -37,6 +38,10 @@
  * - Available during pthread_create
  *
  * This TLS variable is initialized to 0 for each new thread.
+ *
+ * Only compiled when UMEM_ENABLE_RECURSION_GUARD is defined.
  */
+#ifdef UMEM_ENABLE_RECURSION_GUARD
 __thread int umem_malloc_recursion_depth
     __attribute__((tls_model("initial-exec"))) = 0;
+#endif
