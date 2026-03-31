@@ -146,10 +146,21 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 
 nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h
 
-# Tests - pthread_create/malloc circular dependency causes hangs in multi-threaded tests
-# Working tests: umem_test (no threads), umem_test3 (malloc, no threads), umem_ptc_fork_test (fork, not pthread)
-# Hanging tests: umem_test2, umem_ptc_test (pthread_create + malloc interposition)
-# See TEST_RESULTS.md for detailed analysis
+# Tests - pthread_create/malloc deadlock limitation
+# Working tests:
+#   umem_test           - Single-threaded, direct umem_alloc() API
+#   umem_test3          - Single-threaded, malloc interposition
+#   umem_ptc_fork_test  - Multi-process fork, direct umem_alloc() API
+#
+# Disabled tests (known limitation):
+#   umem_test2          - Hangs: LD_PRELOAD malloc + pthread_create deadlock
+#   umem_ptc_test       - Hangs: LD_PRELOAD malloc + pthread_create deadlock
+#
+# Root cause: libumem uses pthread_getspecific() for PTC, which creates circular
+# dependency when malloc() is interposed: pthread_create -> malloc -> umem_malloc
+# -> pthread_getspecific -> deadlock. This is an architectural limitation.
+#
+# See PTHREAD_LIMITATION.md and PTHREAD_STATUS.md for details and alternatives.
 TESTS = umem_test umem_test3 umem_ptc_fork_test
 
 html-local:
