@@ -22,6 +22,19 @@ case "$host_os" in
     ;;
 esac
 
+AC_MSG_CHECKING([for FreeBSD build])
+case "$host_os" in
+  freebsd*)
+    AC_MSG_RESULT(yes)
+    AM_CONDITIONAL(FREEBSD_BUILD, true)
+    AC_DEFINE(FREEBSD_BUILD, [1], [Building on FreeBSD])
+    ;;
+  *)
+    AC_MSG_RESULT(no)
+    AM_CONDITIONAL(FREEBSD_BUILD, false)
+    ;;
+esac
+
 AC_MSG_CHECKING([system architecture])
 case "$host_cpu" in
   x86_64|amd64)
@@ -76,6 +89,23 @@ AC_CHECK_LIB(dl,dlopen)
 
 AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h])
 AC_CHECK_FUNCS([issetugid mallinfo malloc_stats])
+
+# Check for FreeBSD pthread hooks
+AC_MSG_CHECKING([for FreeBSD pthread hooks])
+AC_LINK_IFELSE([
+    AC_LANG_PROGRAM([[
+        extern void _pthread_mutex_init_calloc_cb(void *(*)(size_t));
+        extern void _malloc_thread_cleanup(void);
+    ]], [[
+        _pthread_mutex_init_calloc_cb(0);
+    ]])
+], [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_FREEBSD_PTHREAD_HOOKS], [1],
+        [Define if FreeBSD pthread hooks are available])
+], [
+    AC_MSG_RESULT([no])
+])
 
 # Coverage support
 AC_ARG_ENABLE([coverage],

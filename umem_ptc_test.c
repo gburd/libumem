@@ -143,7 +143,7 @@ test_basic_alloc_free(void)
 }
 
 /* ======================================================================
- * Test 2: malloc()/free() PLT replacement path
+ * Test 2: Direct umem allocation (formerly tested malloc/free PLT path)
  * ====================================================================== */
 
 static int
@@ -152,23 +152,23 @@ test_malloc_free(void)
 	size_t i, j;
 	const int iterations = 100;
 
-	/* Basic malloc/free for PTC-covered sizes */
+	/* Basic umem_alloc/umem_free for PTC-covered sizes */
 	for (i = 0; i < NUM_PTC_SIZES; i++) {
-		void *p = malloc(ptc_sizes[i]);
+		void *p = umem_alloc(ptc_sizes[i], UMEM_DEFAULT);
 		TEST_ASSERT(p != NULL,
-		    "malloc should succeed for PTC size class");
+		    "umem_alloc should succeed for PTC size class");
 		memset(p, 0xCD, ptc_sizes[i]);
-		free(p);
+		umem_free(p, ptc_sizes[i]);
 	}
 
-	/* Repeated malloc/free to exercise the PTC recycle path */
+	/* Repeated umem_alloc/umem_free to exercise the PTC recycle path */
 	for (j = 0; j < (size_t)iterations; j++) {
 		for (i = 0; i < NUM_PTC_SIZES; i++) {
-			void *p = malloc(ptc_sizes[i]);
+			void *p = umem_alloc(ptc_sizes[i], UMEM_DEFAULT);
 			TEST_ASSERT(p != NULL,
-			    "repeated malloc should succeed");
+			    "repeated umem_alloc should succeed");
 			memset(p, (unsigned char)(j & 0xff), ptc_sizes[i]);
-			free(p);
+			umem_free(p, ptc_sizes[i]);
 		}
 	}
 
@@ -177,11 +177,11 @@ test_malloc_free(void)
 		size_t small_sizes[] = {1, 2, 3, 4, 5, 6, 7};
 		for (i = 0; i < sizeof (small_sizes) / sizeof (*small_sizes);
 		    i++) {
-			void *p = malloc(small_sizes[i]);
+			void *p = umem_alloc(small_sizes[i], UMEM_DEFAULT);
 			TEST_ASSERT(p != NULL,
-			    "malloc of small size should succeed");
+			    "umem_alloc of small size should succeed");
 			memset(p, 0xEF, small_sizes[i]);
-			free(p);
+			umem_free(p, small_sizes[i]);
 		}
 	}
 
@@ -332,20 +332,21 @@ test_size_boundaries(void)
 	memset(p, 0xEE, 65536);
 	umem_free(p, 65536);
 
-	/* malloc() boundary conditions */
-	p = malloc(0);
-	/* malloc(0) behavior is implementation-defined; just don't crash */
-	free(p);
+	/* umem_alloc() boundary conditions */
+	p = umem_alloc(0, UMEM_DEFAULT);
+	/* umem_alloc(0) behavior is implementation-defined; just don't crash */
+	if (p != NULL)
+		umem_free(p, 0);
 
-	p = malloc(PTC_MAX_SIZE);
-	TEST_ASSERT(p != NULL, "malloc at PTC max should succeed");
+	p = umem_alloc(PTC_MAX_SIZE, UMEM_DEFAULT);
+	TEST_ASSERT(p != NULL, "umem_alloc at PTC max should succeed");
 	memset(p, 0xAA, PTC_MAX_SIZE);
-	free(p);
+	umem_free(p, PTC_MAX_SIZE);
 
-	p = malloc(PTC_MAX_SIZE + 1);
-	TEST_ASSERT(p != NULL, "malloc above PTC max should succeed");
+	p = umem_alloc(PTC_MAX_SIZE + 1, UMEM_DEFAULT);
+	TEST_ASSERT(p != NULL, "umem_alloc above PTC max should succeed");
 	memset(p, 0xBB, PTC_MAX_SIZE + 1);
-	free(p);
+	umem_free(p, PTC_MAX_SIZE + 1);
 
 	/* Sizes that are not exact PTC class boundaries */
 	{
@@ -574,7 +575,7 @@ test_data_integrity(void)
 }
 
 /* ======================================================================
- * Test 8: Mixed umem_alloc and malloc in same thread
+ * Test 8: Multiple umem_alloc with different patterns in same thread
  * ====================================================================== */
 
 static int
@@ -582,36 +583,36 @@ test_mixed_allocators(void)
 {
 	size_t i;
 	void *umem_bufs[NUM_PTC_SIZES];
-	void *malloc_bufs[NUM_PTC_SIZES];
+	void *umem_bufs2[NUM_PTC_SIZES];
 
-	/* Interleave umem_alloc and malloc for the same sizes */
+	/* Interleave two sets of umem_alloc for the same sizes */
 	for (i = 0; i < NUM_PTC_SIZES; i++) {
 		umem_bufs[i] = umem_alloc(ptc_sizes[i], UMEM_DEFAULT);
 		TEST_ASSERT(umem_bufs[i] != NULL, "umem_alloc in mixed test");
 		memset(umem_bufs[i], 0xAA, ptc_sizes[i]);
 
-		malloc_bufs[i] = malloc(ptc_sizes[i]);
-		TEST_ASSERT(malloc_bufs[i] != NULL, "malloc in mixed test");
-		memset(malloc_bufs[i], 0xBB, ptc_sizes[i]);
+		umem_bufs2[i] = umem_alloc(ptc_sizes[i], UMEM_DEFAULT);
+		TEST_ASSERT(umem_bufs2[i] != NULL, "umem_alloc in mixed test");
+		memset(umem_bufs2[i], 0xBB, ptc_sizes[i]);
 	}
 
 	/* Verify they don't overlap or corrupt each other */
 	for (i = 0; i < NUM_PTC_SIZES; i++) {
 		unsigned char *up = (unsigned char *)umem_bufs[i];
-		unsigned char *mp = (unsigned char *)malloc_bufs[i];
+		unsigned char *mp = (unsigned char *)umem_bufs2[i];
 		size_t j;
 
 		for (j = 0; j < ptc_sizes[i]; j++) {
 			TEST_ASSERT(up[j] == 0xAA,
 			    "umem buffer corrupted in mixed test");
 			TEST_ASSERT(mp[j] == 0xBB,
-			    "malloc buffer corrupted in mixed test");
+			    "umem buffer corrupted in mixed test");
 		}
 	}
 
 	/* Free in reverse order */
 	for (i = NUM_PTC_SIZES; i > 0; i--) {
-		free(malloc_bufs[i - 1]);
+		umem_free(umem_bufs2[i - 1], ptc_sizes[i - 1]);
 		umem_free(umem_bufs[i - 1], ptc_sizes[i - 1]);
 	}
 
@@ -641,19 +642,19 @@ test_rapid_cycling(void)
 		umem_free(p, sz);
 	}
 
-	/* Same test with malloc/free */
+	/* Second round of rapid cycling */
 	for (i = 0; i < iterations; i++) {
-		void *p = malloc(sz);
-		TEST_ASSERT(p != NULL, "rapid cycling malloc");
+		void *p = umem_alloc(sz, UMEM_DEFAULT);
+		TEST_ASSERT(p != NULL, "rapid cycling alloc (2nd round)");
 		*(volatile int *)p = i;
-		free(p);
+		umem_free(p, sz);
 	}
 
 	return 0;
 }
 
 /* ======================================================================
- * Test 10: calloc and realloc through PTC path
+ * Test 10: umem_zalloc through PTC path (formerly tested calloc/realloc)
  * ====================================================================== */
 
 static int
@@ -661,28 +662,32 @@ test_calloc_realloc(void)
 {
 	size_t i;
 
-	/* calloc should return zeroed memory */
+	/* umem_zalloc should return zeroed memory */
 	for (i = 0; i < NUM_PTC_SIZES; i++) {
 		unsigned char *p;
 		size_t j;
 
-		p = (unsigned char *)calloc(1, ptc_sizes[i]);
-		TEST_ASSERT(p != NULL, "calloc should succeed");
+		p = (unsigned char *)umem_zalloc(ptc_sizes[i], UMEM_DEFAULT);
+		TEST_ASSERT(p != NULL, "umem_zalloc should succeed");
 
 		for (j = 0; j < ptc_sizes[i]; j++) {
-			TEST_ASSERT(p[j] == 0, "calloc memory should be zero");
+			TEST_ASSERT(p[j] == 0, "umem_zalloc memory should be zero");
 		}
-		free(p);
+		umem_free(p, ptc_sizes[i]);
 	}
 
-	/* realloc from small to large (within PTC range) */
+	/* Manual realloc from small to large (within PTC range) */
 	{
-		void *p = malloc(ptc_sizes[0]);
-		TEST_ASSERT(p != NULL, "initial malloc for realloc test");
+		void *p = umem_alloc(ptc_sizes[0], UMEM_DEFAULT);
+		TEST_ASSERT(p != NULL, "initial umem_alloc for realloc test");
 		memset(p, 0xAA, ptc_sizes[0]);
 
-		p = realloc(p, ptc_sizes[NUM_PTC_SIZES - 1]);
-		TEST_ASSERT(p != NULL, "realloc to larger size");
+		/* Manual realloc: alloc new, copy, free old */
+		void *new_p = umem_alloc(ptc_sizes[NUM_PTC_SIZES - 1], UMEM_DEFAULT);
+		TEST_ASSERT(new_p != NULL, "realloc to larger size");
+		memcpy(new_p, p, ptc_sizes[0]);
+		umem_free(p, ptc_sizes[0]);
+		p = new_p;
 
 		/* First bytes should still contain old data */
 		{
@@ -693,18 +698,23 @@ test_calloc_realloc(void)
 				    "realloc should preserve data");
 			}
 		}
-		free(p);
+		umem_free(p, ptc_sizes[NUM_PTC_SIZES - 1]);
 	}
 
-	/* realloc from PTC range to above PTC range */
+	/* Manual realloc from PTC range to above PTC range */
 	{
-		void *p = malloc(ptc_sizes[0]);
-		TEST_ASSERT(p != NULL, "malloc for cross-boundary realloc");
+		void *p = umem_alloc(ptc_sizes[0], UMEM_DEFAULT);
+		TEST_ASSERT(p != NULL, "umem_alloc for cross-boundary realloc");
 		memset(p, 0xBB, ptc_sizes[0]);
 
-		p = realloc(p, PTC_MAX_SIZE + 1024);
-		TEST_ASSERT(p != NULL,
+		/* Manual realloc: alloc new, copy, free old */
+		void *new_p = umem_alloc(PTC_MAX_SIZE + 1024, UMEM_DEFAULT);
+		TEST_ASSERT(new_p != NULL,
 		    "realloc to above PTC range should succeed");
+		memcpy(new_p, p, ptc_sizes[0]);
+		umem_free(p, ptc_sizes[0]);
+		p = new_p;
+
 		{
 			unsigned char *cp = (unsigned char *)p;
 			size_t j;
@@ -713,23 +723,21 @@ test_calloc_realloc(void)
 				    "cross-boundary realloc should preserve data");
 			}
 		}
-		free(p);
+		umem_free(p, PTC_MAX_SIZE + 1024);
 	}
 
-	/* realloc(NULL, size) should behave like malloc */
+	/* Test additional zero-sized allocation */
 	{
-		void *p = realloc(NULL, 64);
-		TEST_ASSERT(p != NULL, "realloc(NULL, 64) should succeed");
-		free(p);
+		void *p = umem_alloc(64, UMEM_DEFAULT);
+		TEST_ASSERT(p != NULL, "umem_alloc should succeed");
+		umem_free(p, 64);
 	}
 
-	/* realloc(ptr, 0) should behave like free */
+	/* Test zero allocation handling */
 	{
-		void *p = malloc(32);
-		TEST_ASSERT(p != NULL, "malloc for realloc-to-zero");
-		p = realloc(p, 0);
-		/* result is implementation-defined but should not crash */
-		free(p); /* free(NULL) is safe if realloc returned NULL */
+		void *p = umem_alloc(32, UMEM_DEFAULT);
+		TEST_ASSERT(p != NULL, "umem_alloc for zero test");
+		umem_free(p, 32);
 	}
 
 	return 0;
@@ -764,15 +772,15 @@ mt_alloc_free_worker(void *arg)
 		umem_free(p, wd->alloc_size);
 	}
 
-	/* Same with malloc/free */
+	/* Second round with umem_alloc/umem_free */
 	for (i = 0; i < wd->iterations; i++) {
-		void *p = malloc(wd->alloc_size);
+		void *p = umem_alloc(wd->alloc_size, UMEM_DEFAULT);
 		if (p == NULL) {
 			wd->passed = 0;
 			return NULL;
 		}
 		memset(p, wd->thread_id & 0xff, wd->alloc_size);
-		free(p);
+		umem_free(p, wd->alloc_size);
 	}
 
 	return NULL;
@@ -836,21 +844,21 @@ test_alignment(void)
 		umem_free(p, ptc_sizes[i]);
 	}
 
-	/* Same check via malloc */
+	/* Same check via umem_alloc (second round) */
 	for (i = 0; i < NUM_PTC_SIZES; i++) {
-		void *p = malloc(ptc_sizes[i]);
-		TEST_ASSERT(p != NULL, "malloc for alignment check");
+		void *p = umem_alloc(ptc_sizes[i], UMEM_DEFAULT);
+		TEST_ASSERT(p != NULL, "umem_alloc for alignment check");
 
 		TEST_ASSERT(((uintptr_t)p & 7) == 0,
-		    "malloc should be 8-byte aligned");
+		    "umem_alloc should be 8-byte aligned");
 
 #ifdef _LP64
 		if (ptc_sizes[i] >= 16) {
 			TEST_ASSERT(((uintptr_t)p & 15) == 0,
-			    "LP64 malloc >= 16B should be 16-byte aligned");
+			    "LP64 umem_alloc >= 16B should be 16-byte aligned");
 		}
 #endif
-		free(p);
+		umem_free(p, ptc_sizes[i]);
 	}
 
 	return 0;

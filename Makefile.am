@@ -19,6 +19,13 @@ STUB_SOURCES = tmem_stubs.c
 GENASM_SOURCES = $(GENASM_DIR)/umem_genasm.c
 endif
 
+# Conditionally include FreeBSD pthread hooks
+if FREEBSD_BUILD
+FREEBSD_SOURCES = freebsd_pthread_hooks.c
+else
+FREEBSD_SOURCES =
+endif
+
 libumem_la_SOURCES = init_lib.c \
 			umem_agent_support.c \
 			umem_fail.c \
@@ -42,14 +49,17 @@ libumem_la_SOURCES = init_lib.c \
 			sys/vmem.h \
 			sys/vmem_impl_user.h \
 			malloc.c \
+			malloc_guard.c \
+			malloc_guard.h \
 			umem_audit.c \
 			umem_hooks.c \
 			umem_hooks.h \
 			$(GENASM_SOURCES) \
-			$(STUB_SOURCES)
+			$(STUB_SOURCES) \
+			$(FREEBSD_SOURCES)
 
-libumem_malloc_la_SOURCES = malloc.c
-libumem_malloc_la_LDFLAGS = -lpthread -R$(libdir)
+libumem_malloc_la_SOURCES = malloc_interpose.c malloc_guard.c malloc_guard.h
+libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir)
 libumem_malloc_la_LIBADD = libumem.la
 
 # Initialize flags unconditionally to avoid += errors
@@ -82,18 +92,18 @@ umem_test_SOURCES = umem_test.c
 umem_test_LDADD = libumem.la
 
 umem_test2_SOURCES = umem_test2.c
-umem_test2_LDADD = libumem.la
+umem_test2_LDADD = libumem.la libumem_malloc.la
 umem_test2_LDFLAGS = -lpthread
 
 umem_test3_SOURCES = umem_test3.c
 umem_test3_LDADD = libumem.la libumem_malloc.la
 
 umem_ptc_test_SOURCES = umem_ptc_test.c
-umem_ptc_test_LDADD = libumem.la
+umem_ptc_test_LDADD = libumem.la libumem_malloc.la
 umem_ptc_test_LDFLAGS = -pthread
 
 umem_ptc_fork_test_SOURCES = umem_ptc_fork_test.c
-umem_ptc_fork_test_LDADD = libumem.la
+umem_ptc_fork_test_LDADD = libumem.la libumem_malloc.la
 umem_ptc_fork_test_LDFLAGS = -pthread
 
 umem_ptc_bench_SOURCES = umem_ptc_bench.c
@@ -107,12 +117,12 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_umem_align.c \
 			 test/unit/test_umem_debug.c \
 			 test/unit/test_vmem.c
-test_test_main_LDADD = libumem.la
+test_test_main_LDADD = libumem.la libumem_malloc.la
 test_test_main_LDFLAGS = -pthread
 
 # Property-based tests
 test_property_prop_alloc_free2_SOURCES = test/property/prop_alloc_free2.c test/qc.c
-test_property_prop_alloc_free2_LDADD = libumem.la
+test_property_prop_alloc_free2_LDADD = libumem.la libumem_malloc.la
 test_property_prop_alloc_free2_LDFLAGS = -pthread
 
 # Benchmarks
@@ -136,10 +146,11 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 
 nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h
 
-# Thread-related and complex tests disabled due to pthread_create/malloc interaction (see PTHREAD_LIMITATION.md)
-# Disabled: umem_test2, umem_test4, umem_ptc_test, umem_ptc_fork_test, test/test_main, test/property/prop_alloc_free2
-# Basic tests verify core malloc/free functionality works correctly
-TESTS = umem_test umem_test3
+# Tests - pthread_create/malloc circular dependency causes hangs in multi-threaded tests
+# Working tests: umem_test (no threads), umem_test3 (malloc, no threads), umem_ptc_fork_test (fork, not pthread)
+# Hanging tests: umem_test2, umem_ptc_test (pthread_create + malloc interposition)
+# See TEST_RESULTS.md for detailed analysis
+TESTS = umem_test umem_test3 umem_ptc_fork_test
 
 html-local:
 	mkdir -p docs

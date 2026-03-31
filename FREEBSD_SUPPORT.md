@@ -240,6 +240,77 @@ FreeBSD system calls may have different semantics:
 
 All critical syscalls are compatible.
 
+## FreeBSD pthread Hooks
+
+### Overview
+
+FreeBSD provides superior pthread_create compatibility through platform-specific hooks that libumem uses to eliminate deadlock.
+
+### The pthread_create/malloc Problem
+
+On most Unix systems, pthread_create calls malloc internally, creating a circular dependency:
+```
+pthread_create → malloc → umem_init → pthread_once → malloc → DEADLOCK
+```
+
+### FreeBSD Solution
+
+FreeBSD's `libthr` provides two allocator hooks:
+
+1. **_pthread_mutex_init_calloc_cb()** - Custom allocator for mutex initialization
+2. **_malloc_thread_cleanup()** - Thread exit cleanup without pthread_key_t
+
+### Implementation
+
+```c
+/* Registered during library initialization */
+__attribute__((constructor(101)))
+static void
+register_freebsd_pthread_hooks(void)
+{
+    _pthread_mutex_init_calloc_cb(freebsd_pthread_alloc);
+}
+
+/* Uses bootstrap allocator (direct mmap) */
+static void *
+freebsd_pthread_alloc(size_t size)
+{
+    return bootstrap_malloc(size);  /* No TLS, no locks, no umem */
+}
+
+/* Called during pthread_exit */
+void _malloc_thread_cleanup(void) { /* cleanup */ }
+```
+
+### Advantages vs Linux/glibc
+
+| Platform | Solution | Complexity | Overhead |
+|----------|----------|------------|----------|
+| FreeBSD | Native hooks | Low | None |
+| Linux | dlsym(RTLD_NEXT) + TLS guards | Medium | Minimal |
+| Other | Bootstrap + guards | Medium | Minimal |
+
+FreeBSD provides the cleanest solution with zero runtime overhead.
+
+### Defense in Depth
+
+FreeBSD builds include BOTH:
+- Native pthread hooks (primary)
+- dlsym/TLS guards from umem_hooks.c (backup)
+
+Multiple layers ensure pthread_create never deadlocks.
+
+### Comparison with jemalloc
+
+jemalloc uses identical hooks on FreeBSD:
+```c
+#ifdef __FreeBSD__
+    _pthread_mutex_init_calloc_cb(bootstrap_malloc);
+#endif
+```
+
+libumem follows this proven pattern.
+
 ## Performance Characteristics
 
 ### Expected Performance on FreeBSD
@@ -256,16 +327,23 @@ All critical syscalls are compatible.
 
 ### FreeBSD-Specific Optimizations
 
-1. **PTC (Per-Thread Cache)**:
+1. **Native pthread Hooks** (NEW):
+   - FreeBSD provides `_pthread_mutex_init_calloc_cb()` hook
+   - Eliminates pthread_create/malloc deadlock without dlsym
+   - Zero overhead after initialization
+   - Implementation in `freebsd_pthread_hooks.c`
+   - Same hooks used by jemalloc on FreeBSD
+
+2. **PTC (Per-Thread Cache)**:
    - Fully functional on FreeBSD
    - Uses same runtime code generation
    - Lock-free fast path
 
-2. **Magazine Layer**:
+3. **Magazine Layer**:
    - Works identically to Linux
    - CPU cache optimization
 
-3. **vmem Backing**:
+4. **vmem Backing**:
    - Uses FreeBSD's efficient `mmap()`
    - Supports large pages (if configured)
 

@@ -1,0 +1,472 @@
+/*
+ * CDDL HEADER START
+ *
+ * The contents of this file are subject to the terms of the
+ * Common Development and Distribution License, Version 1.0 only
+ * (the "License").  You may not use this file except in compliance
+ * with the License.
+ *
+ * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+ * or http://www.opensolaris.org/os/licensing.
+ * See the License for the specific language governing permissions
+ * and limitations under the License.
+ *
+ * When distributing Covered Code, include this CDDL HEADER in each
+ * file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+ * If applicable, add the following below this CDDL HEADER, with the
+ * fields enclosed by brackets "[]" replaced with your own identifying
+ * information: Portions Copyright [yyyy] [name of copyright owner]
+ *
+ * CDDL HEADER END
+ */
+
+/*
+ * malloc interposition via dlsym(RTLD_NEXT)
+ *
+ * This file implements lazy initialization of libumem to avoid the
+ * pthread_create/malloc circular dependency deadlock. The approach is
+ * based on patterns used by profiling tools (valgrind, ASan) and
+ * recommended in docs/PTHREAD_RESEARCH.md section 3.
+ *
+ * Key design:
+ * 1. Use dlsym(RTLD_NEXT) to get real libc malloc
+ * 2. State machine: UNINIT → BOOTSTRAP → READY
+ * 3. Route early calls to bootstrap allocator (mmap-based)
+ * 4. Track pointer ownership to know which free path to use
+ */
+
+#define _GNU_SOURCE
+#include "config.h"
+#include <dlfcn.h>
+#include <stddef.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "umem_impl.h"
+#include "malloc_guard.h"
+
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
+/* External: umem readiness state and functions */
+extern int umem_ready;
+extern void *umem_malloc(size_t);
+extern void umem_malloc_free(void *);
+
+/* Bootstrap allocator functions from malloc.c */
+extern void *bootstrap_malloc(size_t);
+extern void bootstrap_free(void *);
+extern int is_bootstrap_pointer(void *);
+
+/* State machine for interposition */
+typedef enum {
+	INTERPOSE_UNINIT,	/* Before first malloc call */
+	INTERPOSE_BOOTSTRAP,	/* Resolving libc or initializing umem */
+	INTERPOSE_READY		/* Fully initialized, use umem */
+} interpose_state_t;
+
+static volatile interpose_state_t interpose_state = INTERPOSE_UNINIT;
+
+/* Pointers to real libc functions */
+static void *(*libc_malloc)(size_t) = NULL;
+static void (*libc_free)(void *) = NULL;
+static void *(*libc_calloc)(size_t, size_t) = NULL;
+static void *(*libc_realloc)(void *, size_t) = NULL;
+static void *(*libc_memalign)(size_t, size_t) = NULL;
+
+/*
+ * Pointer tracking: track which allocations came from libc
+ * during bootstrap phase so we can free them correctly.
+ */
+#define MAX_BOOTSTRAP_PTRS 512
+static void *bootstrap_ptrs[MAX_BOOTSTRAP_PTRS];
+static size_t bootstrap_ptr_count = 0;
+
+static void
+track_bootstrap_ptr(void *ptr)
+{
+	if (ptr != NULL && bootstrap_ptr_count < MAX_BOOTSTRAP_PTRS) {
+		bootstrap_ptrs[bootstrap_ptr_count++] = ptr;
+	}
+}
+
+static int
+is_libc_pointer(void *ptr)
+{
+	size_t i;
+
+	if (ptr == NULL)
+		return (0);
+
+	for (i = 0; i < bootstrap_ptr_count; i++) {
+		if (bootstrap_ptrs[i] == ptr) {
+			bootstrap_ptrs[i] = NULL;  /* Clear slot */
+			return (1);
+		}
+	}
+	return (0);
+}
+
+/*
+ * Static buffer for dlsym allocations.
+ * dlsym may call calloc internally, which creates a circular dependency.
+ * We use a static buffer to handle these allocations.
+ */
+#define DLSYM_BUFFER_SIZE 1024
+static char dlsym_buffer[DLSYM_BUFFER_SIZE];
+static size_t dlsym_buffer_used = 0;
+static int in_dlsym = 0;
+
+/*
+ * Resolve libc malloc functions using dlsym(RTLD_NEXT)
+ */
+static void
+resolve_libc_functions(void)
+{
+	in_dlsym = 1;
+	libc_malloc = dlsym(RTLD_NEXT, "malloc");
+	libc_free = dlsym(RTLD_NEXT, "free");
+	libc_calloc = dlsym(RTLD_NEXT, "calloc");
+	libc_realloc = dlsym(RTLD_NEXT, "realloc");
+	libc_memalign = dlsym(RTLD_NEXT, "memalign");
+	in_dlsym = 0;
+}
+
+/*
+ * Constructor: Resolve libc functions before any malloc calls
+ * This is called automatically when the library is loaded via LD_PRELOAD.
+ *
+ * IMPORTANT: This constructor MUST run before libumem's __umem_init constructor,
+ * because __umem_init may call pthread functions which call malloc. We use
+ * priority 101 to ensure this runs first (lower priority numbers run first).
+ *
+ * NOTE: We do NOT call umem_init() here because that would trigger
+ * pthread_create which calls malloc, creating a deadlock. Instead,
+ * we let malloc calls during the bootstrap phase use the bootstrap
+ * allocator, and umem will be initialized lazily on first use.
+ */
+__attribute__((constructor(101)))
+static void
+umem_interpose_init(void)
+{
+	/* Resolve libc functions */
+	interpose_state = INTERPOSE_BOOTSTRAP;
+	resolve_libc_functions();
+
+	/*
+	 * Don't call umem_init() here - let it initialize naturally
+	 * through the first umem API call. The bootstrap allocator will
+	 * handle any malloc calls that happen during initialization.
+	 */
+}
+
+/*
+ * malloc - main interposition point
+ */
+void *
+malloc(size_t size)
+{
+	void *ret;
+
+	/*
+	 * Handle dlsym's malloc calls with static buffer.
+	 * dlsym may call malloc/calloc internally, so we provide
+	 * a temporary buffer to avoid infinite recursion.
+	 */
+	if (in_dlsym) {
+		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
+		if (dlsym_buffer_used + aligned_size <= DLSYM_BUFFER_SIZE) {
+			ret = &dlsym_buffer[dlsym_buffer_used];
+			dlsym_buffer_used += aligned_size;
+			return (ret);
+		}
+		/* Buffer exhausted - this shouldn't happen */
+		return (NULL);
+	}
+
+	/* Fast path: fully initialized */
+	if (__builtin_expect(interpose_state == INTERPOSE_READY, 1)) {
+		/*
+		 * Check for recursive malloc (pthread_create -> malloc ->
+		 * pthread_getspecific -> malloc). Use bootstrap allocator
+		 * to break the cycle.
+		 */
+		if (umem_enter_malloc() > 0) {
+			umem_exit_malloc();
+			return (bootstrap_malloc(size));
+		}
+		ret = umem_malloc(size);
+		umem_exit_malloc();
+		return (ret);
+	}
+
+	/*
+	 * If we somehow get here before the constructor runs,
+	 * use bootstrap allocator and let the constructor handle init.
+	 */
+	if (interpose_state == INTERPOSE_UNINIT) {
+		return (bootstrap_malloc(size));
+	}
+
+	/*
+	 * Bootstrap phase: use bootstrap allocator.
+	 * We stay in this phase until umem_ready becomes UMEM_READY.
+	 * Umem will be initialized lazily through direct umem API calls
+	 * (like umem_alloc), not through malloc.
+	 */
+	if (interpose_state == INTERPOSE_BOOTSTRAP) {
+		/* Check if umem became ready (from external initialization) */
+		if (umem_ready == UMEM_READY) {
+			interpose_state = INTERPOSE_READY;
+			if (umem_enter_malloc() > 0) {
+				umem_exit_malloc();
+				return (bootstrap_malloc(size));
+			}
+			ret = umem_malloc(size);
+			umem_exit_malloc();
+			return (ret);
+		}
+
+		/* Still bootstrapping - use mmap-based allocator */
+		ret = bootstrap_malloc(size);
+		return (ret);
+	}
+
+	/* Should not reach here */
+	return (umem_malloc(size));
+}
+
+/*
+ * free - must handle mixed allocation sources
+ */
+void
+free(void *ptr)
+{
+	if (ptr == NULL)
+		return;
+
+	/*
+	 * Check if this is from the dlsym static buffer.
+	 * These allocations cannot be freed.
+	 */
+	if (ptr >= (void *)dlsym_buffer &&
+	    ptr < (void *)(dlsym_buffer + DLSYM_BUFFER_SIZE)) {
+		/* Ignore frees of dlsym buffer allocations */
+		return;
+	}
+
+	/*
+	 * Check if this is a bootstrap allocation.
+	 * Bootstrap allocations use mmap with a magic header.
+	 */
+	if (is_bootstrap_pointer(ptr)) {
+		bootstrap_free(ptr);
+		return;
+	}
+
+	/*
+	 * Check if this came from libc during bootstrap phase
+	 */
+	if (is_libc_pointer(ptr)) {
+		if (libc_free != NULL)
+			libc_free(ptr);
+		return;
+	}
+
+	/*
+	 * If we're not ready yet and it's not a tracked pointer,
+	 * be defensive and try libc_free
+	 */
+	if (interpose_state != INTERPOSE_READY) {
+		if (libc_free != NULL)
+			libc_free(ptr);
+		return;
+	}
+
+	/* Normal umem free */
+	umem_malloc_free(ptr);
+}
+
+/*
+ * calloc - allocate and zero
+ */
+void *
+calloc(size_t nelem, size_t elsize)
+{
+	size_t size = nelem * elsize;
+	void *ret;
+
+	/*
+	 * Handle dlsym's calloc calls with static buffer.
+	 * dlsym may call calloc internally on some systems.
+	 */
+	if (in_dlsym) {
+		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
+		if (dlsym_buffer_used + aligned_size <= DLSYM_BUFFER_SIZE) {
+			ret = &dlsym_buffer[dlsym_buffer_used];
+			dlsym_buffer_used += aligned_size;
+			(void) memset(ret, 0, size);
+			return (ret);
+		}
+		/* Buffer exhausted */
+		return (NULL);
+	}
+
+	/* Check for overflow */
+	if (nelem > 0 && elsize > 0 && size / nelem != elsize) {
+		errno = ENOMEM;
+		return (NULL);
+	}
+
+	/*
+	 * Note: We call malloc() which will handle recursion guards internally.
+	 * We don't need to add another layer of recursion tracking here.
+	 */
+	ret = malloc(size);
+	if (ret != NULL)
+		(void) memset(ret, 0, size);
+
+	return (ret);
+}
+
+/*
+ * realloc - resize allocation
+ */
+void *
+realloc(void *ptr, size_t size)
+{
+	void *new_ptr;
+	size_t old_size;
+
+	if (ptr == NULL)
+		return (malloc(size));
+
+	if (size == 0) {
+		free(ptr);
+		return (NULL);
+	}
+
+	/*
+	 * For bootstrap and libc pointers, we can't determine the old size
+	 * easily, so we have to use a conservative approach:
+	 * allocate new, copy what we can, free old.
+	 */
+	if (is_bootstrap_pointer(ptr) || is_libc_pointer(ptr)) {
+		new_ptr = malloc(size);
+		if (new_ptr == NULL)
+			return (NULL);
+
+		/*
+		 * We don't know the old size, so we just copy the new size.
+		 * This is safe because memcpy won't read past what we write to.
+		 */
+		(void) memcpy(new_ptr, ptr, size);
+		free(ptr);
+		return (new_ptr);
+	}
+
+	/*
+	 * If we're in bootstrap phase and using libc, use libc_realloc
+	 */
+	if (interpose_state == INTERPOSE_BOOTSTRAP && libc_realloc != NULL) {
+		return (libc_realloc(ptr, size));
+	}
+
+	/*
+	 * Normal case: delegate to umem's realloc logic.
+	 * We reimplement the logic from malloc.c to avoid circular calls.
+	 */
+	if (interpose_state == INTERPOSE_READY) {
+		extern int process_free(void *, int, size_t *);
+
+		/* Get old size without freeing */
+		if (process_free(ptr, 0, &old_size) == 0) {
+			errno = EINVAL;
+			return (NULL);
+		}
+
+		if (size == old_size)
+			return (ptr);
+
+		new_ptr = malloc(size);
+		if (new_ptr == NULL)
+			return (NULL);
+
+		(void) memcpy(new_ptr, ptr, size < old_size ? size : old_size);
+		free(ptr);
+		return (new_ptr);
+	}
+
+	/* Bootstrap path: allocate new, copy, free old */
+	new_ptr = malloc(size);
+	if (new_ptr == NULL)
+		return (NULL);
+
+	(void) memcpy(new_ptr, ptr, size);
+	free(ptr);
+	return (new_ptr);
+}
+
+/*
+ * memalign - allocate aligned memory
+ */
+void *
+memalign(size_t align, size_t size)
+{
+	void *ret;
+
+	/* Validate alignment */
+	if (align == 0 || (align & (align - 1)) != 0) {
+		errno = EINVAL;
+		return (NULL);
+	}
+
+	/* Fast path: fully initialized */
+	if (__builtin_expect(interpose_state == INTERPOSE_READY, 1)) {
+		extern void *umem_memalign(size_t, size_t);
+		return (umem_memalign(align, size));
+	}
+
+	/*
+	 * Bootstrap phase: use libc_memalign if available,
+	 * otherwise use regular malloc (may not be aligned as requested)
+	 */
+	if (interpose_state == INTERPOSE_BOOTSTRAP && libc_memalign != NULL) {
+		ret = libc_memalign(align, size);
+		if (ret != NULL)
+			track_bootstrap_ptr(ret);
+		return (ret);
+	}
+
+	/* Fall back to malloc */
+	return (malloc(size));
+}
+
+/*
+ * posix_memalign - POSIX aligned allocation
+ */
+int
+posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+	void *ptr;
+
+	ptr = memalign(alignment, size);
+	if (ptr != NULL) {
+		*memptr = ptr;
+		return (0);
+	}
+
+	return (errno);
+}
+
+/*
+ * valloc - page-aligned allocation
+ */
+void *
+valloc(size_t size)
+{
+	extern size_t pagesize;
+	return (memalign(pagesize, size));
+}

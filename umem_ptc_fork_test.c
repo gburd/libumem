@@ -525,15 +525,15 @@ test_rapid_fork_stress(void)
 				_exit(1);
 			umem_free(p, SMALL_SIZE);
 
-			/* Also test malloc/free path */
-			p = malloc(MEDIUM_SIZE);
+			/* Second allocation test */
+			p = umem_alloc(MEDIUM_SIZE, UMEM_DEFAULT);
 			if (p == NULL)
 				_exit(1);
 			fill_buf(p, MEDIUM_SIZE, (unsigned char)(i + 0x80));
 			if (!verify_buf(p, MEDIUM_SIZE,
 			    (unsigned char)(i + 0x80)))
 				_exit(1);
-			free(p);
+			umem_free(p, MEDIUM_SIZE);
 
 			_exit(0);
 		}

@@ -42,6 +42,7 @@
 #include "umem_impl.h"
 
 #include "misc.h"
+#include "malloc_guard.h"
 
 /* External: umem readiness state */
 extern int umem_ready;
@@ -68,7 +69,11 @@ typedef struct bootstrap_header {
 } bootstrap_header_t;
 
 
-static void *
+/*
+ * Exposed for malloc_interpose.c
+ * These functions are used during bootstrap phase when umem is not yet ready.
+ */
+void *
 bootstrap_malloc(size_t size)
 {
 	bootstrap_header_t *hdr;
@@ -84,7 +89,7 @@ bootstrap_malloc(size_t size)
 	return (void *)(hdr + 1);
 }
 
-static int
+int
 is_bootstrap_pointer(void *buf)
 {
 	bootstrap_header_t *hdr;
@@ -96,7 +101,7 @@ is_bootstrap_pointer(void *buf)
 	return (hdr->magic == BOOTSTRAP_MAGIC);
 }
 
-static void
+void
 bootstrap_free(void *buf)
 {
 	bootstrap_header_t *hdr;
@@ -129,15 +134,10 @@ typedef struct malloc_data {
 } malloc_data_t;
 
 /*
- * On non-x86, we use weak aliases so malloc/free resolve to umem_malloc
- * and umem_malloc_free.  On x86, malloc and free are defined as thin
- * dispatchers that call through the PTC generated code (if enabled)
- * or fall through to umem_malloc/umem_malloc_free.
+ * NOTE: malloc/free interposition is now handled by malloc_interpose.c
+ * which uses dlsym(RTLD_NEXT) to avoid pthread_create deadlocks.
+ * The weak symbol pragmas have been removed.
  */
-#if !defined(__amd64__) && !defined(__x86_64__)
-#pragma weak malloc = umem_malloc
-#pragma weak free = umem_malloc_free
-#endif /* !_x86 */
 
 /*
  * On Linux, the PTC genasm code sets these function pointers after
@@ -173,6 +173,16 @@ umem_malloc(size_t size_arg)
 	if (umem_ready != UMEM_READY)
 		return (bootstrap_malloc(size_arg));
 
+	/*
+	 * Check for recursive malloc call (e.g., pthread_create -> malloc ->
+	 * pthread_getspecific -> malloc). Use bootstrap allocator to break
+	 * the cycle. This uses initial-exec TLS for single-instruction access.
+	 */
+	if (umem_enter_malloc() > 0) {
+		umem_exit_malloc();
+		return (bootstrap_malloc(size_arg));
+	}
+
 	size = size_arg + sizeof (malloc_data_t);
 
 #ifdef _LP64
@@ -182,11 +192,13 @@ umem_malloc(size_t size_arg)
 	}
 #endif
 	if (size < size_arg) {
+		umem_exit_malloc();
 		errno = ENOMEM;			/* overflow */
 		return (NULL);
 	}
 	ret = (malloc_data_t *)_umem_alloc(size, UMEM_DEFAULT);
 	if (ret == NULL) {
+		umem_exit_malloc();
 		if (size <= UMEM_MAXBUF)
 			errno = EAGAIN;
 		else
@@ -224,37 +236,20 @@ umem_malloc(size_t size_arg)
 		ret++;
 	}
 
+	umem_exit_malloc();
 	return ((void *)ret);
 }
 
-void *
-calloc(size_t nelem, size_t elsize)
-{
-	size_t size = nelem * elsize;
-	void *retval;
-
-	if (nelem > 0 && elsize > 0 && size/nelem != elsize) {
-		errno = ENOMEM;				/* overflow */
-		return (NULL);
-	}
-
-	retval = malloc(size);
-	if (retval == NULL)
-		return (NULL);
-
-	(void) memset(retval, 0, size);
-	return (retval);
-}
-
 /*
- * memalign uses vmem_xalloc to do its work.
- *
- * in 64-bit, the memaligned buffer always has two tags.  This simplifies the
- * code.
+ * NOTE: calloc() is now in malloc_interpose.c
  */
 
+/*
+ * umem_memalign: internal memalign implementation
+ * Used by malloc_interpose.c when umem is fully initialized
+ */
 void *
-memalign(size_t align, size_t size_arg)
+umem_memalign(size_t align, size_t size_arg)
 {
 	size_t size;
 	uintptr_t phase;
@@ -274,7 +269,7 @@ memalign(size_t align, size_t size_arg)
 	 */
 	if (align <= UMEM_ALIGN ||
 	    (align <= UMEM_SECOND_ALIGN && size_arg >= UMEM_SECOND_ALIGN))
-		return (malloc(size_arg));
+		return (umem_malloc(size_arg));
 
 #ifdef _LP64
 	overhead = 2 * sizeof (malloc_data_t);
@@ -333,21 +328,9 @@ memalign(size_t align, size_t size_arg)
 	return ((void *)ret);
 }
 
-int
-posix_memalign(void **memptr, size_t alignment, size_t size)
-{
-	*memptr = memalign(alignment, size);
-	if (*memptr) {
-		return 0;
-	}
-	return errno;
-}
-
-void *
-valloc(size_t size)
-{
-	return (memalign(pagesize, size));
-}
+/*
+ * NOTE: memalign, posix_memalign, and valloc are now in malloc_interpose.c
+ */
 
 /*
  * process_free:
@@ -359,9 +342,11 @@ valloc(size_t size)
  * On success, returns the data size through *data_size_arg, if (!is_free).
  *
  * Preserves errno, since free()'s semantics require it.
+ *
+ * Exposed for malloc_interpose.c
  */
 
-static int
+int
 process_free(void *buf_arg,
     int do_free,		/* free the buffer, or just get its size? */
     size_t *data_size_arg)	/* output: bytes of data in buf_arg */
@@ -522,73 +507,10 @@ umem_malloc_free(void *buf)
 }
 
 /*
- * On x86 platforms, malloc() and free() are dispatchers that check
- * whether PTC genasm has been enabled.  If so, they call through the
- * generated assembly code (which handles small allocations via per-thread
- * caches and falls back to umem_malloc/umem_malloc_free for everything else).
- * If PTC is not enabled, they call the real implementations directly.
+ * NOTE: malloc(), free(), calloc(), realloc(), memalign(), posix_memalign(),
+ * and valloc() are now in malloc_interpose.c which handles both the bootstrap
+ * phase and dispatching to umem once initialized.
  */
-#if defined(__amd64__) || defined(__x86_64__)
-
-#ifdef __sun
-/*
- * On Solaris, _malloc/_free are in writable text segments and the PLT
- * handles dispatching via weak aliases.  malloc/free are defined as
- * weak aliases to _malloc/_free in the mapfile.
- */
-#else
-void *
-malloc(size_t size_arg)
-{
-	if (__builtin_expect(umem_genasm_malloc_ptr != NULL, 1))
-		return (umem_genasm_malloc_ptr(size_arg));
-	return (umem_malloc(size_arg));
-}
-
-void
-free(void *buf)
-{
-	if (__builtin_expect(umem_genasm_free_ptr != NULL, 1))
-		return (umem_genasm_free_ptr(buf));
-	umem_malloc_free(buf);
-}
-#endif /* __sun */
-
-#endif /* __amd64__ || __x86_64__ */
-
-void *
-realloc(void *buf_arg, size_t newsize)
-{
-	size_t oldsize;
-	void *buf;
-
-	if (buf_arg == NULL)
-		return (malloc(newsize));
-
-	if (newsize == 0) {
-		free(buf_arg);
-		return (NULL);
-	}
-
-	/*
-	 * get the old data size without freeing the buffer
-	 */
-	if (process_free(buf_arg, 0, &oldsize) == 0) {
-		errno = EINVAL;
-		return (NULL);
-	}
-
-	if (newsize == oldsize)		/* size didn't change */
-		return (buf_arg);
-
-	buf = malloc(newsize);
-	if (buf == NULL)
-		return (NULL);
-
-	(void) memcpy(buf, buf_arg, MIN(newsize, oldsize));
-	free(buf_arg);
-	return (buf);
-}
 
 /*
  * _malloc and _free are the PTC (per-thread cache) trampoline entry points.
