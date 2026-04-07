@@ -43,6 +43,7 @@ core.*
 # Benchmark artifacts
 test/bench/bench_allocators
 test/bench/bench_main
+test/bench/bench_depot_contention
 test/bench/results/
 test/test_main
 test/property/prop_alloc_free
@@ -50,6 +51,12 @@ test/property/prop_alloc_free2
 test/property/prop_cache
 test/property/prop_fragmentation
 test/property/prop_fragmentation_test
+
+# Integration test executables
+test/integration/test_signals
+test/integration/test_oom
+test/integration/test_multithreaded
+test/integration/test_realloc_bootstrap
 
 # Nix build outputs
 result
@@ -95,8 +102,17 @@ test.c
 *.gcno
 *.gcda
 *.gcov
+coverage.info
+coverage.info.*
+coverage_*.info
 
 # Test executables in root (from test runs)
 /test_oom
 /test_pthread_simple
 /test_signals
+
+# Ad-hoc test files (experiments, debugging)
+test_*.c
+test_*
+!test/
+test_run_output.txt
