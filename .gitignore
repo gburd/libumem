@@ -111,8 +111,8 @@ coverage_*.info
 /test_pthread_simple
 /test_signals
 
-# Ad-hoc test files (experiments, debugging)
-test_*.c
-test_*
-!test/
-test_run_output.txt
+# Ad-hoc test files in root (experiments, debugging)
+/test_*.c
+/test_*
+!/test/
+/test_run_output.txt

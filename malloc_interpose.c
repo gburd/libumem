@@ -408,6 +408,18 @@ calloc(size_t nelem, size_t elsize)
 		(void) memset(ret, 0, size);
 	in_calloc = 0;
 
+	/*
+	 * Reset calloc buffer after TLS initialization completes.
+	 * Allocations from calloc_buffer can never be freed (static buffer),
+	 * and are only used during pthread TLS setup. Once in_calloc returns
+	 * to 0, TLS init is complete and we can reuse the buffer for the
+	 * next thread. This fixes the bug where creating 8+ threads would
+	 * exhaust the 2KB buffer and cause pthread_create to fail.
+	 */
+	if (calloc_buffer_used > 0 && in_calloc == 0) {
+		calloc_buffer_used = 0;
+	}
+
 	return (ret);
 }
 

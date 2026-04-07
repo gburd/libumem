@@ -13,7 +13,9 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_signals \
 		  test/integration/test_oom \
 		  test/integration/test_multithreaded \
-		  test/integration/test_realloc_bootstrap
+		  test/integration/test_realloc_bootstrap \
+		  test/integration/test_debug_features \
+		  test/integration/test_threading_stress
 
 libumem_la_LDFLAGS = -lpthread $(NUMA_LIBS)
 
@@ -192,6 +194,14 @@ test_integration_test_oom_LDFLAGS = -pthread
 test_integration_test_realloc_bootstrap_SOURCES = test/integration/test_realloc_bootstrap.c test/munit.c
 test_integration_test_realloc_bootstrap_LDADD = libumem.la libumem_malloc.la
 test_integration_test_realloc_bootstrap_LDFLAGS = -pthread
+
+test_integration_test_debug_features_SOURCES = test/integration/test_debug_features.c test/munit.c
+test_integration_test_debug_features_LDADD = libumem.la libumem_malloc.la
+test_integration_test_debug_features_LDFLAGS = -pthread
+
+test_integration_test_threading_stress_SOURCES = test/integration/test_threading_stress.c test/munit.c
+test_integration_test_threading_stress_LDADD = libumem.la libumem_malloc.la
+test_integration_test_threading_stress_LDFLAGS = -pthread
 
 man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
