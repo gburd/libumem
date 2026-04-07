@@ -42,6 +42,7 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <malloc.h>
 
 #include "umem_impl.h"
 #include "malloc_guard.h"
@@ -59,6 +60,13 @@ extern void umem_malloc_free(void *);
 extern void *bootstrap_malloc(size_t);
 extern void bootstrap_free(void *);
 extern int is_bootstrap_pointer(void *);
+
+/* Bootstrap header structure (from malloc.c) */
+#define BOOTSTRAP_MAGIC 0xB007B007B007B007ULL
+typedef struct bootstrap_header {
+	uint64_t magic;
+	size_t size;
+} bootstrap_header_t;
 
 /* State machine for interposition */
 typedef enum {
@@ -107,6 +115,26 @@ is_libc_pointer(void *ptr)
 		}
 	}
 	return (0);
+}
+
+/*
+ * Get the usable size of a bootstrap allocation.
+ * Bootstrap allocations have a header before the returned pointer.
+ */
+static size_t
+get_bootstrap_size(void *ptr)
+{
+	bootstrap_header_t *hdr;
+
+	if (ptr == NULL)
+		return (0);
+
+	hdr = (bootstrap_header_t *)ptr - 1;
+	if (hdr->magic != BOOTSTRAP_MAGIC)
+		return (0);
+
+	/* Return data size (total size minus header) */
+	return (hdr->size - sizeof(bootstrap_header_t));
 }
 
 /*
@@ -401,20 +429,27 @@ realloc(void *ptr, size_t size)
 	}
 
 	/*
-	 * For bootstrap and libc pointers, we can't determine the old size
-	 * easily, so we have to use a conservative approach:
-	 * allocate new, copy what we can, free old.
+	 * For bootstrap pointers, get size from header.
+	 * For libc pointers, use malloc_usable_size().
 	 */
-	if (is_bootstrap_pointer(ptr) || is_libc_pointer(ptr)) {
+	if (is_bootstrap_pointer(ptr)) {
 		new_ptr = malloc(size);
 		if (new_ptr == NULL)
 			return (NULL);
 
-		/*
-		 * We don't know the old size, so we just copy the new size.
-		 * This is safe because memcpy won't read past what we write to.
-		 */
-		(void) memcpy(new_ptr, ptr, size);
+		old_size = get_bootstrap_size(ptr);
+		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
+		free(ptr);
+		return (new_ptr);
+	}
+
+	if (is_libc_pointer(ptr)) {
+		new_ptr = malloc(size);
+		if (new_ptr == NULL)
+			return (NULL);
+
+		old_size = malloc_usable_size(ptr);
+		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
 		free(ptr);
 		return (new_ptr);
 	}
@@ -456,7 +491,8 @@ realloc(void *ptr, size_t size)
 	if (new_ptr == NULL)
 		return (NULL);
 
-	(void) memcpy(new_ptr, ptr, size);
+	old_size = malloc_usable_size(ptr);
+	(void) memcpy(new_ptr, ptr, MIN(old_size, size));
 	free(ptr);
 	return (new_ptr);
 }

@@ -12,7 +12,8 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/bench_depot_contention \
 		  test/integration/test_signals \
 		  test/integration/test_oom \
-		  test/integration/test_multithreaded
+		  test/integration/test_multithreaded \
+		  test/integration/test_realloc_bootstrap
 
 libumem_la_LDFLAGS = -lpthread $(NUMA_LIBS)
 
@@ -187,6 +188,10 @@ test_integration_test_signals_LDFLAGS = -pthread
 test_integration_test_oom_SOURCES = test/integration/test_oom.c test/munit.c
 test_integration_test_oom_LDADD = libumem.la
 test_integration_test_oom_LDFLAGS = -pthread
+
+test_integration_test_realloc_bootstrap_SOURCES = test/integration/test_realloc_bootstrap.c test/munit.c
+test_integration_test_realloc_bootstrap_LDADD = libumem.la libumem_malloc.la
+test_integration_test_realloc_bootstrap_LDFLAGS = -pthread
 
 man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
