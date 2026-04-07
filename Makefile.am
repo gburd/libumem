@@ -141,17 +141,21 @@ umem_ptc_bench_LDFLAGS = -pthread
 # New test suite - unified runner with all unit tests
 test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_umem_alloc.c \
+			 test/unit/test_umem_advanced.c \
 			 test/unit/test_umem_cache.c \
 			 test/unit/test_umem_align.c \
 			 test/unit/test_umem_debug.c \
 			 test/unit/test_vmem.c \
+			 test/unit/test_vmem_sbrk.c \
+			 test/unit/test_umem_hooks.c \
 			 test/unit/test_error_paths.c \
 			 test/unit/test_rare_flags.c \
 			 test/unit/test_boundary_conditions.c \
 			 test/unit/test_umem_audit.c \
 			 test/unit/test_malloc.c \
 			 test/unit/test_envvar.c \
-			 test/unit/test_umem_fail.c
+			 test/unit/test_umem_fail.c \
+			 test/unit/test_overflow_fixes.c
 test_test_main_LDADD = libumem.la libumem_malloc.la
 test_test_main_LDFLAGS = -pthread
 

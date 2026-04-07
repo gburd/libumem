@@ -293,7 +293,7 @@ vmem_sbrk_arena(vmem_alloc_t **a_out, vmem_free_t **f_out)
 			heap_size = 0;
 		} else if (heap_size != 0 && !ISP2(heap_size)) {
 			heap_size = 0;
-			log_message("ignoring bad pagesize: 0x%p\n", heap_size);
+			log_message("ignoring bad pagesize: 0x%zx\n", heap_size);
 		}
 		if (heap_size <= real_pagesize) {
 			heap_size = real_pagesize;
@@ -307,7 +307,7 @@ vmem_sbrk_arena(vmem_alloc_t **a_out, vmem_free_t **f_out)
 			if (memcntl(NULL, 0, MC_HAT_ADVISE, (char *)&mha, 0, 0)
 			    == -1) {
 				log_message("unable to set MAPSIZE_BSSBRK to "
-				    "0x%p\n", heap_size);
+				    "0x%zx\n", heap_size);
 				heap_size = real_pagesize;
 			}
 #else

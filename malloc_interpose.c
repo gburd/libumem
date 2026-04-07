@@ -355,8 +355,18 @@ free(void *ptr)
 void *
 calloc(size_t nelem, size_t elsize)
 {
-	size_t size = nelem * elsize;
+	size_t size;
 	void *ret;
+
+	/* Check for overflow BEFORE any size calculations */
+	if (nelem > 0 && elsize > 0) {
+		if (SIZE_MAX / elsize < nelem) {
+			errno = ENOMEM;
+			return (NULL);
+		}
+	}
+
+	size = nelem * elsize;
 
 	/*
 	 * Handle dlsym's calloc calls with static buffer.
@@ -364,6 +374,11 @@ calloc(size_t nelem, size_t elsize)
 	 */
 	if (in_dlsym) {
 		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
+		/* Also check that alignment doesn't overflow */
+		if (aligned_size < size) {
+			errno = ENOMEM;
+			return (NULL);
+		}
 		if (dlsym_buffer_used + aligned_size <= DLSYM_BUFFER_SIZE) {
 			ret = &dlsym_buffer[dlsym_buffer_used];
 			dlsym_buffer_used += aligned_size;
@@ -382,6 +397,11 @@ calloc(size_t nelem, size_t elsize)
 	 */
 	if (in_calloc > 0) {
 		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
+		/* Also check that alignment doesn't overflow */
+		if (aligned_size < size) {
+			errno = ENOMEM;
+			return (NULL);
+		}
 		if (calloc_buffer_used + aligned_size <= CALLOC_BUFFER_SIZE) {
 			ret = &calloc_buffer[calloc_buffer_used];
 			calloc_buffer_used += aligned_size;
@@ -389,12 +409,6 @@ calloc(size_t nelem, size_t elsize)
 			return (ret);
 		}
 		/* Buffer exhausted */
-		return (NULL);
-	}
-
-	/* Check for overflow */
-	if (nelem > 0 && elsize > 0 && size / nelem != elsize) {
-		errno = ENOMEM;
 		return (NULL);
 	}
 

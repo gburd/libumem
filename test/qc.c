@@ -14,12 +14,6 @@
 
 #include "qc.h"
 
-// TODO: fix these...
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wimplicit-function-declaration"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wint-conversion"
-#pragma GCC diagnostic ignored "-Wpedantic"
 
 typedef void (*QCC_genRaw)(void *ptr);
 typedef void (*QCC_genRawR)(void *ptr, void *from, void *to);
@@ -393,7 +387,7 @@ QCC_showByte(void *value, int len)
 static char *
 QCC_showArrayByte(void *value, int n)
 {
-  return QCC_showSimpleArray(value, sizeof(long), QCC_showByte, n);
+  return QCC_showSimpleArray(value, sizeof(uint8_t), QCC_showByte, n);
 }
 
 void
@@ -412,19 +406,19 @@ QCC_genByteAt(uint8_t *b)
 QCC_GenValue *
 QCC_genArrayByteLR(int len, long from, long to)
 {
-  return QCC_genArrayOfR(len, (QCC_genRawR)QCC_genByteAtR, &from, &to, sizeof(long), QCC_showArrayByte, QCC_freeSimpleValue);
+  return QCC_genArrayOfR(len, (QCC_genRawR)QCC_genByteAtR, &from, &to, sizeof(uint8_t), QCC_showArrayByte, QCC_freeSimpleValue);
 }
 
 QCC_GenValue *
 QCC_genArrayByteL(int len)
 {
-  return QCC_genArrayOf(len, (QCC_genRaw)QCC_genByteAt, sizeof(long), QCC_showArrayByte, QCC_freeSimpleValue);
+  return QCC_genArrayOf(len, (QCC_genRaw)QCC_genByteAt, sizeof(uint8_t), QCC_showArrayByte, QCC_freeSimpleValue);
 }
 
 QCC_GenValue *
 QCC_genArrayByte()
 {
-  return QCC_genArrayOf(50, (QCC_genRaw)QCC_genByteAt, sizeof(long), QCC_showArrayByte, QCC_freeSimpleValue);
+  return QCC_genArrayOf(50, (QCC_genRaw)QCC_genByteAt, sizeof(uint8_t), QCC_showArrayByte, QCC_freeSimpleValue);
 }
 
 static char *
@@ -557,6 +551,65 @@ QCC_GenValue *
 QCC_genArrayChar()
 {
   return QCC_genArrayOf(50, (QCC_genRaw)QCC_genCharAt, sizeof(char), QCC_showArrayChar, QCC_freeSimpleValue);
+}
+
+static char *
+QCC_showArrayString(void *value, int n)
+{
+  char **strings = (char **)value;
+  int totalLen = 2; /* for "[]" */
+  int i;
+
+  /* Calculate total length needed */
+  for (i = 0; i < n; i++) {
+    totalLen += strlen(strings[i]) + 4; /* +4 for quotes and separator */
+  }
+
+  char *result = malloc(totalLen + 1);
+  sprintf(result, "[");
+  int currLen = 1;
+
+  for (i = 0; i < n; i++) {
+    if (i == 0) {
+      sprintf(result + currLen, "\"%s\"", strings[i]);
+      currLen += strlen(strings[i]) + 2;
+    } else {
+      sprintf(result + currLen, ", \"%s\"", strings[i]);
+      currLen += strlen(strings[i]) + 4;
+    }
+  }
+  sprintf(result + currLen, "]");
+
+  return result;
+}
+
+static void
+QCC_freeArrayString(void *value)
+{
+  free(value);
+}
+
+QCC_GenValue *
+QCC_genArrayStringL(int len, int strLen)
+{
+  int n = random() % len;
+  char **arr = malloc(n * sizeof(char *));
+
+  int i;
+  for (i = 0; i < n; i++) {
+    QCC_GenValue *str = QCC_genStringL(strLen);
+    arr[i] = (char *)str->value;
+    /* Keep only the string value, free the wrapper */
+    free(str);
+  }
+
+  return QCC_initGenValue(arr, n, QCC_showArrayString, QCC_freeArrayString);
+}
+
+QCC_GenValue *
+QCC_genArrayString()
+{
+  return QCC_genArrayStringL(50, 50);
 }
 
 /***********************************************************************
@@ -697,7 +750,7 @@ QCC_labelN(QCC_Stamp **stamps, char *label, int n)
 void
 QCC_label(QCC_Stamp **stamps, char *label)
 {
-  return QCC_labelN(stamps, label, 1);
+  QCC_labelN(stamps, label, 1);
 }
 
 static void
@@ -829,4 +882,3 @@ QCC_testForAll(int num, int maxFail, QCC_property prop, int genNum, ...)
 
   return 0;
 }
-#pragma GCC diagnostic pop

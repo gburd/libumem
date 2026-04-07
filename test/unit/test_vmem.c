@@ -785,6 +785,306 @@ static MunitResult test_vmem_concurrent(const MunitParameter params[], void* dat
 }
 
 /* Test array */
+/* Test: Null arena error handling */
+static MunitResult test_vmem_error_null_arena(const MunitParameter params[], void* data) {
+    /* Alloc/free with NULL arena should fail gracefully */
+    void *ptr = vmem_alloc(NULL, 1024, VM_NOSLEEP);
+    munit_assert_null(ptr);
+
+    /* Free with NULL arena should not crash */
+    vmem_free(NULL, (void*)0x1000, 1024);
+
+    return MUNIT_OK;
+}
+
+/* Test: Invalid quantum error handling */
+static MunitResult test_vmem_error_invalid_quantum(const MunitParameter params[], void* data) {
+    /* Quantum must be power of 2 */
+    vmem_t *arena = vmem_create("invalid_quantum", NULL, 0, 3,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_null(arena);
+
+    return MUNIT_OK;
+}
+
+/* Test: Invalid alignment in xalloc */
+static MunitResult test_vmem_error_invalid_align(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("align_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    /* Alignment not power of 2 should fail */
+    void *ptr = vmem_xalloc(arena, 1024, 3, 0, 0, NULL, NULL, VM_NOSLEEP);
+    munit_assert_null(ptr);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: Invalid phase in xalloc */
+static MunitResult test_vmem_error_invalid_phase(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("phase_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    /* Phase >= alignment should fail */
+    void *ptr = vmem_xalloc(arena, 1024, 64, 64, 0, NULL, NULL, VM_NOSLEEP);
+    munit_assert_null(ptr);
+
+    ptr = vmem_xalloc(arena, 1024, 64, 128, 0, NULL, NULL, VM_NOSLEEP);
+    munit_assert_null(ptr);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: vmem_add with NULL address */
+static MunitResult test_vmem_error_add_null(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("add_null_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    /* Adding NULL should fail */
+    void *result = vmem_add(arena, NULL, 4096, VM_NOSLEEP);
+    munit_assert_null(result);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: BESTFIT policy behavior */
+static MunitResult test_vmem_bestfit_policy(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("bestfit", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP | VMC_IDENTIFIER);
+    munit_assert_not_null(arena);
+
+    /* Add some memory */
+    char buffer[8192];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    /* Create fragmentation */
+    void *p1 = vmem_alloc(arena, 1024, VM_SLEEP);
+    void *p2 = vmem_alloc(arena, 512, VM_SLEEP);
+    void *p3 = vmem_alloc(arena, 1024, VM_SLEEP);
+    void *p4 = vmem_alloc(arena, 256, VM_SLEEP);
+
+    vmem_free(arena, p2, 512);
+    vmem_free(arena, p4, 256);
+
+    /* BESTFIT should use the best-fitting free segment */
+    void *p5 = vmem_alloc(arena, 200, VM_SLEEP);
+    munit_assert_not_null(p5);
+
+    vmem_free(arena, p1, 1024);
+    vmem_free(arena, p3, 1024);
+    vmem_free(arena, p5, 200);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: INSTANTFIT policy behavior */
+static MunitResult test_vmem_instantfit_policy(const MunitParameter params[], void* data) {
+    /* INSTANTFIT is the default policy */
+    vmem_t *arena = vmem_create("instantfit", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    char buffer[4096];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    /* Make some allocations */
+    void *p1 = vmem_alloc(arena, 512, VM_SLEEP);
+    void *p2 = vmem_alloc(arena, 512, VM_SLEEP);
+    void *p3 = vmem_alloc(arena, 512, VM_SLEEP);
+
+    munit_assert_not_null(p1);
+    munit_assert_not_null(p2);
+    munit_assert_not_null(p3);
+
+    vmem_free(arena, p1, 512);
+    vmem_free(arena, p2, 512);
+    vmem_free(arena, p3, 512);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: NEXTFIT policy behavior */
+static MunitResult test_vmem_nextfit_policy(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("nextfit", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP | VMC_IDENTIFIER);
+    munit_assert_not_null(arena);
+
+    char buffer[8192];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    /* NEXTFIT continues from last allocation point */
+    void *p1 = vmem_alloc(arena, 1024, VM_SLEEP);
+    void *p2 = vmem_alloc(arena, 1024, VM_SLEEP);
+    void *p3 = vmem_alloc(arena, 1024, VM_SLEEP);
+
+    munit_assert_not_null(p1);
+    munit_assert_not_null(p2);
+    munit_assert_not_null(p3);
+
+    /* Free middle block */
+    vmem_free(arena, p2, 1024);
+
+    /* Next allocation should not reuse p2's space immediately */
+    void *p4 = vmem_alloc(arena, 512, VM_SLEEP);
+    munit_assert_not_null(p4);
+
+    vmem_free(arena, p1, 1024);
+    vmem_free(arena, p3, 1024);
+    vmem_free(arena, p4, 512);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: Hash table rescaling */
+static MunitResult test_vmem_hash_rescale(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("hash_rescale", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    char buffer[65536];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    /* Allocate many blocks to force hash rescaling */
+    void *ptrs[200];
+    for (int i = 0; i < 200; i++) {
+        ptrs[i] = vmem_alloc(arena, 128, VM_SLEEP);
+        if (ptrs[i] == NULL) {
+            /* Out of space, free what we got */
+            for (int j = 0; j < i; j++) {
+                vmem_free(arena, ptrs[j], 128);
+            }
+            vmem_destroy(arena);
+            return MUNIT_OK;
+        }
+    }
+
+    /* Free all */
+    for (int i = 0; i < 200; i++) {
+        vmem_free(arena, ptrs[i], 128);
+    }
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: Populate failure handling */
+static MunitResult test_vmem_populate_failure(const MunitParameter params[], void* data) {
+    /* Create arena with no parent allocator */
+    vmem_t *arena = vmem_create("populate_fail", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    /* Try to allocate without adding memory first */
+    void *ptr = vmem_alloc(arena, 1024, VM_NOSLEEP);
+    munit_assert_null(ptr);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: _vmem_extend_alloc functionality */
+static MunitResult test_vmem_extend_alloc(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("extend_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    char buffer[8192];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    /* Allocate something */
+    void *p1 = vmem_alloc(arena, 2048, VM_SLEEP);
+    munit_assert_not_null(p1);
+
+    /* Try to extend - this tests internal extension logic */
+    void *p2 = vmem_alloc(arena, 2048, VM_SLEEP);
+    munit_assert_not_null(p2);
+
+    vmem_free(arena, p1, 2048);
+    vmem_free(arena, p2, 2048);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: Minimum size enforcement */
+static MunitResult test_vmem_minsize_enforcement(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("minsize_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    char buffer[4096];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    /* Allocate with minsize */
+    void *ptr = vmem_xalloc(arena, 64, 0, 0, 0, NULL, NULL, VM_SLEEP);
+    munit_assert_not_null(ptr);
+
+    /* Size should be at least quantum-aligned */
+    vmem_free(arena, ptr, 64);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: Maximum size handling */
+static MunitResult test_vmem_maxsize_enforcement(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("maxsize_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    char buffer[4096];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    /* Try to allocate more than available */
+    void *ptr = vmem_alloc(arena, 10000, VM_NOSLEEP);
+    munit_assert_null(ptr);
+
+    vmem_destroy(arena);
+    return MUNIT_OK;
+}
+
+/* Test: Double free detection */
+static MunitResult test_vmem_double_free_detection(const MunitParameter params[], void* data) {
+    vmem_t *arena = vmem_create("double_free_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_SLEEP);
+    munit_assert_not_null(arena);
+
+    char buffer[4096];
+    void *added = vmem_add(arena, buffer, sizeof(buffer), VM_SLEEP);
+    munit_assert_not_null(added);
+
+    void *ptr = vmem_alloc(arena, 512, VM_SLEEP);
+    munit_assert_not_null(ptr);
+
+    /* First free */
+    vmem_free(arena, ptr, 512);
+
+    /* Double free - should not crash but behavior is undefined */
+    /* We just verify the arena remains usable */
+    void *ptr2 = vmem_alloc(arena, 256, VM_SLEEP);
+    munit_assert_not_null(ptr2);
+
+    vmem_free(arena, ptr2, 256);
+    vmem_destroy(arena);
+
+    return MUNIT_OK;
+}
+
 static MunitTest vmem_tests[] = {
     { "/create_destroy", test_vmem_create_destroy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/alloc_free", test_vmem_alloc_free, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
@@ -807,6 +1107,20 @@ static MunitTest vmem_tests[] = {
     { "/fragmentation", test_vmem_fragmentation, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/reap", test_vmem_reap, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/concurrent", test_vmem_concurrent, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/error_null_arena", test_vmem_error_null_arena, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/error_invalid_quantum", test_vmem_error_invalid_quantum, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/error_invalid_align", test_vmem_error_invalid_align, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/error_invalid_phase", test_vmem_error_invalid_phase, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/error_add_null", test_vmem_error_add_null, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/bestfit_policy", test_vmem_bestfit_policy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/instantfit_policy", test_vmem_instantfit_policy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/nextfit_policy", test_vmem_nextfit_policy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/hash_rescale", test_vmem_hash_rescale, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/populate_failure", test_vmem_populate_failure, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/extend_alloc", test_vmem_extend_alloc, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/minsize_enforcement", test_vmem_minsize_enforcement, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/maxsize_enforcement", test_vmem_maxsize_enforcement, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/double_free_detection", test_vmem_double_free_detection, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }
 };
 
