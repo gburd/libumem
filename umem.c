@@ -809,6 +809,7 @@ extern thread_t _thr_self(void);
 #define CPUHINT_MAX()           INT_MAX
 
 #define CPU(mask)               (umem_cpus + (CPUHINT() & (mask)))
+#define CPU_CACHED(mask)        (umem_cpus + (get_cached_cpu_hint() & (mask)))
 static umem_cpu_t umem_startup_cpu = {  /* initial, single, cpu */
 	UMEM_CACHE_SIZE(0),
 	0
@@ -2099,6 +2100,12 @@ umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 	ccp->cc_prounds = ccp->cc_rounds;
 	ccp->cc_loaded = mp;
 	ccp->cc_rounds = rounds;
+
+	/*
+	 * Reset CPU hint cache on magazine reload to detect thread migration.
+	 * This ensures the cached hint stays fresh across potential CPU changes.
+	 */
+	reset_cpu_hint_cache();
 }
 
 /*
@@ -2116,7 +2123,7 @@ _umem_cache_alloc(umem_cache_t *cp, int umflag)
 	int flags_nfatal;
 
 retry:
-	ccp = UMEM_CPU_CACHE(cp, CPU(cp->cache_cpu_mask));
+	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 	(void) mutex_lock(&ccp->cc_lock);
 	for (;;) {
 		/*
@@ -2230,7 +2237,7 @@ retry:
 void
 _umem_cache_free(umem_cache_t *cp, void *buf)
 {
-	umem_cpu_cache_t *ccp = UMEM_CPU_CACHE(cp, CPU(cp->cache_cpu_mask));
+	umem_cpu_cache_t *ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 	umem_magazine_t *emp;
 	umem_magtype_t *mtp;
 
