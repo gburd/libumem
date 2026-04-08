@@ -116,3 +116,93 @@ coverage_*.info
 /test_*
 !/test/
 /test_run_output.txt
+
+# Build artifacts
+*.o
+*.lo
+*.la
+.libs/
+.deps/
+*.so
+*.so.*
+*.dylib
+*.a
+
+# Autotools generated
+/autom4te.cache/
+/aclocal.m4
+/compile
+/config.guess
+/config.h
+/config.h.in
+/config.log
+/config.status
+/config.sub
+/configure
+/depcomp
+/install-sh
+/libtool
+/ltmain.sh
+/m4/libtool.m4
+/m4/ltoptions.m4
+/m4/ltsugar.m4
+/m4/ltversion.m4
+/m4/lt~obsolete.m4
+/missing
+/stamp-h1
+Makefile
+Makefile.in
+
+# Test executables
+umem_test
+umem_test2
+umem_test3
+umem_ptc_test
+umem_ptc_fork_test
+umem_ptc_bench
+test/test_main
+test/property/prop_*
+test/bench/bench_*
+test/integration/test_*
+
+# Coverage files
+*.gcda
+*.gcno
+*.gcov
+coverage.info*
+test/coverage/
+
+# Editor backups
+*~
+*.bak
+*.swp
+*.backup
+.*.swp
+
+# Temporary files
+*.tmp
+
+# Build logs
+build.log
+test.log
+benchmark*.log
+
+# Session artifacts (agent-generated)
+*AGENT*.md
+*TASK_*.md
+*SESSION*.md
+*STATUS_*.md
+*WORK_COMPLETE*.md
+*INTEGRATION_WORK*.md
+*COMPILATION_FIXES*.md
+*SANITIZER_REPORT*.txt
+
+# Scripts for one-time migrations
+apply_*.sh
+apply_*.py
+
+# Experimental features not yet integrated
+depot_functions_lockfree.c
+umem_htm.[ch]
+umem_numa.[ch]
+umem_rseq.[ch]
