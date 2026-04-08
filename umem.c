@@ -643,6 +643,7 @@
 #include <sys/vmem_impl_user.h>
 #include "umem_base.h"
 #include "vmem_base.h"
+#include "umem_tcache.h"
 
 #if HAVE_SYS_PROCESSOR_H
 #include <sys/processor.h>
@@ -816,6 +817,12 @@ static umem_cpu_t umem_startup_cpu = {  /* initial, single, cpu */
 static uint32_t umem_cpu_mask = 0;                      /* global cpu mask */
 static umem_cpu_t *umem_cpus = &umem_startup_cpu;       /* cpu list */
 
+/*
+ * Per-thread cached CPU hint to reduce CPUHINT() syscall overhead.
+ * Initialized to -1 to force refresh on first access.
+ */
+__thread int cached_cpu_hint = -1;
+
 volatile uint32_t umem_reaping;
 
 thread_t                umem_update_thr;
@@ -909,7 +916,7 @@ umem_cache_t            umem_null_cache = {
 	ALLOC_TABLE_64, ALLOC_TABLE_64, ALLOC_TABLE_64, ALLOC_TABLE_64, \
 	ALLOC_TABLE_64, ALLOC_TABLE_64, ALLOC_TABLE_64, ALLOC_TABLE_64
 
-static umem_cache_t *umem_alloc_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT] = {
+umem_cache_t *umem_alloc_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT] = {
 	ALLOC_TABLE_1024,
 	ALLOC_TABLE_1024,
 	ALLOC_TABLE_1024,
@@ -1184,9 +1191,9 @@ umem_error(int error, umem_cache_t *cparg, void *bufarg)
 			    (uintptr_t)sp->slab_base) % cp->cache_chunksize;
 		if (buf != bufarg)
 			error = UMERR_BADBASE;
-		if (cp->cache_flags & UMF_BUFTAG)
+		if (unlikely(cp->cache_flags & UMF_BUFTAG))
 			btp = UMEM_BUFTAG(cp, buf);
-		if (cp->cache_flags & UMF_HASH) {
+		if (unlikely(cp->cache_flags & UMF_HASH)) {
 			(void) mutex_lock(&cp->cache_lock);
 			for (bcp = *UMEM_HASH(cp, buf); bcp; bcp = bcp->bc_next)
 				if (bcp->bc_addr == buf)
@@ -1271,7 +1278,7 @@ umem_error(int error, umem_cache_t *cparg, void *bufarg)
 	umem_printf("buffer=%p  bufctl=%p  cache: %s\n",
 	    bufarg, (void *)bcp, cparg->cache_name);
 
-	if (bcp != NULL && (cp->cache_flags & UMF_AUDIT) &&
+	if (bcp != NULL && unlikely(cp->cache_flags & UMF_AUDIT) &&
 	    error != UMERR_BADBUFCTL) {
 		int d;
 		timespec_t ts;
@@ -1452,7 +1459,7 @@ umem_log_enter(umem_log_header_t *lhp, void *data, size_t size)
 	_bcp->bc_timestamp = gethrtime();                               \
 	_bcp->bc_thread = thr_self();                                   \
 	_bcp->bc_depth = getpcstack(_bcp->bc_stack, umem_stack_depth,   \
-	    (cp != NULL) && (cp->cache_flags & UMF_CHECKSIGNAL));       \
+	    (cp != NULL) && unlikely(cp->cache_flags & UMF_CHECKSIGNAL));       \
 	_bcp->bc_lastlog = umem_log_enter((lp), _bcp,                   \
 	    UMEM_BUFCTL_AUDIT_SIZE);                                    \
 }
@@ -1486,10 +1493,16 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 	umem_bufctl_t *bcp;
 	vmem_t *vmp = cp->cache_arena;
 
+	/*
+	 * Slab coloring: rotate through different offsets to reduce
+	 * cache conflicts. Protected by cache_lock to prevent data races.
+	 */
+	(void) mutex_lock(&cp->cache_lock);
 	color = cp->cache_color + cp->cache_align;
 	if (color > cp->cache_maxcolor)
 		color = cp->cache_mincolor;
 	cp->cache_color = color;
+	(void) mutex_unlock(&cp->cache_lock);
 
 	slab = vmem_alloc(vmp, slabsize, UMEM_VMFLAGS(umflag));
 
@@ -1499,10 +1512,10 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 	ASSERT(P2PHASE((uintptr_t)slab, vmp->vm_quantum) == 0);
 
 	if (!(cp->cache_cflags & UMC_NOTOUCH) &&
-	    (cp->cache_flags & UMF_DEADBEEF))
+	    unlikely(cp->cache_flags & UMF_DEADBEEF))
 		copy_pattern(UMEM_UNINITIALIZED_PATTERN, slab, slabsize);
 
-	if (cache_flags & UMF_HASH) {
+	if (unlikely(cache_flags & UMF_HASH)) {
 		if ((sp = _umem_cache_alloc(umem_slab_cache, umflag)) == NULL)
 			goto slab_alloc_failure;
 		chunks = (slabsize - color) / chunksize;
@@ -1519,11 +1532,11 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 
 	ASSERT(chunks > 0);
 	while (chunks-- != 0) {
-		if (cache_flags & UMF_HASH) {
+		if (unlikely(cache_flags & UMF_HASH)) {
 			bcp = _umem_cache_alloc(cp->cache_bufctl_cache, umflag);
 			if (bcp == NULL)
 				goto bufctl_alloc_failure;
-			if (cache_flags & UMF_AUDIT) {
+			if (unlikely(cache_flags & UMF_AUDIT)) {
 				umem_bufctl_audit_t *bcap =
 				    (umem_bufctl_audit_t *)bcp;
 				bzero(bcap, UMEM_BUFCTL_AUDIT_SIZE);
@@ -1534,12 +1547,12 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 		} else {
 			bcp = UMEM_BUFCTL(cp, buf);
 		}
-		if (cache_flags & UMF_BUFTAG) {
+		if (unlikely(cache_flags & UMF_BUFTAG)) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
 			btp->bt_redzone = UMEM_REDZONE_PATTERN;
 			btp->bt_bufctl = bcp;
 			btp->bt_bxstat = (intptr_t)bcp ^ UMEM_BUFTAG_FREE;
-			if (cache_flags & UMF_DEADBEEF) {
+			if (unlikely(cache_flags & UMF_DEADBEEF)) {
 				copy_pattern(UMEM_FREE_PATTERN, buf,
 				    cp->cache_verify);
 			}
@@ -1582,7 +1595,7 @@ umem_slab_destroy(umem_cache_t *cp, umem_slab_t *sp)
 	vmem_t *vmp = cp->cache_arena;
 	void *slab = (void *)P2ALIGN((uintptr_t)sp->slab_base, vmp->vm_quantum);
 
-	if (cp->cache_flags & UMF_HASH) {
+	if (unlikely(cp->cache_flags & UMF_HASH)) {
 		umem_bufctl_t *bcp;
 		while ((bcp = sp->slab_head) != NULL) {
 			sp->slab_head = bcp->bc_next;
@@ -1640,7 +1653,7 @@ umem_slab_alloc(umem_cache_t *cp, int umflag)
 		ASSERT(sp->slab_refcnt == sp->slab_chunks);
 	}
 
-	if (cp->cache_flags & UMF_HASH) {
+	if (unlikely(cp->cache_flags & UMF_HASH)) {
 		/*
 		 * Add buffer to allocated-address hash table.
 		 */
@@ -1676,7 +1689,7 @@ umem_slab_free(umem_cache_t *cp, void *buf)
 	(void) mutex_lock(&cp->cache_lock);
 	cp->cache_slab_free++;
 
-	if (cp->cache_flags & UMF_HASH) {
+	if (unlikely(cp->cache_flags & UMF_HASH)) {
 		/*
 		 * Look up buffer in allocated-address hash table.
 		 */
@@ -1702,7 +1715,7 @@ umem_slab_free(umem_cache_t *cp, void *buf)
 	}
 
 	if ((cp->cache_flags & (UMF_AUDIT | UMF_BUFTAG)) == UMF_AUDIT) {
-		if (cp->cache_flags & UMF_CONTENTS)
+		if (unlikely(cp->cache_flags & UMF_CONTENTS))
 			((umem_bufctl_audit_t *)bcp)->bc_contents =
 			    umem_log_enter(umem_content_log, buf,
 			    cp->cache_contents);
@@ -1761,14 +1774,14 @@ umem_cache_alloc_debug(umem_cache_t *cp, void *buf, int umflag)
 
 	btp->bt_bxstat = (intptr_t)bcp ^ UMEM_BUFTAG_ALLOC;
 
-	if ((cp->cache_flags & UMF_HASH) && bcp->bc_addr != buf) {
+	if (unlikely(cp->cache_flags & UMF_HASH) && bcp->bc_addr != buf) {
 		umem_error(UMERR_BADBUFCTL, cp, buf);
 		return (-1);
 	}
 
 	btp->bt_redzone = UMEM_REDZONE_PATTERN;
 
-	if (cp->cache_flags & UMF_DEADBEEF) {
+	if (unlikely(cp->cache_flags & UMF_DEADBEEF)) {
 		if (verify_and_copy_pattern(UMEM_FREE_PATTERN,
 		    UMEM_UNINITIALIZED_PATTERN, buf, cp->cache_verify)) {
 			umem_error(UMERR_MODIFIED, cp, buf);
@@ -1798,7 +1811,7 @@ umem_cache_alloc_debug(umem_cache_t *cp, void *buf, int umflag)
 		return (-1);
 	}
 
-	if (cp->cache_flags & UMF_AUDIT) {
+	if (unlikely(cp->cache_flags & UMF_AUDIT)) {
 		UMEM_AUDIT(umem_transaction_log, cp, bcp);
 	}
 
@@ -1827,7 +1840,7 @@ umem_cache_free_debug(umem_cache_t *cp, void *buf)
 
 	btp->bt_bxstat = (intptr_t)bcp ^ UMEM_BUFTAG_FREE;
 
-	if ((cp->cache_flags & UMF_HASH) && bcp->bc_addr != buf) {
+	if (unlikely(cp->cache_flags & UMF_HASH) && bcp->bc_addr != buf) {
 		umem_error(UMERR_BADBUFCTL, cp, buf);
 		return (-1);
 	}
@@ -1837,8 +1850,8 @@ umem_cache_free_debug(umem_cache_t *cp, void *buf)
 		return (-1);
 	}
 
-	if (cp->cache_flags & UMF_AUDIT) {
-		if (cp->cache_flags & UMF_CONTENTS)
+	if (unlikely(cp->cache_flags & UMF_AUDIT)) {
+		if (unlikely(cp->cache_flags & UMF_CONTENTS))
 			bcp->bc_contents = umem_log_enter(umem_content_log,
 			    buf, cp->cache_contents);
 		UMEM_AUDIT(umem_transaction_log, cp, bcp);
@@ -1847,7 +1860,7 @@ umem_cache_free_debug(umem_cache_t *cp, void *buf)
 	if (cp->cache_destructor != NULL)
 		cp->cache_destructor(buf, cp->cache_private);
 
-	if (cp->cache_flags & UMF_DEADBEEF)
+	if (unlikely(cp->cache_flags & UMF_DEADBEEF))
 		copy_pattern(UMEM_FREE_PATTERN, buf, cp->cache_verify);
 
 	return (0);
@@ -1866,14 +1879,14 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 	for (round = 0; round < nrounds; round++) {
 		void *buf = mp->mag_round[round];
 
-		if ((cp->cache_flags & UMF_DEADBEEF) &&
+		if (unlikely(cp->cache_flags & UMF_DEADBEEF) &&
 		    verify_pattern(UMEM_FREE_PATTERN, buf,
 		    cp->cache_verify) != NULL) {
 			umem_error(UMERR_MODIFIED, cp, buf);
 			continue;
 		}
 
-		if (!(cp->cache_flags & UMF_BUFTAG) &&
+		if (!unlikely(cp->cache_flags & UMF_BUFTAG) &&
 		    cp->cache_destructor != NULL)
 			cp->cache_destructor(buf, cp->cache_private);
 
@@ -2114,7 +2127,7 @@ retry:
 			buf = ccp->cc_loaded->mag_round[--ccp->cc_rounds];
 			ccp->cc_alloc++;
 			(void) mutex_unlock(&ccp->cc_lock);
-			if ((ccp->cc_flags & UMF_BUFTAG) &&
+			if (unlikely(ccp->cc_flags & UMF_BUFTAG) &&
 			    umem_cache_alloc_debug(cp, buf, umflag) == -1) {
 				if (umem_alloc_retry(cp, umflag)) {
 					goto retry;
@@ -2176,7 +2189,7 @@ retry:
 		return (NULL);
 	}
 
-	if (cp->cache_flags & UMF_BUFTAG) {
+	if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 		/*
 		 * Let umem_cache_alloc_debug() apply the constructor for us.
 		 */
@@ -2221,7 +2234,7 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	umem_magazine_t *emp;
 	umem_magtype_t *mtp;
 
-	if (ccp->cc_flags & UMF_BUFTAG)
+	if (unlikely(ccp->cc_flags & UMF_BUFTAG))
 		if (umem_cache_free_debug(cp, buf) == -1)
 			return;
 
@@ -2312,7 +2325,7 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	 * Note that if UMF_BUFTAG is in effect, umem_cache_free_debug()
 	 * will have already applied the destructor.
 	 */
-	if (!(cp->cache_flags & UMF_BUFTAG) && cp->cache_destructor != NULL)
+	if (!unlikely(cp->cache_flags & UMF_BUFTAG) && cp->cache_destructor != NULL)
 		cp->cache_destructor(buf, cp->cache_private);
 
 	umem_slab_free(cp, buf);
@@ -2332,7 +2345,7 @@ retry:
 		umem_cache_t *cp = umem_alloc_table[index];
 		buf = _umem_cache_alloc(cp, umflag);
 		if (buf != NULL) {
-			if (cp->cache_flags & UMF_BUFTAG) {
+			if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 				umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
 				((uint8_t *)buf)[size] = UMEM_REDZONE_BYTE;
 				((uint32_t *)btp)[1] = UMEM_SIZE_ENCODE(size);
@@ -2360,7 +2373,7 @@ umem_alloc_retry:
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
 		umem_cache_t *cp = umem_alloc_table[index];
 		buf = _umem_cache_alloc(cp, umflag);
-		if ((cp->cache_flags & UMF_BUFTAG) && buf != NULL) {
+		if (unlikely(cp->cache_flags & UMF_BUFTAG) && buf != NULL) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
 			((uint8_t *)buf)[size] = UMEM_REDZONE_BYTE;
 			((uint32_t *)btp)[1] = UMEM_SIZE_ENCODE(size);
@@ -2428,7 +2441,7 @@ _umem_free(void *buf, size_t size)
 
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
 		umem_cache_t *cp = umem_alloc_table[index];
-		if (cp->cache_flags & UMF_BUFTAG) {
+		if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
 			uint32_t *ip = (uint32_t *)btp;
 			if (ip[1] != UMEM_SIZE_ENCODE(size)) {
@@ -2568,7 +2581,7 @@ umem_cache_magazine_enable(umem_cache_t *cp)
 {
 	int cpu_seqid;
 
-	if (cp->cache_flags & UMF_NOMAGAZINE)
+	if (unlikely(cp->cache_flags & UMF_NOMAGAZINE))
 		return;
 
 	for (cpu_seqid = 0; cpu_seqid < umem_max_ncpus; cpu_seqid++) {
@@ -2678,7 +2691,7 @@ umem_cache_update(umem_cache_t *cp)
 	 */
 	(void) mutex_lock(&cp->cache_lock);
 
-	if ((cp->cache_flags & UMF_HASH) &&
+	if (unlikely(cp->cache_flags & UMF_HASH) &&
 	    (cp->cache_buftotal > (cp->cache_hash_mask << 1) ||
 	    (cp->cache_buftotal < (cp->cache_hash_mask >> 1) &&
 	    cp->cache_hash_mask > UMEM_HASH_INITIAL)))
@@ -2936,7 +2949,7 @@ umem_cache_create(
 	/*
 	 * Make sure all the various flags are reasonable.
 	 */
-	if (cp->cache_flags & UMF_LITE) {
+	if (unlikely(cp->cache_flags & UMF_LITE)) {
 		if (bufsize >= umem_lite_minsize &&
 		    align <= umem_lite_maxalign &&
 		    P2PHASE(bufsize, umem_lite_maxalign) != 0) {
@@ -2947,7 +2960,7 @@ umem_cache_create(
 		}
 	}
 
-	if ((cflags & UMC_QCACHE) && (cp->cache_flags & UMF_AUDIT))
+	if ((cflags & UMC_QCACHE) && unlikely(cp->cache_flags & UMF_AUDIT))
 		cp->cache_flags |= UMF_NOMAGAZINE;
 
 	if (cflags & UMC_NODEBUG)
@@ -2962,17 +2975,17 @@ umem_cache_create(
 	if (cflags & UMC_NOMAGAZINE)
 		cp->cache_flags |= UMF_NOMAGAZINE;
 
-	if ((cp->cache_flags & UMF_AUDIT) && !(cflags & UMC_NOTOUCH))
+	if (unlikely(cp->cache_flags & UMF_AUDIT) && !(cflags & UMC_NOTOUCH))
 		cp->cache_flags |= UMF_REDZONE;
 
-	if ((cp->cache_flags & UMF_BUFTAG) && bufsize >= umem_minfirewall &&
-	    !(cp->cache_flags & UMF_LITE) && !(cflags & UMC_NOHASH))
+	if (unlikely(cp->cache_flags & UMF_BUFTAG) && bufsize >= umem_minfirewall &&
+	    !unlikely(cp->cache_flags & UMF_LITE) && !(cflags & UMC_NOHASH))
 		cp->cache_flags |= UMF_FIREWALL;
 
 	if (vmp != umem_default_arena || umem_firewall_arena == NULL)
 		cp->cache_flags &= ~UMF_FIREWALL;
 
-	if (cp->cache_flags & UMF_FIREWALL) {
+	if (unlikely(cp->cache_flags & UMF_FIREWALL)) {
 		cp->cache_flags &= ~UMF_BUFTAG;
 		cp->cache_flags |= UMF_NOMAGAZINE;
 		ASSERT(vmp == umem_default_arena);
@@ -3003,15 +3016,15 @@ umem_cache_create(
 		cp->cache_bufctl = chunksize - UMEM_ALIGN;
 	}
 
-	if (cp->cache_flags & UMF_BUFTAG) {
+	if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 		cp->cache_bufctl = chunksize;
 		cp->cache_buftag = chunksize;
 		chunksize += sizeof (umem_buftag_t);
 	}
 
-	if (cp->cache_flags & UMF_DEADBEEF) {
+	if (unlikely(cp->cache_flags & UMF_DEADBEEF)) {
 		cp->cache_verify = MIN(cp->cache_buftag, umem_maxverify);
-		if (cp->cache_flags & UMF_LITE)
+		if (unlikely(cp->cache_flags & UMF_LITE))
 			cp->cache_verify = MIN(cp->cache_verify, UMEM_ALIGN);
 	}
 
@@ -3034,7 +3047,7 @@ umem_cache_create(
 		cp->cache_flags |= UMF_HASH;
 		ASSERT(!(cp->cache_flags & UMF_BUFTAG));
 	} else if ((cflags & UMC_NOHASH) || (!(cflags & UMC_NOTOUCH) &&
-	    !(cp->cache_flags & UMF_AUDIT) &&
+	    !unlikely(cp->cache_flags & UMF_AUDIT) &&
 	    chunksize < vmp->vm_quantum / UMEM_VOID_FRACTION)) {
 		cp->cache_slabsize = vmp->vm_quantum;
 		cp->cache_mincolor = 0;
@@ -3075,9 +3088,9 @@ umem_cache_create(
 		cp->cache_flags |= UMF_HASH;
 	}
 
-	if (cp->cache_flags & UMF_HASH) {
+	if (unlikely(cp->cache_flags & UMF_HASH)) {
 		ASSERT(!(cflags & UMC_NOHASH));
-		cp->cache_bufctl_cache = (cp->cache_flags & UMF_AUDIT) ?
+		cp->cache_bufctl_cache = unlikely(cp->cache_flags & UMF_AUDIT) ?
 		    umem_bufctl_audit_cache : umem_bufctl_cache;
 	}
 
@@ -3097,7 +3110,7 @@ umem_cache_create(
 	cp->cache_nullslab.slab_next = &cp->cache_nullslab;
 	cp->cache_nullslab.slab_prev = &cp->cache_nullslab;
 
-	if (cp->cache_flags & UMF_HASH) {
+	if (unlikely(cp->cache_flags & UMF_HASH)) {
 		cp->cache_hash_table = vmem_alloc(umem_hash_arena,
 		    UMEM_HASH_INITIAL * sizeof (void *), VM_NOSLEEP);
 		if (cp->cache_hash_table == NULL) {
@@ -3764,6 +3777,14 @@ umem_init(void)
 	umem_memalign_arena = memalign_arena;
 
 	umem_cache_applyall(umem_cache_magazine_enable);
+
+#ifndef UMEM_STANDALONE
+	/*
+	 * Initialize per-thread cache for fast small allocations.
+	 * This provides zero-lock access for sizes 8-448 bytes.
+	 */
+	umem_tcache_init();
+#endif
 
 	/*
 	 * initialization done, ready to go

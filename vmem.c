@@ -1475,16 +1475,20 @@ vmem_create(const char *name, void *base, size_t size, size_t quantum,
 	vmp->vm_qshift = highbit(quantum) - 1;
 	nqcache = MIN(qcache_max >> vmp->vm_qshift, VMEM_NQCACHE_MAX);
 
-	for (i = 0; i <= VMEM_FREELISTS; i++) {
+	for (i = 0; i < VMEM_FREELISTS; i++) {
 		vfp = &vmp->vm_freelist[i];
 		vfp->vs_end = 1UL << i;
 		vfp->vs_knext = (vmem_seg_t *)(vfp + 1);
 		vfp->vs_kprev = (vmem_seg_t *)(vfp - 1);
 	}
 
+	/* Handle the last freelist entry separately */
+	vfp = &vmp->vm_freelist[VMEM_FREELISTS];
+	vfp->vs_end = 0;
+	vfp->vs_knext = NULL;
+	vfp->vs_kprev = (vmem_seg_t *)(vfp - 1);
+
 	vmp->vm_freelist[0].vs_kprev = NULL;
-	vmp->vm_freelist[VMEM_FREELISTS].vs_knext = NULL;
-	vmp->vm_freelist[VMEM_FREELISTS].vs_end = 0;
 	vmp->vm_hash_table = vmp->vm_hash0;
 	vmp->vm_hash_mask = VMEM_HASH_INITIAL - 1;
 	vmp->vm_hash_shift = highbit(vmp->vm_hash_mask);
