@@ -43,6 +43,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <malloc.h>
+#include <pthread.h>
 
 #include "umem_impl.h"
 #include "malloc_guard.h"
@@ -87,34 +88,48 @@ static void *(*libc_memalign)(size_t, size_t) = NULL;
 /*
  * Pointer tracking: track which allocations came from libc
  * during bootstrap phase so we can free them correctly.
+ *
+ * THREAD SAFETY: These functions are protected by a mutex to prevent
+ * races when tracking/checking libc pointers from multiple threads.
  */
 #define MAX_BOOTSTRAP_PTRS 512
 static void *bootstrap_ptrs[MAX_BOOTSTRAP_PTRS];
 static size_t bootstrap_ptr_count = 0;
+static pthread_mutex_t bootstrap_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void
 track_bootstrap_ptr(void *ptr)
 {
-	if (ptr != NULL && bootstrap_ptr_count < MAX_BOOTSTRAP_PTRS) {
+	if (ptr == NULL)
+		return;
+
+	(void) pthread_mutex_lock(&bootstrap_ptr_lock);
+	if (bootstrap_ptr_count < MAX_BOOTSTRAP_PTRS) {
 		bootstrap_ptrs[bootstrap_ptr_count++] = ptr;
 	}
+	(void) pthread_mutex_unlock(&bootstrap_ptr_lock);
 }
 
 static int
 is_libc_pointer(void *ptr)
 {
 	size_t i;
+	int found = 0;
 
 	if (ptr == NULL)
 		return (0);
 
+	(void) pthread_mutex_lock(&bootstrap_ptr_lock);
 	for (i = 0; i < bootstrap_ptr_count; i++) {
 		if (bootstrap_ptrs[i] == ptr) {
 			bootstrap_ptrs[i] = NULL;  /* Clear slot */
-			return (1);
+			found = 1;
+			break;
 		}
 	}
-	return (0);
+	(void) pthread_mutex_unlock(&bootstrap_ptr_lock);
+
+	return (found);
 }
 
 /*
@@ -459,12 +474,27 @@ realloc(void *ptr, size_t size)
 	 * For libc pointers, use malloc_usable_size().
 	 */
 	if (is_bootstrap_pointer(ptr)) {
+		old_size = get_bootstrap_size(ptr);
+		if (old_size == 0) {
+			/* Header corrupted or invalid */
+			errno = EINVAL;
+			return (NULL);
+		}
+
 		new_ptr = malloc(size);
 		if (new_ptr == NULL)
 			return (NULL);
 
-		old_size = get_bootstrap_size(ptr);
+		/*
+		 * Copy old data to new buffer.
+		 * Use the smaller of old_size or new size to avoid overruns.
+		 */
 		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
+
+		/*
+		 * Free the old buffer AFTER copying is complete.
+		 * The order is critical to ensure data integrity.
+		 */
 		free(ptr);
 		return (new_ptr);
 	}
@@ -478,13 +508,6 @@ realloc(void *ptr, size_t size)
 		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
 		free(ptr);
 		return (new_ptr);
-	}
-
-	/*
-	 * If we're in bootstrap phase and using libc, use libc_realloc
-	 */
-	if (interpose_state == INTERPOSE_BOOTSTRAP && libc_realloc != NULL) {
-		return (libc_realloc(ptr, size));
 	}
 
 	/*
@@ -507,7 +530,7 @@ realloc(void *ptr, size_t size)
 		if (new_ptr == NULL)
 			return (NULL);
 
-		(void) memcpy(new_ptr, ptr, size < old_size ? size : old_size);
+		(void) memcpy(new_ptr, ptr, MIN(size, old_size));
 		free(ptr);
 		return (new_ptr);
 	}
