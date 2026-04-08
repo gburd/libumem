@@ -1174,7 +1174,7 @@ umem_error(int error, umem_cache_t *cparg, void *bufarg)
 	umem_abort_info.ump_timestamp = gethrtime();
 
 	sp = umem_findslab(cp, buf);
-	if (sp == NULL) {
+	if (unlikely(sp == NULL)) {
 		for (cp = umem_null_cache.cache_prev; cp != &umem_null_cache;
 		    cp = cp->cache_prev) {
 			if ((sp = umem_findslab(cp, buf)) != NULL)
@@ -1182,7 +1182,7 @@ umem_error(int error, umem_cache_t *cparg, void *bufarg)
 		}
 	}
 
-	if (sp == NULL) {
+	if (unlikely(sp == NULL)) {
 		cp = NULL;
 		error = UMERR_BADADDR;
 	} else {
@@ -1322,7 +1322,7 @@ umem_alloc_retry(umem_cache_t *cp, int umflag)
 		 * Initialization failed.  Do normal failure processing.
 		 */
 	}
-	if (umem_flags & UMF_CHECKNULL) {
+	if (unlikely(umem_flags & UMF_CHECKNULL)) {
 		umem_err_recoverable("umem: out of heap space");
 	}
 	if (umflag & UMEM_NOFAIL) {
@@ -1373,7 +1373,7 @@ umem_log_init(size_t logsize)
 	lhsize = P2ROUNDUP(lhsize, UMEM_ALIGN);
 	lhp = vmem_xalloc(umem_log_arena, lhsize, 64, P2NPHASE(lhsize, 64), 0,
 	    NULL, NULL, VM_NOSLEEP);
-	if (lhp == NULL)
+	if (unlikely(lhp == NULL))
 		goto fail;
 
 	bzero(lhp, lhsize);
@@ -1386,12 +1386,12 @@ umem_log_init(size_t logsize)
 
 	lhp->lh_base = vmem_alloc(umem_log_arena,
 	    lhp->lh_chunksize * nchunks, VM_NOSLEEP);
-	if (lhp->lh_base == NULL)
+	if (unlikely(lhp->lh_base == NULL))
 		goto fail;
 
 	lhp->lh_free = vmem_alloc(umem_log_arena,
 	    nchunks * sizeof (int), VM_NOSLEEP);
-	if (lhp->lh_free == NULL)
+	if (unlikely(lhp->lh_free == NULL))
 		goto fail;
 
 	bzero(lhp->lh_base, lhp->lh_chunksize * nchunks);
@@ -1428,7 +1428,7 @@ umem_log_enter(umem_log_header_t *lhp, void *data, size_t size)
 	umem_cpu_log_header_t *clhp =
 	    &lhp->lh_cpu[CPU(umem_cpu_mask)->cpu_number];
 
-	if (lhp == NULL || umem_logging == 0)
+	if (unlikely(lhp == NULL || umem_logging == 0))
 		return (NULL);
 
 	(void) mutex_lock(&clhp->clh_lock);
@@ -1508,7 +1508,7 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 
 	slab = vmem_alloc(vmp, slabsize, UMEM_VMFLAGS(umflag));
 
-	if (slab == NULL)
+	if (unlikely(slab == NULL))
 		goto vmem_alloc_failure;
 
 	ASSERT(P2PHASE((uintptr_t)slab, vmp->vm_quantum) == 0);
@@ -1518,7 +1518,7 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 		copy_pattern(UMEM_UNINITIALIZED_PATTERN, slab, slabsize);
 
 	if (unlikely(cache_flags & UMF_HASH)) {
-		if ((sp = _umem_cache_alloc(umem_slab_cache, umflag)) == NULL)
+		if (unlikely((sp = _umem_cache_alloc(umem_slab_cache, umflag)) == NULL))
 			goto slab_alloc_failure;
 		chunks = (slabsize - color) / chunksize;
 	} else {
@@ -1536,7 +1536,7 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 	while (chunks-- != 0) {
 		if (unlikely(cache_flags & UMF_HASH)) {
 			bcp = _umem_cache_alloc(cp->cache_bufctl_cache, umflag);
-			if (bcp == NULL)
+			if (unlikely(bcp == NULL))
 				goto bufctl_alloc_failure;
 			if (unlikely(cache_flags & UMF_AUDIT)) {
 				umem_bufctl_audit_t *bcap =
@@ -2251,7 +2251,7 @@ locked_path:
 	 */
 	buf = umem_slab_alloc(cp, umflag);
 
-	if (buf == NULL) {
+	if (unlikely(buf == NULL)) {
 		if (cp == &umem_null_cache)
 			return (NULL);
 		if (umem_alloc_retry(cp, umflag)) {
@@ -2471,14 +2471,14 @@ umem_alloc_retry:
 	}
 	if (size == 0)
 		return (NULL);
-	if (umem_oversize_arena == NULL) {
+	if (unlikely(umem_oversize_arena == NULL)) {
 		if (umem_init())
 			ASSERT(umem_oversize_arena != NULL);
 		else
 			return (NULL);
 	}
 	buf = vmem_alloc(umem_oversize_arena, size, UMEM_VMFLAGS(umflag));
-	if (buf == NULL) {
+	if (unlikely(buf == NULL)) {
 		umem_log_event(umem_failure_log, NULL, NULL, (void *)size);
 		if (umem_alloc_retry(NULL, umflag))
 			goto umem_alloc_retry;
@@ -2502,7 +2502,7 @@ _umem_alloc_align(size_t size, size_t align, int umflag)
 		align = UMEM_ALIGN;
 
 umem_alloc_align_retry:
-	if (umem_memalign_arena == NULL) {
+	if (unlikely(umem_memalign_arena == NULL)) {
 		if (umem_init())
 			ASSERT(umem_oversize_arena != NULL);
 		else
@@ -2510,7 +2510,7 @@ umem_alloc_align_retry:
 	}
 	buf = vmem_xalloc(umem_memalign_arena, size, align, 0, 0, NULL, NULL,
 	    UMEM_VMFLAGS(umflag));
-	if (buf == NULL) {
+	if (unlikely(buf == NULL)) {
 		umem_log_event(umem_failure_log, NULL, NULL, (void *)size);
 		if (umem_alloc_retry(NULL, umflag))
 			goto umem_alloc_align_retry;
@@ -2731,7 +2731,7 @@ umem_hash_rescale(umem_cache_t *cp)
 
 	new_table = vmem_alloc(umem_hash_arena, new_size * sizeof (void *),
 	    VM_NOSLEEP);
-	if (new_table == NULL)
+	if (unlikely(new_table == NULL))
 		return;
 	bzero(new_table, new_size * sizeof (void *));
 
@@ -3019,7 +3019,7 @@ umem_cache_create(
 	cp = vmem_xalloc(umem_cache_arena, csize, UMEM_CPU_CACHE_SIZE, phase,
 	    0, NULL, NULL, VM_NOSLEEP);
 
-	if (cp == NULL) {
+	if (unlikely(cp == NULL)) {
 		errno = EAGAIN;
 		return (NULL);
 	}
@@ -3027,7 +3027,7 @@ umem_cache_create(
 	bzero(cp, csize);
 
 	(void) mutex_lock(&umem_flags_lock);
-	if (umem_flags & UMF_RANDOMIZE)
+	if (unlikely(umem_flags & UMF_RANDOMIZE))
 		umem_flags = (((umem_flags | ~UMF_RANDOM) + 1) & UMF_RANDOM) |
 		    UMF_RANDOMIZE;
 	cp->cache_flags = umem_flags | (cflags & UMF_DEBUG);
@@ -3069,7 +3069,7 @@ umem_cache_create(
 	    !unlikely(cp->cache_flags & UMF_LITE) && !(cflags & UMC_NOHASH))
 		cp->cache_flags |= UMF_FIREWALL;
 
-	if (vmp != umem_default_arena || umem_firewall_arena == NULL)
+	if (unlikely(vmp != umem_default_arena || umem_firewall_arena == NULL))
 		cp->cache_flags &= ~UMF_FIREWALL;
 
 	if (unlikely(cp->cache_flags & UMF_FIREWALL)) {
@@ -3496,7 +3496,7 @@ umem_cache_init(void)
 	else
 		umem_va_arena = heap_arena;
 
-	if (umem_va_arena == NULL)
+	if (unlikely(umem_va_arena == NULL))
 		return (0);
 
 	umem_default_arena = vmem_create("umem_default",
@@ -3504,7 +3504,7 @@ umem_cache_init(void)
 	    heap_alloc, heap_free, umem_va_arena,
 	    0, VM_NOSLEEP);
 
-	if (umem_default_arena == NULL)
+	if (unlikely(umem_default_arena == NULL))
 		return (0);
 
 	/*
@@ -3536,7 +3536,7 @@ umem_cache_init(void)
 
 		cp = umem_cache_create(name, cache_size, align,
 		    NULL, NULL, NULL, NULL, NULL, UMC_INTERNAL);
-		if (cp == NULL)
+		if (unlikely(cp == NULL))
 			return (0);
 
 		umem_alloc_caches[i] = cp;
@@ -3753,7 +3753,7 @@ umem_init(void)
 	/*
 	 * set up vmem
 	 */
-	if (!(umem_flags & UMF_AUDIT))
+	if (unlikely(!(umem_flags & UMF_AUDIT)))
 		vmem_no_debug();
 
 	heap_arena = vmem_heap_arena(&heap_alloc, &heap_free);
@@ -3765,7 +3765,7 @@ umem_init(void)
 
 	umem_default_arena = umem_internal_arena;
 
-	if (umem_internal_arena == NULL)
+	if (unlikely(umem_internal_arena == NULL))
 		goto fail;
 
 	umem_cache_arena = vmem_create("umem_cache", NULL, 0, UMEM_ALIGN,
@@ -3782,15 +3782,15 @@ umem_init(void)
 	    umem_firewall_va_alloc, umem_firewall_va_free, heap_arena,
 	    0, VM_NOSLEEP);
 
-	if (umem_cache_arena == NULL || umem_hash_arena == NULL ||
-	    umem_log_arena == NULL || umem_firewall_va_arena == NULL)
+	if (unlikely(umem_cache_arena == NULL || umem_hash_arena == NULL ||
+	    umem_log_arena == NULL || umem_firewall_va_arena == NULL))
 		goto fail;
 
 	umem_firewall_arena = vmem_create("umem_firewall", NULL, 0, pagesize,
 	    heap_alloc, heap_free, umem_firewall_va_arena, 0,
 	    VM_NOSLEEP);
 
-	if (umem_firewall_arena == NULL)
+	if (unlikely(umem_firewall_arena == NULL))
 		goto fail;
 
 	oversize_arena = vmem_create("umem_oversize", NULL, 0, pagesize,
@@ -3801,7 +3801,7 @@ umem_init(void)
 	    heap_alloc, heap_free, minfirewall < ULONG_MAX ?
 	    umem_firewall_va_arena : heap_arena, 0, VM_NOSLEEP);
 
-	if (oversize_arena == NULL || memalign_arena == NULL)
+	if (unlikely(oversize_arena == NULL || memalign_arena == NULL))
 		goto fail;
 
 	if (umem_max_ncpus > CPUHINT_MAX())
@@ -3815,7 +3815,7 @@ umem_init(void)
 
 	size = umem_max_ncpus * sizeof (umem_cpu_t);
 	new_cpus = vmem_alloc(umem_internal_arena, size, VM_NOSLEEP);
-	if (new_cpus == NULL)
+	if (unlikely(new_cpus == NULL))
 		goto fail;
 
 	bzero(new_cpus, size);
