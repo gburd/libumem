@@ -82,7 +82,7 @@ worker_realloc_stress(void *arg)
 
 			/* Verify old data preserved */
 			for (size_t k = 0; k < old_size; k++) {
-				if (ptr[k] != pattern) {
+				if ((unsigned char)ptr[k] != pattern) {
 					atomic_fetch_add(&error_count, 1);
 					free(ptr);
 					goto next_iteration;
@@ -109,7 +109,7 @@ worker_realloc_stress(void *arg)
 
 			/* Verify data still intact */
 			for (size_t k = 0; k < size; k++) {
-				if (ptr[k] != pattern) {
+				if ((unsigned char)ptr[k] != pattern) {
 					atomic_fetch_add(&error_count, 1);
 					free(ptr);
 					goto next_iteration;

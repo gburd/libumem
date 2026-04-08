@@ -44,6 +44,7 @@
 #include <unistd.h>
 #include <malloc.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "umem_impl.h"
 #include "malloc_guard.h"
@@ -53,6 +54,7 @@
 #endif
 
 /* External: umem readiness state and functions */
+#define	UMEM_READY	3
 extern int umem_ready;
 extern void *umem_malloc(size_t);
 extern void umem_malloc_free(void *);
@@ -76,7 +78,7 @@ typedef enum {
 	INTERPOSE_READY		/* Fully initialized, use umem */
 } interpose_state_t;
 
-static volatile interpose_state_t interpose_state = INTERPOSE_UNINIT;
+static atomic_int interpose_state = ATOMIC_VAR_INIT(INTERPOSE_UNINIT);
 
 /* Pointers to real libc functions */
 static void *(*libc_malloc)(size_t) = NULL;
@@ -212,7 +214,7 @@ static void
 umem_interpose_init(void)
 {
 	/* Resolve libc functions */
-	interpose_state = INTERPOSE_BOOTSTRAP;
+	atomic_store(&interpose_state, INTERPOSE_BOOTSTRAP);
 	resolve_libc_functions();
 
 	/*
@@ -246,8 +248,17 @@ malloc(size_t size)
 		return (NULL);
 	}
 
+	/*
+	 * Transition to READY state when umem is fully initialized.
+	 * Use atomic compare-and-swap to ensure only one thread does the transition.
+	 */
+	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP && umem_ready == UMEM_READY) {
+		int expected = INTERPOSE_BOOTSTRAP;
+		atomic_compare_exchange_strong(&interpose_state, &expected, INTERPOSE_READY);
+	}
+
 	/* Fast path: fully initialized */
-	if (__builtin_expect(interpose_state == INTERPOSE_READY, 1)) {
+	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
 		/*
 		 * Check for recursive malloc (pthread_create -> malloc ->
 		 * pthread_getspecific -> malloc). Use bootstrap allocator
@@ -273,7 +284,7 @@ malloc(size_t size)
 	 * If we somehow get here before the constructor runs,
 	 * use bootstrap allocator and let the constructor handle init.
 	 */
-	if (interpose_state == INTERPOSE_UNINIT) {
+	if (atomic_load(&interpose_state) == INTERPOSE_UNINIT) {
 		return (bootstrap_malloc(size));
 	}
 
@@ -294,7 +305,7 @@ malloc(size_t size)
 	 * performance benefits. For best performance, link directly against libumem
 	 * or use umem_alloc()/umem_free() explicitly.
 	 */
-	if (interpose_state == INTERPOSE_BOOTSTRAP) {
+	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP) {
 		ret = bootstrap_malloc(size);
 		return (ret);
 	}
@@ -354,7 +365,7 @@ free(void *ptr)
 	 * If we're not ready yet and it's not a tracked pointer,
 	 * be defensive and try libc_free
 	 */
-	if (interpose_state != INTERPOSE_READY) {
+	if (atomic_load(&interpose_state) != INTERPOSE_READY) {
 		if (libc_free != NULL)
 			libc_free(ptr);
 		return;
@@ -515,7 +526,7 @@ realloc(void *ptr, size_t size)
 	 * In READY state, try umem's process_free to get the size.
 	 * If that fails, the pointer is invalid.
 	 */
-	if (interpose_state == INTERPOSE_READY) {
+	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
 		extern int process_free(void *, int, size_t *);
 
 		if (process_free(ptr, 0, &old_size) == 0) {
@@ -570,7 +581,7 @@ memalign(size_t align, size_t size)
 	}
 
 	/* Fast path: fully initialized */
-	if (__builtin_expect(interpose_state == INTERPOSE_READY, 1)) {
+	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
 		extern void *umem_memalign(size_t, size_t);
 		return (umem_memalign(align, size));
 	}
@@ -579,7 +590,7 @@ memalign(size_t align, size_t size)
 	 * Bootstrap phase: use libc_memalign if available,
 	 * otherwise use regular malloc (may not be aligned as requested)
 	 */
-	if (interpose_state == INTERPOSE_BOOTSTRAP && libc_memalign != NULL) {
+	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP && libc_memalign != NULL) {
 		ret = libc_memalign(align, size);
 		if (ret != NULL)
 			track_bootstrap_ptr(ret);

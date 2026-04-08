@@ -353,6 +353,20 @@ process_free(void *buf_arg,
 {
 	malloc_data_t *buf;
 
+	/*
+	 * Check for bootstrap pointers first.
+	 * These have a different header format (bootstrap_header_t) and must
+	 * be handled separately to avoid misinterpreting their headers.
+	 */
+	if (is_bootstrap_pointer(buf_arg)) {
+		if (data_size_arg != NULL) {
+			bootstrap_header_t *hdr = (bootstrap_header_t *)buf_arg - 1;
+			*data_size_arg = hdr->size - sizeof(bootstrap_header_t);
+		}
+		/* For do_free=1, bootstrap_free should be called instead */
+		return (1);
+	}
+
 	void *base;
 	size_t size;
 	size_t data_size;
