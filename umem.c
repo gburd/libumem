@@ -1901,7 +1901,7 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
  * Select depot stripe based on thread ID.
  * Distributes threads across stripes to reduce lock contention.
  */
-static inline int
+static inline int __attribute__((always_inline))
 umem_depot_stripe_select(void)
 {
 	/*
@@ -2089,7 +2089,7 @@ umem_depot_ws_reap(umem_cache_t *cp)
 	}
 }
 
-static void
+static inline void __attribute__((always_inline))
 umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 {
 	ASSERT((ccp->cc_loaded == NULL && ccp->cc_rounds == -1) ||

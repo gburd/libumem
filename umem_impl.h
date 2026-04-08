@@ -128,7 +128,7 @@ extern __thread int cached_cpu_hint;
  * Get the cached CPU hint, refreshing if needed.
  * This inline function reduces overhead by avoiding repeated syscalls/TLS lookups.
  */
-static inline int
+static inline int __attribute__((always_inline))
 get_cached_cpu_hint(void)
 {
 	int hint = cached_cpu_hint;
