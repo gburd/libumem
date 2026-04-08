@@ -746,6 +746,7 @@ uint32_t umem_max_ncpus;        /* # of CPU caches. */
 uint32_t umem_stack_depth = 15; /* # stack frames in a bufctl_audit */
 uint32_t umem_reap_interval = 10; /* max reaping rate (seconds) */
 uint_t umem_depot_contention = 2; /* max failed trylocks per real interval */
+uint_t umem_magazine_tuning = 0; /* magazine size auto-tuning (0=off, 1=on) */
 uint_t umem_abort = 1;          /* whether to abort on error */
 uint_t umem_output = 0;         /* whether to write to standard error */
 uint_t umem_logging = 0;        /* umem_log_enter() override */
@@ -852,6 +853,8 @@ umem_cache_t            umem_null_cache = {
 	0, 0,
 	0, 0,
 	0, 0,
+	0, 0,
+	0, 0,
 	"invalid_cache",
 	0, 0,
 	NULL, NULL, NULL, NULL,
@@ -885,7 +888,8 @@ umem_cache_t            umem_null_cache = {
 			DEFAULTMUTEX,
 			{ NULL, 0, 0, 0, 0 },   /* ds_full */
 			{ NULL, 0, 0, 0, 0 },   /* ds_empty */
-			0                       /* ds_contention */
+			0,                      /* ds_contention */
+			{0}                     /* ds_pad (cache line padding) */
 		}
 	}, {
 		{
@@ -1621,6 +1625,14 @@ umem_slab_alloc(umem_cache_t *cp, int umflag)
 	(void) mutex_lock(&cp->cache_lock);
 	cp->cache_slab_alloc++;
 	sp = cp->cache_freelist;
+
+	/*
+	 * Prefetch slab metadata for the allocation path.
+	 * Medium locality (2) since we'll be accessing multiple
+	 * fields of this slab during the allocation.
+	 */
+	__builtin_prefetch(sp, 0, 2);
+
 	ASSERT(sp->slab_cache == cp);
 	if (sp->slab_head == NULL) {
 		/*
@@ -1881,6 +1893,16 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 	for (round = 0; round < nrounds; round++) {
 		void *buf = mp->mag_round[round];
 
+		/*
+		 * Prefetch next 4 magazine slots ahead during batch operations.
+		 * Low locality (1) since we only access each slot once.
+		 * This helps pipeline the loop by bringing future slots into
+		 * cache while processing current ones.
+		 */
+		if (round + 4 < nrounds) {
+			__builtin_prefetch(&mp->mag_round[round + 4], 0, 1);
+		}
+
 		if (unlikely(cp->cache_flags & UMF_DEADBEEF) &&
 		    verify_pattern(UMEM_FREE_PATTERN, buf,
 		    cp->cache_verify) != NULL) {
@@ -1929,6 +1951,13 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 	 */
 	stripe_id = umem_depot_stripe_select();
 	stripe = &cp->cache_depot[stripe_id];
+
+	/*
+	 * Prefetch depot stripe metadata before lock acquisition.
+	 * Medium locality (2) since depot access is occasional but
+	 * benefits from having the cache line ready before locking.
+	 */
+	__builtin_prefetch(stripe, 0, 2);
 
 	/*
 	 * Determine which list (full or empty) to use based on the
@@ -2142,6 +2171,15 @@ umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 	    (ccp->cc_loaded && current_rounds + rounds == ccp->cc_magsize));
 	ASSERT(ccp->cc_magsize > 0);
 
+	/*
+	 * Prefetch cc_ploaded before swap. This magazine will be accessed
+	 * soon for magazine exchange operations. High locality (3) since
+	 * we frequently swap between loaded and ploaded magazines.
+	 */
+	if (ccp->cc_ploaded != NULL) {
+		__builtin_prefetch(ccp->cc_ploaded, 0, 3);
+	}
+
 	ccp->cc_ploaded = ccp->cc_loaded;
 	ccp->cc_prounds = current_rounds;
 	ccp->cc_loaded = mp;
@@ -2171,6 +2209,13 @@ _umem_cache_alloc(umem_cache_t *cp, int umflag)
 	int rounds;
 
 retry:
+	/*
+	 * Track allocation operations for magazine tuning.
+	 */
+	if (unlikely(umem_magazine_tuning)) {
+		atomic_add_64(&cp->cache_alloc_ops, 1);
+	}
+
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 
 	/*
@@ -2192,6 +2237,13 @@ locked_path:
 		 */
 		rounds = ccp->cc_rounds;
 		if (rounds > 0) {
+			/*
+			 * Prefetch the loaded magazine before accessing.
+			 * High locality (3) since we access this frequently
+			 * in the hot allocation path.
+			 */
+			__builtin_prefetch(ccp->cc_loaded, 0, 3);
+
 			/*
 			 * Decrement rounds. We hold the lock so this is safe.
 			 */
@@ -2215,6 +2267,9 @@ locked_path:
 		 * magazine was full, exchange them and try again.
 		 */
 		if (ccp->cc_prounds > 0) {
+			if (unlikely(umem_magazine_tuning)) {
+				atomic_add_64(&cp->cache_mag_reloads, 1);
+			}
 			umem_cpu_reload(ccp, ccp->cc_ploaded, ccp->cc_prounds);
 			continue;
 		}
@@ -2233,6 +2288,9 @@ locked_path:
 			if (ccp->cc_ploaded != NULL)
 				umem_depot_free(cp, &cp->cache_empty,
 				    ccp->cc_ploaded);
+			if (unlikely(umem_magazine_tuning)) {
+				atomic_add_64(&cp->cache_mag_reloads, 1);
+			}
 			umem_cpu_reload(ccp, fmp, ccp->cc_magsize);
 			continue;
 		}
@@ -2329,6 +2387,13 @@ locked_slow_path:
 
 		if ((uint_t)rounds < magsize) {
 			/*
+			 * Prefetch the loaded magazine before accessing.
+			 * High locality (3) since we access this frequently
+			 * in the hot free path.
+			 */
+			__builtin_prefetch(ccp->cc_loaded, 0, 3);
+
+			/*
 			 * Increment rounds. We hold the lock so this is safe.
 			 */
 			ccp->cc_rounds = rounds + 1;
@@ -2343,6 +2408,9 @@ locked_slow_path:
 		 * magazine was empty, exchange them and try again.
 		 */
 		if (ccp->cc_prounds == 0) {
+			if (unlikely(umem_magazine_tuning)) {
+				atomic_add_64(&cp->cache_mag_reloads, 1);
+			}
 			umem_cpu_reload(ccp, ccp->cc_ploaded, ccp->cc_prounds);
 			continue;
 		}
@@ -2361,6 +2429,9 @@ locked_slow_path:
 			if (ccp->cc_ploaded != NULL)
 				umem_depot_free(cp, &cp->cache_full,
 				    ccp->cc_ploaded);
+			if (unlikely(umem_magazine_tuning)) {
+				atomic_add_64(&cp->cache_mag_reloads, 1);
+			}
 			umem_cpu_reload(ccp, emp, 0);
 			continue;
 		}
@@ -2805,6 +2876,43 @@ umem_cache_update(umem_cache_t *cp)
 	cp->cache_depot_contention_prev = cp->cache_depot_contention;
 
 	(void) mutex_unlock(&cp->cache_depot_lock);
+
+	/*
+	 * Magazine size auto-tuning based on reload frequency.
+	 * Only active when umem_magazine_tuning is enabled.
+	 */
+	if (unlikely(umem_magazine_tuning) && cp->cache_magtype != NULL) {
+		uint64_t reloads = cp->cache_mag_reloads;
+		uint64_t allocs = cp->cache_alloc_ops;
+		uint64_t reload_delta = reloads - cp->cache_mag_reloads_prev;
+		uint64_t alloc_delta = allocs - cp->cache_alloc_ops_prev;
+
+		cp->cache_mag_reloads_prev = reloads;
+		cp->cache_alloc_ops_prev = allocs;
+
+		/*
+		 * Calculate reload frequency as percentage.
+		 * High reload frequency (>15%) indicates magazines are too small.
+		 * Low reload frequency (<2%) with memory pressure suggests we can shrink.
+		 */
+		if (alloc_delta > 100) {
+			uint64_t reload_pct = (reload_delta * 100) / alloc_delta;
+
+			/*
+			 * High reload frequency: increase magazine size to reduce thrashing.
+			 */
+			if (reload_pct > 15 &&
+			    cp->cache_chunksize < cp->cache_magtype->mt_maxbuf) {
+				update_flags |= UMU_MAGAZINE_RESIZE;
+			}
+			/*
+			 * Low reload frequency with memory pressure: shrink magazine.
+			 * Note: Magazine shrinking is not currently implemented in
+			 * umem_cache_magazine_resize(), so this is a placeholder for
+			 * future enhancement.
+			 */
+		}
+	}
 
 	if (update_flags)
 		umem_add_update(cp, update_flags);

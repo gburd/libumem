@@ -154,6 +154,10 @@ static umem_env_item_t umem_options_items[] = {
 		"Minimum time between reaps and updates, in seconds.",
 		NULL, 0,	&umem_reap_interval
 	},
+	{ "magazine_tune",	"Evolving",	ITEM_UINT,
+		"Enable magazine size auto-tuning (1=enable, 0=disable)",
+		NULL, 0,	&umem_magazine_tuning
+	},
 
 	{ "size_add",		"Private",	ITEM_SPECIAL,
 		"add a size to the cache size table",

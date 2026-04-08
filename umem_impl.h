@@ -331,7 +331,7 @@ typedef struct umem_cpu_cache {
 	 * that contain zero size arrays */
 	char		cc_pad[UMEM_CPU_PAD]; /* for nice alignment (32-bit) */
 #endif
-} umem_cpu_cache_t;
+} __attribute__((aligned(UMEM_CACHE_LINE_SIZE))) umem_cpu_cache_t;
 
 /*
  * The magazine lists used in the depot.
@@ -356,7 +356,14 @@ typedef struct umem_depot_stripe {
 	umem_maglist_t	ds_full;	/* full magazines */
 	umem_maglist_t	ds_empty;	/* empty magazines */
 	uint64_t	ds_contention;	/* contention count for this stripe */
-} umem_depot_stripe_t;
+	/*
+	 * Padding to prevent false sharing between depot stripes.
+	 * Each stripe is aligned to cache line boundary to ensure
+	 * independent cache line ownership in multi-threaded scenarios.
+	 */
+	char		ds_pad[UMEM_CACHE_LINE_SIZE -
+	    (sizeof(mutex_t) + 2 * sizeof(umem_maglist_t) + sizeof(uint64_t)) % UMEM_CACHE_LINE_SIZE];
+} __attribute__((aligned(UMEM_CACHE_LINE_SIZE))) umem_depot_stripe_t;
 
 #define	UMEM_CACHE_NAMELEN	31
 
@@ -375,6 +382,10 @@ struct umem_cache {
 	uint64_t	cache_lookup_depth;	/* hash lookup depth */
 	uint64_t	cache_depot_contention;	/* mutex contention count */
 	uint64_t	cache_depot_contention_prev; /* previous snapshot */
+	uint64_t	cache_mag_reloads;	/* total magazine reloads */
+	uint64_t	cache_mag_reloads_prev;	/* previous reload snapshot */
+	uint64_t	cache_alloc_ops;	/* total allocation operations */
+	uint64_t	cache_alloc_ops_prev;	/* previous alloc snapshot */
 
 	/*
 	 * Cache properties
@@ -427,6 +438,8 @@ struct umem_cache {
 
 	/*
 	 * Per-CPU layer
+	 * Each CPU cache is cache-line aligned to prevent false sharing.
+	 * The alignment attribute on umem_cpu_cache_t ensures proper spacing.
 	 */
 	umem_cpu_cache_t cache_cpu[1];		/* cache_cpu_mask + 1 entries */
 };

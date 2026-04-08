@@ -23,6 +23,7 @@ extern MunitSuite suite_malloc;
 extern MunitSuite suite_envvar;
 extern MunitSuite suite_umem_fail;
 extern MunitSuite suite_overflow_fixes;
+extern MunitSuite suite_magazine_tune;
 
 static MunitSuite* test_suites[] = {
     &suite_umem_alloc,
@@ -41,6 +42,7 @@ static MunitSuite* test_suites[] = {
     &suite_envvar,
     &suite_umem_fail,
     &suite_overflow_fixes,
+    &suite_magazine_tune,
     NULL
 };
 
