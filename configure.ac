@@ -242,6 +242,77 @@ else
     AC_MSG_NOTICE([Per-CPU caching disabled (default)])
 fi
 
+# Experimental rseq support (Linux 4.18+)
+AC_ARG_ENABLE([rseq],
+    [AS_HELP_STRING([--enable-rseq],
+        [Enable restartable sequences for true per-CPU caching (Linux 4.18+, 50-200% improvement)])],
+    [rseq=$enableval], [rseq=no])
+
+AM_CONDITIONAL([ENABLE_RSEQ], [test "x$rseq" = "xyes"])
+
+if test "x$rseq" = "xyes"; then
+    AC_MSG_NOTICE([RSEQ support enabled (experimental)])
+    AC_CHECK_HEADERS([linux/rseq.h], [
+        AC_DEFINE([HAVE_LINUX_RSEQ_H], [1], [Define if linux/rseq.h is available])
+    ])
+else
+    AC_MSG_NOTICE([RSEQ support disabled (default)])
+fi
+
+# NUMA-aware allocation
+AC_ARG_ENABLE([numa],
+    [AS_HELP_STRING([--enable-numa],
+        [Enable NUMA-aware memory allocation (10-30% improvement on multi-socket systems)])],
+    [numa=$enableval], [numa=no])
+
+AM_CONDITIONAL([ENABLE_NUMA], [test "x$numa" = "xyes"])
+
+if test "x$numa" = "xyes"; then
+    AC_MSG_NOTICE([NUMA-aware allocation enabled])
+    AC_CHECK_LIB([numa], [numa_available], [
+        AC_DEFINE([HAVE_LIBNUMA], [1], [Define if libnuma is available])
+        NUMA_LIBS="-lnuma"
+        AC_SUBST(NUMA_LIBS)
+    ], [
+        AC_MSG_ERROR([libnuma required for NUMA support but not found])
+    ])
+else
+    AC_MSG_NOTICE([NUMA-aware allocation disabled (default)])
+fi
+
+# Hardware Transactional Memory (Intel TSX)
+AC_ARG_ENABLE([htm],
+    [AS_HELP_STRING([--enable-htm],
+        [Enable Hardware Transactional Memory support (5-15% improvement, Intel Haswell+)])],
+    [htm=$enableval], [htm=no])
+
+AM_CONDITIONAL([ENABLE_HTM], [test "x$htm" = "xyes"])
+
+if test "x$htm" = "xyes"; then
+    AC_MSG_NOTICE([Hardware Transactional Memory enabled])
+    AC_CHECK_HEADERS([immintrin.h], [
+        AC_DEFINE([HAVE_IMMINTRIN_H], [1], [Define if immintrin.h is available])
+
+        # Check for TSX support
+        AC_MSG_CHECKING([for Intel TSX intrinsics])
+        AC_COMPILE_IFELSE([
+            AC_LANG_PROGRAM([[#include <immintrin.h>]],
+                [[unsigned int status = _xbegin();
+                  if (status == _XBEGIN_STARTED) _xend();]])
+        ], [
+            AC_MSG_RESULT([yes])
+            AC_DEFINE([HAVE_TSX], [1], [Define if Intel TSX is available])
+        ], [
+            AC_MSG_RESULT([no])
+            AC_MSG_WARN([immintrin.h found but TSX intrinsics not available])
+        ])
+    ], [
+        AC_MSG_WARN([immintrin.h not found, HTM support limited])
+    ])
+else
+    AC_MSG_NOTICE([Hardware Transactional Memory disabled (default)])
+fi
+
 # Profile-Guided Optimization support
 AC_ARG_ENABLE([pgo],
     [AS_HELP_STRING([--enable-pgo=generate|use],
@@ -277,6 +348,9 @@ Configuration summary:
   OS:               $host_os
   Recursion guard:  $recursion_guard
   Per-CPU caching:  $percpu_caching
+  RSEQ support:     $rseq
+  NUMA support:     $numa
+  HTM support:      $htm
   PGO:              $pgo
   Coverage:         $coverage
   AddressSanitizer: $asan

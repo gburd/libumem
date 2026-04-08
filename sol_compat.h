@@ -252,5 +252,15 @@ static INLINE int __nthreads(void)
 # define MAX(a,b) ((a) > (b) ? (a) : (b))
 #endif
 
+/*
+ * Branch prediction hints for optimization
+ */
+#ifndef likely
+# define likely(x)      __builtin_expect(!!(x), 1)
+#endif
+#ifndef unlikely
+# define unlikely(x)    __builtin_expect(!!(x), 0)
+#endif
+
 
 #endif

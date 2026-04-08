@@ -99,6 +99,66 @@ extern "C" {
 #define	UMEM_REDZONE_PATTERN		0xfeedfacefeedfaceULL
 #define	UMEM_REDZONE_BYTE		0xbb
 
+/*
+ * Cache line size and alignment macros
+ */
+#define	UMEM_CACHE_LINE_SIZE	64
+#define	UMEM_CACHE_ALIGNED	__attribute__((aligned(UMEM_CACHE_LINE_SIZE)))
+
+/*
+ * Prefetch macros for performance optimization
+ */
+#define	UMEM_PREFETCH_READ(addr)	__builtin_prefetch((addr), 0, 3)
+#define	UMEM_PREFETCH_WRITE(addr)	__builtin_prefetch((addr), 1, 3)
+#define	UMEM_PREFETCH_BATCH(base, stride, count) \
+	do { \
+		for (int _i = 0; _i < (count); _i++) { \
+			UMEM_PREFETCH_READ((char *)(base) + (_i) * (stride)); \
+		} \
+	} while (0)
+
+/*
+ * CPU hint caching to reduce overhead of repeated CPUHINT() calls.
+ * The cached hint is thread-local and reset on magazine reload to detect
+ * CPU migration. Initialized to -1 to force first load.
+ */
+extern __thread int cached_cpu_hint;
+
+/*
+ * Get the cached CPU hint, refreshing if needed.
+ * This inline function reduces overhead by avoiding repeated syscalls/TLS lookups.
+ */
+static inline int
+get_cached_cpu_hint(void)
+{
+	int hint = cached_cpu_hint;
+
+	/*
+	 * Use unlikely() to hint that the cache miss is the uncommon case.
+	 * This helps with branch prediction in the hot path.
+	 */
+	if (unlikely(hint == -1)) {
+#ifdef CPUHINT
+		hint = CPUHINT();
+#else
+		extern thread_t _thr_self(void);
+		hint = (int)(_thr_self());
+#endif
+		cached_cpu_hint = hint;
+	}
+	return hint;
+}
+
+/*
+ * Reset the CPU hint cache to force refresh on next access.
+ * Called during magazine reload to detect CPU migration.
+ */
+static inline void __attribute__((always_inline))
+reset_cpu_hint_cache(void)
+{
+	cached_cpu_hint = -1;
+}
+
 #define	UMEM_FATAL_FLAGS	(UMEM_NOFAIL)
 #define	UMEM_SLEEP_FLAGS	(0)
 
@@ -447,6 +507,11 @@ extern int umem_add(caddr_t, size_t);
 extern uintptr_t _tmem_get_base(void);
 extern int _tmem_get_nentries(void);
 extern void _tmem_set_cleanup(void(*)(void *, int));
+
+/*
+ * Global allocation table for size-based cache lookup
+ */
+extern umem_cache_t *umem_alloc_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT];
 
 #ifdef	__cplusplus
 }

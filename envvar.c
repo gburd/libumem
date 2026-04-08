@@ -42,6 +42,7 @@
 
 #include "umem_base.h"
 #include "vmem_base.h"
+#include "umem_tcache.h"
 
 /*
  * A umem environment variable, like UMEM_DEBUG, is set to a series
@@ -184,6 +185,14 @@ static umem_env_item_t umem_options_items[] = {
 	{ "perthread_cache",	"Evolving",	ITEM_SIZE,
 		"Size (in bytes) of per-thread allocation cache",
 		NULL, 0, NULL, &umem_ptc_size
+	},
+	{ "tcache",		"Evolving",	ITEM_UINT,
+		"Enable thread-local cache for small allocations (1=enable, 0=disable)",
+		NULL, 0, (uint_t *)&umem_tcache_enabled
+	},
+	{ "tcache_max",		"Evolving",	ITEM_SIZE,
+		"Maximum size (in bytes) cached by tcache (default 448)",
+		NULL, 0, NULL, &umem_tcache_maxsize
 	},
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };

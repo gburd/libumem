@@ -42,6 +42,27 @@ else
 PERCPU_SOURCES =
 endif
 
+# Conditionally include rseq support
+if ENABLE_RSEQ
+RSEQ_SOURCES = umem_rseq.c umem_rseq.h
+else
+RSEQ_SOURCES =
+endif
+
+# Conditionally include NUMA support
+if ENABLE_NUMA
+NUMA_SOURCES = umem_numa.c umem_numa.h
+else
+NUMA_SOURCES =
+endif
+
+# Conditionally include HTM support
+if ENABLE_HTM
+HTM_SOURCES = umem_htm.c umem_htm.h
+else
+HTM_SOURCES =
+endif
+
 libumem_la_SOURCES = init_lib.c \
 			umem_agent_support.c \
 			umem_fail.c \
@@ -70,10 +91,15 @@ libumem_la_SOURCES = init_lib.c \
 			umem_audit.c \
 			umem_hooks.c \
 			umem_hooks.h \
+			umem_tcache.c \
+			umem_tcache.h \
 			$(GENASM_SOURCES) \
 			$(STUB_SOURCES) \
 			$(FREEBSD_SOURCES) \
-			$(PERCPU_SOURCES)
+			$(PERCPU_SOURCES) \
+			$(RSEQ_SOURCES) \
+			$(NUMA_SOURCES) \
+			$(HTM_SOURCES)
 
 libumem_malloc_la_SOURCES = malloc_interpose.c malloc_guard.h
 libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir)
@@ -158,6 +184,7 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_overflow_fixes.c
 test_test_main_LDADD = libumem.la libumem_malloc.la
 test_test_main_LDFLAGS = -pthread
+test_test_main_CPPFLAGS = -I$(srcdir)/test
 
 # Property-based tests
 test_property_prop_alloc_free2_SOURCES = test/property/prop_alloc_free2.c test/qc.c
@@ -186,26 +213,32 @@ test_bench_bench_depot_contention_LDFLAGS = -pthread -lm
 test_integration_test_multithreaded_SOURCES = test/integration/test_multithreaded.c test/munit.c
 test_integration_test_multithreaded_LDADD = libumem.la
 test_integration_test_multithreaded_LDFLAGS = -pthread
+test_integration_test_multithreaded_CPPFLAGS = -I$(srcdir)/test
 
 test_integration_test_signals_SOURCES = test/integration/test_signals.c test/munit.c
 test_integration_test_signals_LDADD = libumem.la
 test_integration_test_signals_LDFLAGS = -pthread
+test_integration_test_signals_CPPFLAGS = -I$(srcdir)/test
 
 test_integration_test_oom_SOURCES = test/integration/test_oom.c test/munit.c
 test_integration_test_oom_LDADD = libumem.la
 test_integration_test_oom_LDFLAGS = -pthread
+test_integration_test_oom_CPPFLAGS = -I$(srcdir)/test
 
 test_integration_test_realloc_bootstrap_SOURCES = test/integration/test_realloc_bootstrap.c test/munit.c
 test_integration_test_realloc_bootstrap_LDADD = libumem.la libumem_malloc.la
 test_integration_test_realloc_bootstrap_LDFLAGS = -pthread
+test_integration_test_realloc_bootstrap_CPPFLAGS = -I$(srcdir)/test
 
 test_integration_test_debug_features_SOURCES = test/integration/test_debug_features.c test/munit.c
 test_integration_test_debug_features_LDADD = libumem.la libumem_malloc.la
 test_integration_test_debug_features_LDFLAGS = -pthread
+test_integration_test_debug_features_CPPFLAGS = -I$(srcdir)/test
 
 test_integration_test_threading_stress_SOURCES = test/integration/test_threading_stress.c test/munit.c
 test_integration_test_threading_stress_LDADD = libumem.la libumem_malloc.la
 test_integration_test_threading_stress_LDFLAGS = -pthread
+test_integration_test_threading_stress_CPPFLAGS = -I$(srcdir)/test
 
 man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
@@ -224,6 +257,18 @@ nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h
 
 if ENABLE_PERCPU_CACHING
 nobase_include_HEADERS += umem_percpu.h
+endif
+
+if ENABLE_RSEQ
+nobase_include_HEADERS += umem_rseq.h
+endif
+
+if ENABLE_NUMA
+nobase_include_HEADERS += umem_numa.h
+endif
+
+if ENABLE_HTM
+nobase_include_HEADERS += umem_htm.h
 endif
 
 # Tests - pthread_create/malloc deadlock limitation
