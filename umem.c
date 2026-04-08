@@ -2529,6 +2529,17 @@ _umem_alloc(size_t size, int umflag)
 	void *buf;
 umem_alloc_retry:
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
+		/*
+		 * Try per-thread cache first for small allocations.
+		 * This provides a zero-synchronization fast path.
+		 */
+		if (likely(umem_ptc_enabled)) {
+			buf = umem_tcache_alloc(size);
+			if (likely(buf != NULL))
+				return (buf);
+			/* Cache miss - fall through to magazine layer */
+		}
+
 		umem_cache_t *cp = umem_alloc_table[index];
 		buf = _umem_cache_alloc(cp, umflag);
 		if (unlikely(cp->cache_flags & UMF_BUFTAG) && buf != NULL) {
@@ -2599,6 +2610,11 @@ _umem_free(void *buf, size_t size)
 
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
 		umem_cache_t *cp = umem_alloc_table[index];
+
+		/*
+		 * Handle debug checking before tcache to ensure correctness.
+		 * Debug checks must run even for tcache allocations.
+		 */
 		if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
 			uint32_t *ip = (uint32_t *)btp;
@@ -2621,6 +2637,17 @@ _umem_free(void *buf, size_t size)
 			}
 			btp->bt_redzone = UMEM_REDZONE_PATTERN;
 		}
+
+		/*
+		 * Try per-thread cache for small allocations.
+		 * Zero-synchronization fast path.
+		 */
+		if (likely(umem_ptc_enabled)) {
+			if (likely(umem_tcache_free(buf, size) == 0))
+				return;
+			/* Cache full - fall through to magazine layer */
+		}
+
 		_umem_cache_free(cp, buf);
 	} else {
 		if (buf == NULL && size == 0)

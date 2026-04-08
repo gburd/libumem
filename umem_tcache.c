@@ -39,7 +39,7 @@ extern umem_cache_t *umem_alloc_table[];
  * Global configuration (can be tuned via UMEM_OPTIONS)
  */
 size_t umem_tcache_maxsize = 448;       /* max cached size */
-int umem_tcache_enabled = 0;            /* disabled by default for now */
+int umem_tcache_enabled = 1;            /* enabled by default for performance */
 
 /*
  * Thread-local storage for tcache
