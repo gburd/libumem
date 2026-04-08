@@ -2104,27 +2104,6 @@ atomic_load_int_acquire(volatile int *ptr)
 	return val;
 }
 
-/* Atomic load with relaxed semantics */
-static inline int __attribute__((always_inline))
-atomic_load_int_relaxed(atomic_int *ptr)
-{
-	return atomic_load_explicit(ptr, memory_order_relaxed);
-}
-
-/* Atomic store with release semantics */
-static inline void __attribute__((always_inline))
-atomic_store_int_release(atomic_int *ptr, int val)
-{
-	atomic_store_explicit(ptr, val, memory_order_release);
-}
-
-/* Atomic store with relaxed semantics */
-static inline void __attribute__((always_inline))
-atomic_store_int_relaxed(atomic_int *ptr, int val)
-{
-	atomic_store_explicit(ptr, val, memory_order_relaxed);
-}
-
 /*
  * Atomic compare-exchange-weak. Returns 1 if successful, 0 otherwise.
  * On failure, *expected is updated with the current value.
@@ -2155,11 +2134,9 @@ umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 	int current_rounds;
 
 	/*
-	 * Note: cc_rounds is accessed atomically by the lock-free fast path.
-	 * This function is always called under cc_lock, so we use relaxed
-	 * memory order.
+	 * This function is always called under cc_lock.
 	 */
-	current_rounds = atomic_load_int_relaxed(&ccp->cc_rounds);
+	current_rounds = ccp->cc_rounds;
 
 	ASSERT((ccp->cc_loaded == NULL && current_rounds == -1) ||
 	    (ccp->cc_loaded && current_rounds + rounds == ccp->cc_magsize));
@@ -2168,13 +2145,7 @@ umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 	ccp->cc_ploaded = ccp->cc_loaded;
 	ccp->cc_prounds = current_rounds;
 	ccp->cc_loaded = mp;
-
-	/*
-	 * Store the new rounds count atomically with release semantics.
-	 * This ensures that the magazine pointer update above happens-before
-	 * any fast-path load of the new magazine.
-	 */
-	atomic_store_int_release(&ccp->cc_rounds, rounds);
+	ccp->cc_rounds = rounds;
 
 	/*
 	 * Reset CPU hint cache on magazine reload to detect thread migration.
@@ -2203,87 +2174,28 @@ retry:
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 
 	/*
-	 * Lock-free fast path: Try to allocate from the loaded magazine
-	 * without taking the lock. This is the common case and provides
-	 * significant performance improvement.
+	 * NOTE: Lock-free fast path temporarily disabled due to race conditions.
+	 * The original implementation had data corruption issues in multithreaded
+	 * scenarios. Need to redesign using proper synchronization (e.g., RCU,
+	 * seqlock, or atomic magazine pointer updates).
+	 *
+	 * TODO: Re-implement lock-free magazine cache with correct memory ordering
+	 * See LOCK_FREE_MAGAZINE_ANALYSIS.md for details.
 	 */
 
-	/* First check if debug mode is enabled - must use slow path */
-	if (unlikely(ccp->cc_flags & UMF_BUFTAG))
-		goto locked_path;
-
-	/* Load current rounds count atomically */
-	rounds = atomic_load_explicit(&ccp->cc_rounds, memory_order_relaxed);
-
-	if (rounds > 0) {
-		/*
-		 * Take a local copy of the magazine pointer BEFORE the CAS.
-		 * This protects against the magazine being swapped out during
-		 * a reload operation between our CAS and the array access.
-		 */
-		loaded_mag = ccp->cc_loaded;
-
-		/*
-		 * Check if magazine is NULL (magazine layer not initialized yet).
-		 * This can happen during early bootstrap or if magazines are disabled.
-		 */
-		if (unlikely(loaded_mag == NULL))
-			goto locked_path;
-
-		/*
-		 * Try to atomically claim a slot. We use:
-		 * - memory_order_acquire on success: ensures the pointer we
-		 *   read from mag_round happens-after the store from the
-		 *   corresponding free operation
-		 * - memory_order_relaxed on failure: we just retry
-		 */
-		if (atomic_compare_exchange_weak_explicit(
-		    &ccp->cc_rounds, &rounds, rounds - 1,
-		    memory_order_acquire, memory_order_relaxed)) {
-
-			/*
-			 * Success! We've atomically claimed slot at index
-			 * (rounds - 1). No other thread can access this slot.
-			 * Use our local copy of the magazine pointer to avoid
-			 * any TOCTOU issues with magazine reload.
-			 */
-			buf = loaded_mag->mag_round[rounds - 1];
-			ccp->cc_alloc++;
-			return (buf);
-		}
-
-		/*
-		 * CAS failed - another thread modified cc_rounds concurrently.
-		 * The 'rounds' variable has been updated with the current value.
-		 * If there are still rounds available, retry the fast path.
-		 */
-		if (rounds > 0)
-			goto retry;
-	}
-
-	/*
-	 * Fast path failed - either magazine is empty or we lost the CAS race
-	 * repeatedly. Fall through to the locked slow path.
-	 */
 locked_path:
 	(void) mutex_lock(&ccp->cc_lock);
 	for (;;) {
 		/*
 		 * Re-check rounds under lock. Another thread might have
-		 * succeeded on the fast path or reloaded the magazine.
-		 * We need atomic_load here because the fast path modifies
-		 * cc_rounds without the lock.
+		 * reloaded the magazine.
 		 */
-		rounds = atomic_load_explicit(&ccp->cc_rounds, memory_order_relaxed);
+		rounds = ccp->cc_rounds;
 		if (rounds > 0) {
 			/*
-			 * Atomically decrement rounds. We hold the lock so no
-			 * magazine reload can happen, but the fast path might
-			 * still be active on other CPUs (shouldn't be common,
-			 * but possible if threads migrate).
+			 * Decrement rounds. We hold the lock so this is safe.
 			 */
-			atomic_store_explicit(&ccp->cc_rounds, rounds - 1,
-			    memory_order_relaxed);
+			ccp->cc_rounds = rounds - 1;
 			buf = ccp->cc_loaded->mag_round[rounds - 1];
 			ccp->cc_alloc++;
 			(void) mutex_unlock(&ccp->cc_lock);
@@ -2401,81 +2313,25 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 			return;
 
 	/*
-	 * Lock-free fast path: Try to free to the loaded magazine
-	 * without taking the lock. This is the common case.
+	 * NOTE: Lock-free fast path temporarily disabled due to race conditions.
+	 * See alloc path for details.
 	 */
-retry:
-	/* Load magazine size (read-only after cache creation) */
-	magsize = ccp->cc_magsize;
 
-	/* Load current rounds count atomically */
-	rounds = atomic_load_explicit(&ccp->cc_rounds, memory_order_relaxed);
-
-	if (rounds < magsize && magsize > 0) {
-		/*
-		 * Take a local copy of the magazine pointer BEFORE the CAS.
-		 * This protects against the magazine being swapped during reload.
-		 */
-		loaded_mag = ccp->cc_loaded;
-
-		/*
-		 * Check if magazine is NULL (magazine layer not initialized yet).
-		 * This can happen during early bootstrap or if magazines are disabled.
-		 */
-		if (unlikely(loaded_mag == NULL))
-			goto locked_slow_path;
-
-		/*
-		 * Try to atomically claim a slot. We use:
-		 * - memory_order_release on success: ensures our store to
-		 *   mag_round happens-before any future allocation that reads it
-		 * - memory_order_relaxed on failure: we just retry
-		 */
-		if (atomic_compare_exchange_weak_explicit(
-		    &ccp->cc_rounds, &rounds, rounds + 1,
-		    memory_order_release, memory_order_relaxed)) {
-
-			/*
-			 * Success! We've atomically claimed slot at index 'rounds'.
-			 * Store the buffer pointer. The release semantics from the
-			 * CAS ensure this store happens-before any future load.
-			 */
-			loaded_mag->mag_round[rounds] = buf;
-			ccp->cc_free++;
-			return;
-		}
-
-		/*
-		 * CAS failed - another thread modified cc_rounds concurrently.
-		 * The 'rounds' variable has been updated. Retry if space remains.
-		 */
-		if (rounds < magsize)
-			goto retry;
-	}
-
-	/*
-	 * Fast path failed - magazine is full or not initialized.
-	 * Fall through to locked slow path.
-	 */
 locked_slow_path:
 	(void) mutex_lock(&ccp->cc_lock);
 	for (;;) {
 		/*
 		 * Re-check rounds under lock. Another thread might have
-		 * succeeded or reloaded the magazine. Use atomic_load because
-		 * the fast path modifies cc_rounds without the lock.
+		 * reloaded the magazine.
 		 */
-		rounds = atomic_load_explicit(&ccp->cc_rounds, memory_order_relaxed);
+		rounds = ccp->cc_rounds;
 		magsize = ccp->cc_magsize;
 
 		if ((uint_t)rounds < magsize) {
 			/*
-			 * Atomically increment rounds. We hold the lock so no
-			 * magazine reload can happen, but theoretically the fast
-			 * path could be active on another CPU (rare).
+			 * Increment rounds. We hold the lock so this is safe.
 			 */
-			atomic_store_explicit(&ccp->cc_rounds, rounds + 1,
-			    memory_order_relaxed);
+			ccp->cc_rounds = rounds + 1;
 			ccp->cc_loaded->mag_round[rounds] = buf;
 			ccp->cc_free++;
 			(void) mutex_unlock(&ccp->cc_lock);
@@ -2778,11 +2634,11 @@ umem_cache_magazine_purge(umem_cache_t *cp)
 		(void) mutex_lock(&ccp->cc_lock);
 		mp = ccp->cc_loaded;
 		pmp = ccp->cc_ploaded;
-		rounds = atomic_load_explicit(&ccp->cc_rounds, memory_order_relaxed);
+		rounds = ccp->cc_rounds;
 		prounds = ccp->cc_prounds;
 		ccp->cc_loaded = NULL;
 		ccp->cc_ploaded = NULL;
-		atomic_store_explicit(&ccp->cc_rounds, -1, memory_order_relaxed);
+		ccp->cc_rounds = -1;
 		ccp->cc_prounds = -1;
 		ccp->cc_magsize = 0;
 		(void) mutex_unlock(&ccp->cc_lock);

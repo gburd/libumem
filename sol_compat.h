@@ -125,7 +125,7 @@ static INLINE int thr_create(void *stack_base __attribute__((unused)),
 static INLINE uint_t umem_atomic_cas(uint_t *mem, uint_t with, uint_t cmp)
 {
   uint_t prev;
-  asm volatile ("lock; cmpxchgl %1, %2"
+  __asm__ volatile ("lock; cmpxchgl %1, %2"
         : "=a" (prev)
         : "r"    (with), "m" (*(mem)), "0" (cmp)
         : "memory");

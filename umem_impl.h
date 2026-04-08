@@ -321,7 +321,7 @@ typedef struct umem_cpu_cache {
 	uint_t		cc_free;	/* frees to this cpu */
 	umem_magazine_t	*cc_loaded;	/* the currently loaded magazine */
 	umem_magazine_t	*cc_ploaded;	/* the previously loaded magazine */
-	atomic_int	cc_rounds;	/* number of objects in loaded mag (accessed atomically for lock-free fast path) */
+	int		cc_rounds;	/* number of objects in loaded mag */
 	int		cc_prounds;	/* number of objects in previous mag */
 	int		cc_magsize;	/* number of rounds in a full mag */
 	int		cc_flags;	/* CPU-local copy of cache_flags */

@@ -9,7 +9,8 @@ AC_PROG_CC
 # Try -std=c17 first, fall back to -std=c11
 AC_MSG_CHECKING([for C17 support])
 OLD_CFLAGS="$CFLAGS"
-CFLAGS="$CFLAGS -std=c17"
+# Add feature test macros for POSIX and GNU extensions
+CFLAGS="$CFLAGS -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE"
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
     #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201710L
     #error C17 not supported
@@ -17,7 +18,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 ]], [[]])],
     [AC_MSG_RESULT([yes])],
     [AC_MSG_RESULT([no, trying C11])
-     CFLAGS="$OLD_CFLAGS -std=c11"
+     CFLAGS="$OLD_CFLAGS -std=c11 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE"
      AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
          #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
          #error C11 not supported
