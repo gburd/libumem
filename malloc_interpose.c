@@ -470,8 +470,9 @@ realloc(void *ptr, size_t size)
 	}
 
 	/*
-	 * For bootstrap pointers, get size from header.
-	 * For libc pointers, use malloc_usable_size().
+	 * Check for bootstrap pointers first.
+	 * These can exist even in READY state if they were allocated
+	 * during bootstrap phase and never freed.
 	 */
 	if (is_bootstrap_pointer(ptr)) {
 		old_size = get_bootstrap_size(ptr);
@@ -511,18 +512,23 @@ realloc(void *ptr, size_t size)
 	}
 
 	/*
-	 * Normal case: delegate to umem's realloc logic.
-	 * We reimplement the logic from malloc.c to avoid circular calls.
+	 * In READY state, try umem's process_free to get the size.
+	 * If that fails, the pointer is invalid.
 	 */
 	if (interpose_state == INTERPOSE_READY) {
 		extern int process_free(void *, int, size_t *);
 
-		/* Get old size without freeing */
 		if (process_free(ptr, 0, &old_size) == 0) {
+			/*
+			 * Pointer is invalid or corrupted.
+			 * Don't fall through to malloc_usable_size as that
+			 * reads libc malloc metadata, not umem metadata.
+			 */
 			errno = EINVAL;
 			return (NULL);
 		}
 
+		/* Valid umem pointer */
 		if (size == old_size)
 			return (ptr);
 
@@ -535,7 +541,10 @@ realloc(void *ptr, size_t size)
 		return (new_ptr);
 	}
 
-	/* Bootstrap path: allocate new, copy, free old */
+	/*
+	 * Bootstrap phase fallback: use malloc_usable_size.
+	 * This path should only be reached during bootstrap phase.
+	 */
 	new_ptr = malloc(size);
 	if (new_ptr == NULL)
 		return (NULL);
