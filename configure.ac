@@ -3,6 +3,33 @@ AM_INIT_AUTOMAKE([dist-bzip2])
 AC_CONFIG_MACRO_DIRS([m4])
 
 AC_PROG_CC
+
+# Require C17 standard (ISO/IEC 9899:2018)
+# Matches PostgreSQL v16+ requirements
+# Try -std=c17 first, fall back to -std=c11
+AC_MSG_CHECKING([for C17 support])
+OLD_CFLAGS="$CFLAGS"
+CFLAGS="$CFLAGS -std=c17"
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+    #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201710L
+    #error C17 not supported
+    #endif
+]], [[]])],
+    [AC_MSG_RESULT([yes])],
+    [AC_MSG_RESULT([no, trying C11])
+     CFLAGS="$OLD_CFLAGS -std=c11"
+     AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+         #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
+         #error C11 not supported
+         #endif
+     ]], [[]])],
+         [AC_MSG_WARN([Using C11 instead of C17])],
+         [AC_MSG_ERROR([C11 or C17 compiler required (GCC 9.0+, Clang 10.0+)])])])
+
+# Verify C11/C17 atomics support
+AC_CHECK_HEADER([stdatomic.h], [],
+    [AC_MSG_ERROR([C11/C17 atomics required (<stdatomic.h>)])])
+
 AM_PROG_AS
 LT_INIT
 

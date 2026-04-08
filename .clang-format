@@ -1,0 +1,17 @@
+# libumem code formatting
+# Matches existing Solaris/OpenSolaris style
+
+BasedOnStyle: LLVM
+IndentWidth: 8
+UseTab: Always
+TabWidth: 8
+ColumnLimit: 80
+BreakBeforeBraces: Linux
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+IndentCaseLabels: false
+AlignAfterOpenBracket: Align
+SpaceAfterCStyleCast: false
+PointerAlignment: Right
+DerivePointerAlignment: false

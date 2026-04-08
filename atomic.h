@@ -24,6 +24,9 @@ typedef unsigned char uchar_t;
 #define atomic_cas_uint(target, cmp, new) \
 	__sync_val_compare_and_swap((target), (cmp), (new))
 
+#define atomic_cas_int(target, cmp, new) \
+	__sync_val_compare_and_swap((target), (cmp), (new))
+
 #define atomic_cas_ulong(target, cmp, new) \
 	__sync_val_compare_and_swap((target), (cmp), (new))
 
