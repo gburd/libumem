@@ -78,7 +78,8 @@ typedef enum {
 	INTERPOSE_READY		/* Fully initialized, use umem */
 } interpose_state_t;
 
-static atomic_int interpose_state = ATOMIC_VAR_INIT(INTERPOSE_UNINIT);
+/* Direct initialization - ATOMIC_VAR_INIT deprecated in C17 */
+static atomic_int interpose_state = INTERPOSE_UNINIT;
 
 /* Pointers to real libc functions */
 static void *(*libc_malloc)(size_t) = NULL;

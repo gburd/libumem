@@ -39,6 +39,7 @@
 /* #pragma ident	"@(#)umem_impl.h	1.6	05/06/08 SMI" */
 
 #include <umem.h>
+#include <stdatomic.h>
 
 #ifdef HAVE_SYS_SYSMACROS_H
 #include <sys/sysmacros.h>
@@ -315,12 +316,12 @@ typedef struct umem_magtype {
 	((size_t)(&((umem_cache_t *)0)->cache_cpu[ncpus]))
 
 typedef struct umem_cpu_cache {
-	mutex_t		cc_lock;	/* protects this cpu's local cache */
+	mutex_t		cc_lock;	/* protects slow path (magazine reload) */
 	uint_t		cc_alloc;	/* allocations from this cpu */
 	uint_t		cc_free;	/* frees to this cpu */
 	umem_magazine_t	*cc_loaded;	/* the currently loaded magazine */
 	umem_magazine_t	*cc_ploaded;	/* the previously loaded magazine */
-	int		cc_rounds;	/* number of objects in loaded mag */
+	_Atomic int	cc_rounds;	/* number of objects in loaded mag (atomic for lock-free fast path) */
 	int		cc_prounds;	/* number of objects in previous mag */
 	int		cc_magsize;	/* number of rounds in a full mag */
 	int		cc_flags;	/* CPU-local copy of cache_flags */
