@@ -72,12 +72,17 @@ static MunitResult test_vmem_alloc_free(const MunitParameter params[], void* dat
 
     /* Create arena with initial span */
     size_t span_size = 1048576;  /* 1MB */
-    void *base = malloc(span_size);
+    size_t quantum = 4096;
+
+    /* Ensure base is aligned to quantum (required by vmem_create) */
+    void *base;
+    int ret = posix_memalign(&base, quantum, span_size);
+    munit_assert_int(ret, ==, 0);
     munit_assert_not_null(base);
 
     vmem_t *vmp = vmem_create(
         "test_alloc_arena",
-        base, span_size, 4096,
+        base, span_size, quantum,
         NULL, NULL, NULL, 0,
         VM_SLEEP
     );
@@ -592,12 +597,16 @@ static MunitResult test_vmem_exhaustion(const MunitParameter params[], void* dat
     (void)data;
 
     /* Create arena with fixed span */
-    void *base = malloc(1048576);
+    size_t span_size = 1048576;
+    size_t quantum = 4096;
+    void *base;
+    int ret = posix_memalign(&base, quantum, span_size);
+    munit_assert_int(ret, ==, 0);
     munit_assert_not_null(base);
 
     vmem_t *vmp = vmem_create(
         "test_exhaustion_arena",
-        base, 1048576, 4096,
+        base, span_size, quantum,
         NULL, NULL, NULL, 0,
         VM_SLEEP
     );
