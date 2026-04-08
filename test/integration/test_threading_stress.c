@@ -245,8 +245,8 @@ test_mixed_heavy(const MunitParameter params[], void *data)
 	(void)params;
 	(void)data;
 
-	const int NUM_THREADS = 64;
-	const int ITERATIONS = 5000;
+	const int NUM_THREADS = 32;
+	const int ITERATIONS = 10000;
 	pthread_t threads[NUM_THREADS];
 	stress_args_t args[NUM_THREADS];
 
