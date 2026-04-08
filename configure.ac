@@ -121,7 +121,7 @@ int main(void){return (sizeof(pthread_mutex_t) > 24);}
 AC_CHECK_LIB(dl,dlopen)
 
 AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h])
-AC_CHECK_FUNCS([issetugid mallinfo malloc_stats])
+AC_CHECK_FUNCS([issetugid mallinfo mallinfo2 malloc_stats])
 
 # Check for FreeBSD pthread hooks
 AC_MSG_CHECKING([for FreeBSD pthread hooks])

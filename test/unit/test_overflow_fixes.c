@@ -21,7 +21,15 @@ test_calloc_overflow_SIZE_MAX(const MunitParameter params[], void* data)
 	size_t elsize = 2;
 
 	errno = 0;
+	/* Intentionally testing overflow - suppress warning */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Walloc-size-larger-than="
+#endif
 	void *ptr = calloc(nelem, elsize);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 	/* Should fail with ENOMEM */
 	munit_assert_null(ptr);
@@ -39,7 +47,15 @@ test_calloc_overflow_large(const MunitParameter params[], void* data)
 	size_t elsize = 4;
 
 	errno = 0;
+	/* Intentionally testing overflow - suppress warning */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Walloc-size-larger-than="
+#endif
 	void *ptr = calloc(nelem, elsize);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 	/* Should fail with ENOMEM */
 	munit_assert_null(ptr);
@@ -116,7 +132,15 @@ test_calloc_near_max(const MunitParameter params[], void* data)
 	size_t elsize = 1025;  /* Should overflow */
 
 	errno = 0;
+	/* Intentionally testing overflow - suppress warning */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Walloc-size-larger-than="
+#endif
 	void *ptr = calloc(nelem, elsize);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 	/* Should fail */
 	munit_assert_null(ptr);

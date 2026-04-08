@@ -16,11 +16,21 @@ extern const int umem_genasm_supported;
 
 static void minfo(void)
 {
-#if defined(HAVE_MALLOC_H) && defined(HAVE_MALLINFO)
+#if defined(HAVE_MALLOC_H)
+#if defined(HAVE_MALLINFO2)
+  /* Use mallinfo2() which returns size_t instead of int (no overflow) */
+  struct mallinfo2 mi;
+  mi = mallinfo2();
+  printf(" fordblks = %zu\n", mi.fordblks);
+#elif defined(HAVE_MALLINFO)
+  /* Fall back to deprecated mallinfo() if mallinfo2() not available */
   struct mallinfo mi;
   mi = mallinfo();
   printf(" fordblks = %d\n", mi.fordblks);
+#endif
+#if defined(HAVE_MALLOC_STATS)
   malloc_stats();
+#endif
   printf("\n");
 #endif
 }
