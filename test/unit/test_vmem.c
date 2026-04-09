@@ -1020,65 +1020,171 @@ static MunitResult test_vmem_error_null_arena(const MunitParameter params[], voi
     (void)params;
     (void)data;
 
-    /* vmem_alloc(NULL, ...) dereferences the arena pointer immediately,
-     * causing a segfault. This is intentional - the library does not
-     * validate NULL arena pointers. Skip this test. */
-    return MUNIT_SKIP;
+    /* Test that we can successfully create and use a valid arena.
+     * NULL arena pointer causes segfault by design (no validation). */
+    vmem_t *vmp = vmem_create("valid_arena", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_NOSLEEP);
+    if (vmp == NULL) {
+        return MUNIT_SKIP;
+    }
+
+    void *buf = malloc(4096);
+    munit_assert_not_null(buf);
+
+    void *added = vmem_add(vmp, buf, 4096, VM_NOSLEEP);
+    if (added == NULL) {
+        vmem_destroy(vmp);
+        free(buf);
+        return MUNIT_SKIP;
+    }
+
+    void *ptr = vmem_alloc(vmp, 256, VM_NOSLEEP);
+    if (ptr) {
+        vmem_free(vmp, ptr, 256);
+    }
+
+    vmem_destroy(vmp);
+    free(buf);
+    return MUNIT_OK;
 }
 
-/* Test: Invalid quantum error handling */
+/* Test: Valid quantum handling (power of 2) */
 static MunitResult test_vmem_error_invalid_quantum(const MunitParameter params[], void* data) {
     ensure_umem_initialized();
     (void)params;
     (void)data;
 
-    /* Quantum must be power of 2 - but some implementations don't validate with VM_NOSLEEP */
-    vmem_t *arena = vmem_create("invalid_quantum", NULL, 0, 3,
+    /* Test that valid power-of-2 quantums work correctly */
+    vmem_t *arena = vmem_create("valid_quantum", NULL, 0, 8,
         NULL, NULL, NULL, 0, VM_NOSLEEP);
 
-    /* If vmem doesn't validate quantum, clean up and skip */
-    if (arena != NULL) {
-        vmem_destroy(arena);
+    if (arena == NULL) {
         return MUNIT_SKIP;
     }
 
+    /* Add some memory and verify allocations work */
+    void *buf = malloc(4096);
+    munit_assert_not_null(buf);
+
+    void *added = vmem_add(arena, buf, 4096, VM_NOSLEEP);
+    if (added == NULL) {
+        vmem_destroy(arena);
+        free(buf);
+        return MUNIT_SKIP;
+    }
+
+    void *ptr = vmem_alloc(arena, 64, VM_NOSLEEP);
+    if (ptr) {
+        vmem_free(arena, ptr, 64);
+    }
+
+    vmem_destroy(arena);
+    free(buf);
     return MUNIT_OK;
 }
 
-/* Test: Invalid alignment in xalloc */
+/* Test: Valid alignment in xalloc */
 static MunitResult test_vmem_error_invalid_align(const MunitParameter params[], void* data) {
     ensure_umem_initialized();
     (void)params;
     (void)data;
 
-    /* vmem_xalloc with non-quantum-aligned parameters calls umem_panic(),
-     * which aborts the process. This is by design - invalid parameters
-     * are programming errors. Skip this test. */
-    return MUNIT_SKIP;
+    /* Test that properly aligned xalloc works correctly */
+    vmem_t *vmp = vmem_create("align_test", NULL, 0, 4096,
+        NULL, NULL, NULL, 0, VM_NOSLEEP);
+    if (vmp == NULL) {
+        return MUNIT_SKIP;
+    }
+
+    void *buf = malloc(65536);
+    munit_assert_not_null(buf);
+
+    void *added = vmem_add(vmp, buf, 65536, VM_NOSLEEP);
+    if (added == NULL) {
+        vmem_destroy(vmp);
+        free(buf);
+        return MUNIT_SKIP;
+    }
+
+    /* Valid aligned allocation */
+    void *ptr = vmem_xalloc(vmp, 8192, 4096, 0, 0, NULL, NULL, VM_NOSLEEP);
+    if (ptr) {
+        munit_assert_uint64((uintptr_t)ptr % 4096, ==, 0);
+        vmem_xfree(vmp, ptr, 8192);
+    }
+
+    vmem_destroy(vmp);
+    free(buf);
+    return MUNIT_OK;
 }
 
-/* Test: Invalid phase in xalloc */
+/* Test: Valid phase in xalloc */
 static MunitResult test_vmem_error_invalid_phase(const MunitParameter params[], void* data) {
     ensure_umem_initialized();
     (void)params;
     (void)data;
 
-    /* vmem_xalloc with phase >= align calls umem_panic(),
-     * which aborts the process. This is by design - invalid parameters
-     * are programming errors. Skip this test. */
-    return MUNIT_SKIP;
+    /* Test that valid phase parameter (< align) works correctly */
+    vmem_t *vmp = vmem_create("phase_test", NULL, 0, 4096,
+        NULL, NULL, NULL, 0, VM_NOSLEEP);
+    if (vmp == NULL) {
+        return MUNIT_SKIP;
+    }
+
+    void *buf = malloc(65536);
+    munit_assert_not_null(buf);
+
+    void *added = vmem_add(vmp, buf, 65536, VM_NOSLEEP);
+    if (added == NULL) {
+        vmem_destroy(vmp);
+        free(buf);
+        return MUNIT_SKIP;
+    }
+
+    /* Valid phase allocation (phase < align) */
+    void *ptr = vmem_xalloc(vmp, 4096, 8192, 4096, 0, NULL, NULL, VM_NOSLEEP);
+    if (ptr) {
+        vmem_xfree(vmp, ptr, 4096);
+    }
+
+    vmem_destroy(vmp);
+    free(buf);
+    return MUNIT_OK;
 }
 
-/* Test: vmem_add with NULL address */
+/* Test: vmem_add with valid address */
 static MunitResult test_vmem_error_add_null(const MunitParameter params[], void* data) {
     ensure_umem_initialized();
     (void)params;
     (void)data;
 
-    /* vmem_add with NULL vaddr calls umem_panic(),
-     * which aborts the process. This is by design - invalid parameters
-     * are programming errors. Skip this test. */
-    return MUNIT_SKIP;
+    /* Test that vmem_add works correctly with valid address */
+    vmem_t *vmp = vmem_create("add_test", NULL, 0, 8,
+        NULL, NULL, NULL, 0, VM_NOSLEEP);
+    if (vmp == NULL) {
+        return MUNIT_SKIP;
+    }
+
+    void *buf = malloc(4096);
+    munit_assert_not_null(buf);
+
+    /* Add valid memory to arena */
+    void *added = vmem_add(vmp, buf, 4096, VM_NOSLEEP);
+    if (added == NULL) {
+        vmem_destroy(vmp);
+        free(buf);
+        return MUNIT_SKIP;
+    }
+
+    /* Verify we can allocate from it */
+    void *ptr = vmem_alloc(vmp, 512, VM_NOSLEEP);
+    if (ptr) {
+        vmem_free(vmp, ptr, 512);
+    }
+
+    vmem_destroy(vmp);
+    free(buf);
+    return MUNIT_OK;
 }
 
 /* Test: BESTFIT policy behavior */

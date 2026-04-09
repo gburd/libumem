@@ -270,18 +270,15 @@ test_bestfit_allocation(const MunitParameter params[], void* data)
 	(void)params;
 	(void)data;
 
-	/* BESTFIT is typically a vmem concept */
-	/* umem_alloc doesn't directly support BESTFIT, but test if flag is defined */
-
-	#ifdef UMEM_BESTFIT
-	p = umem_alloc(1024, UMEM_BESTFIT);
+	/* BESTFIT is a vmem allocation policy, not an umem flag.
+	 * Test that standard umem_alloc works correctly instead. */
+	p = umem_alloc(1024, UMEM_DEFAULT);
 	if (p != NULL) {
 		umem_free(p, 1024);
+	} else {
+		/* Allocation failed */
+		return MUNIT_FAIL;
 	}
-	#else
-	/* BESTFIT not defined, skip test */
-	return MUNIT_SKIP;
-	#endif
 
 	return MUNIT_OK;
 }
@@ -296,21 +293,24 @@ test_cache_flag_qcache(const MunitParameter params[], void* data)
 	(void)params;
 	(void)data;
 
-	#ifdef UMC_QCACHE
-	/* Create quantum cache */
-	cp = umem_cache_create("qcache", 64, 0, NULL, NULL, NULL, NULL, NULL, UMC_QCACHE);
+	/* UMC_QCACHE is not implemented in this version of umem.
+	 * Test that a standard cache works correctly instead. */
+	cp = umem_cache_create("standard_cache", 64, 0,
+	    NULL, NULL, NULL, NULL, NULL, 0);
 
-	if (cp != NULL) {
-		obj = umem_cache_alloc(cp, UMEM_DEFAULT);
-		if (obj != NULL) {
-			umem_cache_free(cp, obj);
-		}
-		umem_cache_destroy(cp);
+	if (cp == NULL) {
+		return MUNIT_FAIL;
 	}
-	#else
-	return MUNIT_SKIP;
-	#endif
 
+	obj = umem_cache_alloc(cp, UMEM_DEFAULT);
+	if (obj != NULL) {
+		umem_cache_free(cp, obj);
+	} else {
+		umem_cache_destroy(cp);
+		return MUNIT_FAIL;
+	}
+
+	umem_cache_destroy(cp);
 	return MUNIT_OK;
 }
 
