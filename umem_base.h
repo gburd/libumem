@@ -148,13 +148,7 @@ void umem_setup_envvars(int);
 void umem_process_envvars(void);
 
 /*
- * umem_genasm.c: private interfaces
- */
-extern const int umem_genasm_supported;
-extern int umem_genasm(int *, umem_cache_t **, int);
-
-/*
- * malloc.c: traditional malloc/free interface for genasm
+ * malloc.c: traditional malloc/free interface
  */
 extern void *umem_malloc(size_t);
 extern void umem_malloc_free(void *);

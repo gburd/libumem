@@ -275,7 +275,7 @@ munit_log_errno(MunitLogLevel level, FILE *fp, const char *msg)
   munit_error_str[0] = '\0';
 
 #if !defined(_WIN32)
-  strerror_r(errno, munit_error_str, MUNIT_STRERROR_LEN);
+  (void)strerror_r(errno, munit_error_str, MUNIT_STRERROR_LEN);
 #else
   strerror_s(munit_error_str, MUNIT_STRERROR_LEN, errno);
 #endif

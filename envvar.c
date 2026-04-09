@@ -44,6 +44,10 @@
 #include "vmem_base.h"
 #include "umem_tcache.h"
 
+#ifdef UMEM_NUMA_AVAILABLE
+#include "umem_numa.h"
+#endif
+
 /*
  * A umem environment variable, like UMEM_DEBUG, is set to a series
  * of items, seperated by ',':
@@ -158,6 +162,12 @@ static umem_env_item_t umem_options_items[] = {
 		"Enable magazine size auto-tuning (1=enable, 0=disable)",
 		NULL, 0,	&umem_magazine_tuning
 	},
+#ifdef UMEM_NUMA_AVAILABLE
+	{ "numa",		"Evolving",	ITEM_UINT,
+		"Enable NUMA-aware allocation (1=enable, 0=disable, auto-detected)",
+		NULL, 0,	(uint_t *)&umem_numa_enabled
+	},
+#endif
 
 	{ "size_add",		"Private",	ITEM_SPECIAL,
 		"add a size to the cache size table",

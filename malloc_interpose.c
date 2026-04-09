@@ -35,7 +35,9 @@
  * 4. Track pointer ownership to know which free path to use
  */
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include "config.h"
 #include <dlfcn.h>
 #include <stddef.h>

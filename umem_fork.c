@@ -46,10 +46,12 @@ umem_lockup_cache(umem_cache_t *cp)
 		(void) mutex_lock(&cp->cache_cpu[idx].cc_lock);
 
 	/*
-	 * Lock all depot stripes for fork safety.
+	 * Note: Depot stripes are now lock-free (no ds_lock).
+	 * For fork safety, we rely on:
+	 * 1. Per-CPU locks above prevent new magazine ops
+	 * 2. Lock-free depot uses atomic ops (safe across fork)
+	 * 3. Child process gets consistent atomic state
 	 */
-	for (idx = 0; idx < UMEM_DEPOT_STRIPES; idx++)
-		(void) mutex_lock(&cp->cache_depot[idx].ds_lock);
 
 	(void) mutex_lock(&cp->cache_depot_lock);
 	(void) mutex_lock(&cp->cache_lock);
@@ -65,10 +67,8 @@ umem_release_cache(umem_cache_t *cp)
 	(void) mutex_unlock(&cp->cache_depot_lock);
 
 	/*
-	 * Unlock all depot stripes.
+	 * Note: Depot stripes are lock-free (no locks to release).
 	 */
-	for (idx = 0; idx < UMEM_DEPOT_STRIPES; idx++)
-		(void) mutex_unlock(&cp->cache_depot[idx].ds_lock);
 
 	for (idx = 0; idx < ncpus; idx++)
 		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);

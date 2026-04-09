@@ -334,35 +334,79 @@ typedef struct umem_cpu_cache {
 } __attribute__((aligned(UMEM_CACHE_LINE_SIZE))) umem_cpu_cache_t;
 
 /*
+ * Tagged pointer for lock-free stack operations.
+ * Packs a pointer and a 16-bit version counter into a single 64-bit word
+ * so the pair can be atomically loaded/CAS'd with standard 64-bit atomics.
+ * On x86_64 and aarch64, userspace pointers use at most 48 bits; the
+ * upper 16 bits carry the ABA-prevention version counter.
+ */
+#define	UMEM_PTR_MASK	0x0000FFFFFFFFFFFFULL
+#define	UMEM_VER_SHIFT	48
+
+typedef union umem_tagged_ptr {
+	uint64_t	raw;		/* Atomic-friendly 64-bit representation */
+	struct {
+		/*
+		 * On little-endian (x86_64, aarch64-le) the low 48 bits
+		 * are the pointer and the high 16 are the version.
+		 * We access them through the helper macros below rather
+		 * than relying on bitfield layout.
+		 */
+		uint64_t	_bits;
+	} _packed;
+} umem_tagged_ptr_t;
+
+static inline void *
+umem_tagged_ptr_get(umem_tagged_ptr_t tp)
+{
+	return (void *)(uintptr_t)(tp.raw & UMEM_PTR_MASK);
+}
+
+static inline uint16_t
+umem_tagged_ver_get(umem_tagged_ptr_t tp)
+{
+	return (uint16_t)(tp.raw >> UMEM_VER_SHIFT);
+}
+
+static inline umem_tagged_ptr_t
+umem_tagged_ptr_make(void *ptr, uint16_t ver)
+{
+	umem_tagged_ptr_t tp;
+	tp.raw = ((uint64_t)(uintptr_t)ptr & UMEM_PTR_MASK) |
+	    ((uint64_t)ver << UMEM_VER_SHIFT);
+	return tp;
+}
+
+/*
  * The magazine lists used in the depot.
+ * Uses lock-free atomic operations via tagged pointers.
  */
 typedef struct umem_maglist {
-	umem_magazine_t	*ml_list;	/* magazine list */
-	long		ml_total;	/* number of magazines */
+	volatile umem_tagged_ptr_t ml_list;	/* magazine list (lock-free) */
+	long		ml_total;	/* number of magazines (approximate) */
 	long		ml_min;		/* min since last update */
 	long		ml_reaplimit;	/* max reapable magazines */
 	uint64_t	ml_alloc;	/* allocations from this list */
 } umem_maglist_t;
 
 /*
- * Depot striping for reduced lock contention.
- * Each stripe has its own lock and magazine lists.
+ * Depot striping for lock-free operations.
+ * Each stripe has lock-free magazine lists using tagged pointers.
  * Threads hash to a stripe based on thread ID.
  */
 #define	UMEM_DEPOT_STRIPES	16
 
 typedef struct umem_depot_stripe {
-	mutex_t		ds_lock;	/* protects this stripe */
-	umem_maglist_t	ds_full;	/* full magazines */
-	umem_maglist_t	ds_empty;	/* empty magazines */
-	uint64_t	ds_contention;	/* contention count for this stripe */
+	umem_maglist_t	ds_full;	/* full magazines (lock-free) */
+	umem_maglist_t	ds_empty;	/* empty magazines (lock-free) */
+	uint64_t	ds_contention;	/* CAS retry count for this stripe */
 	/*
 	 * Padding to prevent false sharing between depot stripes.
 	 * Each stripe is aligned to cache line boundary to ensure
 	 * independent cache line ownership in multi-threaded scenarios.
 	 */
 	char		ds_pad[UMEM_CACHE_LINE_SIZE -
-	    (sizeof(mutex_t) + 2 * sizeof(umem_maglist_t) + sizeof(uint64_t)) % UMEM_CACHE_LINE_SIZE];
+	    (2 * sizeof(umem_maglist_t) + sizeof(uint64_t)) % UMEM_CACHE_LINE_SIZE];
 } __attribute__((aligned(UMEM_CACHE_LINE_SIZE))) umem_depot_stripe_t;
 
 #define	UMEM_CACHE_NAMELEN	31
@@ -435,6 +479,13 @@ struct umem_cache {
 	umem_maglist_t	cache_full;		/* legacy full magazines */
 	umem_maglist_t	cache_empty;		/* legacy empty magazines */
 	umem_depot_stripe_t cache_depot[UMEM_DEPOT_STRIPES];	/* striped depot */
+
+#ifdef UMEM_NUMA_AVAILABLE
+	/*
+	 * NUMA layer
+	 */
+	void *cache_numa_info;			/* NUMA-aware depot info */
+#endif
 
 	/*
 	 * Per-CPU layer

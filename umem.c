@@ -887,14 +887,14 @@ umem_cache_t            umem_null_cache = {
 	NULL,
 	DEFAULTMUTEX,                           /* start of depot layer (legacy) */
 	NULL, {
-		{ NULL, 0, 0 }, 0, 0, 0, 0    /* cache_full (legacy) */
+		{ .raw = 0 }, 0, 0, 0, 0    /* cache_full (legacy) */
 	}, {
-		{ NULL, 0, 0 }, 0, 0, 0, 0    /* cache_empty (legacy) */
+		{ .raw = 0 }, 0, 0, 0, 0    /* cache_empty (legacy) */
 	}, {
 		/* cache_depot[UMEM_DEPOT_STRIPES] - initialized at runtime */
 		[0 ... (UMEM_DEPOT_STRIPES - 1)] = {
-			{ { NULL, 0, 0 }, 0, 0, 0, 0 },   /* ds_full */
-			{ { NULL, 0, 0 }, 0, 0, 0, 0 },   /* ds_empty */
+			{ { .raw = 0 }, 0, 0, 0, 0 },   /* ds_full */
+			{ { .raw = 0 }, 0, 0, 0, 0 },   /* ds_empty */
 			0,                      /* ds_contention */
 			{0}                     /* ds_pad (cache line padding) */
 		}
@@ -1946,11 +1946,7 @@ static inline umem_tagged_ptr_t
 atomic_load_tagged_ptr(volatile umem_tagged_ptr_t *ptr)
 {
 	umem_tagged_ptr_t val;
-	uint64_t raw;
-
-	/* Atomic load via fetch-and-add with 0 */
-	raw = __sync_fetch_and_add((volatile uint64_t *)ptr, 0);
-	memcpy(&val, &raw, sizeof(val));
+	val.raw = __sync_fetch_and_add((volatile uint64_t *)&ptr->raw, 0);
 	return val;
 }
 
@@ -1964,22 +1960,16 @@ atomic_cas_tagged_ptr(volatile umem_tagged_ptr_t *ptr,
                      umem_tagged_ptr_t *expected,
                      umem_tagged_ptr_t desired)
 {
-	uint64_t exp_raw, des_raw, old;
+	uint64_t old;
 
-	/* Convert structures to 64-bit values */
-	memcpy(&exp_raw, expected, sizeof(exp_raw));
-	memcpy(&des_raw, &desired, sizeof(des_raw));
+	old = __sync_val_compare_and_swap((volatile uint64_t *)&ptr->raw,
+	    expected->raw, desired.raw);
 
-	/* Perform atomic CAS */
-	old = __sync_val_compare_and_swap((volatile uint64_t *)ptr,
-	                                  exp_raw, des_raw);
-
-	if (old == exp_raw) {
-		return 1;  /* Success */
+	if (old == expected->raw) {
+		return 1;
 	} else {
-		/* Update expected with current value for retry */
-		memcpy(expected, &old, sizeof(*expected));
-		return 0;  /* Failure */
+		expected->raw = old;
+		return 0;
 	}
 }
 
@@ -2061,7 +2051,7 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 	 */
 	do {
 		old = atomic_load_tagged_ptr(&stripe_list->ml_list);
-		mp = (umem_magazine_t *)old.ptr;
+		mp = (umem_magazine_t *)umem_tagged_ptr_get(old);
 
 		if (mp == NULL) {
 			/* Empty depot */
@@ -2069,9 +2059,8 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 		}
 
 		/* Prepare new head (next magazine in list) */
-		new.ptr = mp->mag_next;
-		new.version = old.version + 1;  /* Increment to prevent ABA */
-		new._pad = 0;
+		new = umem_tagged_ptr_make(mp->mag_next,
+		    umem_tagged_ver_get(old) + 1);
 
 		/*
 		 * Track CAS retries as contention metric.
@@ -2140,12 +2129,11 @@ umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp, umem_magazine_t *mp)
 		old = atomic_load_tagged_ptr(&stripe_list->ml_list);
 
 		/* Link magazine to current head */
-		mp->mag_next = (umem_magazine_t *)old.ptr;
+		mp->mag_next = (umem_magazine_t *)umem_tagged_ptr_get(old);
 
 		/* Prepare new head */
-		new.ptr = mp;
-		new.version = old.version + 1;  /* Increment to prevent ABA */
-		new._pad = 0;
+		new = umem_tagged_ptr_make(mp,
+		    umem_tagged_ver_get(old) + 1);
 
 		/*
 		 * Track CAS retries as contention metric.
@@ -2193,12 +2181,11 @@ umem_depot_reap_pop(umem_maglist_t *mlp)
 
 	do {
 		old = atomic_load_tagged_ptr(&mlp->ml_list);
-		mp = (umem_magazine_t *)old.ptr;
+		mp = (umem_magazine_t *)umem_tagged_ptr_get(old);
 		if (mp == NULL)
 			return (NULL);
-		new.ptr = mp->mag_next;
-		new.version = old.version + 1;
-		new._pad = 0;
+		new = umem_tagged_ptr_make(mp->mag_next,
+		    umem_tagged_ver_get(old) + 1);
 	} while (!atomic_cas_tagged_ptr(&mlp->ml_list, &old, new));
 
 	atomic_add_64((uint64_t *)&mlp->ml_total, (uint64_t)-1);
@@ -3489,7 +3476,7 @@ umem_cache_create(
 	 */
 	for (cpu_seqid = 0; cpu_seqid < UMEM_DEPOT_STRIPES; cpu_seqid++) {
 		umem_depot_stripe_t *stripe = &cp->cache_depot[cpu_seqid];
-		umem_tagged_ptr_t empty_ptr = { NULL, 0, 0 };
+		umem_tagged_ptr_t empty_ptr = { .raw = 0 };
 		stripe->ds_full.ml_list = empty_ptr;
 		stripe->ds_full.ml_total = 0;
 		stripe->ds_full.ml_min = 0;

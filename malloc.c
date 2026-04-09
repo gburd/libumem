@@ -144,16 +144,12 @@ typedef struct malloc_data {
  * generating the per-thread-cache assembly.  malloc() and free() check
  * these and dispatch through them when set.
  */
-#ifndef __sun
-extern void *(*umem_genasm_malloc_ptr)(size_t);
-extern void (*umem_genasm_free_ptr)(void *);
-#endif
 
 /*
  * umem_malloc: the real malloc implementation.
  *
- * This is the function that PTC generated code falls back to for
- * allocations it cannot handle (overflow, oversized, etc.).
+ * This is the function that PTC falls back to for allocations it
+ * cannot handle (overflow, oversized, etc.).
  * On non-x86, malloc is a weak alias to this function.
  */
 void *
