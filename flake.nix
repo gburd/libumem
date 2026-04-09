@@ -482,6 +482,13 @@
           test = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "test" ''
               set -e
+
+              # Ensure configured
+              if [ ! -f Makefile ]; then
+                echo "Configuring..."
+                ./configure --quiet
+              fi
+
               echo "=== Running main test suite ==="
               make check
               echo ""
@@ -493,6 +500,12 @@
           unit = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "unit" ''
               set -e
+
+              # Ensure configured
+              if [ ! -f Makefile ]; then
+                echo "Configuring..."
+                ./configure --quiet
+              fi
 
               if [ ! -x ./test/test_main ]; then
                 echo "Building test suite..."
@@ -512,6 +525,16 @@
           prop = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "prop" ''
               set -e
+
+              # Ensure configured and built
+              if [ ! -f Makefile ]; then
+                echo "Configuring..."
+                ./configure --quiet
+              fi
+              if [ ! -f .libs/libumem.so ]; then
+                echo "Building..."
+                make -j$(nproc) > /dev/null
+              fi
 
               echo "=== Running property-based tests ==="
               export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -537,6 +560,16 @@
             drv = pkgs.writeShellScriptBin "integ" ''
               set -e
 
+              # Ensure configured and built
+              if [ ! -f Makefile ]; then
+                echo "Configuring..."
+                ./configure --quiet
+              fi
+              if [ ! -f .libs/libumem.so ]; then
+                echo "Building..."
+                make -j$(nproc) > /dev/null
+              fi
+
               echo "=== Running integration tests ==="
               export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
@@ -560,6 +593,16 @@
           perf = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "perf" ''
               set -e
+
+              # Ensure configured and built
+              if [ ! -f Makefile ]; then
+                echo "Configuring..."
+                ./configure --quiet
+              fi
+              if [ ! -f .libs/libumem.so ]; then
+                echo "Building..."
+                make -j$(nproc) > /dev/null
+              fi
 
               echo "=== Running performance benchmarks ==="
               export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
