@@ -1494,6 +1494,22 @@ munit_test_runner_run_test_with_params(MunitTestRunner *runner,
   stderr_buf = NULL;
 #if !defined(_WIN32) || defined(__MINGW32__)
   stderr_buf = tmpfile();
+  if (stderr_buf == NULL) {
+    /* tmpfile() can fail in sandboxed environments (e.g. Nix builds)
+     * where /tmp is read-only. Fall back to TMPDIR via mkstemp. */
+    const char *tmpdir = getenv("TMPDIR");
+    if (tmpdir == NULL)
+      tmpdir = "/tmp";
+    char tmppath[1024];
+    snprintf(tmppath, sizeof(tmppath), "%s/munit_XXXXXX", tmpdir);
+    int tmpfd = mkstemp(tmppath);
+    if (tmpfd != -1) {
+      unlink(tmppath);
+      stderr_buf = fdopen(tmpfd, "w+");
+      if (stderr_buf == NULL)
+        close(tmpfd);
+    }
+  }
 #else
   tmpfile_s(&stderr_buf);
 #endif
