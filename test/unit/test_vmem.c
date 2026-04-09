@@ -1015,6 +1015,7 @@ static MunitResult test_vmem_concurrent(const MunitParameter params[], void* dat
 /* Test array */
 /* Test: Null arena error handling */
 static MunitResult test_vmem_error_null_arena(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1029,6 +1030,7 @@ static MunitResult test_vmem_error_null_arena(const MunitParameter params[], voi
 
 /* Test: Invalid quantum error handling */
 static MunitResult test_vmem_error_invalid_quantum(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1047,6 +1049,10 @@ static MunitResult test_vmem_error_invalid_quantum(const MunitParameter params[]
 
 /* Test: Invalid alignment in xalloc */
 static MunitResult test_vmem_error_invalid_align(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
     vmem_t *arena = vmem_create("align_test", NULL, 0, 8,
         NULL, NULL, NULL, 0, VM_NOSLEEP);
     munit_assert_not_null(arena);
@@ -1061,6 +1067,10 @@ static MunitResult test_vmem_error_invalid_align(const MunitParameter params[], 
 
 /* Test: Invalid phase in xalloc */
 static MunitResult test_vmem_error_invalid_phase(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
     vmem_t *arena = vmem_create("phase_test", NULL, 0, 8,
         NULL, NULL, NULL, 0, VM_NOSLEEP);
     munit_assert_not_null(arena);
@@ -1078,6 +1088,10 @@ static MunitResult test_vmem_error_invalid_phase(const MunitParameter params[], 
 
 /* Test: vmem_add with NULL address */
 static MunitResult test_vmem_error_add_null(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
     vmem_t *arena = vmem_create("add_null_test", NULL, 0, 8,
         NULL, NULL, NULL, 0, VM_NOSLEEP);
     munit_assert_not_null(arena);
@@ -1092,6 +1106,7 @@ static MunitResult test_vmem_error_add_null(const MunitParameter params[], void*
 
 /* Test: BESTFIT policy behavior */
 static MunitResult test_vmem_bestfit_policy(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1142,6 +1157,7 @@ static MunitResult test_vmem_bestfit_policy(const MunitParameter params[], void*
 
 /* Test: INSTANTFIT policy behavior */
 static MunitResult test_vmem_instantfit_policy(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1182,6 +1198,7 @@ static MunitResult test_vmem_instantfit_policy(const MunitParameter params[], vo
 
 /* Test: NEXTFIT policy behavior */
 static MunitResult test_vmem_nextfit_policy(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1229,6 +1246,7 @@ static MunitResult test_vmem_nextfit_policy(const MunitParameter params[], void*
 
 /* Test: Hash table rescaling */
 static MunitResult test_vmem_hash_rescale(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1269,6 +1287,10 @@ static MunitResult test_vmem_hash_rescale(const MunitParameter params[], void* d
 
 /* Test: Populate failure handling */
 static MunitResult test_vmem_populate_failure(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
     /* Create arena with no parent allocator */
     vmem_t *arena = vmem_create("populate_fail", NULL, 0, 8,
         NULL, NULL, NULL, 0, VM_NOSLEEP);
@@ -1284,6 +1306,7 @@ static MunitResult test_vmem_populate_failure(const MunitParameter params[], voi
 
 /* Test: _vmem_extend_alloc functionality */
 static MunitResult test_vmem_extend_alloc(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1320,6 +1343,7 @@ static MunitResult test_vmem_extend_alloc(const MunitParameter params[], void* d
 
 /* Test: Minimum size enforcement */
 static MunitResult test_vmem_minsize_enforcement(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1350,6 +1374,7 @@ static MunitResult test_vmem_minsize_enforcement(const MunitParameter params[], 
 
 /* Test: Maximum size handling */
 static MunitResult test_vmem_maxsize_enforcement(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
@@ -1378,6 +1403,7 @@ static MunitResult test_vmem_maxsize_enforcement(const MunitParameter params[], 
 
 /* Test: Double free detection */
 static MunitResult test_vmem_double_free_detection(const MunitParameter params[], void* data) {
+    ensure_umem_initialized();
     (void)params;
     (void)data;
 
