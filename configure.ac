@@ -132,6 +132,33 @@ if test "$GENASM_DIR" = "aarch64"; then
     )
 fi
 
+# SIMD vectorization support
+AC_MSG_CHECKING([for x86_64 SSE2 support])
+if test "$GENASM_DIR" = "amd64"; then
+    AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM([[#include <emmintrin.h>]], [[__m128i v = _mm_setzero_si128();]])],
+        [AC_MSG_RESULT([yes])
+         AC_DEFINE([HAVE_SSE2], [1], [x86_64 SSE2 SIMD support available])],
+        [AC_MSG_RESULT([no])]
+    )
+
+    AC_MSG_CHECKING([for x86_64 AVX2 support])
+    OLD_CFLAGS_SIMD="$CFLAGS"
+    CFLAGS="$CFLAGS -mavx2"
+    AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM([[#include <immintrin.h>]], [[__m256i v = _mm256_setzero_si256();]])],
+        [AC_MSG_RESULT([yes])
+         AC_DEFINE([HAVE_AVX2], [1], [x86_64 AVX2 SIMD support available])
+         SIMD_CFLAGS="-mavx2"],
+        [AC_MSG_RESULT([no])
+         SIMD_CFLAGS=""]
+    )
+    CFLAGS="$OLD_CFLAGS_SIMD"
+    AC_SUBST(SIMD_CFLAGS)
+else
+    AC_MSG_RESULT([skipped (not x86_64)])
+fi
+
 AC_MSG_CHECKING([whether pthread_mutex_t is larger than 24 bytes])
 AC_RUN_IFELSE(
   [AC_LANG_SOURCE([
