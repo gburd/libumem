@@ -275,7 +275,10 @@ munit_log_errno(MunitLogLevel level, FILE *fp, const char *msg)
   munit_error_str[0] = '\0';
 
 #if !defined(_WIN32)
-  (void)strerror_r(errno, munit_error_str, MUNIT_STRERROR_LEN);
+  int strerror_result = strerror_r(errno, munit_error_str, MUNIT_STRERROR_LEN);
+  if (strerror_result != 0) {
+    snprintf(munit_error_str, MUNIT_STRERROR_LEN, "Unknown error %d", errno);
+  }
 #else
   strerror_s(munit_error_str, MUNIT_STRERROR_LEN, errno);
 #endif

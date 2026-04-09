@@ -162,8 +162,14 @@ umem_ptc_fork_test
 umem_ptc_bench
 test/test_main
 test/property/prop_*
-test/bench/bench_*
 test/integration/test_*
+# Benchmark executables (but not .c source files)
+test/bench/bench_main
+test/bench/bench_depot_contention
+test/bench/bench_simd
+test/bench/bench_simd_threshold
+test/bench/bench_numa_hash
+test/bench/bench_percpu
 
 # Coverage files
 *.gcda

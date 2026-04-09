@@ -299,31 +299,39 @@ fi
 
 # Experimental rseq support (Linux 4.18+)
 AC_ARG_ENABLE([rseq],
-    [AS_HELP_STRING([--enable-rseq],
-        [Enable restartable sequences for true per-CPU caching (Linux 4.18+, 50-200% improvement)])],
-    [rseq=$enableval], [rseq=no])
+    [AS_HELP_STRING([--enable-rseq@<:@=auto@:>@],
+        [Enable restartable sequences for true per-CPU caching (Linux 4.18+, 50-200% improvement) @<:@default=auto@:>@])],
+    [rseq=$enableval], [rseq=auto])
+
+# Auto-detect rseq support if not explicitly disabled
+if test "x$rseq" = "xauto"; then
+    AC_CHECK_HEADERS([linux/rseq.h], [rseq=yes], [rseq=no])
+fi
 
 AM_CONDITIONAL([ENABLE_RSEQ], [test "x$rseq" = "xyes"])
 
 if test "x$rseq" = "xyes"; then
-    AC_MSG_NOTICE([RSEQ support enabled (experimental)])
-    AC_CHECK_HEADERS([linux/rseq.h], [
-        AC_DEFINE([HAVE_LINUX_RSEQ_H], [1], [Define if linux/rseq.h is available])
-    ])
+    AC_MSG_NOTICE([RSEQ support enabled (auto-detected)])
+    AC_DEFINE([HAVE_LINUX_RSEQ_H], [1], [Define if linux/rseq.h is available])
 else
-    AC_MSG_NOTICE([RSEQ support disabled (default)])
+    AC_MSG_NOTICE([RSEQ support disabled (not available)])
 fi
 
 # NUMA-aware allocation
 AC_ARG_ENABLE([numa],
-    [AS_HELP_STRING([--enable-numa],
-        [Enable NUMA-aware memory allocation (10-30% improvement on multi-socket systems)])],
-    [numa=$enableval], [numa=no])
+    [AS_HELP_STRING([--enable-numa@<:@=auto@:>@],
+        [Enable NUMA-aware memory allocation (10-30% improvement on multi-socket systems) @<:@default=auto@:>@])],
+    [numa=$enableval], [numa=auto])
+
+# Auto-detect NUMA support if not explicitly disabled
+if test "x$numa" = "xauto"; then
+    AC_CHECK_LIB([numa], [numa_available], [numa=yes], [numa=no])
+fi
 
 AM_CONDITIONAL([ENABLE_NUMA], [test "x$numa" = "xyes"])
 
 if test "x$numa" = "xyes"; then
-    AC_MSG_NOTICE([NUMA-aware allocation enabled])
+    AC_MSG_NOTICE([NUMA-aware allocation enabled (auto-detected)])
     AC_CHECK_LIB([numa], [numa_available], [
         AC_DEFINE([HAVE_LIBNUMA], [1], [Define if libnuma is available])
         NUMA_LIBS="-lnuma"
@@ -332,7 +340,7 @@ if test "x$numa" = "xyes"; then
         AC_MSG_ERROR([libnuma required for NUMA support but not found])
     ])
 else
-    AC_MSG_NOTICE([NUMA-aware allocation disabled (default)])
+    AC_MSG_NOTICE([NUMA-aware allocation disabled (not available)])
 fi
 
 # Hardware Transactional Memory (Intel TSX)
