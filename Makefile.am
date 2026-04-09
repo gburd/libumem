@@ -184,7 +184,7 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_umem_fail.c \
 			 test/unit/test_overflow_fixes.c \
 			 test/unit/test_magazine_tune.c
-test_test_main_LDADD = libumem.la libumem_malloc.la
+test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread
 test_test_main_CPPFLAGS = -I$(srcdir)/test
 
@@ -285,21 +285,11 @@ if ENABLE_HTM
 nobase_include_HEADERS += umem_htm.h
 endif
 
-# Tests - pthread_create/malloc deadlock limitation
-# Working tests:
-#   umem_test           - Single-threaded, direct umem_alloc() API
-#   umem_test3          - Single-threaded, malloc interposition
-#   umem_ptc_fork_test  - Multi-process fork, direct umem_alloc() API
-#
-# Disabled tests (known limitation):
-#   umem_test2          - Hangs: LD_PRELOAD malloc + pthread_create deadlock
-#   umem_ptc_test       - Hangs: LD_PRELOAD malloc + pthread_create deadlock
-#
-# Root cause: libumem uses pthread_getspecific() for PTC, which creates circular
-# dependency when malloc() is interposed: pthread_create -> malloc -> umem_malloc
-# -> pthread_getspecific -> deadlock. This is an architectural limitation.
-#
-# See PTHREAD_LIMITATION.md and PTHREAD_STATUS.md for details and alternatives.
+# Test suite
+# Using simple smoke tests that don't trigger pthread_create/malloc deadlock.
+# test/test_main (comprehensive unit tests) hangs due to malloc interposition
+# creating circular dependency: pthread_create -> malloc -> pthread_getspecific.
+# See PTHREAD_LIMITATION.md for details.
 TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test
 
 html-local:

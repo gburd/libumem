@@ -16,52 +16,49 @@ int main(void)
   char *foo;
   int ptc_state;
 
+  printf("=== umem_test: Basic functionality and PTC integration ===\n");
+  printf("Testing: umem_alloc(), umem_free(), PTC status\n\n");
+
   /* Perform a basic allocation to ensure umem is initialized. */
+  printf("Test 1: Basic 32-byte allocation... ");
   foo = umem_alloc(32, UMEM_DEFAULT);
   if (foo == NULL) {
-    fprintf(stderr, "umem_alloc failed\n");
+    fprintf(stderr, "FAIL\n");
     return EXIT_FAILURE;
   }
-
   strcpy(foo, "hello there");
-
-  printf("Hello %s\n", foo);
-
+  printf("PASS (data: '%s')\n", foo);
   umem_free(foo, 32);
 
   /* Check PTC status after umem is initialized. */
   ptc_state = umem_ptc_enabled;
-  printf("PTC: genasm_supported=%d, ptc_enabled=%d\n",
-      umem_genasm_supported, ptc_state);
-
-  /*
-   * If the architecture supports genasm, PTC should be enabled
-   * (unless explicitly disabled via UMEM_OPTIONS=perthread_cache=0
-   * or debug mode).  Report the status for diagnostics.
-   */
+  printf("Test 2: PTC status check... ");
+  printf("genasm_supported=%d, ptc_enabled=%d ", umem_genasm_supported, ptc_state);
   if (umem_genasm_supported && !ptc_state) {
-    printf("PTC: NOTE - genasm supported but PTC not enabled "
-        "(debug mode or perthread_cache=0?)\n");
+    printf("(NOTE: genasm supported but PTC not enabled)\n");
+  } else {
+    printf("PASS\n");
   }
 
   /*
    * Verify alloc/free still works correctly after PTC state check.
    * This catches any corruption from PTC initialization.
    */
+  printf("Test 3: Post-init 64-byte allocation with verification... ");
   foo = umem_alloc(64, UMEM_DEFAULT);
   if (foo == NULL) {
-    fprintf(stderr, "post-PTC-check umem_alloc failed\n");
+    fprintf(stderr, "FAIL (allocation failed)\n");
     return EXIT_FAILURE;
   }
   memset(foo, 'A', 63);
   foo[63] = '\0';
   if (strlen(foo) != 63) {
-    fprintf(stderr, "memory corruption detected\n");
+    fprintf(stderr, "FAIL (memory corruption detected)\n");
     return EXIT_FAILURE;
   }
   umem_free(foo, 64);
+  printf("PASS\n");
 
-  printf("basic PTC integration test passed\n");
-
+  printf("\nAll tests passed (3/3)\n");
   return EXIT_SUCCESS;
 }

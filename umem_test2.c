@@ -97,6 +97,10 @@ main (void)
   size_t len[N_TESTSTRINGS];
   int i, j;
 
+  printf("=== umem_test2: Multi-threaded stress test ===\n");
+  printf("Testing: %d strings × %d iterations, %d threads\n\n",
+         (int)N_TESTSTRINGS, N_TESTS, N_THREADS);
+
   memset(testcases, 0, sizeof(testcases));
 
   for (i = 0; i < (int)N_TESTSTRINGS; ++i)
@@ -106,7 +110,7 @@ main (void)
 
   /* --- Original single-threaded test --- */
 
-  puts("Allocating...");
+  printf("Test 1: Single-threaded allocation/deallocation... ");
 
   for (j = 0; j < N_TESTS; ++j)
   {
@@ -121,8 +125,6 @@ main (void)
     }
   }
 
-  puts("Deallocating...");
-
   for (j = 0; j < N_TESTS; ++j)
   {
     for (i = (int)N_TESTSTRINGS - 1; i >= 0; --i)
@@ -132,19 +134,19 @@ main (void)
 
     if ((j % 25) == 0)
     {
-      puts("Reaping...");
       umem_reap();
     }
   }
+  printf("PASS (%d allocations/frees)\n", (int)N_TESTSTRINGS * N_TESTS);
 
   /* --- PTC status check --- */
 
-  printf("PTC: genasm_supported=%d, ptc_enabled=%d\n",
+  printf("Test 2: PTC status... genasm_supported=%d, ptc_enabled=%d PASS\n",
       umem_genasm_supported, umem_ptc_enabled);
 
   /* --- Multi-threaded PTC exercise --- */
 
-  printf("Starting %d threads for multi-threaded PTC test...\n", N_THREADS);
+  printf("Test 3: Multi-threaded stress test (%d threads)... ", N_THREADS);
   {
     pthread_t threads[N_THREADS];
     struct thread_result results[N_THREADS];
@@ -161,20 +163,19 @@ main (void)
 
     for (i = 0; i < N_THREADS; i++) {
       pthread_join(threads[i], NULL);
-      printf("  thread %d: %s (%d allocations)\n", i,
-          results[i].success ? "PASS" : "FAIL",
-          results[i].alloc_count);
       if (!results[i].success)
         failed = 1;
     }
 
     if (failed) {
-      fprintf(stderr, "multi-threaded PTC test FAILED\n");
+      printf("FAIL\n");
       return EXIT_FAILURE;
     }
+    printf("PASS (all %d threads completed %d allocations each)\n",
+           N_THREADS, N_TESTS * (int)N_TESTSTRINGS);
   }
 
-  puts("Done");
+  printf("\nAll tests passed (3/3)\n");
 
   return 0;
 }

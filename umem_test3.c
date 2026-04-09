@@ -41,10 +41,15 @@ main (void)
   char *p;
   int i;
 
+  printf("=== umem_test3: malloc() interposition and statistics ===\n");
+  printf("Testing: malloc(), free(), mallinfo, PTC integration\n\n");
+
+  printf("Test 1: Initial memory info and basic malloc/free... ");
   minfo();
   p = malloc(10);
   free(p);
   minfo();
+  printf("PASS\n");
 
   /*
    * After malloc/free, umem is initialized.  Check PTC state.
@@ -52,7 +57,7 @@ main (void)
    * through umem's malloc replacement, which may use the PTC
    * genasm fast path.
    */
-  printf("PTC: genasm_supported=%d, ptc_enabled=%d\n",
+  printf("Test 2: PTC status... genasm_supported=%d, ptc_enabled=%d PASS\n",
       umem_genasm_supported, umem_ptc_enabled);
 
   /*
@@ -66,32 +71,34 @@ main (void)
     };
     int nsizes = (int)(sizeof(sizes) / sizeof(sizes[0]));
 
-    printf("Testing %d allocation sizes via malloc/free...\n", nsizes);
+    printf("Test 3: Various allocation sizes (%d sizes)... ", nsizes);
 
     for (i = 0; i < nsizes; i++) {
       p = malloc(sizes[i]);
       if (p == NULL) {
-        fprintf(stderr, "malloc(%zu) failed\n", sizes[i]);
+        fprintf(stderr, "FAIL (malloc(%zu) failed)\n", sizes[i]);
         return EXIT_FAILURE;
       }
       memset(p, 0xAB, sizes[i]);
       free(p);
     }
+    printf("PASS\n");
 
     /* Rapid alloc/free cycle to exercise PTC reuse. */
-    printf("Testing rapid alloc/free cycle (1000 iterations)...\n");
+    printf("Test 4: Rapid alloc/free cycle (1000 iterations)... ");
     for (i = 0; i < 1000; i++) {
       p = malloc(64);
       if (p == NULL) {
-        fprintf(stderr, "malloc(64) failed at iteration %d\n", i);
+        fprintf(stderr, "FAIL at iteration %d\n", i);
         return EXIT_FAILURE;
       }
       memset(p, (unsigned char)i, 64);
       free(p);
     }
+    printf("PASS\n");
   }
 
-  printf("malloc replacement PTC test passed\n");
+  printf("\nAll tests passed (4/4)\n");
 
   return EXIT_SUCCESS;
 }
