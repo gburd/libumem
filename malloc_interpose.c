@@ -223,6 +223,19 @@ umem_interpose_init(void)
 	resolve_libc_functions();
 
 	/*
+	 * Disable abort on recoverable errors in interpose mode.
+	 * When LD_PRELOAD is used, we may encounter pointers from:
+	 * - libc malloc (allocated before libumem loaded)
+	 * - Shared libraries with their own allocators
+	 * - System libraries (zlib, etc.)
+	 *
+	 * Rather than crashing on invalid frees, log errors and continue.
+	 * This matches glibc malloc's behavior and is safer for LD_PRELOAD.
+	 */
+	extern uint_t umem_abort;
+	umem_abort = 0;
+
+	/*
 	 * Don't call umem_init() here - let it initialize naturally
 	 * through the first umem API call. The bootstrap allocator will
 	 * handle any malloc calls that happen during initialization.
@@ -350,7 +363,12 @@ free(void *ptr)
 		return;
 	}
 
-	/* Normal umem free */
+	/*
+	 * Normal umem free.
+	 * If this is an invalid pointer (from libc, zlib, etc.),
+	 * umem_err_recoverable() will log an error but won't crash
+	 * because we set umem_abort = 0 in umem_interpose_init().
+	 */
 	umem_malloc_free(ptr);
 }
 
