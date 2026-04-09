@@ -199,7 +199,7 @@ umem_verify_all_caches(void)
 	    cp != &umem_null_cache;
 	    cp = cp->cache_next) {
 
-		/* Basic sanity checks */
+		/* 1. Basic sanity checks */
 		if (cp->cache_bufsize == 0) {
 			(void) fprintf(stderr,
 			    "ERROR: Cache %s has zero buffer size\n",
@@ -207,19 +207,118 @@ umem_verify_all_caches(void)
 			errors++;
 		}
 
-		if (cp->cache_slab_free > cp->cache_slab_alloc) {
+		if (cp->cache_align == 0 ||
+		    (cp->cache_align & (cp->cache_align - 1)) != 0) {
 			(void) fprintf(stderr,
-			    "ERROR: Cache %s has more slab frees than allocs\n",
-			    cp->cache_name);
+			    "ERROR: Cache %s has invalid alignment %zu\n",
+			    cp->cache_name, cp->cache_align);
 			errors++;
 		}
 
-		/* In a full implementation, we would:
-		 * - Verify slab structures
-		 * - Check buffer headers
-		 * - Validate free lists
-		 * - Check for corruption patterns
-		 */
+		if (cp->cache_chunksize < cp->cache_bufsize) {
+			(void) fprintf(stderr,
+			    "ERROR: Cache %s has chunksize (%zu) < bufsize (%zu)\n",
+			    cp->cache_name, cp->cache_chunksize, cp->cache_bufsize);
+			errors++;
+		}
+
+		/* 2. Statistics consistency */
+		if (cp->cache_slab_free > cp->cache_slab_alloc) {
+			(void) fprintf(stderr,
+			    "ERROR: Cache %s has more slab frees (%llu) than allocs (%llu)\n",
+			    cp->cache_name,
+			    (unsigned long long)cp->cache_slab_free,
+			    (unsigned long long)cp->cache_slab_alloc);
+			errors++;
+		}
+
+		if (cp->cache_slab_destroy > cp->cache_slab_create) {
+			(void) fprintf(stderr,
+			    "ERROR: Cache %s has more slab destroys (%llu) than creates (%llu)\n",
+			    cp->cache_name,
+			    (unsigned long long)cp->cache_slab_destroy,
+			    (unsigned long long)cp->cache_slab_create);
+			errors++;
+		}
+
+		/* 3. Magazine layer checks */
+		if (cp->cache_magtype != NULL) {
+			/* Verify depot contention is non-negative */
+			if ((int64_t)cp->cache_depot_contention < 0) {
+				(void) fprintf(stderr,
+				    "ERROR: Cache %s has negative depot contention\n",
+				    cp->cache_name);
+				errors++;
+			}
+		}
+
+		/* 4. Per-CPU cache checks */
+		for (uint32_t cpu = 0; cpu <= cp->cache_cpu_mask; cpu++) {
+			umem_cpu_cache_t *ccp = &cp->cache_cpu[cpu];
+
+			if (ccp->cc_rounds < 0) {
+				(void) fprintf(stderr,
+				    "ERROR: Cache %s CPU %u has negative rounds\n",
+				    cp->cache_name, cpu);
+				errors++;
+			}
+
+			if (ccp->cc_prounds < 0) {
+				(void) fprintf(stderr,
+				    "ERROR: Cache %s CPU %u has negative prounds\n",
+				    cp->cache_name, cpu);
+				errors++;
+			}
+
+			/* Verify loaded magazine has valid rounds */
+			if (ccp->cc_loaded != NULL &&
+			    cp->cache_magtype != NULL) {
+				if (ccp->cc_rounds > cp->cache_magtype->mt_magsize) {
+					(void) fprintf(stderr,
+					    "ERROR: Cache %s CPU %u has rounds (%d) > magsize (%d)\n",
+					    cp->cache_name, cpu, ccp->cc_rounds,
+					    cp->cache_magtype->mt_magsize);
+					errors++;
+				}
+			}
+		}
+
+		/* 5. Hash table sanity */
+		if (cp->cache_hash_table != NULL) {
+			if (cp->cache_hash_mask == 0) {
+				(void) fprintf(stderr,
+				    "ERROR: Cache %s has hash table but zero mask\n",
+				    cp->cache_name);
+				errors++;
+			}
+
+			/* Verify hash_shift is reasonable */
+			if (cp->cache_hash_shift > 64) {
+				(void) fprintf(stderr,
+				    "ERROR: Cache %s has invalid hash_shift %zu\n",
+				    cp->cache_name, cp->cache_hash_shift);
+				errors++;
+			}
+		}
+
+		/* 6. Slab coloring sanity */
+		if (cp->cache_maxcolor > 0 && cp->cache_color > cp->cache_maxcolor) {
+			(void) fprintf(stderr,
+			    "ERROR: Cache %s has color (%zu) > maxcolor (%zu)\n",
+			    cp->cache_name, cp->cache_color, cp->cache_maxcolor);
+			errors++;
+		}
+
+		/* 7. Verify debug structures if enabled */
+		if (cp->cache_flags & UMF_AUDIT) {
+			/* Audit tracking is enabled - verify bufctl cache exists */
+			if (cp->cache_bufctl_cache == NULL && cp->cache_bufctl == 0) {
+				(void) fprintf(stderr,
+				    "ERROR: Cache %s has UMF_AUDIT but no bufctl cache\n",
+				    cp->cache_name);
+				errors++;
+			}
+		}
 	}
 
 	if (errors == 0) {
