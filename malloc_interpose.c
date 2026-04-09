@@ -56,8 +56,10 @@
 #endif
 
 /* External: umem readiness state and functions */
-#define	UMEM_READY	3
+#define	UMEM_READY_STARTUP	1
+#define	UMEM_READY		3
 extern int umem_ready;
+extern int umem_init(void);
 extern void *umem_malloc(size_t);
 extern void umem_malloc_free(void *);
 
@@ -252,69 +254,43 @@ malloc(size_t size)
 	}
 
 	/*
-	 * Transition to READY state when umem is fully initialized.
-	 * Use atomic compare-and-swap to ensure only one thread does the transition.
+	 * Trigger umem initialization if startup is complete but
+	 * umem_init() hasn't been called yet. This breaks the
+	 * chicken-and-egg problem: umem_init() is normally called
+	 * by umem_alloc(), but malloc interposition never calls
+	 * umem_alloc() while in BOOTSTRAP state, so umem never
+	 * initializes.
+	 *
+	 * During umem_init(), recursive malloc() calls will still
+	 * use bootstrap_malloc() because interpose_state remains
+	 * BOOTSTRAP until init completes.
 	 */
-	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP && umem_ready == UMEM_READY) {
-		int expected = INTERPOSE_BOOTSTRAP;
-		atomic_compare_exchange_strong(&interpose_state, &expected, INTERPOSE_READY);
+	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP) {
+		static volatile int umem_init_attempted = 0;
+
+		if (umem_ready == UMEM_READY_STARTUP &&
+		    !umem_init_attempted) {
+			umem_init_attempted = 1;
+			(void) umem_init();
+		}
+
+		if (umem_ready == UMEM_READY) {
+			int expected = INTERPOSE_BOOTSTRAP;
+			atomic_compare_exchange_strong(&interpose_state,
+			    &expected, INTERPOSE_READY);
+		}
 	}
 
 	/* Fast path: fully initialized */
 	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
-		/*
-		 * Check for recursive malloc (pthread_create -> malloc ->
-		 * pthread_getspecific -> malloc). Use bootstrap allocator
-		 * to break the cycle.
-		 *
-		 * When UMEM_ENABLE_RECURSION_GUARD is not defined, these
-		 * calls compile to nothing (no overhead).
-		 */
-#if UMEM_GUARD_ENABLED
-		if (umem_enter_malloc() > 0) {
-			umem_exit_malloc();
-			return (bootstrap_malloc(size));
-		}
-#endif
-		ret = umem_malloc(size);
-#if UMEM_GUARD_ENABLED
-		umem_exit_malloc();
-#endif
-		return (ret);
+		return (umem_malloc(size));
 	}
 
 	/*
-	 * If we somehow get here before the constructor runs,
-	 * use bootstrap allocator and let the constructor handle init.
+	 * Pre-constructor or during umem_init(): use bootstrap allocator.
+	 * This handles recursive malloc calls during initialization.
 	 */
-	if (atomic_load(&interpose_state) == INTERPOSE_UNINIT) {
-		return (bootstrap_malloc(size));
-	}
-
-	/*
-	 * Bootstrap phase: use bootstrap allocator.
-	 *
-	 * IMPORTANT: We NEVER transition to using umem_malloc() from malloc()
-	 * interposition. This is because:
-	 * 1. pthread_create internally calls malloc()
-	 * 2. umem_malloc() uses pthread operations (pthread_getspecific for PTC)
-	 * 3. This creates a circular dependency: pthread_create -> malloc ->
-	 *    umem_malloc -> pthread_getspecific -> deadlock
-	 *
-	 * Instead, malloc() always uses the bootstrap allocator (simple mmap-based).
-	 * Only direct umem_alloc() calls use the real umem allocator.
-	 *
-	 * This means LD_PRELOAD malloc interposition will NOT get umem's
-	 * performance benefits. For best performance, link directly against libumem
-	 * or use umem_alloc()/umem_free() explicitly.
-	 */
-	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP) {
-		ret = bootstrap_malloc(size);
-		return (ret);
-	}
-
-	/* Should not reach here */
-	return (umem_malloc(size));
+	return (bootstrap_malloc(size));
 }
 
 /*
