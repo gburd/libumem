@@ -550,7 +550,7 @@ realloc(void *ptr, size_t size)
 		if (new_ptr == NULL)
 			return (NULL);
 
-		(void) memcpy(new_ptr, ptr, MIN(size, old_size));
+		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
 		free(ptr);
 		return (new_ptr);
 	}
