@@ -205,4 +205,3 @@ apply_*.py
 depot_functions_lockfree.c
 umem_htm.[ch]
 umem_numa.[ch]
-umem_rseq.[ch]
