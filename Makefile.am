@@ -11,6 +11,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/bench_main \
 		  test/bench/bench_depot_contention \
 		  test/bench/bench_simd \
+		  test/bench/bench_simd_threshold \
 		  test/bench/bench_numa_hash \
 		  test/integration/test_signals \
 		  test/integration/test_oom \
@@ -213,6 +214,10 @@ test_bench_bench_depot_contention_LDFLAGS = -pthread -lm
 test_bench_bench_simd_SOURCES = test/bench/bench_simd.c
 test_bench_bench_simd_LDADD =
 test_bench_bench_simd_LDFLAGS = -lm
+
+test_bench_bench_simd_threshold_SOURCES = test/bench/bench_simd_threshold.c
+test_bench_bench_simd_threshold_LDADD =
+test_bench_bench_simd_threshold_LDFLAGS = -lm
 
 test_bench_bench_numa_hash_SOURCES = test/bench/bench_numa_hash.c umem_hash_partition.c
 test_bench_bench_numa_hash_CPPFLAGS = -I$(srcdir)

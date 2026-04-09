@@ -29,19 +29,37 @@ make
 
 ## Code Standards
 
-### C Code Style
+libumem maintains consistency with its Solaris heritage while incorporating modern C17 features. See [CODING_STYLE.md](CODING_STYLE.md) for comprehensive guidelines.
 
-- 100-character line length
-- Tab indentation (8 spaces)
-- K&R brace style
-- Declare variables at block start (C89 style for compatibility)
+### Quick Reference
+
+- **Standard:** C17 (ISO/IEC 9899:2018)
+- **Line length:** 80 characters maximum
+- **Indentation:** Tabs (8-space width)
+- **Brace style:** Linux kernel style (K&R variant)
+- **Comments:** C-style `/* */` (C++ `//` acceptable in new code)
 
 ### Naming Conventions
 
-- Public API: `umem_*`
-- Internal functions: `umem_*_impl` or static
-- Structures: `umem_*_t` typedef
-- Constants: `UMEM_*` or `UMC_*` for flags
+- **Public API:** `umem_*`, `vmem_*`
+- **Internal functions:** `_umem_*`, `_vmem_*`, or static
+- **Types:** `umem_*_t`, `vmem_*_t` suffix
+- **Constants:** `UMEM_*`, `UMF_*`, `VM_*` prefix
+- **Macros:** All caps with underscores
+
+### Code Formatting
+
+Run `clang-format` before committing:
+
+```bash
+# Format specific files
+clang-format -i umem.c umem_impl.h
+
+# Format all modified files
+git diff --name-only --diff-filter=AM | grep '\.[ch]$' | xargs clang-format -i
+```
+
+The repository includes `.clang-format` with Solaris-compatible settings.
 
 ### Comments
 
@@ -212,8 +230,9 @@ Fixes: #45
 - [ ] Documentation updated (man pages, README, etc.)
 - [ ] No performance regression (<5% on benchmarks)
 - [ ] Commit messages follow guidelines
-- [ ] Code follows style guidelines
-- [ ] No compiler warnings
+- [ ] Code follows style guidelines (see [CODING_STYLE.md](CODING_STYLE.md))
+- [ ] `clang-format` has been run on modified files
+- [ ] No compiler warnings with `-Wall -Wextra`
 - [ ] Works on all supported platforms (x86_64, i386)
 
 ## Architecture Porting
