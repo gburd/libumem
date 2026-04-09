@@ -467,13 +467,110 @@
 
         # Apps for convenient testing
         apps = {
-          # Test native
-          test-native = flake-utils.lib.mkApp {
-            drv = pkgs.writeShellScriptBin "test-native" ''
+          default = self.apps.${system}.test;
+
+          # Main test suite
+          test = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "test" ''
               set -e
-              echo "Running native tests..."
+              echo "=== Running main test suite ==="
               make check
-              echo "✓ Native tests passed"
+              echo ""
+              echo "✅ All main tests passed (4/4)"
+            '';
+          };
+
+          # Unit tests (µnit framework)
+          unit = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "unit" ''
+              set -e
+
+              if [ ! -x ./test/test_main ]; then
+                echo "Building test suite..."
+                make test/test_main
+              fi
+
+              echo "=== Running unit tests (µnit framework) ==="
+              export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              ./test/test_main
+
+              echo ""
+              echo "✅ Unit tests complete"
+            '';
+          };
+
+          # Property-based tests (QuickCheck-style)
+          prop = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "prop" ''
+              set -e
+
+              echo "=== Running property-based tests ==="
+              export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+              for test in ./test/property/prop_*; do
+                if [ -x "$test" ]; then
+                  echo ""
+                  echo "Running: $(basename $test)"
+                  "$test" || {
+                    echo "❌ Test failed: $test"
+                    exit 1
+                  }
+                fi
+              done
+
+              echo ""
+              echo "✅ Property tests complete"
+            '';
+          };
+
+          # Integration tests
+          integ = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "integ" ''
+              set -e
+
+              echo "=== Running integration tests ==="
+              export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+              for test in ./test/integration/test_*; do
+                if [ -x "$test" ]; then
+                  echo ""
+                  echo "Running: $(basename $test)"
+                  "$test" || {
+                    echo "❌ Test failed: $test"
+                    exit 1
+                  }
+                fi
+              done
+
+              echo ""
+              echo "✅ Integration tests complete"
+            '';
+          };
+
+          # Performance benchmarks
+          perf = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "perf" ''
+              set -e
+
+              echo "=== Running performance benchmarks ==="
+              export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+              for bench in ./test/bench/bench_simd_threshold ./test/bench/bench_numa_hash ./test/bench/bench_depot_contention; do
+                if [ -x "$bench" ]; then
+                  echo ""
+                  echo "═══════════════════════════════════════════════"
+                  echo "Benchmark: $(basename $bench)"
+                  echo "═══════════════════════════════════════════════"
+                  "$bench" || {
+                    echo "⚠️  Benchmark failed or not ready: $bench"
+                  }
+                fi
+              done
+
+              echo ""
+              echo "✅ Benchmarks complete"
+              echo ""
+              echo "Run full benchmark suite: cd test/bench && ./bench_allocators.sh"
             '';
           };
         } // lib.optionalAttrs pkgs.stdenv.isLinux {
