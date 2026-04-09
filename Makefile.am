@@ -10,6 +10,8 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/property/prop_fragmentation \
 		  test/bench/bench_main \
 		  test/bench/bench_depot_contention \
+		  test/bench/bench_simd \
+		  test/bench/bench_numa_hash \
 		  test/integration/test_signals \
 		  test/integration/test_oom \
 		  test/integration/test_multithreaded \
@@ -19,13 +21,11 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 
 libumem_la_LDFLAGS = -lpthread $(NUMA_LIBS)
 
-# Conditionally include stub_stand.c and genasm for Solaris/Illumos
+# Conditionally include stub_stand.c for Solaris/Illumos
 if SOLARIS_BUILD
 STUB_SOURCES = stub_stand.c
-GENASM_SOURCES = $(GENASM_DIR)/umem_genasm.c
 else
 STUB_SOURCES = tmem_stubs.c
-GENASM_SOURCES = $(GENASM_DIR)/umem_genasm.c
 endif
 
 # Conditionally include FreeBSD pthread hooks
@@ -44,14 +44,14 @@ endif
 
 # Conditionally include rseq support
 if ENABLE_RSEQ
-RSEQ_SOURCES = umem_rseq.c umem_rseq.h
+RSEQ_SOURCES = umem_rseq.c umem_rseq.h umem_rseq_x86_64.S umem_rseq_aarch64.S
 else
 RSEQ_SOURCES =
 endif
 
 # Conditionally include NUMA support
 if ENABLE_NUMA
-NUMA_SOURCES = umem_numa.c umem_numa.h
+NUMA_SOURCES = umem_numa.c umem_numa.h umem_hash_partition.c umem_hash_partition.h
 else
 NUMA_SOURCES =
 endif
@@ -81,6 +81,7 @@ libumem_la_SOURCES = init_lib.c \
 			umem.h \
 			umem_base.h \
 			umem_impl.h \
+			umem_simd.h \
 			sol_compat.h \
 			vmem.c \
 			sys/vmem.h \
@@ -93,7 +94,6 @@ libumem_la_SOURCES = init_lib.c \
 			umem_hooks.h \
 			umem_tcache.c \
 			umem_tcache.h \
-			$(GENASM_SOURCES) \
 			$(STUB_SOURCES) \
 			$(FREEBSD_SOURCES) \
 			$(PERCPU_SOURCES) \
@@ -106,7 +106,7 @@ libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir)
 libumem_malloc_la_LIBADD = libumem.la
 
 # Initialize flags unconditionally to avoid += errors
-AM_CFLAGS = -fno-builtin-calloc
+AM_CFLAGS = -fno-builtin-calloc $(SIMD_CFLAGS)
 AM_LDFLAGS =
 
 # Add coverage flags if enabled
@@ -210,6 +210,15 @@ test_bench_bench_depot_contention_SOURCES = test/bench/bench_depot_contention.c 
 test_bench_bench_depot_contention_LDADD = libumem.la
 test_bench_bench_depot_contention_LDFLAGS = -pthread -lm
 
+test_bench_bench_simd_SOURCES = test/bench/bench_simd.c
+test_bench_bench_simd_LDADD =
+test_bench_bench_simd_LDFLAGS = -lm
+
+test_bench_bench_numa_hash_SOURCES = test/bench/bench_numa_hash.c umem_hash_partition.c
+test_bench_bench_numa_hash_CPPFLAGS = -I$(srcdir)
+test_bench_bench_numa_hash_LDADD =
+test_bench_bench_numa_hash_LDFLAGS = -pthread -lm $(NUMA_LIBS)
+
 # Integration tests
 test_integration_test_multithreaded_SOURCES = test/integration/test_multithreaded.c test/munit.c
 test_integration_test_multithreaded_LDADD = libumem.la
@@ -248,7 +257,6 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 	scripts/run-coverage.sh scripts/run-sanitizers.sh \
 	tools/gdb/umem_gdb.py tools/lldb/umem_lldb.py \
 	examples/palloc_integration.c examples/README.md \
-	riscv64/umem_genasm.c aarch64/umem_genasm.c \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
 	test/tdigest.c test/tdigest.h test/common.c test/common.h \
 	test/bench/bench_framework.c test/bench/bench_framework.h test/bench/allocators.c \

@@ -215,9 +215,9 @@ static INLINE uint64_t umem_atomic_inc64(uint64_t *val)
 #define P2BOUNDARY(off, len, align) \
     (((off) ^ ((off) + (len) - 1)) > (align) - 1)
 
-/* beware! umem only uses these atomic adds for incrementing by 1 */
 #ifndef atomic_add_64
-#define atomic_add_64(lvalptr, delta) umem_atomic_inc64(lvalptr)
+#define atomic_add_64(lvalptr, delta) \
+	__sync_fetch_and_add((volatile uint64_t *)(lvalptr), (uint64_t)(delta))
 #endif
 #define atomic_add_32_nv(a, b)  	  umem_atomic_inc(a)
 

@@ -645,6 +645,11 @@
 #include "umem_base.h"
 #include "vmem_base.h"
 #include "umem_tcache.h"
+#include "umem_simd.h"
+
+#ifdef UMEM_NUMA_AVAILABLE
+#include "umem_numa.h"
+#endif
 
 #if HAVE_SYS_PROCESSOR_H
 #include <sys/processor.h>
@@ -772,6 +777,9 @@ int                     umem_init_env_ready;    /* environ pre-initted */
 int                     umem_ready = UMEM_READY_STARTUP;
 
 int			umem_ptc_enabled;	/* per-thread caching enabled */
+const int		umem_genasm_supported = 0; /* genasm removed */
+static inline int umem_genasm(int *sizes, umem_cache_t **caches, int ncaches)
+{ (void)sizes; (void)caches; (void)ncaches; return (-1); }
 
 static umem_nofail_callback_t *nofail_callback;
 static mutex_t          umem_nofail_exit_lock = DEFAULTMUTEX;
@@ -879,15 +887,14 @@ umem_cache_t            umem_null_cache = {
 	NULL,
 	DEFAULTMUTEX,                           /* start of depot layer (legacy) */
 	NULL, {
-		NULL, 0, 0, 0, 0               /* cache_full (legacy) */
+		{ NULL, 0, 0 }, 0, 0, 0, 0    /* cache_full (legacy) */
 	}, {
-		NULL, 0, 0, 0, 0               /* cache_empty (legacy) */
+		{ NULL, 0, 0 }, 0, 0, 0, 0    /* cache_empty (legacy) */
 	}, {
 		/* cache_depot[UMEM_DEPOT_STRIPES] - initialized at runtime */
 		[0 ... (UMEM_DEPOT_STRIPES - 1)] = {
-			DEFAULTMUTEX,
-			{ NULL, 0, 0, 0, 0 },   /* ds_full */
-			{ NULL, 0, 0, 0, 0 },   /* ds_empty */
+			{ { NULL, 0, 0 }, 0, 0, 0, 0 },   /* ds_full */
+			{ { NULL, 0, 0 }, 0, 0, 0, 0 },   /* ds_empty */
 			0,                      /* ds_contention */
 			{0}                     /* ds_pad (cache line padding) */
 		}
@@ -1890,6 +1897,15 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 
 	ASSERT(cp->cache_next == NULL || IN_UPDATE());
 
+	/*
+	 * Fast path: Use SIMD to check if magazine has any allocations.
+	 * If all slots are NULL, skip the loop entirely.
+	 * This optimization helps during cleanup of empty magazines.
+	 */
+	if (nrounds > 0 && !umem_mag_scan_notnull(mp->mag_round, nrounds)) {
+		goto done;
+	}
+
 	for (round = 0; round < nrounds; round++) {
 		void *buf = mp->mag_round[round];
 
@@ -1916,35 +1932,101 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 
 		umem_slab_free(cp, buf);
 	}
+
+done:
 	ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
 	_umem_cache_free(cp->cache_magtype->mt_cache, mp);
 }
 
 /*
- * Select depot stripe based on thread ID.
- * Distributes threads across stripes to reduce lock contention.
+ * Atomic load of tagged pointer.
+ * Uses 64-bit atomic fetch to load both pointer and version atomically.
+ */
+static inline umem_tagged_ptr_t
+atomic_load_tagged_ptr(volatile umem_tagged_ptr_t *ptr)
+{
+	umem_tagged_ptr_t val;
+	uint64_t raw;
+
+	/* Atomic load via fetch-and-add with 0 */
+	raw = __sync_fetch_and_add((volatile uint64_t *)ptr, 0);
+	memcpy(&val, &raw, sizeof(val));
+	return val;
+}
+
+/*
+ * Atomic compare-and-swap of tagged pointer.
+ * Returns 1 on success, 0 on failure.
+ * On failure, 'expected' is updated with the current value.
+ */
+static inline int
+atomic_cas_tagged_ptr(volatile umem_tagged_ptr_t *ptr,
+                     umem_tagged_ptr_t *expected,
+                     umem_tagged_ptr_t desired)
+{
+	uint64_t exp_raw, des_raw, old;
+
+	/* Convert structures to 64-bit values */
+	memcpy(&exp_raw, expected, sizeof(exp_raw));
+	memcpy(&des_raw, &desired, sizeof(des_raw));
+
+	/* Perform atomic CAS */
+	old = __sync_val_compare_and_swap((volatile uint64_t *)ptr,
+	                                  exp_raw, des_raw);
+
+	if (old == exp_raw) {
+		return 1;  /* Success */
+	} else {
+		/* Update expected with current value for retry */
+		memcpy(expected, &old, sizeof(*expected));
+		return 0;  /* Failure */
+	}
+}
+
+/*
+ * Select depot stripe based on thread ID and NUMA node.
+ * When NUMA is enabled, stripes are partitioned by node so threads on the
+ * same NUMA node share depot stripes, improving memory locality.
+ * Within a node's stripe range, threads are distributed by thread ID
+ * to reduce contention.
  */
 static inline int __attribute__((always_inline))
 umem_depot_stripe_select(void)
 {
-	/*
-	 * Use pthread_self() to get thread ID and hash to stripe.
-	 * The modulo operation distributes threads evenly across stripes.
-	 */
-	return (int)((uintptr_t)pthread_self() % UMEM_DEPOT_STRIPES);
+	uintptr_t tid = (uintptr_t)pthread_self();
+
+#ifdef UMEM_NUMA_AVAILABLE
+	if (umem_numa_enabled) {
+		int node = umem_numa_get_node();
+		int num_nodes = umem_numa_topo ?
+		    umem_numa_topo->num_nodes : 1;
+		int stripes_per_node = UMEM_DEPOT_STRIPES / num_nodes;
+
+		if (stripes_per_node < 1)
+			stripes_per_node = 1;
+
+		int base = node * stripes_per_node;
+		int offset = (int)(tid % stripes_per_node);
+		return (base + offset) % UMEM_DEPOT_STRIPES;
+	}
+#endif
+	return (int)(tid % UMEM_DEPOT_STRIPES);
 }
 
 /*
- * Allocate a magazine from the depot (striped version).
+ * Allocate a magazine from the depot (lock-free version).
+ * Uses tagged pointers with version counters to prevent ABA problem.
  * Each thread accesses its own stripe to reduce contention.
  */
 static umem_magazine_t *
 umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 {
 	umem_magazine_t *mp;
+	umem_tagged_ptr_t old, new;
 	int stripe_id;
 	umem_depot_stripe_t *stripe;
 	umem_maglist_t *stripe_list;
+	int retries = 0;
 
 	/*
 	 * Select stripe based on thread ID for load distribution.
@@ -1953,9 +2035,9 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 	stripe = &cp->cache_depot[stripe_id];
 
 	/*
-	 * Prefetch depot stripe metadata before lock acquisition.
+	 * Prefetch depot stripe metadata before access.
 	 * Medium locality (2) since depot access is occasional but
-	 * benefits from having the cache line ready before locking.
+	 * benefits from having the cache line ready.
 	 */
 	__builtin_prefetch(stripe, 0, 2);
 
@@ -1971,39 +2053,67 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 	}
 
 	/*
-	 * If we can't get the depot lock without contention,
-	 * update our contention count.  We use the depot
-	 * contention rate to determine whether we need to
-	 * increase the magazine size for better scalability.
+	 * Lock-free stack pop operation using tagged pointers.
+	 * The version counter prevents the ABA problem where:
+	 * - Thread 1 reads A->next
+	 * - Thread 2 pops A, pops B, pushes A (A->next now different)
+	 * - Thread 1's CAS would succeed incorrectly without versioning
 	 */
-	if (mutex_trylock(&stripe->ds_lock) != 0) {
-		(void) mutex_lock(&stripe->ds_lock);
-		stripe->ds_contention++;
-		cp->cache_depot_contention++;
+	do {
+		old = atomic_load_tagged_ptr(&stripe_list->ml_list);
+		mp = (umem_magazine_t *)old.ptr;
+
+		if (mp == NULL) {
+			/* Empty depot */
+			return NULL;
+		}
+
+		/* Prepare new head (next magazine in list) */
+		new.ptr = mp->mag_next;
+		new.version = old.version + 1;  /* Increment to prevent ABA */
+		new._pad = 0;
+
+		/*
+		 * Track CAS retries as contention metric.
+		 * Unlike mutex contention, this counts actual conflicts.
+		 */
+		if (retries++ > 0) {
+			atomic_add_64(&stripe->ds_contention, 1);
+			atomic_add_64(&cp->cache_depot_contention, 1);
+		}
+
+	} while (!atomic_cas_tagged_ptr(&stripe_list->ml_list, &old, new));
+
+	/*
+	 * Successfully popped magazine from depot.
+	 * Update statistics (approximate counts, no atomics needed).
+	 */
+	ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+
+	/* Atomic decrement for total count */
+	if (atomic_add_64((uint64_t *)&stripe_list->ml_total, -1) - 1 <
+	    stripe_list->ml_min) {
+		stripe_list->ml_min = stripe_list->ml_total;
 	}
 
-	if ((mp = stripe_list->ml_list) != NULL) {
-		ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
-		stripe_list->ml_list = mp->mag_next;
-		if (--stripe_list->ml_total < stripe_list->ml_min)
-			stripe_list->ml_min = stripe_list->ml_total;
-		stripe_list->ml_alloc++;
-	}
+	/* Atomic increment for allocation count */
+	atomic_add_64(&stripe_list->ml_alloc, 1);
 
-	(void) mutex_unlock(&stripe->ds_lock);
-
-	return (mp);
+	return mp;
 }
 
 /*
- * Free a magazine to the depot (striped version).
+ * Free a magazine to the depot (lock-free version).
+ * Uses tagged pointers with version counters to prevent ABA problem.
  */
 static void
 umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp, umem_magazine_t *mp)
 {
+	umem_tagged_ptr_t old, new;
 	int stripe_id;
 	umem_depot_stripe_t *stripe;
 	umem_maglist_t *stripe_list;
+	int retries = 0;
 
 	/*
 	 * Select stripe based on thread ID for load distribution.
@@ -2021,17 +2131,41 @@ umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp, umem_magazine_t *mp)
 		stripe_list = &stripe->ds_empty;
 	}
 
-	(void) mutex_lock(&stripe->ds_lock);
+	/*
+	 * Lock-free stack push operation using tagged pointers.
+	 */
 	ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
-	mp->mag_next = stripe_list->ml_list;
-	stripe_list->ml_list = mp;
-	stripe_list->ml_total++;
-	(void) mutex_unlock(&stripe->ds_lock);
+
+	do {
+		old = atomic_load_tagged_ptr(&stripe_list->ml_list);
+
+		/* Link magazine to current head */
+		mp->mag_next = (umem_magazine_t *)old.ptr;
+
+		/* Prepare new head */
+		new.ptr = mp;
+		new.version = old.version + 1;  /* Increment to prevent ABA */
+		new._pad = 0;
+
+		/*
+		 * Track CAS retries as contention metric.
+		 */
+		if (retries++ > 0) {
+			atomic_add_64(&stripe->ds_contention, 1);
+		}
+
+	} while (!atomic_cas_tagged_ptr(&stripe_list->ml_list, &old, new));
+
+	/*
+	 * Successfully pushed magazine to depot.
+	 * Update statistics atomically.
+	 */
+	atomic_add_64((uint64_t *)&stripe_list->ml_total, 1);
 }
 
 /*
  * Update the working set statistics for cp's depot.
- * With striped depot, we update all stripes.
+ * With lock-free depot, statistics are approximate.
  */
 static void
 umem_depot_ws_update(umem_cache_t *cp)
@@ -2041,18 +2175,40 @@ umem_depot_ws_update(umem_cache_t *cp)
 	for (i = 0; i < UMEM_DEPOT_STRIPES; i++) {
 		umem_depot_stripe_t *stripe = &cp->cache_depot[i];
 
-		(void) mutex_lock(&stripe->ds_lock);
 		stripe->ds_full.ml_reaplimit = stripe->ds_full.ml_min;
 		stripe->ds_full.ml_min = stripe->ds_full.ml_total;
 		stripe->ds_empty.ml_reaplimit = stripe->ds_empty.ml_min;
 		stripe->ds_empty.ml_min = stripe->ds_empty.ml_total;
-		(void) mutex_unlock(&stripe->ds_lock);
 	}
 }
 
 /*
+ * Pop a magazine from a lock-free magazine list for reaping.
+ */
+static umem_magazine_t *
+umem_depot_reap_pop(umem_maglist_t *mlp)
+{
+	umem_tagged_ptr_t old, new;
+	umem_magazine_t *mp;
+
+	do {
+		old = atomic_load_tagged_ptr(&mlp->ml_list);
+		mp = (umem_magazine_t *)old.ptr;
+		if (mp == NULL)
+			return (NULL);
+		new.ptr = mp->mag_next;
+		new.version = old.version + 1;
+		new._pad = 0;
+	} while (!atomic_cas_tagged_ptr(&mlp->ml_list, &old, new));
+
+	atomic_add_64((uint64_t *)&mlp->ml_total, (uint64_t)-1);
+	atomic_add_64(&mlp->ml_alloc, 1);
+	return (mp);
+}
+
+/*
  * Reap all magazines that have fallen out of the depot's working set.
- * With striped depot, we reap from all stripes.
+ * With lock-free depot, we use atomic pop operations.
  */
 static void
 umem_depot_ws_reap(umem_cache_t *cp)
@@ -2063,57 +2219,27 @@ umem_depot_ws_reap(umem_cache_t *cp)
 
 	ASSERT(cp->cache_next == NULL || IN_REAP());
 
-	/*
-	 * Reap from each stripe independently.
-	 */
 	for (i = 0; i < UMEM_DEPOT_STRIPES; i++) {
 		umem_depot_stripe_t *stripe = &cp->cache_depot[i];
 
-		/*
-		 * Reap full magazines from this stripe.
-		 */
-		(void) mutex_lock(&stripe->ds_lock);
-		reap = MIN(stripe->ds_full.ml_reaplimit, stripe->ds_full.ml_min);
-		(void) mutex_unlock(&stripe->ds_lock);
-
+		reap = MIN(stripe->ds_full.ml_reaplimit,
+		    stripe->ds_full.ml_min);
 		while (reap-- > 0) {
-			(void) mutex_lock(&stripe->ds_lock);
-			mp = stripe->ds_full.ml_list;
-			if (mp != NULL) {
-				ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
-				stripe->ds_full.ml_list = mp->mag_next;
-				if (--stripe->ds_full.ml_total < stripe->ds_full.ml_min)
-					stripe->ds_full.ml_min = stripe->ds_full.ml_total;
-				stripe->ds_full.ml_alloc++;
-			}
-			(void) mutex_unlock(&stripe->ds_lock);
-
+			mp = umem_depot_reap_pop(&stripe->ds_full);
 			if (mp == NULL)
 				break;
-			umem_magazine_destroy(cp, mp, cp->cache_magtype->mt_magsize);
+			ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+			umem_magazine_destroy(cp, mp,
+			    cp->cache_magtype->mt_magsize);
 		}
 
-		/*
-		 * Reap empty magazines from this stripe.
-		 */
-		(void) mutex_lock(&stripe->ds_lock);
-		reap = MIN(stripe->ds_empty.ml_reaplimit, stripe->ds_empty.ml_min);
-		(void) mutex_unlock(&stripe->ds_lock);
-
+		reap = MIN(stripe->ds_empty.ml_reaplimit,
+		    stripe->ds_empty.ml_min);
 		while (reap-- > 0) {
-			(void) mutex_lock(&stripe->ds_lock);
-			mp = stripe->ds_empty.ml_list;
-			if (mp != NULL) {
-				ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
-				stripe->ds_empty.ml_list = mp->mag_next;
-				if (--stripe->ds_empty.ml_total < stripe->ds_empty.ml_min)
-					stripe->ds_empty.ml_min = stripe->ds_empty.ml_total;
-				stripe->ds_empty.ml_alloc++;
-			}
-			(void) mutex_unlock(&stripe->ds_lock);
-
+			mp = umem_depot_reap_pop(&stripe->ds_empty);
 			if (mp == NULL)
 				break;
+			ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
 			umem_magazine_destroy(cp, mp, 0);
 		}
 	}
@@ -2448,6 +2574,13 @@ locked_slow_path:
 		(void) mutex_lock(&ccp->cc_lock);
 
 		if (emp != NULL) {
+			/*
+			 * Initialize the new magazine with SIMD.
+			 * This zeroes all pointers efficiently using
+			 * vectorized stores when available (AVX2/SSE2/NEON).
+			 */
+			umem_mag_init_fast(emp->mag_round, mtp->mt_magsize);
+
 			/*
 			 * We successfully allocated an empty magazine.
 			 * However, we had to drop ccp->cc_lock to do it,
@@ -3356,13 +3489,13 @@ umem_cache_create(
 	 */
 	for (cpu_seqid = 0; cpu_seqid < UMEM_DEPOT_STRIPES; cpu_seqid++) {
 		umem_depot_stripe_t *stripe = &cp->cache_depot[cpu_seqid];
-		(void) mutex_init(&stripe->ds_lock, USYNC_THREAD, NULL);
-		stripe->ds_full.ml_list = NULL;
+		umem_tagged_ptr_t empty_ptr = { NULL, 0, 0 };
+		stripe->ds_full.ml_list = empty_ptr;
 		stripe->ds_full.ml_total = 0;
 		stripe->ds_full.ml_min = 0;
 		stripe->ds_full.ml_reaplimit = 0;
 		stripe->ds_full.ml_alloc = 0;
-		stripe->ds_empty.ml_list = NULL;
+		stripe->ds_empty.ml_list = empty_ptr;
 		stripe->ds_empty.ml_total = 0;
 		stripe->ds_empty.ml_min = 0;
 		stripe->ds_empty.ml_reaplimit = 0;
@@ -3449,12 +3582,6 @@ umem_cache_destroy(umem_cache_t *cp)
 
 	for (cpu_seqid = 0; cpu_seqid < umem_max_ncpus; cpu_seqid++)
 		(void) mutex_destroy(&cp->cache_cpu[cpu_seqid].cc_lock);
-
-	/*
-	 * Destroy all depot stripe locks.
-	 */
-	for (cpu_seqid = 0; cpu_seqid < UMEM_DEPOT_STRIPES; cpu_seqid++)
-		(void) mutex_destroy(&cp->cache_depot[cpu_seqid].ds_lock);
 
 	(void) mutex_destroy(&cp->cache_depot_lock);
 	(void) mutex_destroy(&cp->cache_lock);
@@ -3884,6 +4011,21 @@ umem_init(void)
 
 	if (issetugid())
 		umem_mtbf = 0;
+
+#ifdef UMEM_NUMA_AVAILABLE
+	/*
+	 * Initialize NUMA support if available
+	 */
+	if (umem_numa_init() == 0) {
+		/* NUMA successfully initialized */
+		if (umem_numa_enabled) {
+			(void) fprintf(stderr,
+			    "umem: NUMA-aware allocation enabled "
+			    "(%d nodes detected)\n",
+			    umem_numa_topo ? umem_numa_topo->num_nodes : 0);
+		}
+	}
+#endif
 
 	/*
 	 * set up vmem
