@@ -280,7 +280,7 @@ umem_cache_alloc_rseq(void *cp, int umflag)
 			return umem_cache_alloc_rseq_slowpath(cp, cpu_id, umflag);
 		}
 
-		obj = mag->mag_objs[--rseq_cache->rounds];
+		obj = mag->mag_round[--rseq_cache->rounds];
 		rseq_cache->alloc_count++;
 		return obj;
 	}
@@ -317,7 +317,7 @@ umem_cache_alloc_rseq_slowpath(void *cp, int cpu_id, int umflag)
 		rseq_cache->rounds = tmp;
 
 		mag = prev_mag;
-		void *obj = mag->mag_objs[--rseq_cache->rounds];
+		void *obj = mag->mag_round[--rseq_cache->rounds];
 		rseq_cache->alloc_count++;
 		return obj;
 	}
@@ -374,7 +374,7 @@ umem_cache_free_rseq(void *cp, void *buf)
 	 * Fallback for other architectures
 	 */
 	umem_magazine_t *mag = (umem_magazine_t *)rseq_cache->loaded_mag;
-	if (mag != NULL && rseq_cache->rounds < mag->mag_magsize) {
+	if (mag != NULL && rseq_cache->rounds < cache->cache_magtype->mt_magsize) {
 		/* Check CPU didn't change */
 		if (umem_rseq_get_cpu() != cpu_id) {
 			rseq_cache->migration_count++;
@@ -383,7 +383,7 @@ umem_cache_free_rseq(void *cp, void *buf)
 			return;
 		}
 
-		mag->mag_objs[rseq_cache->rounds++] = buf;
+		mag->mag_round[rseq_cache->rounds++] = buf;
 		rseq_cache->free_count++;
 		return;
 	}
@@ -411,7 +411,7 @@ umem_cache_free_rseq_slowpath(void *cp, int cpu_id, void *buf)
 	/* Try previous magazine */
 	prev_mag = (umem_magazine_t *)rseq_cache->previous_mag;
 	if (prev_mag != NULL && rseq_cache->prounds <
-	    ((umem_magazine_t *)prev_mag)->mag_magsize) {
+	    cache->cache_magtype->mt_magsize) {
 		/* Swap magazines */
 		rseq_cache->previous_mag = rseq_cache->loaded_mag;
 		rseq_cache->loaded_mag = prev_mag;
@@ -420,7 +420,7 @@ umem_cache_free_rseq_slowpath(void *cp, int cpu_id, void *buf)
 		rseq_cache->rounds = tmp;
 
 		mag = prev_mag;
-		mag->mag_objs[rseq_cache->rounds++] = buf;
+		mag->mag_round[rseq_cache->rounds++] = buf;
 		rseq_cache->free_count++;
 		return;
 	}

@@ -187,10 +187,8 @@
             ];
 
             shellHook = ''
-              echo "╔════════════════════════════════════════════╗"
-              echo "║  libumem development environment          ║"
-              echo "║  Native (${system})                       ║"
-              echo "╚════════════════════════════════════════════╝"
+              echo "libumem development environment"
+              echo "Native (${system})"
               echo ""
               echo "Build:           ./autogen.sh && ./configure && make"
               echo ""

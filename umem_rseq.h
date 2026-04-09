@@ -97,7 +97,7 @@ typedef struct umem_rseq_cache {
  * Global rseq state
  */
 extern int umem_rseq_enabled;		/* rseq available and enabled */
-extern int umem_rseq_registered;	/* Thread has registered rseq */
+extern __thread int umem_rseq_registered;	/* Thread has registered rseq */
 extern __thread struct umem_rseq umem_rseq_area; /* Per-thread rseq area */
 extern umem_rseq_cache_t *umem_rseq_caches; /* Per-CPU cache array */
 

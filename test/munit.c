@@ -275,10 +275,19 @@ munit_log_errno(MunitLogLevel level, FILE *fp, const char *msg)
   munit_error_str[0] = '\0';
 
 #if !defined(_WIN32)
-  int strerror_result = strerror_r(errno, munit_error_str, MUNIT_STRERROR_LEN);
-  if (strerror_result != 0) {
-    snprintf(munit_error_str, MUNIT_STRERROR_LEN, "Unknown error %d", errno);
-  }
+  /* GNU libc returns char*, POSIX returns int */
+  #if defined(__GLIBC__) && defined(_GNU_SOURCE)
+    char *result = strerror_r(errno, munit_error_str, MUNIT_STRERROR_LEN);
+    if (result != munit_error_str) {
+      strncpy(munit_error_str, result, MUNIT_STRERROR_LEN - 1);
+      munit_error_str[MUNIT_STRERROR_LEN - 1] = '\0';
+    }
+  #else
+    int strerror_result = strerror_r(errno, munit_error_str, MUNIT_STRERROR_LEN);
+    if (strerror_result != 0) {
+      snprintf(munit_error_str, MUNIT_STRERROR_LEN, "Unknown error %d", errno);
+    }
+  #endif
 #else
   strerror_s(munit_error_str, MUNIT_STRERROR_LEN, errno);
 #endif
