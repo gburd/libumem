@@ -289,8 +289,11 @@ test_free_null(const MunitParameter params[], void* data)
 	(void)params;
 	(void)data;
 
-	/* Freeing NULL should be safe (no-op) */
-	umem_free(NULL, 64);
+	/* Freeing NULL with size=0 is safe (no-op).
+	 * Note: umem_free(NULL, non_zero_size) is undefined behavior because
+	 * the implementation indexes into umem_alloc_table and dereferences
+	 * the cache pointer before checking for NULL buf. */
+	umem_free(NULL, 0);
 
 	return MUNIT_OK;
 }

@@ -256,17 +256,21 @@ umem_verify_all_caches(void)
 		for (uint32_t cpu = 0; cpu <= cp->cache_cpu_mask; cpu++) {
 			umem_cpu_cache_t *ccp = &cp->cache_cpu[cpu];
 
-			if (ccp->cc_rounds < 0) {
+			/*
+			 * cc_rounds and cc_prounds are -1 when no magazine
+			 * is loaded; values below -1 indicate corruption.
+			 */
+			if (ccp->cc_rounds < -1) {
 				(void) fprintf(stderr,
-				    "ERROR: Cache %s CPU %u has negative rounds\n",
-				    cp->cache_name, cpu);
+				    "ERROR: Cache %s CPU %u has invalid rounds (%d)\n",
+				    cp->cache_name, cpu, ccp->cc_rounds);
 				errors++;
 			}
 
-			if (ccp->cc_prounds < 0) {
+			if (ccp->cc_prounds < -1) {
 				(void) fprintf(stderr,
-				    "ERROR: Cache %s CPU %u has negative prounds\n",
-				    cp->cache_name, cpu);
+				    "ERROR: Cache %s CPU %u has invalid prounds (%d)\n",
+				    cp->cache_name, cpu, ccp->cc_prounds);
 				errors++;
 			}
 

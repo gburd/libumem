@@ -251,14 +251,12 @@ test_cache_invalid_flags(const MunitParameter params[], void* data)
 	(void)params;
 	(void)data;
 
-	/* Try creating cache with invalid/unsupported flags */
-	/* Use a very large flag value that's unlikely to be valid */
-	cp = umem_cache_create("bad_flags", 64, 0, NULL, NULL, NULL, NULL, NULL, 0x80000000);
-
-	/* Should either fail (return NULL) or ignore invalid flags */
-	if (cp != NULL) {
-		umem_cache_destroy(cp);
-	}
+	/* 0x80000000 is UMC_INTERNAL, which triggers ASSERT() if passed by
+	 * non-init threads. Test with a combination that is validated at
+	 * line 3248: UMC_NOHASH | UMC_NOTOUCH together are invalid. */
+	cp = umem_cache_create("bad_flags", 64, 0, NULL, NULL, NULL, NULL, NULL,
+	                       UMC_NOHASH | UMC_NOTOUCH);
+	munit_assert_null(cp);
 
 	return MUNIT_OK;
 }

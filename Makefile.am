@@ -183,7 +183,10 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_envvar.c \
 			 test/unit/test_umem_fail.c \
 			 test/unit/test_overflow_fixes.c \
-			 test/unit/test_magazine_tune.c
+			 test/unit/test_magazine_tune.c \
+			 test/unit/test_cache_consistency.c \
+			 test/unit/test_umem_stats.c \
+			 test/unit/test_depot_consistency.c
 test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread
 test_test_main_CPPFLAGS = -I$(srcdir)/test

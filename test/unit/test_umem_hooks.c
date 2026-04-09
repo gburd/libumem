@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <pthread.h>
 #include "munit.h"
 #include "umem_hooks.h"
@@ -403,9 +404,28 @@ test_hook_dump(const MunitParameter params[], void* data)
 	void *ptr2 = umem_hook_track_alloc(&hook, 512);
 	umem_hook_track_free(&hook, ptr1, 1024);
 
-	/* Dump to file */
-	FILE *fp = tmpfile();
-	munit_assert_not_null(fp);
+	/* Dump to file - use a named temp file since tmpfile() may fail
+	 * in sandboxed environments where /tmp is not writable */
+	const char *tmpdir = getenv("TMPDIR");
+	if (tmpdir == NULL)
+		tmpdir = "/tmp";
+	char tmppath[256];
+	snprintf(tmppath, sizeof(tmppath), "%s/umem_hook_dump_XXXXXX", tmpdir);
+	int fd = mkstemp(tmppath);
+	if (fd < 0) {
+		/* Cannot create temp file - skip */
+		free(ptr2);
+		umem_hook_unregister(&hook);
+		return MUNIT_SKIP;
+	}
+	FILE *fp = fdopen(fd, "w+");
+	if (fp == NULL) {
+		close(fd);
+		unlink(tmppath);
+		free(ptr2);
+		umem_hook_unregister(&hook);
+		return MUNIT_SKIP;
+	}
 
 	umem_hook_dump_one(fp, &hook);
 	munit_assert_long(ftell(fp), >, 0);
@@ -415,6 +435,7 @@ test_hook_dump(const MunitParameter params[], void* data)
 	munit_assert_long(ftell(fp), >, 0);
 
 	fclose(fp);
+	unlink(tmppath);
 
 	/* Test dump with NULL fp - should use stderr */
 	umem_hook_dump(NULL);
@@ -423,9 +444,18 @@ test_hook_dump(const MunitParameter params[], void* data)
 	umem_hook_unregister(&hook);
 
 	/* Test dump with no hooks */
-	fp = tmpfile();
-	umem_hook_dump(fp);
-	fclose(fp);
+	snprintf(tmppath, sizeof(tmppath), "%s/umem_hook_dump2_XXXXXX", tmpdir);
+	fd = mkstemp(tmppath);
+	if (fd >= 0) {
+		fp = fdopen(fd, "w+");
+		if (fp != NULL) {
+			umem_hook_dump(fp);
+			fclose(fp);
+		} else {
+			close(fd);
+		}
+		unlink(tmppath);
+	}
 
 	return MUNIT_OK;
 }
@@ -434,14 +464,28 @@ test_hook_dump(const MunitParameter params[], void* data)
 static MunitResult
 test_hook_dump_null(const MunitParameter params[], void* data)
 {
-	FILE *fp = tmpfile();
-	munit_assert_not_null(fp);
+	/* Use a named temp file since tmpfile() may fail in sandboxed environments */
+	const char *tmpdir = getenv("TMPDIR");
+	if (tmpdir == NULL)
+		tmpdir = "/tmp";
+	char tmppath[256];
+	snprintf(tmppath, sizeof(tmppath), "%s/umem_hook_null_XXXXXX", tmpdir);
+	int fd = mkstemp(tmppath);
+	if (fd < 0)
+		return MUNIT_SKIP;
+	FILE *fp = fdopen(fd, "w+");
+	if (fp == NULL) {
+		close(fd);
+		unlink(tmppath);
+		return MUNIT_SKIP;
+	}
 
 	/* Should be safe */
 	umem_hook_dump_one(fp, NULL);
 	umem_hook_dump_one(NULL, NULL);
 
 	fclose(fp);
+	unlink(tmppath);
 
 	return MUNIT_OK;
 }

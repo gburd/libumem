@@ -5,6 +5,10 @@
 #include "munit.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/* Cache verification function from umem_audit.c */
+extern int umem_verify_all_caches(void);
 
 /* External test suites */
 extern MunitSuite suite_umem_alloc;
@@ -24,6 +28,9 @@ extern MunitSuite suite_envvar;
 extern MunitSuite suite_umem_fail;
 extern MunitSuite suite_overflow_fixes;
 extern MunitSuite suite_magazine_tune;
+extern MunitSuite suite_cache_consistency;
+extern MunitSuite suite_umem_stats;
+extern MunitSuite suite_depot_consistency;
 
 static MunitSuite* test_suites[] = {
     &suite_umem_alloc,
@@ -43,20 +50,43 @@ static MunitSuite* test_suites[] = {
     &suite_umem_fail,
     &suite_overflow_fixes,
     &suite_magazine_tune,
+    &suite_cache_consistency,
+    &suite_umem_stats,
+    &suite_depot_consistency,
     NULL
 };
 
+static int skip_verify(void) {
+    const char *env = getenv("UMEM_SKIP_VERIFY");
+    return (env != NULL && strcmp(env, "1") == 0);
+}
+
 int main(int argc, char* argv[]) {
     int result = 0;
+    int do_verify = !skip_verify();
 
     printf("libumem Test Suite\n");
-    printf("==================\n\n");
+    printf("==================\n");
+    if (do_verify) {
+        printf("  (cache verification enabled after each suite)\n");
+    }
+    printf("\n");
 
     for (int i = 0; test_suites[i] != NULL; i++) {
         MunitSuite* suite = test_suites[i];
         int suite_result = munit_suite_main(suite, NULL, argc, argv);
         if (suite_result != 0) {
             result = suite_result;
+        }
+
+        if (do_verify) {
+            int errors = umem_verify_all_caches();
+            if (errors != 0) {
+                fprintf(stderr,
+                    "FAIL: umem_verify_all_caches() found %d error(s) "
+                    "after suite '%s'\n", errors, suite->prefix);
+                result = 1;
+            }
         }
     }
 
