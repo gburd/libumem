@@ -182,9 +182,21 @@ static INLINE uint64_t umem_atomic_inc64(volatile uint64_t *mem)
 #endif
 
 #define _sysconf(a) sysconf(a)
+#ifndef __NORETURN
 #define __NORETURN  __attribute__ ((noreturn))
+#endif
 
+/*
+ * On Solaris/Illumos, getpcstack.c uses real stack walking via
+ * getfp()/flush_windows() from assembly and stack_getbounds()/
+ * thr_stksegment() from the system.  On other platforms, use
+ * a dummy implementation since those APIs are not available.
+ * ARM64 has its own implementation in getpcstack.c.
+ */
+#if !defined(HAVE_THREAD_H) && \
+    !defined(__aarch64__) && !defined(__arm64__)
 #define EC_UMEM_DUMMY_PCSTACK 1
+#endif
 static INLINE int __nthreads(void)
 {
   /* or more; just to force multi-threaded mode */

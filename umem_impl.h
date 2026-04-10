@@ -41,6 +41,9 @@
 #include "config.h"
 #include <umem.h>
 #include <stdatomic.h>
+#ifdef HAVE_ALLOCA_H
+#include <alloca.h>
+#endif
 
 #ifdef HAVE_SYS_SYSMACROS_H
 #include <sys/sysmacros.h>

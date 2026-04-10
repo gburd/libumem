@@ -100,6 +100,7 @@ case "$host_cpu" in
     AC_MSG_RESULT(sparc)
     GENASM_DIR="sparc"
     AC_DEFINE(ARCH_SPARC, [1], [sparc architecture])
+    arch_sparc=yes
     ;;
   riscv64)
     AC_MSG_RESULT(riscv64)
@@ -120,6 +121,7 @@ case "$host_cpu" in
 esac
 
 AC_SUBST(GENASM_DIR)
+AM_CONDITIONAL(ARCH_SPARC, [test "x$arch_sparc" = "xyes"])
 
 # aarch64-specific checks
 if test "$GENASM_DIR" = "aarch64"; then

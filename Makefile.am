@@ -64,6 +64,17 @@ else
 HTM_SOURCES =
 endif
 
+# Conditionally include SPARC assembly on Solaris
+if SOLARIS_BUILD
+if ARCH_SPARC
+SPARC_ASM_SOURCES = sparc_subr_sol.s
+else
+SPARC_ASM_SOURCES =
+endif
+else
+SPARC_ASM_SOURCES =
+endif
+
 libumem_la_SOURCES = init_lib.c \
 			umem_agent_support.c \
 			umem_fail.c \
@@ -100,7 +111,8 @@ libumem_la_SOURCES = init_lib.c \
 			$(PERCPU_SOURCES) \
 			$(RSEQ_SOURCES) \
 			$(NUMA_SOURCES) \
-			$(HTM_SOURCES)
+			$(HTM_SOURCES) \
+			$(SPARC_ASM_SOURCES)
 
 libumem_malloc_la_SOURCES = malloc_interpose.c malloc_guard.h
 libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir)
