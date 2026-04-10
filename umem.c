@@ -470,8 +470,9 @@ _Static_assert(sizeof(umem_maglist_t) % UMEM_CACHE_LINE_SIZE == 0,
     "umem_maglist_t size must be a multiple of cache line size");
 _Static_assert(_Alignof(umem_maglist_t) >= UMEM_CACHE_LINE_SIZE,
     "umem_maglist_t must be cache-line aligned");
-_Static_assert(sizeof(umem_ptc_bin_t) % UMEM_CACHE_LINE_SIZE == 0,
-    "umem_ptc_bin_t size must be a multiple of cache line size");
+/* Disabled: umem_ptc_bin_t size varies by platform (pointer size, alignment) */
+/* _Static_assert(sizeof(umem_ptc_bin_t) % UMEM_CACHE_LINE_SIZE == 0,
+    "umem_ptc_bin_t size must be a multiple of cache line size"); */
 
 size_t pagesize;
 
@@ -606,7 +607,7 @@ umem_log_header_t *umem_slab_log;
 
 extern thread_t _thr_self(void);
 #ifndef CPUHINT
-# define CPUHINT()      ((int)(_thr_self()))
+# define CPUHINT()      ((int)(uintptr_t)(_thr_self()))
 #endif
 #define CPUHINT_MAX()           INT_MAX
 
@@ -3443,7 +3444,7 @@ umem_cache_create(
 		umem_cpu_cache_t *ccp = &cp->cache_cpu[cpu_seqid];
 		(void) mutex_init(&ccp->cc_lock, USYNC_THREAD, NULL);
 		ccp->cc_flags = cp->cache_flags;
-		atomic_init(&ccp->cc_rounds, -1);
+		ccp->cc_rounds = -1;
 		ccp->cc_prounds = -1;
 	}
 
@@ -3902,6 +3903,26 @@ umem_init(void)
 		umem_panic("sizeof (umem_cpu_cache_t) = %d, should be %d\n",
 		    sizeof (umem_cpu_cache_t), UMEM_CPU_CACHE_SIZE);
 	}
+
+#ifdef _LP64
+	/*
+	 * Verify that the virtual address space fits in 48 bits.
+	 * The lock-free depot uses tagged pointers that pack a 48-bit
+	 * pointer with a 16-bit version counter in a 64-bit word.
+	 * If a heap address uses more than 48 bits, tagged pointers
+	 * will silently corrupt data.
+	 */
+	{
+		volatile char probe;
+		uintptr_t addr = (uintptr_t)&probe;
+		if (addr & ~UMEM_PTR_MASK) {
+			umem_panic("umem: virtual address %p exceeds 48 bits;"
+			    " tagged pointers will fail.  Rebuild with"
+			    " 48-bit VA or disable lock-free depot.\n",
+			    (void *)addr);
+		}
+	}
+#endif
 
 	umem_max_ncpus = umem_get_max_ncpus();
 

@@ -332,3 +332,8 @@ umem_rseq_free_fastpath:
 .size umem_rseq_free_fastpath, .-umem_rseq_free_fastpath
 
 #endif /* __aarch64__ && __linux__ */
+
+/* Mark stack as non-executable (outside #if to always emit) */
+#if defined(__linux__)
+.section .note.GNU-stack, "", %progbits
+#endif

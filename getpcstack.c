@@ -105,7 +105,7 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
  */
 #define UMEM_FRAMESIZE (2 * sizeof(long long))
 
-#elif defined(__sparc) || defined(__sparcv9)
+#elif (defined(__sparc) || defined(__sparcv9)) && HAVE_SYS_STACK_H
 extern void flush_windows(void);
 #define	UMEM_FRAMESIZE	MINFRAME
 

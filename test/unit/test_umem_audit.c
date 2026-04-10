@@ -58,7 +58,7 @@ test_dump_audit_buffer_valid(const MunitParameter params[], void *data)
 	audit.bc_addr = (void *)0x12345678;
 	audit.bc_cache = NULL;  /* Will show "<unknown>" */
 	audit.bc_timestamp = 123456789;
-	audit.bc_thread = 0x999;
+	audit.bc_thread = (thread_t)(uintptr_t)0x999;
 	audit.bc_depth = 0;  /* No stack trace */
 
 	/* Redirect stderr to /dev/null */

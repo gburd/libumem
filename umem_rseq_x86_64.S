@@ -325,4 +325,7 @@ umem_rseq_free_fastpath:
 	.cfi_endproc
 .size umem_rseq_free_fastpath, .-umem_rseq_free_fastpath
 
+/* Mark stack as non-executable */
+.section .note.GNU-stack, "", @progbits
+
 #endif /* __x86_64__ && __linux__ */

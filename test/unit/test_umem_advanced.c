@@ -107,29 +107,36 @@ test_umem_multiple_cache_sizes(const MunitParameter params[], void* data)
 	return MUNIT_OK;
 }
 
+static int stress_ctor_calls = 0;
+static int stress_dtor_calls = 0;
+
+static int
+stress_ctor(void *buf, void *arg, int flags)
+{
+	(void)arg;
+	(void)flags;
+	__atomic_add_fetch(&stress_ctor_calls, 1, __ATOMIC_SEQ_CST);
+	memset(buf, 0xAA, 64);
+	return 0;
+}
+
+static void
+stress_dtor(void *buf, void *arg)
+{
+	(void)arg;
+	__atomic_add_fetch(&stress_dtor_calls, 1, __ATOMIC_SEQ_CST);
+	memset(buf, 0xBB, 64);
+}
+
 /* Test: Cache with constructors and destructors */
 static MunitResult
 test_umem_cache_ctor_dtor_stress(const MunitParameter params[], void* data)
 {
-	static int ctor_calls = 0;
-	static int dtor_calls = 0;
-
-	int ctor(void *buf, void *arg, int flags) {
-		__atomic_add_fetch(&ctor_calls, 1, __ATOMIC_SEQ_CST);
-		memset(buf, 0xAA, 64);
-		return 0;
-	}
-
-	void dtor(void *buf, void *arg) {
-		__atomic_add_fetch(&dtor_calls, 1, __ATOMIC_SEQ_CST);
-		memset(buf, 0xBB, 64);
-	}
-
-	ctor_calls = 0;
-	dtor_calls = 0;
+	stress_ctor_calls = 0;
+	stress_dtor_calls = 0;
 
 	umem_cache_t *cache = umem_cache_create("ctor_dtor_stress",
-	    64, 0, ctor, dtor, NULL, NULL, NULL, 0);
+	    64, 0, stress_ctor, stress_dtor, NULL, NULL, NULL, 0);
 	munit_assert_not_null(cache);
 
 	/* Allocate many objects */
@@ -140,7 +147,7 @@ test_umem_cache_ctor_dtor_stress(const MunitParameter params[], void* data)
 	}
 
 	/* Verify constructor was called */
-	munit_assert_int(ctor_calls, >, 0);
+	munit_assert_int(stress_ctor_calls, >, 0);
 
 	/* Free all */
 	for (int i = 0; i < 50; i++) {
@@ -149,7 +156,7 @@ test_umem_cache_ctor_dtor_stress(const MunitParameter params[], void* data)
 
 	/* Destroy cache - destructors should be called */
 	umem_cache_destroy(cache);
-	munit_assert_int(dtor_calls, >, 0);
+	munit_assert_int(stress_dtor_calls, >, 0);
 
 	return MUNIT_OK;
 }

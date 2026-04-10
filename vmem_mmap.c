@@ -47,6 +47,13 @@
 #define	FREE_PROT	PROT_NONE
 
 #define	ALLOC_FLAGS	MAP_PRIVATE | MAP_ANON
+/*
+ * MAP_NORESERVE is not available on all platforms (e.g., FreeBSD).
+ * Define it to 0 if missing so it has no effect in the flags bitmask.
+ */
+#ifndef MAP_NORESERVE
+#define	MAP_NORESERVE	0
+#endif
 #define	FREE_FLAGS	MAP_PRIVATE | MAP_ANON | MAP_NORESERVE
 
 #ifdef MAP_ALIGN

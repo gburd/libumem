@@ -143,7 +143,7 @@ get_cached_cpu_hint(void)
 		hint = CPUHINT();
 #else
 		extern thread_t _thr_self(void);
-		hint = (int)(_thr_self());
+		hint = (int)(uintptr_t)(_thr_self());
 #endif
 		cached_cpu_hint = hint;
 	}
@@ -346,9 +346,19 @@ typedef struct umem_cpu_cache {
  * Tagged pointer for lock-free stack operations.
  * Packs a pointer and a 16-bit version counter into a single 64-bit word
  * so the pair can be atomically loaded/CAS'd with standard 64-bit atomics.
- * On x86_64 and aarch64, userspace pointers use at most 48 bits; the
- * upper 16 bits carry the ABA-prevention version counter.
+ *
+ * Requires that userspace pointers fit in 48 bits. This is true for:
+ *   - x86_64: canonical form enforces 48-bit user VA
+ *   - aarch64: 48-bit VA is the default (ARMv8.2 52-bit VA is NOT supported)
+ *   - RISC-V Sv39/Sv48: 39/48-bit VA
+ *   - SPARC: 44-bit VA
+ *
+ * Use umem_tagged_ptr_check() at init time to verify at runtime.
  */
+#if defined(__aarch64__) && defined(__ARM_FEATURE_MEMORY_TAGGING)
+#error "ARM MTE (Memory Tagging Extension) conflicts with tagged pointer scheme"
+#endif
+
 #define	UMEM_PTR_MASK	0x0000FFFFFFFFFFFFULL
 #define	UMEM_VER_SHIFT	48
 
