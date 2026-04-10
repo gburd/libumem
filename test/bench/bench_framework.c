@@ -11,6 +11,9 @@
 #include <sys/resource.h>
 #include <pthread.h>
 #include <math.h>
+#include <stdatomic.h>
+#include <time.h>
+#include <errno.h>
 
 /* Get RSS (Resident Set Size) in bytes */
 size_t bench_get_rss_bytes(void) {
@@ -23,6 +26,41 @@ size_t bench_get_rss_bytes(void) {
 #endif
     }
     return 0;
+}
+
+/* Read VmRSS from /proc/self/status (more accurate current RSS) */
+size_t bench_get_vmrss_bytes(void) {
+#ifdef __linux__
+    FILE *f = fopen("/proc/self/status", "r");
+    if (!f) return 0;
+    char line[256];
+    size_t rss = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            char *p = line + 6;
+            while (*p == ' ' || *p == '\t') p++;
+            rss = (size_t)strtoull(p, NULL, 10) * 1024;
+            break;
+        }
+    }
+    fclose(f);
+    return rss;
+#else
+    return bench_get_rss_bytes();
+#endif
+}
+
+/* Get CPU usage from getrusage */
+bench_cpu_usage_t bench_get_cpu_usage(void) {
+    bench_cpu_usage_t usage = {0, 0};
+    struct rusage ru;
+    if (getrusage(RUSAGE_SELF, &ru) == 0) {
+        usage.user_ms = ru.ru_utime.tv_sec * 1000.0 +
+                        ru.ru_utime.tv_usec / 1000.0;
+        usage.sys_ms = ru.ru_stime.tv_sec * 1000.0 +
+                       ru.ru_stime.tv_usec / 1000.0;
+    }
+    return usage;
 }
 
 /* Print statistics in human-readable format */
@@ -72,6 +110,9 @@ void bench_print_stats(const bench_stats_t *stats) {
     printf("  RSS:          %s\n", rss_str);
     printf("  Allocated:    %s\n", alloc_str);
     printf("  Fragmentation: %.2f\n", stats->fragmentation_ratio);
+    printf("\nCPU:\n");
+    printf("  User: %.1f ms\n", stats->cpu_usage.user_ms);
+    printf("  Sys:  %.1f ms\n", stats->cpu_usage.sys_ms);
     printf("========================================\n");
 }
 
@@ -79,7 +120,8 @@ void bench_print_stats(const bench_stats_t *stats) {
 void bench_print_csv_header(void) {
     printf("allocator,workload,threads,ops,elapsed_sec,ops_per_sec,");
     printf("lat_min,lat_p50,lat_p90,lat_p99,lat_p999,lat_max,lat_mean,");
-    printf("rss_bytes,allocated_bytes,fragmentation\n");
+    printf("rss_bytes,allocated_bytes,fragmentation,");
+    printf("cpu_user_ms,cpu_sys_ms\n");
 }
 
 void bench_print_csv_row(const bench_stats_t *stats) {
@@ -89,8 +131,10 @@ void bench_print_csv_row(const bench_stats_t *stats) {
     printf("%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,",
            stats->latency_min, stats->latency_p50, stats->latency_p90,
            stats->latency_p99, stats->latency_p999, stats->latency_max, stats->latency_mean);
-    printf("%zu,%zu,%.2f\n",
-           stats->peak_rss_bytes, stats->bytes_allocated, stats->fragmentation_ratio);
+    printf("%zu,%zu,%.2f,%.1f,%.1f\n",
+           stats->peak_rss_bytes, stats->bytes_allocated,
+           stats->fragmentation_ratio,
+           stats->cpu_usage.user_ms, stats->cpu_usage.sys_ms);
 }
 
 /* Thread context for multithreaded benchmarks */
@@ -319,32 +363,561 @@ cleanup:
     free(contexts);
 }
 
-/* Producer-consumer workload: separate alloc and free threads */
-void workload_producer_consumer(allocator_ops_t *ops, bench_stats_t *stats, void *config) {
-    /* TODO: Implement producer-consumer pattern */
-    workload_single_thread(ops, stats, config);  /* Placeholder */
+/*
+ * Lock-free MPMC ring buffer for producer-consumer workload.
+ * Uses CAS on head/tail for safe multi-producer/multi-consumer access.
+ */
+#define RING_CAPACITY 8192
+
+typedef struct {
+    _Alignas(64) atomic_uint_fast64_t seq;
+    void *ptr;
+    size_t size;
+} ring_slot_t;
+
+typedef struct {
+    _Alignas(64) ring_slot_t slots[RING_CAPACITY];
+    _Alignas(64) atomic_uint_fast64_t head;
+    _Alignas(64) atomic_uint_fast64_t tail;
+    atomic_int done;
+} ring_buffer_t;
+
+static void ring_init(ring_buffer_t *rb) {
+    atomic_init(&rb->head, 0);
+    atomic_init(&rb->tail, 0);
+    atomic_init(&rb->done, 0);
+    for (uint_fast64_t i = 0; i < RING_CAPACITY; i++) {
+        atomic_init(&rb->slots[i].seq, i);
+        rb->slots[i].ptr = NULL;
+    }
 }
 
-/* Fragmentation test: allocate various sizes, free pattern */
-void workload_fragmentation(allocator_ops_t *ops, bench_stats_t *stats, void *config) {
-    /* TODO: Implement fragmentation test */
-    workload_single_thread(ops, stats, config);  /* Placeholder */
+static int ring_push(ring_buffer_t *rb, void *ptr, size_t sz) {
+    uint_fast64_t pos;
+    ring_slot_t *slot;
+    for (;;) {
+        pos = atomic_load_explicit(&rb->head, memory_order_relaxed);
+        slot = &rb->slots[pos % RING_CAPACITY];
+        uint_fast64_t seq = atomic_load_explicit(&slot->seq,
+                                                  memory_order_acquire);
+        intptr_t diff = (intptr_t)seq - (intptr_t)pos;
+        if (diff == 0) {
+            if (atomic_compare_exchange_weak_explicit(
+                    &rb->head, &pos, pos + 1,
+                    memory_order_relaxed, memory_order_relaxed))
+                break;
+        } else if (diff < 0) {
+            return 0;  /* Full */
+        }
+    }
+    slot->ptr = ptr;
+    slot->size = sz;
+    atomic_store_explicit(&slot->seq, pos + 1, memory_order_release);
+    return 1;
+}
+
+static int ring_pop(ring_buffer_t *rb, void **ptr, size_t *sz) {
+    uint_fast64_t pos;
+    ring_slot_t *slot;
+    for (;;) {
+        pos = atomic_load_explicit(&rb->tail, memory_order_relaxed);
+        slot = &rb->slots[pos % RING_CAPACITY];
+        uint_fast64_t seq = atomic_load_explicit(&slot->seq,
+                                                  memory_order_acquire);
+        intptr_t diff = (intptr_t)seq - (intptr_t)(pos + 1);
+        if (diff == 0) {
+            if (atomic_compare_exchange_weak_explicit(
+                    &rb->tail, &pos, pos + 1,
+                    memory_order_relaxed, memory_order_relaxed))
+                break;
+        } else if (diff < 0) {
+            return 0;  /* Empty */
+        }
+    }
+    *ptr = slot->ptr;
+    *sz = slot->size;
+    atomic_store_explicit(&slot->seq, pos + RING_CAPACITY,
+                          memory_order_release);
+    return 1;
+}
+
+typedef struct {
+    int thread_id;
+    allocator_ops_t *ops;
+    workload_config_t *config;
+    ring_buffer_t *ring;
+    td_histogram_t *latency_hist;
+    size_t bytes_allocated;
+    uint64_t operations;
+    pthread_barrier_t *start_barrier;
+} pc_context_t;
+
+static void *producer_thread(void *arg) {
+    pc_context_t *ctx = (pc_context_t *)arg;
+    allocator_ops_t *ops = ctx->ops;
+    workload_config_t *cfg = ctx->config;
+    unsigned int seed = (unsigned int)(ctx->thread_id + 1);
+
+    pthread_barrier_wait(ctx->start_barrier);
+
+    for (uint64_t i = 0; i < cfg->operation_count; i++) {
+        size_t size = cfg->min_size;
+        if (cfg->max_size > cfg->min_size) {
+            size = cfg->min_size +
+                   ((size_t)rand_r(&seed) % (cfg->max_size - cfg->min_size));
+        }
+
+        uint64_t t0 = bench_get_ns();
+        void *ptr = ops->alloc(size);
+        uint64_t t1 = bench_get_ns();
+
+        if (!ptr) continue;
+        memset(ptr, 0x42, size);
+
+        td_add(ctx->latency_hist, (double)(t1 - t0), 1);
+        ctx->bytes_allocated += size;
+        ctx->operations++;
+
+        while (!ring_push(ctx->ring, ptr, size)) {
+            /* Spin briefly waiting for consumer to drain */
+            sched_yield();
+        }
+    }
+    return NULL;
+}
+
+static void *consumer_thread(void *arg) {
+    pc_context_t *ctx = (pc_context_t *)arg;
+    allocator_ops_t *ops = ctx->ops;
+
+    pthread_barrier_wait(ctx->start_barrier);
+
+    for (;;) {
+        void *ptr;
+        size_t sz;
+        if (ring_pop(ctx->ring, &ptr, &sz)) {
+            uint64_t t0 = bench_get_ns();
+            ops->free(ptr);
+            uint64_t t1 = bench_get_ns();
+            td_add(ctx->latency_hist, (double)(t1 - t0), 1);
+            ctx->operations++;
+        } else if (atomic_load(&ctx->ring->done)) {
+            /* Drain remaining */
+            while (ring_pop(ctx->ring, &ptr, &sz)) {
+                ops->free(ptr);
+                ctx->operations++;
+            }
+            break;
+        } else {
+            sched_yield();
+        }
+    }
+    return NULL;
+}
+
+/* Producer-consumer workload: N threads allocate, M threads free */
+void workload_producer_consumer(allocator_ops_t *ops,
+                                bench_stats_t *stats, void *config) {
+    workload_config_t *cfg = (workload_config_t *)config;
+    int nthreads = cfg->thread_count;
+    int n_producers = (nthreads + 1) / 2;
+    int n_consumers = nthreads - n_producers;
+    if (n_consumers < 1) n_consumers = 1;
+    int total = n_producers + n_consumers;
+
+    ring_buffer_t *ring = calloc(1, sizeof(ring_buffer_t));
+    pthread_t *threads = calloc(total, sizeof(pthread_t));
+    pc_context_t *contexts = calloc(total, sizeof(pc_context_t));
+    pthread_barrier_t barrier;
+
+    if (!ring || !threads || !contexts) {
+        free(ring); free(threads); free(contexts);
+        return;
+    }
+
+    ring_init(ring);
+    pthread_barrier_init(&barrier, NULL, total + 1);
+
+    uint64_t ops_per_producer = cfg->operation_count / (uint64_t)n_producers;
+
+    for (int i = 0; i < total; i++) {
+        contexts[i].thread_id = i;
+        contexts[i].ops = ops;
+        contexts[i].config = cfg;
+        contexts[i].ring = ring;
+        contexts[i].start_barrier = &barrier;
+        contexts[i].bytes_allocated = 0;
+        contexts[i].operations = 0;
+        if (td_init(100.0, &contexts[i].latency_hist) != 0) {
+            goto cleanup;
+        }
+    }
+
+    /* Temporarily override per-producer op count */
+    workload_config_t producer_cfg = *cfg;
+    producer_cfg.operation_count = ops_per_producer;
+    for (int i = 0; i < n_producers; i++) {
+        contexts[i].config = &producer_cfg;
+        pthread_create(&threads[i], NULL, producer_thread, &contexts[i]);
+    }
+    for (int i = n_producers; i < total; i++) {
+        pthread_create(&threads[i], NULL, consumer_thread, &contexts[i]);
+    }
+
+    uint64_t start = bench_get_ns();
+    pthread_barrier_wait(&barrier);
+
+    /* Wait for producers */
+    for (int i = 0; i < n_producers; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    atomic_store(&ring->done, 1);
+
+    /* Wait for consumers */
+    for (int i = n_producers; i < total; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    uint64_t end = bench_get_ns();
+
+    /* Aggregate */
+    td_histogram_t *combined;
+    if (td_init(100.0, &combined) != 0) goto cleanup;
+
+    uint64_t total_ops = 0;
+    size_t total_alloc = 0;
+    for (int i = 0; i < total; i++) {
+        td_merge(combined, contexts[i].latency_hist);
+        total_ops += contexts[i].operations;
+        total_alloc += contexts[i].bytes_allocated;
+    }
+
+    stats->elapsed_seconds = (end - start) / 1e9;
+    stats->total_operations = total_ops;
+    stats->ops_per_second = total_ops / stats->elapsed_seconds;
+    stats->bytes_allocated = total_alloc;
+    stats->bytes_freed = total_alloc;
+    stats->thread_count = total;
+
+    stats->latency_min = td_min(combined);
+    stats->latency_max = td_max(combined);
+    stats->latency_p50 = td_quantile(combined, 0.50);
+    stats->latency_p90 = td_quantile(combined, 0.90);
+    stats->latency_p99 = td_quantile(combined, 0.99);
+    stats->latency_p999 = td_quantile(combined, 0.999);
+
+    long long total_samples = td_size(combined);
+    double sum = 0;
+    td_compress(combined);
+    int n = td_centroid_count(combined);
+    for (int i = 0; i < n; i++) {
+        sum += td_centroids_mean_at(combined, i) *
+               td_centroids_weight_at(combined, i);
+    }
+    stats->latency_mean = (total_samples > 0) ? (sum / total_samples) : 0;
+
+    stats->peak_rss_bytes = bench_get_vmrss_bytes();
+    stats->current_rss_bytes = stats->peak_rss_bytes;
+    stats->fragmentation_ratio = (total_alloc > 0) ?
+        ((double)stats->peak_rss_bytes / total_alloc) : 1.0;
+
+    td_free(combined);
+
+cleanup:
+    pthread_barrier_destroy(&barrier);
+    for (int i = 0; i < total; i++) {
+        if (contexts[i].latency_hist)
+            td_free(contexts[i].latency_hist);
+    }
+    free(ring);
+    free(threads);
+    free(contexts);
+}
+
+/* Fragmentation workload: allocate random sizes, free 50%, repeat */
+void workload_fragmentation(allocator_ops_t *ops,
+                            bench_stats_t *stats, void *config) {
+    workload_config_t *cfg = (workload_config_t *)config;
+    td_histogram_t *hist;
+
+    if (td_init(100.0, &hist) != 0) return;
+
+    size_t min_sz = cfg->min_size < 8 ? 8 : cfg->min_size;
+    size_t max_sz = cfg->max_size > 4096 ? 4096 : cfg->max_size;
+    if (max_sz < min_sz) max_sz = min_sz;
+
+    /* Pool of live allocations */
+    size_t pool_cap = 4096;
+    void **pool = calloc(pool_cap, sizeof(void *));
+    size_t *pool_sz = calloc(pool_cap, sizeof(size_t));
+    if (!pool || !pool_sz) {
+        free(pool); free(pool_sz); td_free(hist); return;
+    }
+    size_t pool_count = 0;
+    size_t total_allocated = 0;
+    size_t currently_held = 0;
+    uint64_t total_ops = 0;
+    double peak_frag = 0;
+    unsigned int seed = 42;
+
+    uint64_t start = bench_get_ns();
+
+    /* Run rounds: allocate batch, free ~50% */
+    uint64_t remaining = cfg->operation_count;
+    while (remaining > 0) {
+        /* Allocate a batch */
+        size_t batch = remaining > pool_cap ? pool_cap : remaining;
+        for (size_t i = 0; i < batch; i++) {
+            size_t sz = min_sz +
+                ((size_t)rand_r(&seed) % (max_sz - min_sz + 1));
+
+            uint64_t t0 = bench_get_ns();
+            void *ptr = ops->alloc(sz);
+            uint64_t t1 = bench_get_ns();
+
+            if (!ptr) continue;
+            memset(ptr, 0xAB, sz);
+            td_add(hist, (double)(t1 - t0), 1);
+
+            if (pool_count < pool_cap) {
+                pool[pool_count] = ptr;
+                pool_sz[pool_count] = sz;
+                pool_count++;
+            } else {
+                ops->free(ptr);
+            }
+            total_allocated += sz;
+            currently_held += sz;
+            total_ops++;
+        }
+        remaining -= batch;
+
+        /* Measure fragmentation at peak */
+        size_t rss = bench_get_vmrss_bytes();
+        if (currently_held > 0) {
+            double frag = (double)rss / (double)currently_held;
+            if (frag > peak_frag) peak_frag = frag;
+        }
+
+        /* Free random ~50% of pool */
+        for (size_t i = 0; i < pool_count; ) {
+            if (rand_r(&seed) % 2 == 0) {
+                uint64_t t0 = bench_get_ns();
+                ops->free(pool[i]);
+                uint64_t t1 = bench_get_ns();
+                td_add(hist, (double)(t1 - t0), 1);
+                total_ops++;
+
+                currently_held -= pool_sz[i];
+                pool[i] = pool[pool_count - 1];
+                pool_sz[i] = pool_sz[pool_count - 1];
+                pool_count--;
+            } else {
+                i++;
+            }
+        }
+    }
+
+    /* Free remaining */
+    for (size_t i = 0; i < pool_count; i++) {
+        ops->free(pool[i]);
+        currently_held -= pool_sz[i];
+    }
+
+    uint64_t end = bench_get_ns();
+
+    stats->elapsed_seconds = (end - start) / 1e9;
+    stats->total_operations = total_ops;
+    stats->ops_per_second = total_ops / stats->elapsed_seconds;
+    stats->bytes_allocated = total_allocated;
+    stats->bytes_freed = total_allocated;
+    stats->thread_count = 1;
+
+    stats->latency_min = td_min(hist);
+    stats->latency_max = td_max(hist);
+    stats->latency_p50 = td_quantile(hist, 0.50);
+    stats->latency_p90 = td_quantile(hist, 0.90);
+    stats->latency_p99 = td_quantile(hist, 0.99);
+    stats->latency_p999 = td_quantile(hist, 0.999);
+
+    long long total_samples = td_size(hist);
+    double sum = 0;
+    td_compress(hist);
+    int n = td_centroid_count(hist);
+    for (int i = 0; i < n; i++) {
+        sum += td_centroids_mean_at(hist, i) *
+               td_centroids_weight_at(hist, i);
+    }
+    stats->latency_mean = (total_samples > 0) ? (sum / total_samples) : 0;
+
+    stats->peak_rss_bytes = bench_get_vmrss_bytes();
+    stats->current_rss_bytes = stats->peak_rss_bytes;
+    stats->fragmentation_ratio = peak_frag > 0 ? peak_frag :
+        ((total_allocated > 0) ?
+         ((double)stats->peak_rss_bytes / total_allocated) : 1.0);
+
+    td_free(hist);
+    free(pool);
+    free(pool_sz);
 }
 
 /* Run a benchmark */
-int bench_run(allocator_ops_t *ops, workload_config_t *workload, bench_stats_t *stats) {
+int bench_run(allocator_ops_t *ops, workload_config_t *workload,
+              bench_stats_t *stats) {
     memset(stats, 0, sizeof(*stats));
     stats->allocator_name = ops->name;
     stats->workload_name = workload->name;
     stats->thread_count = workload->thread_count;
 
-    /* Optional cleanup before run */
     if (ops->cleanup) {
         ops->cleanup();
     }
 
-    /* Run the workload */
+    bench_cpu_usage_t cpu_before = bench_get_cpu_usage();
+
     workload->fn(ops, stats, workload);
 
+    bench_cpu_usage_t cpu_after = bench_get_cpu_usage();
+    stats->cpu_usage.user_ms = cpu_after.user_ms - cpu_before.user_ms;
+    stats->cpu_usage.sys_ms = cpu_after.sys_ms - cpu_before.sys_ms;
+
     return 0;
+}
+
+/* Append benchmark result to TOML history file */
+int bench_append_history(const bench_stats_t *stats,
+                         const char *history_path) {
+    FILE *f = fopen(history_path, "a");
+    if (!f) {
+        /* Try creating parent directory */
+        char dir[1024];
+        snprintf(dir, sizeof(dir), "%s", history_path);
+        char *slash = strrchr(dir, '/');
+        if (slash) {
+            *slash = '\0';
+            char cmd[1100];
+            snprintf(cmd, sizeof(cmd), "mkdir -p %s", dir);
+            if (system(cmd) != 0) return -1;
+            f = fopen(history_path, "a");
+        }
+        if (!f) return -1;
+    }
+
+    /* Get commit hash */
+    char commit[64] = "unknown";
+    FILE *p = popen("git rev-parse --short HEAD 2>/dev/null", "r");
+    if (p) {
+        if (fgets(commit, sizeof(commit), p)) {
+            char *nl = strchr(commit, '\n');
+            if (nl) *nl = '\0';
+        }
+        pclose(p);
+    }
+
+    /* Get date */
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    char date[32];
+    strftime(date, sizeof(date), "%Y-%m-%d", tm);
+
+    fprintf(f, "\n[[result]]\n");
+    fprintf(f, "commit = \"%s\"\n", commit);
+    fprintf(f, "date = \"%s\"\n", date);
+    fprintf(f, "allocator = \"%s\"\n", stats->allocator_name);
+    fprintf(f, "workload = \"%s\"\n", stats->workload_name);
+    fprintf(f, "ops_per_sec = %.0f\n", stats->ops_per_second);
+    fprintf(f, "p99_ns = %.0f\n", stats->latency_p99);
+    fprintf(f, "peak_rss_mb = %.1f\n",
+            stats->peak_rss_bytes / (1024.0 * 1024.0));
+    fprintf(f, "cpu_user_ms = %.0f\n", stats->cpu_usage.user_ms);
+    fprintf(f, "cpu_sys_ms = %.0f\n", stats->cpu_usage.sys_ms);
+
+    fclose(f);
+    return 0;
+}
+
+/* Simple TOML parser: find last matching result for comparison */
+int bench_compare_history(const bench_stats_t *stats,
+                          const char *history_path) {
+    FILE *f = fopen(history_path, "r");
+    if (!f) return 0;
+
+    char line[512];
+    double prev_ops = 0;
+    double prev_p99 = 0;
+    int found = 0;
+    int in_matching = 0;
+    char cur_alloc[128] = "";
+    char cur_workload[128] = "";
+
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "[[result]]", 10) == 0) {
+            /* Save previous matching block */
+            if (in_matching && prev_ops > 0) found = 1;
+            in_matching = 0;
+            cur_alloc[0] = '\0';
+            cur_workload[0] = '\0';
+            continue;
+        }
+
+        char *eq = strchr(line, '=');
+        if (!eq) continue;
+
+        /* Trim key */
+        char key[64];
+        size_t klen = (size_t)(eq - line);
+        if (klen >= sizeof(key)) continue;
+        memcpy(key, line, klen);
+        key[klen] = '\0';
+        while (klen > 0 && key[klen-1] == ' ') key[--klen] = '\0';
+
+        /* Get value (skip = and spaces/quotes) */
+        char *val = eq + 1;
+        while (*val == ' ' || *val == '"') val++;
+        char *end = val + strlen(val) - 1;
+        while (end > val && (*end == '\n' || *end == '"' || *end == ' '))
+            *end-- = '\0';
+
+        if (strcmp(key, "allocator") == 0)
+            snprintf(cur_alloc, sizeof(cur_alloc), "%s", val);
+        else if (strcmp(key, "workload") == 0)
+            snprintf(cur_workload, sizeof(cur_workload), "%s", val);
+        else if (strcmp(key, "ops_per_sec") == 0)
+            prev_ops = atof(val);
+        else if (strcmp(key, "p99_ns") == 0)
+            prev_p99 = atof(val);
+
+        if (cur_alloc[0] && cur_workload[0] &&
+            strcmp(cur_alloc, stats->allocator_name) == 0 &&
+            strcmp(cur_workload, stats->workload_name) == 0) {
+            in_matching = 1;
+        }
+    }
+    if (in_matching && prev_ops > 0) found = 1;
+    fclose(f);
+
+    if (!found) return 0;
+
+    int regression = 0;
+
+    if (prev_ops > 0) {
+        double ops_change =
+            (stats->ops_per_second - prev_ops) / prev_ops * 100.0;
+        if (ops_change < -10.0) {
+            printf("  REGRESSION: ops/sec %.0f -> %.0f (%.1f%%)\n",
+                   prev_ops, stats->ops_per_second, ops_change);
+            regression = 1;
+        }
+    }
+
+    if (prev_p99 > 0) {
+        double p99_change =
+            (stats->latency_p99 - prev_p99) / prev_p99 * 100.0;
+        if (p99_change > 10.0) {
+            printf("  REGRESSION: p99 %.0f -> %.0f ns (+%.1f%%)\n",
+                   prev_p99, stats->latency_p99, p99_change);
+            regression = 1;
+        }
+    }
+
+    return regression;
 }
