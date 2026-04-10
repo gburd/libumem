@@ -53,7 +53,7 @@ typedef struct umem_ptc_bin {
 	void *slots[PTC_NSLOTS];
 	uint16_t count;         /* current number of cached objects */
 	uint16_t low_water;     /* for auto-tuning (future) */
-} umem_ptc_bin_t;
+} __attribute__((aligned(64))) umem_ptc_bin_t;
 
 /*
  * Per-thread cache structure

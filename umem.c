@@ -683,6 +683,21 @@
 
 #define UMEM_VMFLAGS(umflag)    (VM_NOSLEEP)
 
+/*
+ * Compile-time checks for cache line alignment of critical structures.
+ * False sharing between per-CPU or per-thread structures kills performance.
+ */
+_Static_assert(sizeof(umem_cpu_cache_t) % UMEM_CACHE_LINE_SIZE == 0,
+    "umem_cpu_cache_t size must be a multiple of cache line size");
+_Static_assert(_Alignof(umem_cpu_cache_t) >= UMEM_CACHE_LINE_SIZE,
+    "umem_cpu_cache_t must be cache-line aligned");
+_Static_assert(sizeof(umem_maglist_t) % UMEM_CACHE_LINE_SIZE == 0,
+    "umem_maglist_t size must be a multiple of cache line size");
+_Static_assert(_Alignof(umem_maglist_t) >= UMEM_CACHE_LINE_SIZE,
+    "umem_maglist_t must be cache-line aligned");
+_Static_assert(sizeof(umem_ptc_bin_t) % UMEM_CACHE_LINE_SIZE == 0,
+    "umem_ptc_bin_t size must be a multiple of cache line size");
+
 size_t pagesize;
 
 /*

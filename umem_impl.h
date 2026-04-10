@@ -326,14 +326,14 @@ typedef struct umem_magtype {
 
 typedef struct umem_cpu_cache {
 	mutex_t		cc_lock;	/* protects slow path (magazine reload) */
-	uint_t		cc_alloc;	/* allocations from this cpu */
-	uint_t		cc_free;	/* frees to this cpu */
-	umem_magazine_t	*cc_loaded;	/* the currently loaded magazine */
-	umem_magazine_t	*cc_ploaded;	/* the previously loaded magazine */
 	int		cc_rounds;	/* number of objects in loaded mag */
 	int		cc_prounds;	/* number of objects in previous mag */
+	umem_magazine_t	*cc_loaded;	/* the currently loaded magazine */
+	umem_magazine_t	*cc_ploaded;	/* the previously loaded magazine */
 	int		cc_magsize;	/* number of rounds in a full mag */
 	int		cc_flags;	/* CPU-local copy of cache_flags */
+	uint_t		cc_alloc;	/* allocations from this cpu */
+	uint_t		cc_free;	/* frees to this cpu */
 #if (!defined(_LP64) || defined(UMEM_PTHREAD_MUTEX_TOO_BIG)) && !defined(_WIN32)
 	/* on win32, UMEM_CPU_PAD evaluates to zero, and the MS compiler
 	 * won't allow static initialization of arrays containing structures
@@ -398,7 +398,7 @@ typedef struct umem_maglist {
 	long		ml_min;		/* min since last update */
 	long		ml_reaplimit;	/* max reapable magazines */
 	uint64_t	ml_alloc;	/* allocations from this list */
-} umem_maglist_t;
+} __attribute__((aligned(UMEM_CACHE_LINE_SIZE))) umem_maglist_t;
 
 #define	UMEM_CACHE_NAMELEN	31
 
