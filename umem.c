@@ -3931,13 +3931,17 @@ umem_init(void)
 		    sizeof (umem_cpu_cache_t), UMEM_CPU_CACHE_SIZE);
 	}
 
-#ifdef _LP64
+#if defined(_LP64) && !defined(ARCH_SPARC)
 	/*
 	 * Verify that the virtual address space fits in 48 bits.
 	 * The lock-free depot uses tagged pointers that pack a 48-bit
 	 * pointer with a 16-bit version counter in a 64-bit word.
 	 * If a heap address uses more than 48 bits, tagged pointers
 	 * will silently corrupt data.
+	 *
+	 * Skipped on SPARC: SPARC V9 sign-extends virtual addresses,
+	 * placing mmap/stack addresses above 48 bits even though the
+	 * hardware VA space is 44 bits.
 	 */
 	{
 		volatile char probe;
