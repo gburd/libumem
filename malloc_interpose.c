@@ -44,7 +44,9 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef HAVE_MALLOC_H
 #include <malloc.h>
+#endif
 #include <pthread.h>
 #include <stdatomic.h>
 
@@ -513,8 +515,19 @@ realloc(void *ptr, size_t size)
 		if (new_ptr == NULL)
 			return (NULL);
 
+#ifdef HAVE_MALLOC_USABLE_SIZE
 		old_size = malloc_usable_size(ptr);
 		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
+#else
+		/*
+		 * Without malloc_usable_size (e.g. Solaris), we cannot
+		 * determine the old allocation size.  Copy up to `size`
+		 * bytes, which is safe: the new buffer is at least `size`
+		 * bytes, and libc pointers only appear during early
+		 * bootstrap when allocations are small.
+		 */
+		(void) memcpy(new_ptr, ptr, size);
+#endif
 		free(ptr);
 		return (new_ptr);
 	}
@@ -550,15 +563,19 @@ realloc(void *ptr, size_t size)
 	}
 
 	/*
-	 * Bootstrap phase fallback: use malloc_usable_size.
+	 * Bootstrap phase fallback.
 	 * This path should only be reached during bootstrap phase.
 	 */
 	new_ptr = malloc(size);
 	if (new_ptr == NULL)
 		return (NULL);
 
+#ifdef HAVE_MALLOC_USABLE_SIZE
 	old_size = malloc_usable_size(ptr);
 	(void) memcpy(new_ptr, ptr, MIN(old_size, size));
+#else
+	(void) memcpy(new_ptr, ptr, size);
+#endif
 	free(ptr);
 	return (new_ptr);
 }
