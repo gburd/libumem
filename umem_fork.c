@@ -53,7 +53,8 @@ umem_lockup_cache(umem_cache_t *cp)
 	 * 3. Child process gets consistent atomic state
 	 */
 
-	(void) mutex_lock(&cp->cache_depot_lock);
+	(void) mutex_lock(&cp->cache_full.ml_lock);
+	(void) mutex_lock(&cp->cache_empty.ml_lock);
 	(void) mutex_lock(&cp->cache_lock);
 }
 
@@ -64,11 +65,8 @@ umem_release_cache(umem_cache_t *cp)
 	int ncpus = cp->cache_cpu_mask + 1;
 
 	(void) mutex_unlock(&cp->cache_lock);
-	(void) mutex_unlock(&cp->cache_depot_lock);
-
-	/*
-	 * Note: Depot stripes are lock-free (no locks to release).
-	 */
+	(void) mutex_unlock(&cp->cache_empty.ml_lock);
+	(void) mutex_unlock(&cp->cache_full.ml_lock);
 
 	for (idx = 0; idx < ncpus; idx++)
 		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);

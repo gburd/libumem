@@ -263,9 +263,7 @@ umem_cache_alloc_percpu_slowpath(umem_cache_t *cp, int cpu_id, int umflag)
 	 * This requires acquiring the depot lock (shared resource).
 	 * This is the main serialization point in per-CPU caching.
 	 */
-	(void) mutex_lock(&cp->cache_depot_lock);
 	fmp = umem_depot_alloc(cp, &cp->cache_full);
-	(void) mutex_unlock(&cp->cache_depot_lock);
 
 	if (fmp != NULL) {
 		pc->pc_depot_refill++;
@@ -274,9 +272,7 @@ umem_cache_alloc_percpu_slowpath(umem_cache_t *cp, int cpu_id, int umflag)
 		 * Return empty previous magazine to depot
 		 */
 		if (pc->pc_previous != NULL && pc->pc_prounds == 0) {
-			(void) mutex_lock(&cp->cache_depot_lock);
 			umem_depot_free(cp, &cp->cache_empty, pc->pc_previous);
-			(void) mutex_unlock(&cp->cache_depot_lock);
 		}
 
 		/*
@@ -417,9 +413,7 @@ umem_cache_free_percpu_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
 	/*
 	 * Both magazines are full. Try to get an empty magazine from depot.
 	 */
-	(void) mutex_lock(&cp->cache_depot_lock);
 	emp = umem_depot_alloc(cp, &cp->cache_empty);
-	(void) mutex_unlock(&cp->cache_depot_lock);
 
 	if (emp != NULL) {
 		/*
@@ -427,9 +421,7 @@ umem_cache_free_percpu_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
 		 */
 		if (pc->pc_previous != NULL &&
 		    pc->pc_prounds == mtp->mt_magsize) {
-			(void) mutex_lock(&cp->cache_depot_lock);
 			umem_depot_free(cp, &cp->cache_full, pc->pc_previous);
-			(void) mutex_unlock(&cp->cache_depot_lock);
 		}
 
 		/*

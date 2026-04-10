@@ -3,13 +3,12 @@
  *
  * Validates the magazine depot layer:
  * - Magazine lists (full/empty) are consistent
- * - Depot stripe counts are correct
+ * - Depot contention tracking works
  * - Magazine exchange operations work
  * - Depot operations under concurrent load
  * - Magazine round counts are valid
  *
- * The depot has UMEM_DEPOT_STRIPES (16) stripes for lock-free
- * magazine exchange. Threads hash to a stripe based on thread ID.
+ * The depot uses simple mutex-protected full/empty magazine lists.
  */
 
 #include "../munit.h"
@@ -31,10 +30,9 @@ static void ensure_umem_initialized(void) {
 }
 
 /*
- * Test: depot stripe initialization
+ * Test: depot initialization
  *
- * All 16 depot stripes should start with zero contention and
- * empty magazine lists after cache creation.
+ * Full and empty magazine lists should start empty after cache creation.
  */
 static MunitResult
 test_depot_stripe_init(const MunitParameter params[], void *data)
@@ -47,14 +45,9 @@ test_depot_stripe_init(const MunitParameter params[], void *data)
 	    NULL, NULL, NULL, NULL, NULL, 0);
 	munit_assert_not_null(cp);
 
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++) {
-		umem_depot_stripe_t *ds = &cp->cache_depot[i];
-		/*
-		 * Freshly created cache should have zero or near-zero
-		 * contention on all stripes.
-		 */
-		munit_assert_uint64(ds->ds_contention, ==, 0);
-	}
+	munit_assert_long(cp->cache_full.ml_total, ==, 0);
+	munit_assert_long(cp->cache_empty.ml_total, ==, 0);
+	munit_assert_uint64(cp->cache_depot_contention, ==, 0);
 
 	umem_cache_destroy(cp);
 	return MUNIT_OK;
@@ -62,9 +55,6 @@ test_depot_stripe_init(const MunitParameter params[], void *data)
 
 /*
  * Test: full magazine list populates after alloc+free cycle
- *
- * Allocating many objects and freeing them should deposit full
- * magazines into the depot stripes.
  */
 static MunitResult
 test_depot_full_magazines(const MunitParameter params[], void *data)
@@ -77,7 +67,6 @@ test_depot_full_magazines(const MunitParameter params[], void *data)
 	    NULL, NULL, NULL, NULL, NULL, 0);
 	munit_assert_not_null(cp);
 
-	/* Allocate and free enough to fill depot magazines */
 	#define DEPOT_FULL_COUNT 500
 	void *ptrs[DEPOT_FULL_COUNT];
 	for (int i = 0; i < DEPOT_FULL_COUNT; i++) {
@@ -87,17 +76,7 @@ test_depot_full_magazines(const MunitParameter params[], void *data)
 	for (int i = 0; i < DEPOT_FULL_COUNT; i++)
 		umem_cache_free(cp, ptrs[i]);
 
-	/*
-	 * At least one stripe should have full magazines deposited.
-	 * Sum ml_total across all stripes' full lists.
-	 */
-	long total_full = 0;
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++)
-		total_full += cp->cache_depot[i].ds_full.ml_total;
-
-	/* Also check legacy full list */
-	total_full += cp->cache_full.ml_total;
-
+	long total_full = cp->cache_full.ml_total;
 	munit_assert_long(total_full, >=, 0);
 
 	umem_cache_destroy(cp);
@@ -106,11 +85,6 @@ test_depot_full_magazines(const MunitParameter params[], void *data)
 
 /*
  * Test: magazine exchange round-trip
- *
- * Allocate to exhaust CPU magazine -> forces depot/slab reload.
- * Free to fill CPU magazine -> forces depot deposit.
- * Re-allocate -> should retrieve from depot.
- * Verify slab_alloc didn't increase much on re-alloc (depot served them).
  */
 static MunitResult
 test_depot_exchange_roundtrip(const MunitParameter params[], void *data)
@@ -126,30 +100,20 @@ test_depot_exchange_roundtrip(const MunitParameter params[], void *data)
 	#define EXCHANGE_COUNT 200
 	void *ptrs[EXCHANGE_COUNT];
 
-	/* Phase 1: allocate (populates slabs) */
 	for (int i = 0; i < EXCHANGE_COUNT; i++) {
 		ptrs[i] = umem_cache_alloc(cp, UMEM_DEFAULT);
 		munit_assert_not_null(ptrs[i]);
 	}
-
-	/* Phase 2: free all (deposits full magazines in depot) */
 	for (int i = 0; i < EXCHANGE_COUNT; i++)
 		umem_cache_free(cp, ptrs[i]);
 
-	/* Record slab alloc before re-alloc */
 	uint64_t slab_alloc_before = cp->cache_slab_alloc;
 
-	/* Phase 3: re-allocate (should come from depot, not slabs) */
 	for (int i = 0; i < EXCHANGE_COUNT; i++) {
 		ptrs[i] = umem_cache_alloc(cp, UMEM_DEFAULT);
 		munit_assert_not_null(ptrs[i]);
 	}
 
-	/*
-	 * Slab allocations should not have increased by EXCHANGE_COUNT
-	 * because the depot should have served most of them.
-	 * Allow some slab allocs for magazine overhead.
-	 */
 	uint64_t slab_alloc_delta = cp->cache_slab_alloc - slab_alloc_before;
 	munit_assert_uint64(slab_alloc_delta, <, (uint64_t)EXCHANGE_COUNT);
 
@@ -161,10 +125,7 @@ test_depot_exchange_roundtrip(const MunitParameter params[], void *data)
 }
 
 /*
- * Test: depot stripe contention tracking
- *
- * Under multi-threaded load, depot stripes should distribute
- * contention across stripes.
+ * Test: depot contention tracking
  */
 typedef struct {
 	umem_cache_t *cache;
@@ -194,16 +155,8 @@ test_depot_stripe_contention(const MunitParameter params[], void *data)
 	    NULL, NULL, NULL, NULL, NULL, 0);
 	munit_assert_not_null(cp);
 
-	/* Record contention before */
 	uint64_t contention_before = cp->cache_depot_contention;
-	uint64_t stripe_contention_before = 0;
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++)
-		stripe_contention_before += cp->cache_depot[i].ds_contention;
 
-	/*
-	 * Run multiple threads doing rapid alloc/free to generate
-	 * depot contention.
-	 */
 	#define CONTENTION_THREADS 4
 	#define CONTENTION_ITERS 5000
 	pthread_t threads[CONTENTION_THREADS];
@@ -218,17 +171,8 @@ test_depot_stripe_contention(const MunitParameter params[], void *data)
 	for (int i = 0; i < CONTENTION_THREADS; i++)
 		pthread_join(threads[i], NULL);
 
-	/*
-	 * Total contention (global + per-stripe) should be >= 0.
-	 * We can't guarantee contention occurs on all hardware, but
-	 * the counters should be non-negative and consistent.
-	 */
-	uint64_t stripe_contention_after = 0;
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++)
-		stripe_contention_after += cp->cache_depot[i].ds_contention;
-
-	munit_assert_uint64(stripe_contention_after, >=,
-	    stripe_contention_before);
+	munit_assert_uint64(cp->cache_depot_contention, >=,
+	    contention_before);
 
 	umem_cache_destroy(cp);
 	return MUNIT_OK;
@@ -236,9 +180,6 @@ test_depot_stripe_contention(const MunitParameter params[], void *data)
 
 /*
  * Test: per-CPU magazine round counts are valid
- *
- * cc_rounds should be between 0 and cc_magsize.
- * cc_prounds should also be in that range.
  */
 static MunitResult
 test_magazine_round_counts(const MunitParameter params[], void *data)
@@ -251,7 +192,6 @@ test_magazine_round_counts(const MunitParameter params[], void *data)
 	    NULL, NULL, NULL, NULL, NULL, 0);
 	munit_assert_not_null(cp);
 
-	/* Do some allocations to populate magazines */
 	#define ROUNDS_COUNT 100
 	void *ptrs[ROUNDS_COUNT];
 	for (int i = 0; i < ROUNDS_COUNT; i++) {
@@ -259,12 +199,10 @@ test_magazine_round_counts(const MunitParameter params[], void *data)
 		munit_assert_not_null(ptrs[i]);
 	}
 
-	/* Check round counts on all CPU caches */
 	for (uint32_t i = 0; i <= cp->cache_cpu_mask; i++) {
 		umem_cpu_cache_t *ccp = &cp->cache_cpu[i];
 		int magsize = ccp->cc_magsize;
 
-		/* rounds should be in [0, magsize] if magazine is loaded */
 		if (ccp->cc_loaded != NULL) {
 			munit_assert_int(ccp->cc_rounds, >=, 0);
 			munit_assert_int(ccp->cc_rounds, <=, magsize);
@@ -284,8 +222,6 @@ test_magazine_round_counts(const MunitParameter params[], void *data)
 
 /*
  * Test: magazine magsize is sane
- *
- * cc_magsize must match the cache's magtype.
  */
 static MunitResult
 test_magazine_size_consistency(const MunitParameter params[], void *data)
@@ -298,7 +234,6 @@ test_magazine_size_consistency(const MunitParameter params[], void *data)
 	    NULL, NULL, NULL, NULL, NULL, 0);
 	munit_assert_not_null(cp);
 
-	/* Do a few allocations to trigger magazine setup */
 	void *ptrs[10];
 	for (int i = 0; i < 10; i++) {
 		ptrs[i] = umem_cache_alloc(cp, UMEM_DEFAULT);
@@ -310,10 +245,6 @@ test_magazine_size_consistency(const MunitParameter params[], void *data)
 
 	for (uint32_t i = 0; i <= cp->cache_cpu_mask; i++) {
 		umem_cpu_cache_t *ccp = &cp->cache_cpu[i];
-		/*
-		 * cc_magsize should match the cache's magtype,
-		 * though tuning could change it. It should always be > 0.
-		 */
 		if (ccp->cc_magsize > 0) {
 			munit_assert_int(ccp->cc_magsize, >, 0);
 			munit_assert_int(ccp->cc_magsize, <=,
@@ -330,9 +261,6 @@ test_magazine_size_consistency(const MunitParameter params[], void *data)
 
 /*
  * Test: NOMAGAZINE flag bypasses depot entirely
- *
- * With UMC_NOMAGAZINE, no magazines should be loaded and depot
- * stripes should remain empty.
  */
 static MunitResult
 test_nomagazine_bypasses_depot(const MunitParameter params[], void *data)
@@ -354,11 +282,8 @@ test_nomagazine_bypasses_depot(const MunitParameter params[], void *data)
 	for (int i = 0; i < NOMAG_COUNT; i++)
 		umem_cache_free(cp, ptrs[i]);
 
-	/* All depot stripes should have zero magazines */
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++) {
-		munit_assert_long(cp->cache_depot[i].ds_full.ml_total, ==, 0);
-		munit_assert_long(cp->cache_depot[i].ds_empty.ml_total, ==, 0);
-	}
+	munit_assert_long(cp->cache_full.ml_total, ==, 0);
+	munit_assert_long(cp->cache_empty.ml_total, ==, 0);
 
 	umem_cache_destroy(cp);
 	return MUNIT_OK;
@@ -366,9 +291,6 @@ test_nomagazine_bypasses_depot(const MunitParameter params[], void *data)
 
 /*
  * Test: concurrent depot operations maintain consistency
- *
- * Multiple threads allocating and freeing simultaneously should
- * not corrupt depot state.
  */
 static void *depot_consistency_worker(void *arg)
 {
@@ -415,16 +337,8 @@ test_depot_concurrent_consistency(const MunitParameter params[], void *data)
 	for (int i = 0; i < DEPOT_CONC_THREADS; i++)
 		pthread_join(threads[i], NULL);
 
-	/*
-	 * After all threads complete, validate depot state:
-	 * - ml_total should be non-negative for all stripes
-	 * - slab_alloc >= slab_free
-	 */
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++) {
-		munit_assert_long(cp->cache_depot[i].ds_full.ml_total, >=, 0);
-		munit_assert_long(cp->cache_depot[i].ds_empty.ml_total, >=, 0);
-	}
-
+	munit_assert_long(cp->cache_full.ml_total, >=, 0);
+	munit_assert_long(cp->cache_empty.ml_total, >=, 0);
 	munit_assert_uint64(cp->cache_slab_alloc, >=, cp->cache_slab_free);
 
 	umem_cache_destroy(cp);
@@ -445,14 +359,9 @@ test_depot_ml_alloc_tracking(const MunitParameter params[], void *data)
 	    NULL, NULL, NULL, NULL, NULL, 0);
 	munit_assert_not_null(cp);
 
-	/* Record ml_alloc before */
-	uint64_t total_ml_alloc_before = 0;
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++) {
-		total_ml_alloc_before += cp->cache_depot[i].ds_full.ml_alloc;
-		total_ml_alloc_before += cp->cache_depot[i].ds_empty.ml_alloc;
-	}
+	uint64_t total_ml_alloc_before =
+	    cp->cache_full.ml_alloc + cp->cache_empty.ml_alloc;
 
-	/* Generate depot traffic */
 	#define ML_ALLOC_COUNT 300
 	void *ptrs[ML_ALLOC_COUNT];
 	for (int cycle = 0; cycle < 5; cycle++) {
@@ -464,17 +373,9 @@ test_depot_ml_alloc_tracking(const MunitParameter params[], void *data)
 			umem_cache_free(cp, ptrs[i]);
 	}
 
-	/* ml_alloc should have increased from depot activity */
-	uint64_t total_ml_alloc_after = 0;
-	for (int i = 0; i < UMEM_DEPOT_STRIPES; i++) {
-		total_ml_alloc_after += cp->cache_depot[i].ds_full.ml_alloc;
-		total_ml_alloc_after += cp->cache_depot[i].ds_empty.ml_alloc;
-	}
+	uint64_t total_ml_alloc_after =
+	    cp->cache_full.ml_alloc + cp->cache_empty.ml_alloc;
 
-	/*
-	 * ml_alloc tracks dispensed magazines; with enough cycles
-	 * some depot exchanges should have occurred.
-	 */
 	munit_assert_uint64(total_ml_alloc_after, >=,
 	    total_ml_alloc_before);
 

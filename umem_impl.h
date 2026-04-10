@@ -379,35 +379,17 @@ umem_tagged_ptr_make(void *ptr, uint16_t ver)
 
 /*
  * The magazine lists used in the depot.
- * Uses lock-free atomic operations via tagged pointers.
+ * Each list is protected by its own mutex for simple, correct locking.
+ * The depot is a cold path — the hot path is the per-CPU magazine layer.
  */
 typedef struct umem_maglist {
-	volatile umem_tagged_ptr_t ml_list;	/* magazine list (lock-free) */
-	long		ml_total;	/* number of magazines (approximate) */
+	mutex_t		ml_lock;	/* protects this list */
+	umem_magazine_t	*ml_list;	/* head of magazine linked list */
+	long		ml_total;	/* number of magazines */
 	long		ml_min;		/* min since last update */
 	long		ml_reaplimit;	/* max reapable magazines */
 	uint64_t	ml_alloc;	/* allocations from this list */
 } umem_maglist_t;
-
-/*
- * Depot striping for lock-free operations.
- * Each stripe has lock-free magazine lists using tagged pointers.
- * Threads hash to a stripe based on thread ID.
- */
-#define	UMEM_DEPOT_STRIPES	16
-
-typedef struct umem_depot_stripe {
-	umem_maglist_t	ds_full;	/* full magazines (lock-free) */
-	umem_maglist_t	ds_empty;	/* empty magazines (lock-free) */
-	uint64_t	ds_contention;	/* CAS retry count for this stripe */
-	/*
-	 * Padding to prevent false sharing between depot stripes.
-	 * Each stripe is aligned to cache line boundary to ensure
-	 * independent cache line ownership in multi-threaded scenarios.
-	 */
-	char		ds_pad[UMEM_CACHE_LINE_SIZE -
-	    (2 * sizeof(umem_maglist_t) + sizeof(uint64_t)) % UMEM_CACHE_LINE_SIZE];
-} __attribute__((aligned(UMEM_CACHE_LINE_SIZE))) umem_depot_stripe_t;
 
 #define	UMEM_CACHE_NAMELEN	31
 
@@ -472,13 +454,12 @@ struct umem_cache {
 	umem_cache_t	*cache_bufctl_cache;	/* source of bufctls */
 	umem_bufctl_t	**cache_hash_table;	/* hash table base */
 	/*
-	 * Depot layer
+	 * Depot layer — mutex-protected magazine lists.
+	 * Each list has its own lock; the depot is a cold path.
 	 */
-	mutex_t		cache_depot_lock;	/* legacy, kept for compatibility */
 	umem_magtype_t	*cache_magtype;		/* magazine type */
-	umem_maglist_t	cache_full;		/* legacy full magazines */
-	umem_maglist_t	cache_empty;		/* legacy empty magazines */
-	umem_depot_stripe_t cache_depot[UMEM_DEPOT_STRIPES];	/* striped depot */
+	umem_maglist_t	cache_full;		/* full magazines */
+	umem_maglist_t	cache_empty;		/* empty magazines */
 
 #ifdef UMEM_NUMA_AVAILABLE
 	/*
