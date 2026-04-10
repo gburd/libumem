@@ -263,6 +263,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 	$(man3_MANS) \
 	NIX_USAGE.md IMPLEMENTATION_STATUS.md \
 	scripts/run-coverage.sh scripts/run-sanitizers.sh \
+	gen_compile_commands.py \
 	tools/gdb/umem_gdb.py tools/lldb/umem_lldb.py \
 	examples/palloc_integration.c examples/README.md \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
@@ -348,6 +349,12 @@ pgo-clean:
 	rm -rf pgo-data
 	@echo "PGO data cleaned"
 
-.PHONY: rpm coverage coverage-clean pgo-generate pgo-use pgo-clean
+# Generate compile_commands.json for clangd/LSP support
+compile_commands.json:
+	@echo "Generating compile_commands.json..."
+	@$(PYTHON) $(srcdir)/gen_compile_commands.py $(srcdir)
+	@echo "Generated compile_commands.json"
+
+.PHONY: rpm coverage coverage-clean pgo-generate pgo-use pgo-clean compile_commands.json
 rpm: dist-bzip2
 	rpmbuild -ta $(distdir).tar.bz2

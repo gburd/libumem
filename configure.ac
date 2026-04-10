@@ -34,6 +34,9 @@ AC_CHECK_HEADER([stdatomic.h], [],
 AM_PROG_AS
 LT_INIT
 
+# Check for Python (for generating compile_commands.json)
+AM_PATH_PYTHON([3.6], [], [AC_MSG_WARN([Python >= 3.6 not found; compile_commands.json generation will not work])])
+
 AC_C_INLINE
 
 # Detect OS and set conditionals
