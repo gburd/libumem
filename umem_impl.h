@@ -52,6 +52,15 @@
 #include <sys/vmem.h>
 #ifdef HAVE_THREAD_H
 #include <thread.h>
+/* Solaris thread.h doesn't define our compat macros */
+# ifndef THR_RETURN
+#  define THR_RETURN void *
+#  define THR_API
+# endif
+# ifndef INLINE
+#  define INLINE inline
+# endif
+# include "sol_compat.h"
 #else
 # include "sol_compat.h"
 #endif
