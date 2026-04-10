@@ -46,6 +46,15 @@
 #define	ALLOC_PROT	PROT_READ | PROT_WRITE | PROT_EXEC
 #define	FREE_PROT	PROT_NONE
 
+/*
+ * MAP_ANON / MAP_ANONYMOUS portability.
+ * POSIX does not define either; MAP_ANONYMOUS is the Linux/glibc name,
+ * MAP_ANON is the BSD name.  Most systems define both as aliases.
+ */
+#if !defined(MAP_ANON) && defined(MAP_ANONYMOUS)
+#define	MAP_ANON	MAP_ANONYMOUS
+#endif
+
 #define	ALLOC_FLAGS	MAP_PRIVATE | MAP_ANON
 /*
  * MAP_NORESERVE is not available on all platforms (e.g., FreeBSD).
