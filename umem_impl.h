@@ -273,6 +273,13 @@ typedef struct umem_buftag {
 #define	UMEM_BUFTAG_ALLOC	0xa110c8edUL
 #define	UMEM_BUFTAG_FREE	0xf4eef4eeUL
 
+/*
+ * Slab page states for background reclamation.
+ */
+#define	SLAB_ACTIVE	0	/* has allocated buffers (refcnt > 0) */
+#define	SLAB_DIRTY	1	/* empty, pages still resident */
+#define	SLAB_CLEAN	2	/* empty, pages advised away (MADV_DONTNEED) */
+
 typedef struct umem_slab {
 	struct umem_cache	*slab_cache;	/* controlling cache */
 	void			*slab_base;	/* base of allocated memory */
@@ -281,6 +288,8 @@ typedef struct umem_slab {
 	struct umem_bufctl	*slab_head;	/* first free buffer */
 	long			slab_refcnt;	/* outstanding allocations */
 	long			slab_chunks;	/* chunks (bufs) in this slab */
+	uint32_t		slab_state;	/* SLAB_ACTIVE/DIRTY/CLEAN */
+	uint32_t		slab_idle_time;	/* seconds empty (approx) */
 } umem_slab_t;
 
 #define	UMEM_HASH_INITIAL	64

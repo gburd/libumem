@@ -1535,6 +1535,8 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 	sp->slab_cache  = cp;
 	sp->slab_head   = NULL;
 	sp->slab_refcnt = 0;
+	sp->slab_state  = SLAB_ACTIVE;
+	sp->slab_idle_time = 0;
 	sp->slab_base   = buf = slab + color;
 	sp->slab_chunks = chunks;
 
