@@ -93,14 +93,19 @@ static INLINE int thr_create(void *stack_base __attribute__((unused)),
 }
 #endif /* _EC_UMEM_SOL_COMPAT_TYPES_DEFINED */
 
-
+/*
+ * On Solaris/Illumos, <synch.h> (via <thread.h>) provides mutex_init,
+ * cond_wait, etc. natively.  Only define pthread-based shims on other
+ * platforms.
+ */
+#ifndef _EC_UMEM_SOL_COMPAT_TYPES_DEFINED
 # define mutex_init(mp, type, arg) pthread_mutex_init(mp, NULL)
 # define mutex_lock(mp)            pthread_mutex_lock(mp)
 # define mutex_unlock(mp)          pthread_mutex_unlock(mp)
 # define mutex_destroy(mp)         pthread_mutex_destroy(mp)
 # define mutex_trylock(mp)         pthread_mutex_trylock(mp)
 # define DEFAULTMUTEX              PTHREAD_MUTEX_INITIALIZER
-# define DEFAULTCV 				   PTHREAD_COND_INITIALIZER
+# define DEFAULTCV                 PTHREAD_COND_INITIALIZER
 # define MUTEX_HELD(mp)            1 /* not really, but only used in an assert */
 
 # define cond_init(c, type, arg)   pthread_cond_init(c, NULL)
@@ -111,6 +116,7 @@ static INLINE int thr_create(void *stack_base __attribute__((unused)),
 # define cond_destroy(c)           pthread_cond_destroy(c)
 # define cond_timedwait            pthread_cond_timedwait
 # define _cond_timedwait           pthread_cond_timedwait
+#endif /* _EC_UMEM_SOL_COMPAT_TYPES_DEFINED */
 
 #ifndef RTLD_FIRST
 # define RTLD_FIRST 0

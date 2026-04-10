@@ -744,8 +744,11 @@ static pthread_once_t umem_forkhandler_once = PTHREAD_ONCE_INIT;
 /*
  * we use the _ versions, since we don't want to be cancelled.
  * Actually, this is automatically taken care of by including "mtlib.h".
+ * On Solaris/Illumos, _cond_wait is provided by the system.
  */
+#ifndef HAVE_THREAD_H
 extern int _cond_wait(cond_t *cv, mutex_t *mutex);
+#endif
 
 #define UMERR_MODIFIED  0       /* buffer modified while on freelist */
 #define UMERR_REDZONE   1       /* redzone violation (write past end of buf) */
