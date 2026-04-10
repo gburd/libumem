@@ -38,6 +38,7 @@
 
 /* #pragma ident	"@(#)umem_impl.h	1.6	05/06/08 SMI" */
 
+#include "config.h"
 #include <umem.h>
 #include <stdatomic.h>
 
