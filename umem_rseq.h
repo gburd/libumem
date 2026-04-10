@@ -99,6 +99,7 @@ typedef struct umem_rseq_cache {
 extern int umem_rseq_enabled;		/* rseq available and enabled */
 extern __thread int umem_rseq_registered;	/* Thread has registered rseq */
 extern __thread struct umem_rseq umem_rseq_area; /* Per-thread rseq area */
+extern __thread volatile uint32_t *umem_rseq_cpu_idp; /* Ptr to active cpu_id */
 extern umem_rseq_cache_t *umem_rseq_caches; /* Per-CPU cache array */
 
 /*
@@ -157,10 +158,10 @@ int umem_rseq_unregister_thread(void);
  */
 static inline int umem_rseq_get_cpu(void)
 {
-	if (!umem_rseq_registered) {
+	if (!umem_rseq_registered || umem_rseq_cpu_idp == NULL) {
 		return -1;
 	}
-	return (int)umem_rseq_area.cpu_id;
+	return (int)*umem_rseq_cpu_idp;
 }
 
 /*

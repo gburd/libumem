@@ -43,6 +43,9 @@
 #include <stdatomic.h>
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
+#elif defined(__GNUC__)
+/* GCC always provides __builtin_alloca */
+#define alloca __builtin_alloca
 #endif
 
 #ifdef HAVE_SYS_SYSMACROS_H
@@ -142,6 +145,15 @@ extern "C" {
 extern __thread int cached_cpu_hint;
 
 /*
+ * rseq integration for CPU hint caching.
+ * When rseq is available and registered, we read the kernel-maintained
+ * cpu_id instead of calling sched_getcpu() or using thread ID hashing.
+ */
+#if defined(__linux__) && defined(HAVE_LINUX_RSEQ_H)
+#include "umem_rseq.h"
+#endif
+
+/*
  * Get the cached CPU hint, refreshing if needed.
  * This inline function reduces overhead by avoiding repeated syscalls/TLS lookups.
  */
@@ -155,6 +167,19 @@ get_cached_cpu_hint(void)
 	 * This helps with branch prediction in the hot path.
 	 */
 	if (unlikely(hint == -1)) {
+#ifdef UMEM_RSEQ_AVAILABLE
+		/*
+		 * When rseq is registered, read the kernel-maintained
+		 * cpu_id directly via the pointer set during thread
+		 * registration. This is a simple memory load (~1ns)
+		 * instead of a vDSO call (~10-20ns).
+		 */
+		if (umem_rseq_enabled && umem_rseq_cpu_idp != NULL) {
+			hint = (int)*umem_rseq_cpu_idp;
+			cached_cpu_hint = hint;
+			return hint;
+		}
+#endif
 #ifdef CPUHINT
 		hint = CPUHINT();
 #else
