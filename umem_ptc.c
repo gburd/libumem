@@ -294,14 +294,13 @@ umem_ptc_free(void *ptr, size_t size)
 }
 
 /*
- * Flush cached objects from a bin to the magazine layer
+ * Flush cached objects from a bin to the magazine layer.
+ * Uses batch free to take cc_lock once instead of per-object.
  */
 void
 umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
 {
-	int i;
 	int flush_count;
-	void *ptr;
 	umem_cache_t *cp;
 
 	if (bin->count == 0) {
@@ -318,29 +317,28 @@ umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
 	cp = umem_alloc_table[(size - 1) >> UMEM_ALIGN_SHIFT];
 	if (cp == NULL) {
 		/* No cache - free directly */
-		for (i = 0; i < flush_count; i++) {
-			ptr = bin->slots[--bin->count];
+		for (int i = 0; i < flush_count; i++) {
+			void *ptr = bin->slots[--bin->count];
 			umem_free(ptr, size);
 		}
 		return;
 	}
 
-	/* Free to magazine layer */
-	for (i = 0; i < flush_count; i++) {
-		ptr = bin->slots[--bin->count];
-		_umem_cache_free(cp, ptr);
-	}
+	/* Batch free from the end of the slots array */
+	(void) umem_cache_free_batch(cp, &bin->slots[bin->count - flush_count],
+	    flush_count);
+	bin->count -= flush_count;
 }
 
 /*
- * Refill a bin from the magazine layer
+ * Refill a bin from the magazine layer.
+ * Uses batch alloc to take cc_lock once instead of per-object.
  */
 int
 umem_ptc_bin_refill(umem_ptc_bin_t *bin, size_t size)
 {
-	int i;
 	int refill_count;
-	void *ptr;
+	int got;
 	umem_cache_t *cp;
 
 	/* Refill half the bin */
@@ -352,16 +350,12 @@ umem_ptc_bin_refill(umem_ptc_bin_t *bin, size_t size)
 		return (-1);
 	}
 
-	/* Allocate from magazine layer */
-	for (i = 0; i < refill_count; i++) {
-		ptr = _umem_cache_alloc(cp, UMEM_DEFAULT);
-		if (ptr == NULL) {
-			break;
-		}
-		bin->slots[bin->count++] = ptr;
-	}
+	/* Batch allocate directly into bin slots */
+	got = umem_cache_alloc_batch(cp, &bin->slots[bin->count],
+	    refill_count, UMEM_DEFAULT);
+	bin->count += got;
 
-	return (i > 0 ? 0 : -1);
+	return (got > 0 ? 0 : -1);
 }
 
 /*

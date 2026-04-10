@@ -117,6 +117,9 @@ extern void _umem_free(void *buf, size_t size);
 
 extern void *_umem_cache_alloc(umem_cache_t *cache, int flags);
 extern void _umem_cache_free(umem_cache_t *cache, void *buffer);
+extern int umem_cache_alloc_batch(umem_cache_t *cp, void **bufs, int count,
+    int umflag);
+extern int umem_cache_free_batch(umem_cache_t *cp, void **bufs, int count);
 
 /*
  * umem.c: private interfaces

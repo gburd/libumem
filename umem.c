@@ -2335,6 +2335,83 @@ locked_path:
 }
 
 /*
+ * Allocate multiple constructed objects from cache cp in a single lock
+ * acquisition.  Returns the number of objects actually allocated (may be
+ * less than count).  Objects are stored in bufs[0..returned-1].
+ */
+int
+umem_cache_alloc_batch(umem_cache_t *cp, void **bufs, int count, int umflag)
+{
+	umem_cpu_cache_t *ccp;
+	umem_magazine_t *fmp;
+	int rounds;
+	int got = 0;
+
+	if (count <= 0)
+		return (0);
+
+	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
+
+	(void) mutex_lock(&ccp->cc_lock);
+	while (got < count) {
+		rounds = ccp->cc_rounds;
+		if (rounds > 0) {
+			/* Drain as many as we can from the loaded magazine */
+			int avail = rounds;
+			if (avail > count - got)
+				avail = count - got;
+			for (int i = 0; i < avail; i++) {
+				bufs[got++] =
+				    ccp->cc_loaded->mag_round[--ccp->cc_rounds];
+			}
+			ccp->cc_alloc += avail;
+			continue;
+		}
+
+		/* Loaded magazine empty - try the previously loaded one */
+		if (ccp->cc_prounds > 0) {
+			umem_cpu_reload(ccp, ccp->cc_ploaded,
+			    ccp->cc_prounds);
+			continue;
+		}
+
+		if (ccp->cc_magsize == 0)
+			break;
+
+		/* Try to get a full magazine from the depot */
+		fmp = umem_depot_alloc(cp, &cp->cache_full);
+		if (fmp != NULL) {
+			if (ccp->cc_ploaded != NULL)
+				umem_depot_free(cp, &cp->cache_empty,
+				    ccp->cc_ploaded);
+			umem_cpu_reload(ccp, fmp, ccp->cc_magsize);
+			continue;
+		}
+
+		/* No more magazines available */
+		break;
+	}
+	(void) mutex_unlock(&ccp->cc_lock);
+
+	/* Fall back to slab layer for remaining objects */
+	while (got < count) {
+		void *buf = umem_slab_alloc(cp, umflag);
+		if (buf == NULL)
+			break;
+		if (cp->cache_constructor != NULL &&
+		    cp->cache_constructor(buf, cp->cache_private,
+		    UMEM_DEFAULT) != 0) {
+			atomic_add_64(&cp->cache_alloc_fail, 1);
+			umem_slab_free(cp, buf);
+			break;
+		}
+		bufs[got++] = buf;
+	}
+
+	return (got);
+}
+
+/*
  * Free a constructed object to cache cp.
  */
 #ifndef NO_WEAK_SYMBOLS
@@ -2501,6 +2578,96 @@ locked_slow_path:
 		cp->cache_destructor(buf, cp->cache_private);
 
 	umem_slab_free(cp, buf);
+}
+
+/*
+ * Free multiple constructed objects to cache cp in a single lock
+ * acquisition.  Returns the number of objects actually freed.
+ */
+int
+umem_cache_free_batch(umem_cache_t *cp, void **bufs, int count)
+{
+	umem_cpu_cache_t *ccp;
+	umem_magazine_t *emp;
+	umem_magtype_t *mtp;
+	int rounds, magsize;
+	int freed = 0;
+
+	if (count <= 0)
+		return (0);
+
+	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
+
+	(void) mutex_lock(&ccp->cc_lock);
+	while (freed < count) {
+		rounds = ccp->cc_rounds;
+		magsize = ccp->cc_magsize;
+
+		if ((uint_t)rounds < magsize) {
+			/* Fill as many as we can into the loaded magazine */
+			int space = magsize - rounds;
+			if (space > count - freed)
+				space = count - freed;
+			for (int i = 0; i < space; i++) {
+				ccp->cc_loaded->mag_round[ccp->cc_rounds++] =
+				    bufs[freed++];
+			}
+			ccp->cc_free += space;
+			continue;
+		}
+
+		/* Loaded magazine full - try the previously loaded one */
+		if (ccp->cc_prounds == 0) {
+			umem_cpu_reload(ccp, ccp->cc_ploaded,
+			    ccp->cc_prounds);
+			continue;
+		}
+
+		if (ccp->cc_magsize == 0)
+			break;
+
+		/* Try to get an empty magazine from the depot */
+		emp = umem_depot_alloc(cp, &cp->cache_empty);
+		if (emp != NULL) {
+			if (ccp->cc_ploaded != NULL)
+				umem_depot_free(cp, &cp->cache_full,
+				    ccp->cc_ploaded);
+			umem_cpu_reload(ccp, emp, 0);
+			continue;
+		}
+
+		/* Try to allocate a new empty magazine */
+		mtp = cp->cache_magtype;
+		(void) mutex_unlock(&ccp->cc_lock);
+		emp = _umem_cache_alloc(mtp->mt_cache, UMEM_DEFAULT);
+		(void) mutex_lock(&ccp->cc_lock);
+
+		if (emp != NULL) {
+			umem_mag_init_fast(emp->mag_round, mtp->mt_magsize);
+			if (ccp->cc_magsize != mtp->mt_magsize) {
+				(void) mutex_unlock(&ccp->cc_lock);
+				_umem_cache_free(mtp->mt_cache, emp);
+				(void) mutex_lock(&ccp->cc_lock);
+				continue;
+			}
+			umem_depot_free(cp, &cp->cache_empty, emp);
+			continue;
+		}
+
+		/* No space in magazine layer */
+		break;
+	}
+	(void) mutex_unlock(&ccp->cc_lock);
+
+	/* Fall back to slab layer for remaining objects */
+	while (freed < count) {
+		if (cp->cache_destructor != NULL)
+			cp->cache_destructor(bufs[freed], cp->cache_private);
+		umem_slab_free(cp, bufs[freed]);
+		freed++;
+	}
+
+	return (freed);
 }
 
 #ifndef NO_WEAK_SYMBOLS
