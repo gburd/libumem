@@ -2094,42 +2094,21 @@ umem_depot_ws_reap(umem_cache_t *cp)
 }
 
 /*
- * Helper functions for lock-free magazine operations using GCC atomic builtins.
- * These provide acquire/release semantics needed for the lock-free fast paths.
+ * Lock-free magazine fast path enabled flag.
+ * When set, _umem_cache_alloc/free attempt a CAS on cc_rounds
+ * before falling through to the mutex slow path.
+ *
+ * The CAS on cc_rounds serializes concurrent access: only one
+ * thread wins, losers fall to the locked path. The magazine
+ * pointer (cc_loaded) only changes under cc_lock, so an acquire
+ * load on cc_rounds establishes happens-before with the release
+ * store that installed the magazine.
  */
-
-/* Atomic load with acquire semantics */
-static inline int __attribute__((always_inline))
-atomic_load_int_acquire(volatile int *ptr)
-{
-	int val = *ptr;
-	__sync_synchronize();  /* Full barrier */
-	return val;
-}
-
 /*
- * Atomic compare-exchange-weak. Returns 1 if successful, 0 otherwise.
- * On failure, *expected is updated with the current value.
- * Memory ordering:
- * - acquire: ensures subsequent loads see effects of prior stores
- * - release: ensures prior stores are visible before this operation
+ * Disabled by default pending further validation.
+ * Enable with UMEM_OPTIONS=lockfree_mag=1
  */
-static inline int __attribute__((always_inline))
-atomic_cas_int_weak(volatile int *ptr, int *expected, int desired, int success_memorder)
-{
-	int old = __sync_val_compare_and_swap(ptr, *expected, desired);
-	if (old == *expected) {
-		/* CAS succeeded */
-		if (success_memorder) {
-			/* Acquire or Release semantics - barrier already in __sync_val_compare_and_swap */
-		}
-		return 1;
-	} else {
-		/* CAS failed - update expected */
-		*expected = old;
-		return 0;
-	}
-}
+static int umem_lockfree_magazine = 0;
 
 static inline void __attribute__((always_inline))
 umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
@@ -2193,14 +2172,46 @@ retry:
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 
 	/*
-	 * NOTE: Lock-free fast path temporarily disabled due to race conditions.
-	 * The original implementation had data corruption issues in multithreaded
-	 * scenarios. Need to redesign using proper synchronization (e.g., RCU,
-	 * seqlock, or atomic magazine pointer updates).
+	 * Lock-free fast path: try to take an object from the loaded
+	 * magazine using a CAS on cc_rounds. Only one thread can win
+	 * the CAS; losers fall through to the mutex slow path.
 	 *
-	 * TODO: Re-implement lock-free magazine cache with correct memory ordering
-	 * See LOCK_FREE_MAGAZINE_ANALYSIS.md for details.
+	 * The magazine pointer (cc_loaded) is only modified under cc_lock,
+	 * and the acquire load on cc_rounds provides happens-before with
+	 * the release that installed the magazine during reload.
 	 */
+	if (likely(umem_lockfree_magazine)) {
+		rounds = atomic_load_explicit(
+		    (_Atomic(int) *)&ccp->cc_rounds, memory_order_acquire);
+		if (rounds > 0) {
+			loaded_mag = (umem_magazine_t *)atomic_load_explicit(
+			    (_Atomic(umem_magazine_t *) *)&ccp->cc_loaded,
+			    memory_order_acquire);
+			if (loaded_mag != NULL) {
+				int desired = rounds - 1;
+				if (atomic_compare_exchange_weak_explicit(
+				    (_Atomic(int) *)&ccp->cc_rounds,
+				    &rounds, desired,
+				    memory_order_acq_rel,
+				    memory_order_relaxed)) {
+					buf = loaded_mag->mag_round[rounds - 1];
+					atomic_fetch_add_explicit(
+					    (_Atomic(uint_t) *)&ccp->cc_alloc,
+					    1, memory_order_relaxed);
+					if (unlikely(ccp->cc_flags &
+					    UMF_BUFTAG) &&
+					    umem_cache_alloc_debug(cp, buf,
+					    umflag) == -1) {
+						if (umem_alloc_retry(cp,
+						    umflag))
+							goto retry;
+						return (NULL);
+					}
+					return (buf);
+				}
+			}
+		}
+	}
 
 locked_path:
 	(void) mutex_lock(&ccp->cc_lock);
@@ -2345,9 +2356,33 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 			return;
 
 	/*
-	 * NOTE: Lock-free fast path temporarily disabled due to race conditions.
-	 * See alloc path for details.
+	 * Lock-free fast path: try to insert into the loaded magazine
+	 * using a CAS on cc_rounds. Same serialization as alloc path.
 	 */
+	if (likely(umem_lockfree_magazine)) {
+		rounds = atomic_load_explicit(
+		    (_Atomic(int) *)&ccp->cc_rounds, memory_order_acquire);
+		magsize = ccp->cc_magsize;
+		if ((uint_t)rounds < (uint_t)magsize) {
+			loaded_mag = (umem_magazine_t *)atomic_load_explicit(
+			    (_Atomic(umem_magazine_t *) *)&ccp->cc_loaded,
+			    memory_order_acquire);
+			if (loaded_mag != NULL) {
+				int desired = rounds + 1;
+				if (atomic_compare_exchange_weak_explicit(
+				    (_Atomic(int) *)&ccp->cc_rounds,
+				    &rounds, desired,
+				    memory_order_acq_rel,
+				    memory_order_relaxed)) {
+					loaded_mag->mag_round[rounds] = buf;
+					atomic_fetch_add_explicit(
+					    (_Atomic(uint_t) *)&ccp->cc_free,
+					    1, memory_order_relaxed);
+					return;
+				}
+			}
+		}
+	}
 
 locked_slow_path:
 	(void) mutex_lock(&ccp->cc_lock);
