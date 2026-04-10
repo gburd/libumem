@@ -66,7 +66,7 @@ endif
 
 # Conditionally include SPARC assembly on Solaris
 # The .S extension ensures the C preprocessor runs on the assembly
-# (needed for #include <sys/asm_linkage.h> and #if directives).
+# (needed for #ifdef directives in the file).
 if SOLARIS_BUILD
 if ARCH_SPARC
 SPARC_ASM_SOURCES = sparc_subr_sol.S
@@ -76,6 +76,10 @@ endif
 else
 SPARC_ASM_SOURCES =
 endif
+
+# Assembly files need minimal preprocessing flags - avoid C-specific
+# flags like -std=c17 that confuse the assembler.
+AM_CCASFLAGS =
 
 libumem_la_SOURCES = init_lib.c \
 			umem_agent_support.c \

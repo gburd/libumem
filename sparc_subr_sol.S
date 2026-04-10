@@ -24,69 +24,58 @@
  * Use is subject to license terms.
  */
 
-/* ident	"@(#)asm_subr.s	1.3	05/06/08 SMI" */
+/*
+ * SPARC assembly subroutines for libumem.
+ *
+ * Provides getfp() and flush_windows() used by getpcstack.c
+ * for real stack walking on Solaris/Illumos SPARC.
+ *
+ * Built with GCC's .S preprocessing; uses GAS-compatible syntax
+ * instead of Solaris asm_linkage.h macros.
+ */
 
-#include <sys/asm_linkage.h>
+	.section ".text"
 
-#if defined(lint)
-
-void *
-getfp(void)
-{
-	return (NULL);
-}
-
-void
-flush_windows(void)
-{
-
-}
-
-#ifndef UMEM_STANDALONE
-void
-_breakpoint(void)
-{
-	return;
-}
-#endif
-
-#else	/* lint */
-
-	ENTRY(getfp)
+	.global	getfp
+	.type	getfp, #function
+getfp:
 	retl
 	mov	%fp, %o0
-	SET_SIZE(getfp)
-
-#ifdef UMEM_STANDALONE
-#ifdef __sparcv9
-
-	/*
-	 * The caller doesn't need the top window to be flushed, so this
-	 * is sufficient.
-	 */
-	ENTRY(flush_windows)
-	retl
-	flushw
-	SET_SIZE(flush_windows)
-
-#else	/* !__sparcv9 */
-#error	"This file does not provide a pre-v9 standalone flush_windows"
-#endif	/* __sparcv9 */
-
-#else	/* !UMEM_STANDALONE */
-
-	ENTRY(flush_windows)
-	retl
-	ta	0x3
-	SET_SIZE(flush_windows)
-
-#endif	/* UMEM_STANDALONE */
+	.size	getfp, .-getfp
 
 #ifndef UMEM_STANDALONE
-	ENTRY(_breakpoint)
+	/*
+	 * Non-standalone: use trap 0x3 (ST_FLUSH_WINDOWS)
+	 * to flush all register windows to the stack.
+	 */
+	.global	flush_windows
+	.type	flush_windows, #function
+flush_windows:
+	retl
+	ta	0x3
+	.size	flush_windows, .-flush_windows
+
+	.global	_breakpoint
+	.type	_breakpoint, #function
+_breakpoint:
 	retl
 	ta	0x1
-	SET_SIZE(_breakpoint)
+	.size	_breakpoint, .-_breakpoint
+
+#else /* UMEM_STANDALONE */
+
+#ifdef __sparcv9
+	/*
+	 * Standalone v9: use flushw instruction directly.
+	 */
+	.global	flush_windows
+	.type	flush_windows, #function
+flush_windows:
+	retl
+	flushw
+	.size	flush_windows, .-flush_windows
+#else
+#error "This file does not provide a pre-v9 standalone flush_windows"
 #endif
 
-#endif	/* lint */
+#endif /* UMEM_STANDALONE */
