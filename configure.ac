@@ -9,8 +9,19 @@ AC_PROG_CC
 # Try -std=c17 first, fall back to -std=c11
 AC_MSG_CHECKING([for C17 support])
 OLD_CFLAGS="$CFLAGS"
-# Add feature test macros for POSIX and GNU extensions
-CFLAGS="$CFLAGS -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE"
+# Add feature test macros for POSIX and GNU/BSD extensions.
+# On BSDs, _POSIX_C_SOURCE hides BSD APIs (gettimeofday, sbrk, etc.)
+# so we skip it there; BSD headers provide POSIX APIs by default.
+UNAME_S=$(uname -s 2>/dev/null || echo unknown)
+case "$UNAME_S" in
+  FreeBSD*|DragonFly*|NetBSD*|OpenBSD*)
+    PLATFORM_FEATURE_FLAGS=""
+    ;;
+  *)
+    PLATFORM_FEATURE_FLAGS="-D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE"
+    ;;
+esac
+CFLAGS="$CFLAGS -std=c17 $PLATFORM_FEATURE_FLAGS"
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
     #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201710L
     #error C17 not supported
@@ -18,7 +29,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 ]], [[]])],
     [AC_MSG_RESULT([yes])],
     [AC_MSG_RESULT([no, trying C11])
-     CFLAGS="$OLD_CFLAGS -std=c11 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE"
+     CFLAGS="$OLD_CFLAGS -std=c11 $PLATFORM_FEATURE_FLAGS"
      AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
          #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
          #error C11 not supported
@@ -163,22 +174,24 @@ else
 fi
 
 AC_MSG_CHECKING([whether pthread_mutex_t is larger than 24 bytes])
-AC_RUN_IFELSE(
-  [AC_LANG_SOURCE([
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([[
 #include <pthread.h>
-int main(void){return (sizeof(pthread_mutex_t) > 24);}
-  ])],
-  [AC_MSG_RESULT(yes)],
+  ]], [[
+    _Static_assert(sizeof(pthread_mutex_t) > 24,
+        "pthread_mutex_t is not larger than 24 bytes");
+  ]])],
   [
-    AC_MSG_RESULT(no)
+    AC_MSG_RESULT(yes)
     AC_DEFINE(UMEM_PTHREAD_MUTEX_TOO_BIG, [1], [need bigger cache])
     AC_MSG_WARN([*** increasing umem cpu cache size to compensate.])
-  ]
+  ],
+  [AC_MSG_RESULT(no)]
 )
 
 AC_CHECK_LIB(dl,dlopen)
 
-AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h])
+AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h thread.h sys/frame.h sys/stack.h])
 AC_CHECK_FUNCS([issetugid mallinfo mallinfo2 malloc_stats])
 
 # Check for FreeBSD pthread hooks
