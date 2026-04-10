@@ -52,7 +52,9 @@
 #include <sys/vmem.h>
 #ifdef HAVE_THREAD_H
 #include <thread.h>
-/* Solaris thread.h doesn't define our compat macros */
+/* Solaris thread.h provides mutex_t, cond_t, hrtime_t, thr_create, etc.
+ * but not our compat macros. Define them before including sol_compat.h
+ * and tell sol_compat.h to skip the type/function redefinitions. */
 # ifndef THR_RETURN
 #  define THR_RETURN void *
 #  define THR_API
@@ -60,6 +62,7 @@
 # ifndef INLINE
 #  define INLINE inline
 # endif
+# define _EC_UMEM_SOL_COMPAT_TYPES_DEFINED
 # include "sol_compat.h"
 #else
 # include "sol_compat.h"

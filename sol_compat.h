@@ -41,6 +41,12 @@
 #define bzero(m, s)			memset(m, 0, s)
 #endif
 
+/*
+ * On Solaris/Illumos, <thread.h> provides these types and functions.
+ * _EC_UMEM_SOL_COMPAT_TYPES_DEFINED is set by umem_impl.h when
+ * HAVE_THREAD_H is available, to skip the redefinitions.
+ */
+#ifndef _EC_UMEM_SOL_COMPAT_TYPES_DEFINED
 typedef pthread_t thread_t;
 typedef pthread_mutex_t mutex_t;
 typedef pthread_cond_t cond_t;
@@ -85,6 +91,7 @@ static INLINE int thr_create(void *stack_base __attribute__((unused)),
   pthread_attr_destroy(&attr);
   return ret;
 }
+#endif /* _EC_UMEM_SOL_COMPAT_TYPES_DEFINED */
 
 
 # define mutex_init(mp, type, arg) pthread_mutex_init(mp, NULL)
