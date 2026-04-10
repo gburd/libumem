@@ -196,7 +196,7 @@ AC_COMPILE_IFELSE(
 
 AC_CHECK_LIB(dl,dlopen)
 
-AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h thread.h sys/frame.h sys/stack.h])
+AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h thread.h sys/frame.h sys/stack.h alloca.h])
 AC_CHECK_FUNCS([issetugid mallinfo mallinfo2 malloc_stats])
 
 # Check for FreeBSD pthread hooks

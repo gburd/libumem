@@ -114,6 +114,8 @@
 #include <sys/vmem_impl_user.h>
 #if HAVE_ALLOCA_H
 #include <alloca.h>
+#elif defined(__GNUC__)
+#define alloca __builtin_alloca
 #endif
 #ifdef HAVE_SYS_SYSMACROS_H
 #include <sys/sysmacros.h>
