@@ -13,7 +13,7 @@
 #include <math.h>
 #include <stdatomic.h>
 #include <time.h>
-#include <errno.h>
+#include <sys/utsname.h>
 
 /* Get RSS (Resident Set Size) in bytes */
 size_t bench_get_rss_bytes(void) {
@@ -819,9 +819,46 @@ int bench_append_history(const bench_stats_t *stats,
     char date[32];
     strftime(date, sizeof(date), "%Y-%m-%d", tm);
 
+    /* Get platform info */
+    char os_info[128] = "unknown";
+    {
+        struct utsname uts;
+        if (uname(&uts) == 0)
+            snprintf(os_info, sizeof(os_info), "%s %s", uts.sysname, uts.release);
+    }
+
+    const char *arch =
+#if defined(__x86_64__) || defined(_M_X64)
+        "x86_64";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+        "aarch64";
+#elif defined(__riscv) && (__riscv_xlen == 64)
+        "riscv64";
+#elif defined(__sparc) || defined(__sparcv9)
+        "sparcv9";
+#elif defined(__i386__)
+        "i386";
+#else
+        "unknown";
+#endif
+
+    char compiler[128] = "unknown";
+#if defined(__clang__)
+    snprintf(compiler, sizeof(compiler), "clang-%d.%d.%d",
+             __clang_major__, __clang_minor__, __clang_patchlevel__);
+#elif defined(__GNUC__)
+    snprintf(compiler, sizeof(compiler), "gcc-%d.%d.%d",
+             __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#elif defined(_MSC_VER)
+    snprintf(compiler, sizeof(compiler), "msvc-%d", _MSC_VER);
+#endif
+
     fprintf(f, "\n[[result]]\n");
     fprintf(f, "commit = \"%s\"\n", commit);
     fprintf(f, "date = \"%s\"\n", date);
+    fprintf(f, "os = \"%s\"\n", os_info);
+    fprintf(f, "arch = \"%s\"\n", arch);
+    fprintf(f, "compiler = \"%s\"\n", compiler);
     fprintf(f, "allocator = \"%s\"\n", stats->allocator_name);
     fprintf(f, "workload = \"%s\"\n", stats->workload_name);
     fprintf(f, "ops_per_sec = %.0f\n", stats->ops_per_second);
