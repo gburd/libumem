@@ -79,8 +79,6 @@ extern volatile uint32_t umem_reaping;
 #define	UMEM_REAP_ADDING	0x00000001	/* umem_reap() is active */
 #define	UMEM_REAP_ACTIVE	0x00000002	/* update thread is reaping */
 
-extern uintptr_t umem_tmem_off;
-
 /*
  * umem.c: tunables
  */

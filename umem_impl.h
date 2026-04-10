@@ -557,13 +557,6 @@ extern int umem_add(caddr_t, size_t);
 #endif
 
 /*
- * Private interface with libc for tcumem.
- */
-extern uintptr_t _tmem_get_base(void);
-extern int _tmem_get_nentries(void);
-extern void _tmem_set_cleanup(void(*)(void *, int));
-
-/*
  * Global allocation table for size-based cache lookup
  */
 extern umem_cache_t *umem_alloc_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT];

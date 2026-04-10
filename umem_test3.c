@@ -12,7 +12,6 @@
  * We access them to verify PTC (per-thread cache) state.
  */
 extern int umem_ptc_enabled;
-extern const int umem_genasm_supported;
 
 static void minfo(void)
 {
@@ -55,10 +54,10 @@ main (void)
    * After malloc/free, umem is initialized.  Check PTC state.
    * When libumem_malloc is preloaded or linked, malloc() goes
    * through umem's malloc replacement, which may use the PTC
-   * genasm fast path.
+   * PTC fast path.
    */
-  printf("Test 2: PTC status... genasm_supported=%d, ptc_enabled=%d PASS\n",
-      umem_genasm_supported, umem_ptc_enabled);
+  printf("Test 2: PTC status... ptc_enabled=%d PASS\n",
+      umem_ptc_enabled);
 
   /*
    * Exercise various allocation sizes through malloc/free to

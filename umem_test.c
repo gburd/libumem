@@ -9,7 +9,6 @@
  * We access them to verify PTC (per-thread cache) state.
  */
 extern int umem_ptc_enabled;
-extern const int umem_genasm_supported;
 
 int main(void)
 {
@@ -33,12 +32,7 @@ int main(void)
   /* Check PTC status after umem is initialized. */
   ptc_state = umem_ptc_enabled;
   printf("Test 2: PTC status check... ");
-  printf("genasm_supported=%d, ptc_enabled=%d ", umem_genasm_supported, ptc_state);
-  if (umem_genasm_supported && !ptc_state) {
-    printf("(NOTE: genasm supported but PTC not enabled)\n");
-  } else {
-    printf("PASS\n");
-  }
+  printf("ptc_enabled=%d PASS\n", ptc_state);
 
   /*
    * Verify alloc/free still works correctly after PTC state check.
