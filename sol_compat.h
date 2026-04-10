@@ -109,90 +109,27 @@ static INLINE int thr_create(void *stack_base __attribute__((unused)),
 # define RTLD_FIRST 0
 #endif
 
+/*
+ * Atomic increment operations.
+ * Uses C11 atomics (stdatomic.h) on all platforms.
+ * The inline asm CAS and PPC mutex fallback have been removed.
+ */
 #ifdef ECELERITY
 # include "umem_atomic.h"
 #else
-# ifdef _WIN32
-#  define umem_atomic_inc(a)		InterlockedIncrement(a)
-#  define umem_atomic_inc64(a)    InterlockedIncrement64(a)
-# elif defined(__MACH__)
-#  include <libkern/OSAtomic.h>
-#  define umem_atomic_inc(x) OSAtomicIncrement32Barrier((int32_t*)x)
-#  if !defined(__ppc__)
-#   define umem_atomic_inc64(x) OSAtomicIncrement64Barrier((int64_t*)x)
-#  endif
-# elif (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
-static INLINE uint_t umem_atomic_cas(uint_t *mem, uint_t with, uint_t cmp)
-{
-  uint_t prev;
-  __asm__ volatile ("lock; cmpxchgl %1, %2"
-        : "=a" (prev)
-        : "r"    (with), "m" (*(mem)), "0" (cmp)
-        : "memory");
-  return prev;
-}
-static INLINE uint64_t umem_atomic_cas64(uint64_t *mem, uint64_t with,
-  uint64_t cmp)
-{
-  uint64_t prev;
-#  if defined(__x86_64__)
-  __asm__ volatile ("lock; cmpxchgq %1, %2"
-    : "=a" (prev)
-    : "r" (with), "m" (*(mem)), "0" (cmp)
-    : "memory");
-#  else
-  __asm__ volatile (
-    "pushl %%ebx;"
-    "mov 4+%1,%%ecx;"
-    "mov %1,%%ebx;"
-    "lock;"
-    "cmpxchg8b (%3);"
-    "popl %%ebx"
-    : "=A" (prev)
-    : "m" (with), "A" (cmp), "r" (mem)
-    : "%ecx", "memory");
-#  endif
-  return prev;
-}
-static INLINE uint64_t umem_atomic_inc64(uint64_t *mem)
-{
-  register uint64_t last;
-  do {
-    last = *mem;
-  } while (umem_atomic_cas64(mem, last+1, last) != last);
-  return ++last;
-}
-#  define umem_atomic_inc64 umem_atomic_inc64
-# else
-#  error no atomic solution for your platform
-# endif
+# include <stdatomic.h>
 
-# ifndef umem_atomic_inc
-static INLINE uint_t umem_atomic_inc(uint_t *mem)
+static INLINE uint_t umem_atomic_inc(volatile uint_t *mem)
 {
-  register uint_t last;
-  do {
-    last = *mem;
-  } while (umem_atomic_cas(mem, last+1, last) != last);
-  return ++last;
+  return atomic_fetch_add_explicit((_Atomic(uint_t) *)mem, 1,
+      memory_order_relaxed) + 1;
 }
-# endif
-# ifndef umem_atomic_inc64
-   /* yeah, it's not great.  It's only used to bump failed allocation
-    * counts, so it is not critical right now. */
-extern pthread_mutex_t umem_ppc_64inc_lock;
-static INLINE uint64_t umem_atomic_inc64(uint64_t *val)
+
+static INLINE uint64_t umem_atomic_inc64(volatile uint64_t *mem)
 {
-  uint64_t rval;
-  pthread_mutex_lock(&umem_ppc_64inc_lock);
-  rval = *val + 1;
-  *val = rval;
-  pthread_mutex_unlock(&umem_ppc_64inc_lock);
-  return rval;
+  return atomic_fetch_add_explicit((_Atomic(uint64_t) *)mem, 1,
+      memory_order_relaxed) + 1;
 }
-#  define umem_atomic_inc64 umem_atomic_inc64
-#  define NEED_64_LOCK 1
-# endif
 
 #endif
 

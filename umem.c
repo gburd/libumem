@@ -675,6 +675,8 @@
 #endif
 #if HAVE_ATOMIC_H
 #include <atomic.h>
+#else
+#include "atomic.h"
 #endif
 
 #include "misc.h"
@@ -1942,13 +1944,14 @@ done:
 
 /*
  * Atomic load of tagged pointer.
- * Uses 64-bit atomic fetch to load both pointer and version atomically.
+ * Uses C11 acquire ordering for safe publication.
  */
 static inline umem_tagged_ptr_t
 atomic_load_tagged_ptr(volatile umem_tagged_ptr_t *ptr)
 {
 	umem_tagged_ptr_t val;
-	val.raw = __sync_fetch_and_add((volatile uint64_t *)&ptr->raw, 0);
+	val.raw = atomic_load_explicit(
+	    (_Atomic(uint64_t) *)&ptr->raw, memory_order_acquire);
 	return val;
 }
 
@@ -1956,23 +1959,17 @@ atomic_load_tagged_ptr(volatile umem_tagged_ptr_t *ptr)
  * Atomic compare-and-swap of tagged pointer.
  * Returns 1 on success, 0 on failure.
  * On failure, 'expected' is updated with the current value.
+ * Uses acq_rel for success (publish new head), acquire for failure.
  */
 static inline int
 atomic_cas_tagged_ptr(volatile umem_tagged_ptr_t *ptr,
                      umem_tagged_ptr_t *expected,
                      umem_tagged_ptr_t desired)
 {
-	uint64_t old;
-
-	old = __sync_val_compare_and_swap((volatile uint64_t *)&ptr->raw,
-	    expected->raw, desired.raw);
-
-	if (old == expected->raw) {
-		return 1;
-	} else {
-		expected->raw = old;
-		return 0;
-	}
+	return atomic_compare_exchange_strong_explicit(
+	    (_Atomic(uint64_t) *)&ptr->raw,
+	    &expected->raw, desired.raw,
+	    memory_order_acq_rel, memory_order_acquire);
 }
 
 /*
@@ -2072,6 +2069,7 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 		if (retries++ > 1) {
 			atomic_add_64(&stripe->ds_contention, 1);
 			atomic_add_64(&cp->cache_depot_contention, 1);
+			UMEM_SPIN_HINT();
 		}
 
 	} while (!atomic_cas_tagged_ptr(&stripe_list->ml_list, &old, new));
@@ -2145,6 +2143,7 @@ umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp, umem_magazine_t *mp)
 		 */
 		if (retries++ > 1) {
 			atomic_add_64(&stripe->ds_contention, 1);
+			UMEM_SPIN_HINT();
 		}
 
 	} while (!atomic_cas_tagged_ptr(&stripe_list->ml_list, &old, new));
@@ -2191,6 +2190,7 @@ umem_depot_reap_pop(umem_maglist_t *mlp)
 			return (NULL);
 		new = umem_tagged_ptr_make(mp->mag_next,
 		    umem_tagged_ver_get(old) + 1);
+		UMEM_SPIN_HINT();
 	} while (!atomic_cas_tagged_ptr(&mlp->ml_list, &old, new));
 
 	atomic_add_64((uint64_t *)&mlp->ml_total, (uint64_t)-1);
