@@ -7,6 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <libgen.h>
+
+#define HISTORY_FILENAME "test/bench/results/history.toml"
 
 static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n", prog);
@@ -18,13 +21,14 @@ static void print_usage(const char *prog) {
     printf("  -s MIN:MAX    Size range in bytes (default: 16:1024)\n");
     printf("  -c            Output CSV format\n");
     printf("  -H            Print CSV header only and exit\n");
+    printf("  --compare     Compare results against historical data\n");
+    printf("  --save        Save results to history file\n");
     printf("  -h            Show this help\n");
     printf("\nExample:\n");
     printf("  %s -a umem -w multi -t 8 -n 10000000\n", prog);
 }
 
 int main(int argc, char *argv[]) {
-    int opt;
     const char *allocator_name = "all";
     const char *workload_name = "all";
     int thread_count = sysconf(_SC_NPROCESSORS_ONLN);
@@ -33,8 +37,26 @@ int main(int argc, char *argv[]) {
     size_t max_size = 1024;
     bool csv_output = false;
     bool header_only = false;
+    bool do_compare = false;
+    bool do_save = false;
 
-    while ((opt = getopt(argc, argv, "a:w:t:n:s:cHh")) != -1) {
+    /* Handle long options manually before getopt */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--compare") == 0) {
+            do_compare = true;
+            argv[i] = (char *)"-?";  /* consumed */
+        } else if (strcmp(argv[i], "--save") == 0) {
+            do_save = true;
+            argv[i] = (char *)"-?";
+        } else if (strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        }
+    }
+
+    int opt;
+    optind = 1;
+    while ((opt = getopt(argc, argv, "a:w:t:n:s:cHh?")) != -1) {
         switch (opt) {
         case 'a':
             allocator_name = optarg;
@@ -63,11 +85,13 @@ int main(int argc, char *argv[]) {
             break;
         case 'H':
             header_only = true;
-            csv_output = true;  /* Header output requires CSV mode */
+            csv_output = true;
             break;
         case 'h':
             print_usage(argv[0]);
             return 0;
+        case '?':
+            break;  /* Consumed long options */
         default:
             print_usage(argv[0]);
             return 1;
@@ -177,6 +201,12 @@ int main(int argc, char *argv[]) {
                     bench_print_csv_row(&stats);
                 } else {
                     bench_print_stats(&stats);
+                }
+                if (do_compare) {
+                    bench_compare_history(&stats, HISTORY_FILENAME);
+                }
+                if (do_save) {
+                    bench_append_history(&stats, HISTORY_FILENAME);
                 }
             }
         }

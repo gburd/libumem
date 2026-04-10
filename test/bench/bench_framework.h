@@ -15,6 +15,12 @@
 /* Forward declaration of tdigest */
 typedef struct td_histogram td_histogram_t;
 
+/* CPU usage from getrusage */
+typedef struct bench_cpu_usage {
+    double user_ms;
+    double sys_ms;
+} bench_cpu_usage_t;
+
 /* Allocator function pointers for testing different implementations */
 typedef struct allocator_ops {
     const char *name;
@@ -53,6 +59,9 @@ typedef struct bench_stats {
 
     /* Thread count (for multithreaded tests) */
     int thread_count;
+
+    /* CPU overhead */
+    bench_cpu_usage_t cpu_usage;
 } bench_stats_t;
 
 /* Workload function signature */
@@ -79,6 +88,12 @@ static inline uint64_t bench_get_ns(void) {
 /* Memory measurement */
 size_t bench_get_rss_bytes(void);
 
+/* Read VmRSS from /proc/self/status (Linux only, returns bytes) */
+size_t bench_get_vmrss_bytes(void);
+
+/* CPU usage measurement */
+bench_cpu_usage_t bench_get_cpu_usage(void);
+
 /* Run a single benchmark */
 int bench_run(allocator_ops_t *ops, workload_config_t *workload, bench_stats_t *stats);
 
@@ -88,6 +103,13 @@ void bench_print_stats(const bench_stats_t *stats);
 /* Print results in CSV format for analysis */
 void bench_print_csv_header(void);
 void bench_print_csv_row(const bench_stats_t *stats);
+
+/* Historical tracking: append result to TOML file */
+int bench_append_history(const bench_stats_t *stats, const char *history_path);
+
+/* Compare against historical results, return 1 if regression detected */
+int bench_compare_history(const bench_stats_t *stats,
+                          const char *history_path);
 
 /* Standard workloads */
 void workload_single_thread(allocator_ops_t *ops, bench_stats_t *stats, void *config);
