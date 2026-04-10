@@ -776,10 +776,12 @@ thread_t                umem_init_thr;          /* thread initializing */
 int                     umem_init_env_ready;    /* environ pre-initted */
 int                     umem_ready = UMEM_READY_STARTUP;
 
-int			umem_ptc_enabled;	/* per-thread caching enabled */
-const int		umem_genasm_supported = 0; /* genasm removed */
-static inline int umem_genasm(int *sizes, umem_cache_t **caches, int ncaches)
-{ (void)sizes; (void)caches; (void)ncaches; return (-1); }
+/*
+ * Legacy symbols kept for ABI compatibility with test binaries.
+ * The actual control flag is umem_tcache_enabled (umem_tcache.c).
+ */
+int			umem_ptc_enabled;
+const int		umem_genasm_supported = 0;
 
 static umem_nofail_callback_t *nofail_callback;
 static mutex_t          umem_nofail_exit_lock = DEFAULTMUTEX;
@@ -2064,9 +2066,10 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 
 		/*
 		 * Track CAS retries as contention metric.
-		 * Unlike mutex contention, this counts actual conflicts.
+		 * Only count after 2+ failures to filter out
+		 * incidental collisions from real contention.
 		 */
-		if (retries++ > 0) {
+		if (retries++ > 1) {
 			atomic_add_64(&stripe->ds_contention, 1);
 			atomic_add_64(&cp->cache_depot_contention, 1);
 		}
@@ -2137,8 +2140,10 @@ umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp, umem_magazine_t *mp)
 
 		/*
 		 * Track CAS retries as contention metric.
+		 * Only count after 2+ failures to filter out
+		 * incidental collisions from real contention.
 		 */
-		if (retries++ > 0) {
+		if (retries++ > 1) {
 			atomic_add_64(&stripe->ds_contention, 1);
 		}
 
@@ -2653,7 +2658,7 @@ umem_alloc_retry:
 		 * Try per-thread cache first for small allocations.
 		 * This provides a zero-synchronization fast path.
 		 */
-		if (likely(umem_ptc_enabled)) {
+		if (likely(umem_tcache_enabled)) {
 			buf = umem_tcache_alloc(size);
 			if (likely(buf != NULL))
 				return (buf);
@@ -2762,7 +2767,7 @@ _umem_free(void *buf, size_t size)
 		 * Try per-thread cache for small allocations.
 		 * Zero-synchronization fast path.
 		 */
-		if (likely(umem_ptc_enabled)) {
+		if (likely(umem_tcache_enabled)) {
 			if (likely(umem_tcache_free(buf, size) == 0))
 				return;
 			/* Cache full - fall through to magazine layer */
@@ -3794,13 +3799,6 @@ umem_cache_init(void)
 	umem_tmem_off = _tmem_get_base();
 	_tmem_set_cleanup(umem_cache_tmem_cleanup);
 
-	if (umem_genasm_supported && !(umem_flags & UMF_DEBUG) &&
-	    !(umem_flags & UMF_NOMAGAZINE) &&
-	    umem_ptc_size > 0) {
-		umem_ptc_enabled = umem_genasm(umem_alloc_sizes,
-		    umem_alloc_caches, i) == 0 ? 1 : 0;
-	}
-
 	/*
 	 * Initialization cannot fail at this point.  Make the caches
 	 * visible to umem_alloc() and friends.
@@ -4135,6 +4133,7 @@ umem_init(void)
 	 * This provides zero-lock access for sizes 8-448 bytes.
 	 */
 	umem_tcache_init();
+	umem_ptc_enabled = umem_tcache_enabled;
 #endif
 
 	/*
