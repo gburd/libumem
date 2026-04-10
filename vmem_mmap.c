@@ -43,7 +43,13 @@
 
 #include "vmem_base.h"
 
-#define	ALLOC_PROT	PROT_READ | PROT_WRITE | PROT_EXEC
+/*
+ * No PROT_EXEC: libumem allocates data memory, not executable code.
+ * The original Solaris code had PROT_EXEC for genasm (runtime code
+ * generation in the heap), which has been removed.
+ * W^X enforcement on modern OSes (FreeBSD, OpenBSD) rejects RWX mappings.
+ */
+#define	ALLOC_PROT	PROT_READ | PROT_WRITE
 #define	FREE_PROT	PROT_NONE
 
 /*
