@@ -65,9 +65,11 @@ HTM_SOURCES =
 endif
 
 # Conditionally include SPARC assembly on Solaris
+# The .S extension ensures the C preprocessor runs on the assembly
+# (needed for #include <sys/asm_linkage.h> and #if directives).
 if SOLARIS_BUILD
 if ARCH_SPARC
-SPARC_ASM_SOURCES = sparc_subr_sol.s
+SPARC_ASM_SOURCES = sparc_subr_sol.S
 else
 SPARC_ASM_SOURCES =
 endif

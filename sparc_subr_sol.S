@@ -24,7 +24,7 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"@(#)asm_subr.s	1.3	05/06/08 SMI"
+/* ident	"@(#)asm_subr.s	1.3	05/06/08 SMI" */
 
 #include <sys/asm_linkage.h>
 
