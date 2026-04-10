@@ -201,10 +201,9 @@ AC_CHECK_FUNCS([issetugid mallinfo mallinfo2 malloc_stats])
 AC_MSG_CHECKING([for FreeBSD pthread hooks])
 AC_LINK_IFELSE([
     AC_LANG_PROGRAM([[
-        extern void _pthread_mutex_init_calloc_cb(void *(*)(size_t));
         extern void _malloc_thread_cleanup(void);
     ]], [[
-        _pthread_mutex_init_calloc_cb(0);
+        _malloc_thread_cleanup();
     ]])
 ], [
     AC_MSG_RESULT([yes])

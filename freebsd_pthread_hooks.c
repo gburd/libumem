@@ -21,90 +21,42 @@
  */
 
 /*
- * FreeBSD-specific pthread hooks for optimal thread creation compatibility.
+ * FreeBSD-specific pthread hooks for thread cleanup compatibility.
  *
- * FreeBSD provides two allocator-specific hooks that eliminate pthread_create
- * deadlock without requiring dlsym(RTLD_NEXT) or TLS guards:
+ * FreeBSD's libthr calls _malloc_thread_cleanup() during pthread_exit(),
+ * giving custom allocators a chance to release per-thread resources
+ * without using pthread_key_t (which can deadlock during thread exit).
  *
- * 1. _pthread_mutex_init_calloc_cb() - Custom allocator for mutex initialization
- * 2. _malloc_thread_cleanup() - Thread exit cleanup without pthread_key_t
- *
- * These hooks are used by jemalloc on FreeBSD and provide zero-deadlock
- * pthread_create compatibility.
- *
- * See docs/PTHREAD_RESEARCH.md section 1 for detailed analysis.
+ * Note: _pthread_mutex_init_calloc_cb() is an internal FreeBSD API for
+ * initializing mutexes used by the allocator itself. Its real signature is:
+ *   int _pthread_mutex_init_calloc_cb(pthread_mutex_t *mutex,
+ *       void *(calloc_cb)(size_t, size_t));
+ * It is called by the allocator when it needs a new mutex, NOT registered
+ * as a global constructor. libumem does not currently need this hook
+ * because its mutex initialization does not call malloc.
  */
 
 #ifdef __FreeBSD__
 
 #include "config.h"
 #include "umem_impl.h"
-#include <stdlib.h>
 
-/* External reference to existing bootstrap allocator */
-extern void *bootstrap_malloc(size_t size);
-extern int is_bootstrap_pointer(void *ptr);
-extern void bootstrap_free(void *ptr);
 extern int umem_ready;
 
 /*
- * FreeBSD pthread hooks (declared in FreeBSD's libthr)
- * These are internal FreeBSD APIs used by custom allocators.
- */
-extern void _pthread_mutex_init_calloc_cb(void *(*alloc_cb)(size_t));
-
-/*
- * freebsd_pthread_alloc - Bootstrap allocator for pthread mutex initialization
+ * _malloc_thread_cleanup - Called by libthr during thread exit
  *
- * Called by FreeBSD's pthread_mutex_init() during thread creation.
- * Must not access TLS or call any pthread functions to avoid recursion.
- * Uses the existing bootstrap_malloc which does direct mmap.
- */
-static void *
-freebsd_pthread_alloc(size_t size)
-{
-	return bootstrap_malloc(size);
-}
-
-/*
- * _malloc_thread_cleanup - Called by pthread during thread exit
- *
- * FreeBSD's pthread implementation calls this function during pthread_exit(),
- * giving the allocator a chance to clean up per-thread data without using
- * pthread_key_t (which can cause deadlock).
- *
- * This implementation is intentionally simple - we just let the OS reclaim
- * thread-local resources. Future versions could add explicit PTC flushing
- * if needed.
+ * FreeBSD's pthread implementation calls this exported symbol during
+ * pthread_exit(), giving the allocator a chance to clean up per-thread
+ * data without using pthread_key_t.
  */
 void
 _malloc_thread_cleanup(void)
 {
 	/*
-	 * Note: We don't perform explicit cleanup here because:
-	 * 1. The kernel will reclaim thread-local memory
-	 * 2. Magazine caches are flushed during normal operation
-	 * 3. PTC data structures will be cleaned up by the kernel
-	 *
-	 * If explicit PTC cleanup becomes necessary, add it here:
-	 *   if (umem_ready == UMEM_READY) {
-	 *       umem_ptc_cleanup();
-	 *   }
+	 * No explicit cleanup needed: the kernel reclaims thread-local
+	 * memory, and magazine caches are flushed during normal operation.
 	 */
-}
-
-/*
- * register_freebsd_pthread_hooks - Register hooks during library initialization
- *
- * Constructor priority 101 ensures this runs early, before any pthread
- * operations, but after basic libc initialization. This must run before
- * umem_init() to ensure pthread_create works during umem initialization.
- */
-__attribute__((constructor(101)))
-static void
-register_freebsd_pthread_hooks(void)
-{
-	_pthread_mutex_init_calloc_cb(freebsd_pthread_alloc);
 }
 
 #endif /* __FreeBSD__ */
