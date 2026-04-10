@@ -196,6 +196,14 @@ static umem_env_item_t umem_options_items[] = {
 	},
 #endif
 #endif
+	{ "reclaim",		"Evolving",	ITEM_UINT,
+		"Enable background page reclamation via madvise (1=enable, 0=disable)",
+		NULL, 0,	&umem_reclaim_enabled
+	},
+	{ "reclaim_delay",	"Evolving",	ITEM_UINT,
+		"Seconds before dirty slabs are reclaimed (default 30)",
+		NULL, 0,	&umem_reclaim_delay
+	},
 	{ "perthread_cache",	"Evolving",	ITEM_SIZE,
 		"Size (in bytes) of per-thread allocation cache",
 		NULL, 0, NULL, &umem_ptc_size
