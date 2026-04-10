@@ -139,24 +139,6 @@ issetugid(void)
 }
 
 int
-_tmem_get_nentries(void)
-{
-	return (0);
-}
-
-uintptr_t
-_tmem_get_base(void)
-{
-	return (0);
-}
-
-/*ARGSUSED*/
-void
-_tmem_set_cleanup(void (*f)(int, void *))
-{
-}
-
-int
 isspace(int c)
 {
 	switch (c) {

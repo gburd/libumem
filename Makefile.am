@@ -26,7 +26,7 @@ libumem_la_LDFLAGS = -lpthread $(NUMA_LIBS)
 if SOLARIS_BUILD
 STUB_SOURCES = stub_stand.c
 else
-STUB_SOURCES = tmem_stubs.c
+STUB_SOURCES =
 endif
 
 # Conditionally include FreeBSD pthread hooks

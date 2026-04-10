@@ -10,7 +10,6 @@
  * We access them to verify PTC (per-thread cache) state.
  */
 extern int umem_ptc_enabled;
-extern const int umem_genasm_supported;
 
 static const char *TESTSTRINGS[] = {
   "fred",
@@ -141,8 +140,8 @@ main (void)
 
   /* --- PTC status check --- */
 
-  printf("Test 2: PTC status... genasm_supported=%d, ptc_enabled=%d PASS\n",
-      umem_genasm_supported, umem_ptc_enabled);
+  printf("Test 2: PTC status... ptc_enabled=%d PASS\n",
+      umem_ptc_enabled);
 
   /* --- Multi-threaded PTC exercise --- */
 
