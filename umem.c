@@ -446,6 +446,7 @@
 #include <signal.h>
 #if HAVE_UNISTD_H
 #include <unistd.h>
+#include <sys/mman.h>
 #endif
 #if HAVE_ATOMIC_H
 #include <atomic.h>
@@ -557,6 +558,9 @@ size_t umem_lite_maxalign = 1024; /* maximum buffer alignment for UMF_LITE */
 size_t umem_maxverify;          /* maximum bytes to inspect in debug routines */
 size_t umem_minfirewall;        /* hardware-enforced redzone threshold */
 size_t umem_ptc_size = 1048576;	/* size of per-thread cache (in bytes) */
+
+uint32_t umem_reclaim_enabled = 1;  /* background page reclamation via madvise */
+uint32_t umem_reclaim_delay = 30;   /* seconds before reclaiming dirty slabs */
 
 uint_t umem_flags = 0;
 
@@ -1442,6 +1446,17 @@ umem_slab_alloc(umem_cache_t *cp, int umflag)
 		cp->cache_freelist = sp;
 	}
 
+	/*
+	 * Reactivate a slab that was idle (DIRTY or CLEAN).
+	 * CLEAN slabs had their pages advised away; the kernel will
+	 * zero-fill on first access, which is fine -- the constructor
+	 * will reinitialize the buffer contents.
+	 */
+	if (sp->slab_state != SLAB_ACTIVE) {
+		sp->slab_state = SLAB_ACTIVE;
+		sp->slab_idle_time = 0;
+	}
+
 	sp->slab_refcnt++;
 	ASSERT(sp->slab_refcnt <= sp->slab_chunks);
 
@@ -1544,19 +1559,28 @@ umem_slab_free(umem_cache_t *cp, void *buf)
 
 	ASSERT(sp->slab_refcnt >= 1);
 	if (--sp->slab_refcnt == 0) {
-		/*
-		 * There are no outstanding allocations from this slab,
-		 * so we can reclaim the memory.
-		 */
-		sp->slab_next->slab_prev = sp->slab_prev;
-		sp->slab_prev->slab_next = sp->slab_next;
-		if (sp == cp->cache_freelist)
-			cp->cache_freelist = sp->slab_next;
-		cp->cache_slab_destroy++;
-		cp->cache_buftotal -= sp->slab_chunks;
-		(void) mutex_unlock(&cp->cache_lock);
-		umem_slab_destroy(cp, sp);
-		return;
+		if (umem_reclaim_enabled) {
+			/*
+			 * Mark the slab as dirty and leave it on the
+			 * freelist.  The update thread will madvise the
+			 * pages away after umem_reclaim_delay seconds.
+			 */
+			sp->slab_state = SLAB_DIRTY;
+			sp->slab_idle_time = 0;
+		} else {
+			/*
+			 * Reclaim disabled: destroy the slab immediately.
+			 */
+			sp->slab_next->slab_prev = sp->slab_prev;
+			sp->slab_prev->slab_next = sp->slab_next;
+			if (sp == cp->cache_freelist)
+				cp->cache_freelist = sp->slab_next;
+			cp->cache_slab_destroy++;
+			cp->cache_buftotal -= sp->slab_chunks;
+			(void) mutex_unlock(&cp->cache_lock);
+			umem_slab_destroy(cp, sp);
+			return;
+		}
 	}
 	(void) mutex_unlock(&cp->cache_lock);
 }
@@ -2829,6 +2853,73 @@ umem_hash_rescale(umem_cache_t *cp)
 }
 
 /*
+ * Release physical pages backing an empty slab via madvise.
+ * The virtual address range remains valid so the slab can be reused;
+ * the kernel will supply zero-filled pages on next access.
+ */
+static void
+umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
+{
+	size_t reclaim_size = cp->cache_slabsize - sizeof (umem_slab_t);
+
+#if defined(__FreeBSD__)
+	(void) madvise(sp->slab_base, reclaim_size, MADV_FREE);
+#else
+	(void) madvise(sp->slab_base, reclaim_size, MADV_DONTNEED);
+#endif
+	sp->slab_state = SLAB_CLEAN;
+}
+
+/*
+ * Walk the slab freelist looking for DIRTY slabs whose idle time
+ * exceeds umem_reclaim_delay.  For each one, advise the kernel that
+ * the pages are no longer needed.  Also increment idle time for
+ * DIRTY slabs that haven't yet reached the threshold, and destroy
+ * CLEAN slabs that have sat idle for twice the reclaim delay.
+ *
+ * Must be called with cp->cache_lock held.  Drops and reacquires
+ * the lock around madvise and slab destroy calls.
+ */
+static void
+umem_cache_reclaim_pages(umem_cache_t *cp)
+{
+	umem_slab_t *sp, *next;
+	umem_slab_t *nullsp = &cp->cache_nullslab;
+	uint32_t delay = umem_reclaim_delay;
+
+	ASSERT(MUTEX_HELD(&cp->cache_lock));
+
+	for (sp = nullsp->slab_prev; sp != nullsp; sp = next) {
+		next = sp->slab_prev;
+
+		if (sp->slab_refcnt != 0)
+			continue;
+
+		if (sp->slab_state == SLAB_DIRTY) {
+			sp->slab_idle_time += umem_reap_interval;
+			if (sp->slab_idle_time >= delay) {
+				(void) mutex_unlock(&cp->cache_lock);
+				umem_slab_reclaim(cp, sp);
+				(void) mutex_lock(&cp->cache_lock);
+			}
+		} else if (sp->slab_state == SLAB_CLEAN) {
+			sp->slab_idle_time += umem_reap_interval;
+			if (sp->slab_idle_time >= delay * 2) {
+				sp->slab_next->slab_prev = sp->slab_prev;
+				sp->slab_prev->slab_next = sp->slab_next;
+				if (sp == cp->cache_freelist)
+					cp->cache_freelist = sp->slab_next;
+				cp->cache_slab_destroy++;
+				cp->cache_buftotal -= sp->slab_chunks;
+				(void) mutex_unlock(&cp->cache_lock);
+				umem_slab_destroy(cp, sp);
+				(void) mutex_lock(&cp->cache_lock);
+			}
+		}
+	}
+}
+
+/*
  * Perform periodic maintenance on a cache: hash rescaling,
  * depot working-set update, and magazine resizing.
  */
@@ -2912,6 +3003,15 @@ umem_cache_update(umem_cache_t *cp)
 
 	if (update_flags)
 		umem_add_update(cp, update_flags);
+
+	/*
+	 * Reclaim pages from idle slabs.
+	 */
+	if (umem_reclaim_enabled) {
+		(void) mutex_lock(&cp->cache_lock);
+		umem_cache_reclaim_pages(cp);
+		(void) mutex_unlock(&cp->cache_lock);
+	}
 }
 
 /*

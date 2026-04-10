@@ -104,6 +104,9 @@ extern size_t umem_maxverify;
 extern size_t umem_minfirewall;
 extern size_t umem_ptc_size;
 
+extern uint32_t umem_reclaim_enabled;
+extern uint32_t umem_reclaim_delay;
+
 extern uint32_t umem_flags;
 
 /*
