@@ -26,7 +26,7 @@
 #include <pthread.h>
 #include <errno.h>
 
-#include "umem_tcache.h"
+#include "umem_ptc.h"
 #include "umem_base.h"
 #include "umem_impl.h"
 
@@ -38,33 +38,33 @@ extern umem_cache_t *umem_alloc_table[];
 /*
  * Global configuration (can be tuned via UMEM_OPTIONS)
  */
-size_t umem_tcache_maxsize = 448;       /* max cached size */
-int umem_tcache_enabled = 1;            /* enabled by default for performance */
+size_t umem_ptc_maxsize = 448;       /* max cached size */
+int umem_ptc_enabled = 1;            /* enabled by default for performance */
 
 /*
- * Thread-local storage for tcache
+ * Thread-local storage for ptc
  * Using __thread with initial-exec TLS model for fast access
  */
-static __thread umem_tcache_t *thread_tcache
+static __thread umem_ptc_t *thread_ptc
     __attribute__((tls_model("initial-exec"))) = NULL;
 
 /*
  * pthread key for cleanup
  */
-static pthread_key_t tcache_key;
-static int tcache_key_initialized = 0;
+static pthread_key_t ptc_key;
+static int ptc_key_initialized = 0;
 
 /*
  * Size class table for quick bin lookup
  * Maps allocation sizes to bin indices
  */
-static int8_t size_to_bin_table[TCACHE_NBINS * 32];
+static int8_t size_to_bin_table[PTC_NBINS * 32];
 
 /*
  * Size classes we cache (matching umem's small size classes)
- * These correspond to the first TCACHE_NBINS entries in umem_alloc_sizes
+ * These correspond to the first PTC_NBINS entries in umem_alloc_sizes
  */
-static const size_t tcache_size_classes[TCACHE_NBINS] = {
+static const size_t ptc_size_classes[PTC_NBINS] = {
 #ifdef _LP64
 	8, 16, 32, 48,          /* 1*8, 1*16, 2*16, 3*16 */
 	64, 80, 96, 112,        /* 4*16, 5*16, 6*16, 7*16 */
@@ -82,36 +82,36 @@ static const size_t tcache_size_classes[TCACHE_NBINS] = {
  * Cleanup callback for pthread_key
  */
 static void
-umem_tcache_cleanup(void *arg)
+umem_ptc_cleanup(void *arg)
 {
-	umem_tcache_t *tcache = (umem_tcache_t *)arg;
+	umem_ptc_t *ptc = (umem_ptc_t *)arg;
 
-	if (tcache != NULL) {
-		umem_tcache_destroy(tcache);
-		thread_tcache = NULL;
+	if (ptc != NULL) {
+		umem_ptc_destroy(ptc);
+		thread_ptc = NULL;
 	}
 }
 
 /*
- * Initialize tcache subsystem
+ * Initialize ptc subsystem
  */
 void
-umem_tcache_init(void)
+umem_ptc_init(void)
 {
 	int i, bin;
 	size_t size;
 
-	if (!umem_tcache_enabled) {
+	if (!umem_ptc_enabled) {
 		return;
 	}
 
 	/* Initialize pthread key for cleanup */
-	if (!tcache_key_initialized) {
-		if (pthread_key_create(&tcache_key, umem_tcache_cleanup) != 0) {
-			umem_tcache_enabled = 0;
+	if (!ptc_key_initialized) {
+		if (pthread_key_create(&ptc_key, umem_ptc_cleanup) != 0) {
+			umem_ptc_enabled = 0;
 			return;
 		}
-		tcache_key_initialized = 1;
+		ptc_key_initialized = 1;
 	}
 
 	/* Build size-to-bin lookup table */
@@ -119,8 +119,8 @@ umem_tcache_init(void)
 		size_to_bin_table[i] = -1;
 	}
 
-	for (bin = 0; bin < TCACHE_NBINS; bin++) {
-		size = tcache_size_classes[bin];
+	for (bin = 0; bin < PTC_NBINS; bin++) {
+		size = ptc_size_classes[bin];
 		if (size / 8 < sizeof(size_to_bin_table)) {
 			size_to_bin_table[size / 8] = bin;
 		}
@@ -129,14 +129,14 @@ umem_tcache_init(void)
 
 /*
  * Map allocation size to bin index
- * Returns -1 if size is not eligible for tcaching
+ * Returns -1 if size is not eligible for per-thread caching
  */
 int
-umem_tcache_size_to_bin(size_t size)
+umem_ptc_size_to_bin(size_t size)
 {
 	size_t index;
 
-	if (!umem_tcache_enabled || size > umem_tcache_maxsize) {
+	if (!umem_ptc_enabled || size > umem_ptc_maxsize) {
 		return (-1);
 	}
 
@@ -155,95 +155,95 @@ umem_tcache_size_to_bin(size_t size)
  * Get the actual size for a bin
  */
 static size_t
-umem_tcache_bin_size(int bin)
+umem_ptc_bin_size(int bin)
 {
-	if (bin < 0 || bin >= TCACHE_NBINS) {
+	if (bin < 0 || bin >= PTC_NBINS) {
 		return (0);
 	}
-	return (tcache_size_classes[bin]);
+	return (ptc_size_classes[bin]);
 }
 
 /*
  * Get or create the current thread's cache
  */
-umem_tcache_t *
-umem_tcache_get(void)
+umem_ptc_t *
+umem_ptc_get(void)
 {
-	umem_tcache_t *tcache;
+	umem_ptc_t *ptc;
 
-	if (!umem_tcache_enabled) {
+	if (!umem_ptc_enabled) {
 		return (NULL);
 	}
 
-	tcache = thread_tcache;
-	if (tcache != NULL) {
-		return (tcache);
+	ptc = thread_ptc;
+	if (ptc != NULL) {
+		return (ptc);
 	}
 
-	/* Allocate new tcache using umem_alloc to avoid recursion */
-	tcache = (umem_tcache_t *)umem_alloc(sizeof(umem_tcache_t),
+	/* Allocate new ptc using umem_alloc to avoid recursion */
+	ptc = (umem_ptc_t *)umem_alloc(sizeof(umem_ptc_t),
 	    UMEM_DEFAULT);
-	if (tcache == NULL) {
+	if (ptc == NULL) {
 		return (NULL);
 	}
 
-	(void) memset(tcache, 0, sizeof(umem_tcache_t));
+	(void) memset(ptc, 0, sizeof(umem_ptc_t));
 
 	/* Store in TLS and pthread-specific data */
-	thread_tcache = tcache;
-	if (tcache_key_initialized) {
-		(void) pthread_setspecific(tcache_key, tcache);
+	thread_ptc = ptc;
+	if (ptc_key_initialized) {
+		(void) pthread_setspecific(ptc_key, ptc);
 	}
 
-	return (tcache);
+	return (ptc);
 }
 
 /*
  * Allocate from thread cache
  */
 void *
-umem_tcache_alloc(size_t size)
+umem_ptc_alloc(size_t size)
 {
-	umem_tcache_t *tcache;
-	umem_tcache_bin_t *bin;
+	umem_ptc_t *ptc;
+	umem_ptc_bin_t *bin;
 	void *ptr;
 	int bin_idx;
 
-	if (!umem_tcache_enabled) {
+	if (!umem_ptc_enabled) {
 		return (NULL);
 	}
 
-	bin_idx = umem_tcache_size_to_bin(size);
+	bin_idx = umem_ptc_size_to_bin(size);
 	if (bin_idx < 0) {
 		return (NULL);
 	}
 
-	tcache = umem_tcache_get();
-	if (tcache == NULL) {
+	ptc = umem_ptc_get();
+	if (ptc == NULL) {
 		return (NULL);
 	}
 
-	bin = &tcache->bins[bin_idx];
+	bin = &ptc->bins[bin_idx];
 
 	/* Fast path: take from cache */
 	if (bin->count > 0) {
 		ptr = bin->slots[--bin->count];
-		tcache->alloc_count++;
-		tcache->hits++;
+		ptc->alloc_count++;
+		ptc->hits++;
 		return (ptr);
 	}
 
 	/* Cache miss - try to refill from magazine layer */
-	if (umem_tcache_bin_refill(bin, umem_tcache_bin_size(bin_idx)) == 0) {
+	if (umem_ptc_bin_refill(bin, umem_ptc_bin_size(bin_idx)) == 0) {
 		if (bin->count > 0) {
 			ptr = bin->slots[--bin->count];
-			tcache->alloc_count++;
-			tcache->hits++;
+			ptc->alloc_count++;
+			ptc->hits++;
 			return (ptr);
 		}
 	}
 
-	tcache->misses++;
+	ptc->misses++;
 	return (NULL);
 }
 
@@ -251,42 +251,42 @@ umem_tcache_alloc(size_t size)
  * Free to thread cache
  */
 int
-umem_tcache_free(void *ptr, size_t size)
+umem_ptc_free(void *ptr, size_t size)
 {
-	umem_tcache_t *tcache;
-	umem_tcache_bin_t *bin;
+	umem_ptc_t *ptc;
+	umem_ptc_bin_t *bin;
 	int bin_idx;
 
-	if (!umem_tcache_enabled || ptr == NULL) {
+	if (!umem_ptc_enabled || ptr == NULL) {
 		return (-1);
 	}
 
-	bin_idx = umem_tcache_size_to_bin(size);
+	bin_idx = umem_ptc_size_to_bin(size);
 	if (bin_idx < 0) {
 		return (-1);
 	}
 
-	tcache = umem_tcache_get();
-	if (tcache == NULL) {
+	ptc = umem_ptc_get();
+	if (ptc == NULL) {
 		return (-1);
 	}
 
-	bin = &tcache->bins[bin_idx];
+	bin = &ptc->bins[bin_idx];
 
 	/* Fast path: cache it */
-	if (bin->count < TCACHE_NSLOTS) {
+	if (bin->count < PTC_NSLOTS) {
 		bin->slots[bin->count++] = ptr;
-		tcache->free_count++;
+		ptc->free_count++;
 		return (0);
 	}
 
 	/* Cache full - flush half to magazine layer */
-	umem_tcache_bin_flush(bin, umem_tcache_bin_size(bin_idx));
+	umem_ptc_bin_flush(bin, umem_ptc_bin_size(bin_idx));
 
 	/* Try again after flush */
-	if (bin->count < TCACHE_NSLOTS) {
+	if (bin->count < PTC_NSLOTS) {
 		bin->slots[bin->count++] = ptr;
-		tcache->free_count++;
+		ptc->free_count++;
 		return (0);
 	}
 
@@ -297,7 +297,7 @@ umem_tcache_free(void *ptr, size_t size)
  * Flush cached objects from a bin to the magazine layer
  */
 void
-umem_tcache_bin_flush(umem_tcache_bin_t *bin, size_t size)
+umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
 {
 	int i;
 	int flush_count;
@@ -336,7 +336,7 @@ umem_tcache_bin_flush(umem_tcache_bin_t *bin, size_t size)
  * Refill a bin from the magazine layer
  */
 int
-umem_tcache_bin_refill(umem_tcache_bin_t *bin, size_t size)
+umem_ptc_bin_refill(umem_ptc_bin_t *bin, size_t size)
 {
 	int i;
 	int refill_count;
@@ -344,7 +344,7 @@ umem_tcache_bin_refill(umem_tcache_bin_t *bin, size_t size)
 	umem_cache_t *cp;
 
 	/* Refill half the bin */
-	refill_count = TCACHE_NSLOTS / 2;
+	refill_count = PTC_NSLOTS / 2;
 
 	/* Look up the appropriate cache */
 	cp = umem_alloc_table[(size - 1) >> UMEM_ALIGN_SHIFT];
@@ -368,24 +368,24 @@ umem_tcache_bin_refill(umem_tcache_bin_t *bin, size_t size)
  * Destroy thread cache
  */
 void
-umem_tcache_destroy(umem_tcache_t *tcache)
+umem_ptc_destroy(umem_ptc_t *ptc)
 {
 	int bin_idx;
-	umem_tcache_bin_t *bin;
+	umem_ptc_bin_t *bin;
 
-	if (tcache == NULL) {
+	if (ptc == NULL) {
 		return;
 	}
 
 	/* Flush all bins back to magazine layer */
-	for (bin_idx = 0; bin_idx < TCACHE_NBINS; bin_idx++) {
-		bin = &tcache->bins[bin_idx];
+	for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
+		bin = &ptc->bins[bin_idx];
 		if (bin->count > 0) {
-			umem_tcache_bin_flush(bin,
-			    umem_tcache_bin_size(bin_idx));
+			umem_ptc_bin_flush(bin,
+			    umem_ptc_bin_size(bin_idx));
 		}
 	}
 
-	/* Free the tcache structure itself */
-	umem_free(tcache, sizeof(umem_tcache_t));
+	/* Free the ptc structure itself */
+	umem_free(ptc, sizeof(umem_ptc_t));
 }

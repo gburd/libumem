@@ -42,7 +42,7 @@
 
 #include "umem_base.h"
 #include "vmem_base.h"
-#include "umem_tcache.h"
+#include "umem_ptc.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
@@ -202,11 +202,11 @@ static umem_env_item_t umem_options_items[] = {
 	},
 	{ "tcache",		"Evolving",	ITEM_UINT,
 		"Enable thread-local cache for small allocations (1=enable, 0=disable)",
-		NULL, 0, (uint_t *)&umem_tcache_enabled
+		NULL, 0, (uint_t *)&umem_ptc_enabled
 	},
 	{ "tcache_max",		"Evolving",	ITEM_SIZE,
 		"Maximum size (in bytes) cached by tcache (default 448)",
-		NULL, 0, NULL, &umem_tcache_maxsize
+		NULL, 0, NULL, &umem_ptc_maxsize
 	},
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };

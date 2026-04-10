@@ -644,7 +644,7 @@
 #include <sys/vmem_impl_user.h>
 #include "umem_base.h"
 #include "vmem_base.h"
-#include "umem_tcache.h"
+#include "umem_ptc.h"
 #include "umem_simd.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
@@ -778,11 +778,7 @@ thread_t                umem_init_thr;          /* thread initializing */
 int                     umem_init_env_ready;    /* environ pre-initted */
 int                     umem_ready = UMEM_READY_STARTUP;
 
-/*
- * Legacy symbols kept for ABI compatibility with test binaries.
- * The actual control flag is umem_tcache_enabled (umem_tcache.c).
- */
-int			umem_ptc_enabled;
+/* Legacy ABI symbol for test binaries */
 const int		umem_genasm_supported = 0;
 
 static umem_nofail_callback_t *nofail_callback;
@@ -2551,8 +2547,8 @@ umem_alloc_retry:
 		 * Try per-thread cache first for small allocations.
 		 * This provides a zero-synchronization fast path.
 		 */
-		if (likely(umem_tcache_enabled)) {
-			buf = umem_tcache_alloc(size);
+		if (likely(umem_ptc_enabled)) {
+			buf = umem_ptc_alloc(size);
 			if (likely(buf != NULL))
 				return (buf);
 			/* Cache miss - fall through to magazine layer */
@@ -2660,8 +2656,8 @@ _umem_free(void *buf, size_t size)
 		 * Try per-thread cache for small allocations.
 		 * Zero-synchronization fast path.
 		 */
-		if (likely(umem_tcache_enabled)) {
-			if (likely(umem_tcache_free(buf, size) == 0))
+		if (likely(umem_ptc_enabled)) {
+			if (likely(umem_ptc_free(buf, size) == 0))
 				return;
 			/* Cache full - fall through to magazine layer */
 		}
@@ -4018,8 +4014,7 @@ umem_init(void)
 	 * Initialize per-thread cache for fast small allocations.
 	 * This provides zero-lock access for sizes 8-448 bytes.
 	 */
-	umem_tcache_init();
-	umem_ptc_enabled = umem_tcache_enabled;
+	umem_ptc_init();
 #endif
 
 	/*

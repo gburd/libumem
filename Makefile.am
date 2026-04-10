@@ -93,8 +93,8 @@ libumem_la_SOURCES = init_lib.c \
 			umem_audit.c \
 			umem_hooks.c \
 			umem_hooks.h \
-			umem_tcache.c \
-			umem_tcache.h \
+			umem_ptc.c \
+			umem_ptc.h \
 			$(STUB_SOURCES) \
 			$(FREEBSD_SOURCES) \
 			$(PERCPU_SOURCES) \
