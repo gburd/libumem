@@ -25,6 +25,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <errno.h>
+#include <sched.h>
 
 #include "umem_ptc.h"
 #include "umem_base.h"
@@ -371,12 +372,14 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 		return;
 	}
 
-	/* Flush all bins back to magazine layer */
+	/* Flush all bins back to magazine layer incrementally,
+	 * yielding between bins to reduce thread-exit latency spike */
 	for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
 		bin = &ptc->bins[bin_idx];
 		if (bin->count > 0) {
 			umem_ptc_bin_flush(bin,
 			    umem_ptc_bin_size(bin_idx));
+			sched_yield();
 		}
 	}
 

@@ -322,6 +322,7 @@ typedef struct umem_buftag {
 #define	SLAB_ACTIVE	0	/* has allocated buffers (refcnt > 0) */
 #define	SLAB_DIRTY	1	/* empty, pages still resident */
 #define	SLAB_CLEAN	2	/* empty, pages advised away (MADV_DONTNEED) */
+#define	SLAB_RECLAIMING	3	/* madvise in progress, do not allocate */
 
 typedef struct umem_slab {
 	struct umem_cache	*slab_cache;	/* controlling cache */

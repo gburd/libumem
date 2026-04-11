@@ -390,9 +390,9 @@
  *	umem_update_lock
  *	umem_flags_lock
  *	umem_cache_t's:
- *		cache_cpu[*].cc_lock
- *		cache_full.ml_lock / cache_empty.ml_lock
  *		cache_lock
+ *		cache_full.ml_lock / cache_empty.ml_lock
+ *		cache_cpu[*].cc_lock
  *	umem_log_header_t's:
  *		lh_cpu[*].clh_lock
  *		lh_lock
@@ -1469,6 +1469,35 @@ umem_slab_alloc(umem_cache_t *cp, int umflag)
 	}
 
 	/*
+	 * Skip slabs being reclaimed (madvise in progress).
+	 * Walk forward to find a usable slab, or create a new one.
+	 */
+	if (sp->slab_state == SLAB_RECLAIMING) {
+		umem_slab_t *nullsp = &cp->cache_nullslab;
+		sp = sp->slab_next;
+		while (sp != nullsp && (sp->slab_state == SLAB_RECLAIMING ||
+		    sp->slab_head == NULL))
+			sp = sp->slab_next;
+		if (sp == nullsp || sp->slab_head == NULL) {
+			(void) mutex_unlock(&cp->cache_lock);
+			if (cp == &umem_null_cache)
+				return (NULL);
+			if ((sp = umem_slab_create(cp, umflag)) == NULL)
+				return (NULL);
+			(void) mutex_lock(&cp->cache_lock);
+			cp->cache_slab_create++;
+			if ((cp->cache_buftotal += sp->slab_chunks) >
+			    cp->cache_bufmax)
+				cp->cache_bufmax = cp->cache_buftotal;
+			sp->slab_next = cp->cache_freelist;
+			sp->slab_prev = cp->cache_freelist->slab_prev;
+			sp->slab_next->slab_prev = sp;
+			sp->slab_prev->slab_next = sp;
+			cp->cache_freelist = sp;
+		}
+	}
+
+	/*
 	 * Reactivate a slab that was idle (DIRTY or CLEAN).
 	 * CLEAN slabs had their pages advised away; the kernel will
 	 * zero-fill on first access, which is fine -- the constructor
@@ -2213,6 +2242,10 @@ retry:
  * Allocate multiple constructed objects from cache cp in a single lock
  * acquisition.  Returns the number of objects actually allocated (may be
  * less than count).  Objects are stored in bufs[0..returned-1].
+ *
+ * Magazine objects are pre-constructed: if the cache has a constructor,
+ * it was already called when the object was first allocated from the slab.
+ * Callers must not re-invoke the constructor on returned objects.
  */
 int
 umem_cache_alloc_batch(umem_cache_t *cp, void **bufs, int count, int umflag)
@@ -2574,18 +2607,19 @@ _umem_alloc(size_t size, int umflag)
 	void *buf;
 umem_alloc_retry:
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
+		umem_cache_t *cp = umem_alloc_table[index];
 		/*
 		 * Try per-thread cache first for small allocations.
-		 * This provides a zero-synchronization fast path.
+		 * Skip PTC when debug flags are active — buftag
+		 * validation must not be bypassed.
 		 */
-		if (likely(umem_ptc_enabled)) {
+		if (likely(umem_ptc_enabled) &&
+		    likely(!(cp->cache_flags & UMF_BUFTAG))) {
 			buf = umem_ptc_alloc(size);
 			if (likely(buf != NULL))
 				return (buf);
-			/* Cache miss - fall through to magazine layer */
 		}
 
-		umem_cache_t *cp = umem_alloc_table[index];
 		buf = _umem_cache_alloc(cp, umflag);
 		if (unlikely(cp->cache_flags & UMF_BUFTAG) && buf != NULL) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
@@ -2685,12 +2719,12 @@ _umem_free(void *buf, size_t size)
 
 		/*
 		 * Try per-thread cache for small allocations.
-		 * Zero-synchronization fast path.
+		 * Skip PTC when debug flags are active.
 		 */
-		if (likely(umem_ptc_enabled)) {
+		if (likely(umem_ptc_enabled) &&
+		    likely(!(cp->cache_flags & UMF_BUFTAG))) {
 			if (likely(umem_ptc_free(buf, size) == 0))
 				return;
-			/* Cache full - fall through to magazine layer */
 		}
 
 		_umem_cache_free(cp, buf);
@@ -2953,6 +2987,7 @@ umem_cache_reclaim_pages(umem_cache_t *cp)
 		if (sp->slab_state == SLAB_DIRTY) {
 			sp->slab_idle_time += umem_reap_interval;
 			if (sp->slab_idle_time >= delay) {
+				sp->slab_state = SLAB_RECLAIMING;
 				(void) mutex_unlock(&cp->cache_lock);
 				umem_slab_reclaim(cp, sp);
 				(void) mutex_lock(&cp->cache_lock);

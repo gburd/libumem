@@ -42,20 +42,15 @@ umem_lockup_cache(umem_cache_t *cp)
 	int idx;
 	int ncpus = cp->cache_cpu_mask + 1;
 
-	for (idx = 0; idx < ncpus; idx++)
-		(void) mutex_lock(&cp->cache_cpu[idx].cc_lock);
-
 	/*
-	 * Note: Depot stripes are now lock-free (no ds_lock).
-	 * For fork safety, we rely on:
-	 * 1. Per-CPU locks above prevent new magazine ops
-	 * 2. Lock-free depot uses atomic ops (safe across fork)
-	 * 3. Child process gets consistent atomic state
+	 * Lock order must match normal operation: cache_lock first,
+	 * then depot locks, then per-CPU locks (outermost to innermost).
 	 */
-
+	(void) mutex_lock(&cp->cache_lock);
 	(void) mutex_lock(&cp->cache_full.ml_lock);
 	(void) mutex_lock(&cp->cache_empty.ml_lock);
-	(void) mutex_lock(&cp->cache_lock);
+	for (idx = 0; idx < ncpus; idx++)
+		(void) mutex_lock(&cp->cache_cpu[idx].cc_lock);
 }
 
 static void
@@ -64,12 +59,12 @@ umem_release_cache(umem_cache_t *cp)
 	int idx;
 	int ncpus = cp->cache_cpu_mask + 1;
 
-	(void) mutex_unlock(&cp->cache_lock);
+	/* Release in reverse of acquisition order */
+	for (idx = ncpus - 1; idx >= 0; idx--)
+		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);
 	(void) mutex_unlock(&cp->cache_empty.ml_lock);
 	(void) mutex_unlock(&cp->cache_full.ml_lock);
-
-	for (idx = 0; idx < ncpus; idx++)
-		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);
+	(void) mutex_unlock(&cp->cache_lock);
 }
 
 static void
