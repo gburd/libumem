@@ -1852,6 +1852,60 @@ umem_depot_free(umem_cache_t *cp __attribute__((unused)),
 	(void) mutex_unlock(&mlp->ml_lock);
 }
 
+#ifdef UMEM_RSEQ_AVAILABLE
+static void *
+umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
+{
+	umem_rseq_cache_t *rc;
+	umem_magazine_t *fmp;
+	umem_magazine_t *old_mag;
+	void *buf;
+
+	rc = &cp->cache_rseq[cpu_id];
+
+	fmp = umem_depot_alloc(cp, &cp->cache_full);
+	if (fmp == NULL)
+		return (NULL);
+
+	old_mag = (umem_magazine_t *)rc->loaded_mag;
+	if (old_mag != NULL)
+		umem_depot_free(cp, &cp->cache_empty, old_mag);
+
+	rc->loaded_mag = fmp;
+	rc->rounds = rc->magsize;
+	rc->rounds--;
+	buf = fmp->mag_round[rc->rounds];
+	rc->alloc_count++;
+
+	return (buf);
+}
+
+static int
+umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
+{
+	umem_rseq_cache_t *rc;
+	umem_magazine_t *emp;
+	umem_magazine_t *old_mag;
+
+	rc = &cp->cache_rseq[cpu_id];
+
+	emp = umem_depot_alloc(cp, &cp->cache_empty);
+	if (emp == NULL)
+		return (-1);
+
+	old_mag = (umem_magazine_t *)rc->loaded_mag;
+	if (old_mag != NULL)
+		umem_depot_free(cp, &cp->cache_full, old_mag);
+
+	rc->loaded_mag = emp;
+	rc->rounds = 0;
+	emp->mag_round[0] = buf;
+	rc->rounds = 1;
+	rc->free_count++;
+	return (0);
+}
+#endif /* UMEM_RSEQ_AVAILABLE */
+
 /*
  * Update the working set statistics for cp's depot.
  */
@@ -1925,11 +1979,6 @@ umem_depot_ws_reap(umem_cache_t *cp)
 	(void) mutex_unlock(&cp->cache_empty.ml_lock);
 }
 
-/*
- * RSEQ-based lock-free magazine fast path gate.
- * Set to 1 by umem_init() when rseq registration succeeds.
- */
-static int umem_lockfree_magazine = 0;
 
 /*
  * Assembly fastpath prototypes for rseq critical sections.
@@ -1990,7 +2039,6 @@ _umem_cache_alloc(umem_cache_t *cp, int umflag)
 {
 	umem_cpu_cache_t *ccp;
 	umem_magazine_t *fmp;
-	umem_magazine_t *loaded_mag;
 	void *buf;
 	int flags_nfatal;
 	int rounds;
@@ -2006,52 +2054,39 @@ retry:
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 
 	/*
-	 * RSEQ lock-free fast path: when rseq is enabled, the CPU
-	 * hint is the actual CPU ID maintained by the kernel. Each
-	 * CPU maps to a unique cache slot, so a CAS on cc_rounds
-	 * is sufficient for correctness (the only contention is from
-	 * the extremely rare case of migration between CPU ID read
-	 * and CAS execution).
+	 * RSEQ fast path: true lock-free per-CPU magazine access.
+	 * Uses assembly critical sections when we own the rseq
+	 * registration (not glibc). Falls through to locked path
+	 * when the magazine is empty or rseq is not available.
 	 */
-	if (likely(umem_lockfree_magazine)) {
 #ifdef UMEM_RSEQ_AVAILABLE
-		if (unlikely(!umem_rseq_registered)) {
+	if (likely(umem_rseq_enabled) && cp->cache_rseq != NULL) {
+		if (unlikely(!umem_rseq_registered))
 			umem_rseq_register_thread();
-		}
-#endif
-		rounds = atomic_load_explicit(
-		    (_Atomic(int) *)&ccp->cc_rounds, memory_order_acquire);
-		if (rounds > 0) {
-			loaded_mag = (umem_magazine_t *)atomic_load_explicit(
-			    (_Atomic(umem_magazine_t *) *)&ccp->cc_loaded,
-			    memory_order_acquire);
-			if (loaded_mag != NULL) {
-				int desired = rounds - 1;
-				if (atomic_compare_exchange_weak_explicit(
-				    (_Atomic(int) *)&ccp->cc_rounds,
-				    &rounds, desired,
-				    memory_order_acq_rel,
-				    memory_order_relaxed)) {
-					buf = loaded_mag->mag_round[rounds - 1];
-					atomic_fetch_add_explicit(
-					    (_Atomic(uint_t) *)&ccp->cc_alloc,
-					    1, memory_order_relaxed);
-					if (unlikely(ccp->cc_flags &
-					    UMF_BUFTAG) &&
-					    umem_cache_alloc_debug(cp, buf,
-					    umflag) == -1) {
-						if (umem_alloc_retry(cp,
-						    umflag))
-							goto retry;
-						return (NULL);
+		if (umem_rseq_cpu_idp != NULL) {
+			int cpu = (int)*umem_rseq_cpu_idp;
+			if (cpu >= 0 && cpu < umem_rseq_get_ncpus()) {
+				umem_rseq_cache_t *rc = &cp->cache_rseq[cpu];
+#if defined(__x86_64__) || defined(__aarch64__)
+				if (umem_rseq_asm_safe) {
+					buf = umem_rseq_alloc_fastpath(rc, cpu);
+					if (buf != NULL) {
+						if (unlikely(ccp->cc_flags & UMF_BUFTAG) &&
+						    umem_cache_alloc_debug(cp, buf,
+						    umflag) == -1) {
+							if (umem_alloc_retry(cp, umflag))
+								goto retry;
+							return (NULL);
+						}
+						return (buf);
 					}
-					return (buf);
 				}
+#endif
 			}
 		}
 	}
+#endif
 
-locked_path:
 	(void) mutex_lock(&ccp->cc_lock);
 	for (;;) {
 		/*
@@ -2263,49 +2298,32 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	umem_cpu_cache_t *ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 	umem_magazine_t *emp;
 	umem_magtype_t *mtp;
-	umem_magazine_t *loaded_mag;
 	int rounds, magsize;
 
 	if (unlikely(ccp->cc_flags & UMF_BUFTAG))
 		if (umem_cache_free_debug(cp, buf) == -1)
 			return;
 
-	/*
-	 * RSEQ lock-free fast path: same approach as alloc path.
-	 * CAS on cc_rounds is safe because rseq CPU IDs give each
-	 * CPU a unique cache slot.
-	 */
-	if (likely(umem_lockfree_magazine)) {
 #ifdef UMEM_RSEQ_AVAILABLE
-		if (unlikely(!umem_rseq_registered)) {
+	if (likely(umem_rseq_enabled) && cp->cache_rseq != NULL) {
+		if (unlikely(!umem_rseq_registered))
 			umem_rseq_register_thread();
-		}
-#endif
-		rounds = atomic_load_explicit(
-		    (_Atomic(int) *)&ccp->cc_rounds, memory_order_acquire);
-		magsize = ccp->cc_magsize;
-		if ((uint_t)rounds < (uint_t)magsize) {
-			loaded_mag = (umem_magazine_t *)atomic_load_explicit(
-			    (_Atomic(umem_magazine_t *) *)&ccp->cc_loaded,
-			    memory_order_acquire);
-			if (loaded_mag != NULL) {
-				int desired = rounds + 1;
-				if (atomic_compare_exchange_weak_explicit(
-				    (_Atomic(int) *)&ccp->cc_rounds,
-				    &rounds, desired,
-				    memory_order_acq_rel,
-				    memory_order_relaxed)) {
-					loaded_mag->mag_round[rounds] = buf;
-					atomic_fetch_add_explicit(
-					    (_Atomic(uint_t) *)&ccp->cc_free,
-					    1, memory_order_relaxed);
-					return;
+		if (umem_rseq_cpu_idp != NULL) {
+			int cpu = (int)*umem_rseq_cpu_idp;
+			if (cpu >= 0 && cpu < umem_rseq_get_ncpus()) {
+				umem_rseq_cache_t *rc = &cp->cache_rseq[cpu];
+#if defined(__x86_64__) || defined(__aarch64__)
+				if (umem_rseq_asm_safe) {
+					if (umem_rseq_free_fastpath(rc, buf,
+					    cpu) == 0)
+						return;
 				}
+#endif
 			}
 		}
 	}
+#endif
 
-locked_slow_path:
 	(void) mutex_lock(&ccp->cc_lock);
 	for (;;) {
 		/*
@@ -3484,6 +3502,25 @@ umem_cache_create(
 		ccp->cc_prounds = -1;
 	}
 
+#ifdef UMEM_RSEQ_AVAILABLE
+	if (umem_rseq_enabled) {
+		int ncpus = umem_rseq_get_ncpus();
+		size_t rseq_size = ncpus * sizeof (umem_rseq_cache_t);
+		cp->cache_rseq = (umem_rseq_cache_t *)mmap(NULL, rseq_size,
+		    PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+		if (cp->cache_rseq == MAP_FAILED) {
+			cp->cache_rseq = NULL;
+		} else {
+			int i;
+			int magsize = cp->cache_magtype->mt_magsize;
+			for (i = 0; i < ncpus; i++)
+				cp->cache_rseq[i].magsize = magsize;
+		}
+	} else {
+		cp->cache_rseq = NULL;
+	}
+#endif
+
 	/*
 	 * Add the cache to the global list.  This makes it visible
 	 * to umem_update(), so the cache must be ready for business.
@@ -3540,6 +3577,26 @@ umem_cache_destroy(umem_cache_t *cp)
 	cp->cache_constructor = (umem_constructor_t *)1;
 	cp->cache_destructor = (umem_destructor_t *)2;
 	(void) mutex_unlock(&cp->cache_lock);
+
+#ifdef UMEM_RSEQ_AVAILABLE
+	if (cp->cache_rseq != NULL) {
+		int ncpus = umem_rseq_get_ncpus();
+		int i;
+		for (i = 0; i < ncpus; i++) {
+			umem_rseq_cache_t *rc = &cp->cache_rseq[i];
+			umem_magazine_t *mag;
+			mag = (umem_magazine_t *)rc->loaded_mag;
+			if (mag != NULL) {
+				if (rc->rounds > 0)
+					umem_depot_free(cp, &cp->cache_full, mag);
+				else
+					umem_depot_free(cp, &cp->cache_empty, mag);
+			}
+		}
+		(void) munmap(cp->cache_rseq, ncpus * sizeof (umem_rseq_cache_t));
+		cp->cache_rseq = NULL;
+	}
+#endif
 
 	if (cp->cache_hash_table != NULL)
 		vmem_free(umem_hash_arena, cp->cache_hash_table,
@@ -3997,15 +4054,7 @@ umem_init(void)
 	 * synchronization overhead. Falls back gracefully if
 	 * rseq is not available.
 	 */
-	if (umem_rseq_init() == 0) {
-		/*
-		 * RSEQ provides zero-cost CPU ID via kernel-maintained
-		 * TLS, replacing sched_getcpu() in get_cached_cpu_hint().
-		 * The CAS-based lock-free magazine fast path remains
-		 * disabled — it needs RSEQ critical sections (assembly)
-		 * for true per-CPU atomicity, not just better CPU IDs.
-		 */
-	}
+	(void) umem_rseq_init();
 #endif
 
 	/*

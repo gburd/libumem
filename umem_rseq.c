@@ -56,7 +56,7 @@ extern __attribute__((weak)) unsigned int __rseq_size;
 
 /* Global state */
 int umem_rseq_enabled = 0;
-umem_rseq_cache_t *umem_rseq_caches = NULL;
+int umem_rseq_asm_safe = 0;
 static int umem_rseq_ncpus = 0;
 static int umem_rseq_use_glibc = 0;
 static pthread_key_t umem_rseq_key;
@@ -172,32 +172,27 @@ umem_rseq_init(void)
 
 	umem_rseq_ncpus = (int)ncpus;
 
-	umem_rseq_caches = calloc(umem_rseq_ncpus,
-	    sizeof (umem_rseq_cache_t));
-	if (umem_rseq_caches == NULL) {
-		return -1;
-	}
-
 	if (pthread_key_create(&umem_rseq_key,
 	    umem_rseq_thread_cleanup) != 0) {
-		free(umem_rseq_caches);
-		umem_rseq_caches = NULL;
 		return -1;
 	}
 
 	umem_rseq_enabled = 1;
+	umem_rseq_asm_safe = !umem_rseq_use_glibc;
 	return 0;
 }
 
 void
 umem_rseq_fini(void)
 {
-	if (umem_rseq_caches != NULL) {
-		free(umem_rseq_caches);
-		umem_rseq_caches = NULL;
-	}
 	umem_rseq_enabled = 0;
 	pthread_key_delete(umem_rseq_key);
+}
+
+int
+umem_rseq_get_ncpus(void)
+{
+	return umem_rseq_ncpus;
 }
 
 int
@@ -275,123 +270,16 @@ umem_rseq_unregister_thread(void)
 #endif
 }
 
-/*
- * Assembly fastpath prototypes (architecture-specific)
- */
-#if defined(__x86_64__) || defined(__aarch64__)
-extern void *umem_rseq_alloc_fastpath(umem_rseq_cache_t *cache,
-    int cpu_id);
-extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache,
-    void *buf, int cpu_id);
-#endif
-
-void *
-umem_cache_alloc_rseq(void *cp, int umflag)
-{
-	umem_rseq_cache_t *rseq_cache;
-	int cpu_id;
-	void *obj;
-
-	if (!umem_rseq_registered) {
-		if (umem_rseq_register_thread() != 0) {
-			return NULL;
-		}
-	}
-
-	cpu_id = umem_rseq_get_cpu();
-	if (cpu_id < 0 || cpu_id >= umem_rseq_ncpus) {
-		return umem_cache_alloc_rseq_slowpath(cp, -1, umflag);
-	}
-
-	rseq_cache = &umem_rseq_caches[cpu_id];
-
-#if defined(__x86_64__) || defined(__aarch64__)
-	obj = umem_rseq_alloc_fastpath(rseq_cache, cpu_id);
-	if (obj != NULL) {
-		return obj;
-	}
-	return umem_cache_alloc_rseq_slowpath(cp, cpu_id, umflag);
-#else
-	return umem_cache_alloc_rseq_slowpath(cp, cpu_id, umflag);
-#endif
-}
-
-/*
- * Slow path for rseq allocation.
- *
- * Falls through to the main umem allocation path which handles
- * depot refill and slab allocation.
- */
-void *
-umem_cache_alloc_rseq_slowpath(void *cp, int cpu_id, int umflag)
-{
-	(void)cpu_id;
-	return _umem_cache_alloc((umem_cache_t *)cp, umflag);
-}
-
-void
-umem_cache_free_rseq(void *cp, void *buf)
-{
-	umem_rseq_cache_t *rseq_cache;
-	int cpu_id;
-
-	if (buf == NULL) {
-		return;
-	}
-
-	if (!umem_rseq_registered) {
-		if (umem_rseq_register_thread() != 0) {
-			_umem_cache_free((umem_cache_t *)cp, buf);
-			return;
-		}
-	}
-
-	cpu_id = umem_rseq_get_cpu();
-	if (cpu_id < 0 || cpu_id >= umem_rseq_ncpus) {
-		umem_cache_free_rseq_slowpath(cp, -1, buf);
-		return;
-	}
-
-	rseq_cache = &umem_rseq_caches[cpu_id];
-
-#if defined(__x86_64__) || defined(__aarch64__)
-	if (umem_rseq_free_fastpath(rseq_cache, buf, cpu_id) == 0) {
-		return;
-	}
-	umem_cache_free_rseq_slowpath(cp, cpu_id, buf);
-#else
-	umem_cache_free_rseq_slowpath(cp, cpu_id, buf);
-#endif
-}
-
-/*
- * Slow path for rseq free.
- *
- * Falls through to the main umem free path which handles
- * depot return and slab deallocation.
- */
-void
-umem_cache_free_rseq_slowpath(void *cp, int cpu_id, void *buf)
-{
-	(void)cpu_id;
-	_umem_cache_free((umem_cache_t *)cp, buf);
-}
-
 void
 umem_rseq_stats(int cpu_id, umem_rseq_cache_t *stats)
 {
-	if (cpu_id < 0 || cpu_id >= umem_rseq_ncpus || stats == NULL) {
-		return;
-	}
-	memcpy(stats, &umem_rseq_caches[cpu_id],
-	    sizeof (umem_rseq_cache_t));
+	(void)cpu_id;
+	(void)stats;
 }
 
 void
 umem_rseq_dump(void)
 {
-	int i;
-
 	fprintf(stderr, "RSEQ State:\n");
 	fprintf(stderr, "  Enabled: %d\n", umem_rseq_enabled);
 	fprintf(stderr, "  Registered: %d\n", umem_rseq_registered);
@@ -401,26 +289,6 @@ umem_rseq_dump(void)
 	if (umem_rseq_registered && umem_rseq_cpu_idp != NULL) {
 		fprintf(stderr, "  Current CPU: %u\n",
 		    *umem_rseq_cpu_idp);
-	}
-
-	if (umem_rseq_caches != NULL) {
-		fprintf(stderr, "\nPer-CPU Statistics:\n");
-		for (i = 0; i < umem_rseq_ncpus; i++) {
-			umem_rseq_cache_t *cache = &umem_rseq_caches[i];
-			if (cache->alloc_count == 0 &&
-			    cache->free_count == 0) {
-				continue;
-			}
-			fprintf(stderr, "  CPU %d:\n", i);
-			fprintf(stderr, "    Allocs: %lu\n",
-			    (unsigned long)cache->alloc_count);
-			fprintf(stderr, "    Frees: %lu\n",
-			    (unsigned long)cache->free_count);
-			fprintf(stderr, "    Restarts: %lu\n",
-			    (unsigned long)cache->restart_count);
-			fprintf(stderr, "    Migrations: %lu\n",
-			    (unsigned long)cache->migration_count);
-		}
 	}
 }
 

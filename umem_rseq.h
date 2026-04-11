@@ -90,17 +90,19 @@ typedef struct umem_rseq_cache {
 	uint64_t free_count;	/* Free counter */
 	uint64_t restart_count;	/* Number of rseq restarts */
 	uint64_t migration_count; /* CPU migrations detected */
-	char pad[64 - (2 * sizeof(void*) + 2 * sizeof(int) + 4 * sizeof(uint64_t))];
+	int magsize;		/* Max rounds (magazine capacity) */
+	char pad[64 - (2 * sizeof(void*) + 2 * sizeof(int) +
+	    4 * sizeof(uint64_t) + sizeof(int))];
 } umem_rseq_cache_t __attribute__((aligned(64)));
 
 /*
  * Global rseq state
  */
 extern int umem_rseq_enabled;		/* rseq available and enabled */
+extern int umem_rseq_asm_safe;		/* safe to use assembly fast path */
 extern __thread int umem_rseq_registered;	/* Thread has registered rseq */
 extern __thread struct umem_rseq umem_rseq_area; /* Per-thread rseq area */
 extern __thread volatile uint32_t *umem_rseq_cpu_idp; /* Ptr to active cpu_id */
-extern umem_rseq_cache_t *umem_rseq_caches; /* Per-CPU cache array */
 
 /*
  * umem_rseq_available - Check if rseq is available on this system
@@ -172,34 +174,10 @@ static inline int umem_rseq_get_cpu(void)
  */
 
 /*
- * umem_cache_alloc_rseq - Allocate from cache using rseq
- *
- * Uses restartable sequences to ensure atomic per-CPU magazine access.
- * If the thread migrates to a different CPU during the operation, the
- * kernel restarts the operation from the beginning on the new CPU.
- *
- * @param cp     Cache to allocate from
- * @param umflag Allocation flags
- *
- * @return Allocated object or NULL on failure
+ * The rseq fast path (assembly) and slow path (depot reload) are
+ * wired directly into _umem_cache_alloc() and _umem_cache_free()
+ * in umem.c. Each umem_cache has a per-CPU array of umem_rseq_cache_t.
  */
-void *umem_cache_alloc_rseq(void *cp, int umflag);
-
-/*
- * umem_cache_free_rseq - Free to cache using rseq
- *
- * Uses restartable sequences to ensure atomic per-CPU magazine access.
- *
- * @param cp  Cache to free to
- * @param buf Object to free
- */
-void umem_cache_free_rseq(void *cp, void *buf);
-
-/*
- * Fallback functions for when rseq operation needs to go slow path
- */
-void *umem_cache_alloc_rseq_slowpath(void *cp, int cpu_id, int umflag);
-void umem_cache_free_rseq_slowpath(void *cp, int cpu_id, void *buf);
 
 /*
  * Statistics and debugging
@@ -218,43 +196,9 @@ void umem_rseq_stats(int cpu_id, umem_rseq_cache_t *stats);
  *
  * Prints rseq information to stderr.
  */
+int umem_rseq_get_ncpus(void);
+
 void umem_rseq_dump(void);
-
-/*
- * Architecture-specific assembly for rseq critical sections
- *
- * These are implemented in assembly to ensure precise control over
- * instruction sequences and support for rseq abort points.
- */
-
-/*
- * umem_rseq_alloc_fastpath_asm - Assembly fastpath for allocation
- *
- * Implements rseq critical section for magazine allocation.
- * Returns object pointer or NULL if magazine is empty.
- *
- * @param cache   Per-CPU cache pointer
- * @param rseq_cs Critical section descriptor pointer
- *
- * @return Object pointer or NULL
- */
-void *umem_rseq_alloc_fastpath_asm(umem_rseq_cache_t *cache,
-    struct umem_rseq_cs *rseq_cs);
-
-/*
- * umem_rseq_free_fastpath_asm - Assembly fastpath for free
- *
- * Implements rseq critical section for magazine free.
- * Returns 0 on success, -1 if magazine is full.
- *
- * @param cache   Per-CPU cache pointer
- * @param buf     Object to free
- * @param rseq_cs Critical section descriptor pointer
- *
- * @return 0 on success, -1 if full
- */
-int umem_rseq_free_fastpath_asm(umem_rseq_cache_t *cache, void *buf,
-    struct umem_rseq_cs *rseq_cs);
 
 #ifdef __cplusplus
 }
