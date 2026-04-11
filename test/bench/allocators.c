@@ -42,6 +42,8 @@ static void *umem_handle = NULL;
 static void* (*umem_alloc_fn)(size_t, int) = NULL;
 static void* (*umem_zalloc_fn)(size_t, int) = NULL;
 static void (*umem_free_fn)(void*, size_t) = NULL;
+static pthread_once_t umem_once = PTHREAD_ONCE_INIT;
+static int umem_init_result = 0;
 
 /* Size tracking header - prepended to each allocation */
 typedef struct {
@@ -55,25 +57,22 @@ typedef struct {
 static void* umem_alloc_wrapper(size_t size);
 static void umem_free_wrapper(void *ptr);
 
-static int umem_init_once(void) {
-    if (umem_handle) return 1;
-
-    /* Load libumem.so - try multiple paths */
+static void umem_do_init(void) {
     const char *paths[] = {
-        "/home/gburd/ws/libumem/.libs/libumem.so.0",
+        "./libs/libumem.so.0",
+        ".libs/libumem.so.0",
         "libumem.so.0",
         NULL
     };
 
     for (int i = 0; paths[i] != NULL; i++) {
-        /* Use RTLD_GLOBAL to share symbol namespace (pthread state, etc) */
         umem_handle = dlopen(paths[i], RTLD_LAZY | RTLD_GLOBAL);
         if (umem_handle) break;
     }
 
     if (!umem_handle) {
         fprintf(stderr, "Failed to load libumem: %s\n", dlerror());
-        return 0;
+        return;
     }
 
     umem_alloc_fn = dlsym(umem_handle, "umem_alloc");
@@ -84,8 +83,15 @@ static int umem_init_once(void) {
         fprintf(stderr, "Failed to load umem symbols: %s\n", dlerror());
         dlclose(umem_handle);
         umem_handle = NULL;
-        return 0;
+        return;
     }
+
+    umem_init_result = 1;
+}
+
+static int umem_init_once(void) {
+    pthread_once(&umem_once, umem_do_init);
+    return umem_init_result;
 
     return 1;
 }
