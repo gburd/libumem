@@ -2873,10 +2873,12 @@ static void
 umem_cache_magazine_resize(umem_cache_t *cp)
 {
 	umem_magtype_t *mtp = cp->cache_magtype;
+	umem_magtype_t *last = &umem_magtype[
+	    sizeof (umem_magtype) / sizeof (umem_magtype[0]) - 1];
 
 	ASSERT(IN_UPDATE());
 
-	if (cp->cache_chunksize < mtp->mt_maxbuf) {
+	if (mtp < last && cp->cache_chunksize < mtp->mt_maxbuf) {
 		umem_cache_magazine_purge(cp);
 		(void) mutex_lock(&cp->cache_full.ml_lock);
 		cp->cache_magtype = ++mtp;
