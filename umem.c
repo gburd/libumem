@@ -444,7 +444,9 @@
 #if HAVE_ALLOCA_H
 #include <alloca.h>
 #elif defined(__GNUC__)
-#define alloca __builtin_alloca
+# ifndef alloca
+#  define alloca __builtin_alloca
+# endif
 #endif
 #include <errno.h>
 #include <limits.h>
@@ -457,9 +459,9 @@
 #include <signal.h>
 #if HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 #if HAVE_SYS_MMAN_H
 #include <sys/mman.h>
-#endif
 #endif
 #ifdef _WIN32
 #include <windows.h>
@@ -1922,6 +1924,12 @@ umem_depot_ws_reap(umem_cache_t *cp)
 	}
 	(void) mutex_unlock(&cp->cache_empty.ml_lock);
 }
+
+/*
+ * RSEQ-based lock-free magazine fast path gate.
+ * Set to 1 by umem_init() when rseq registration succeeds.
+ */
+static int umem_lockfree_magazine = 0;
 
 /*
  * Assembly fastpath prototypes for rseq critical sections.
