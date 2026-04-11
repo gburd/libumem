@@ -457,7 +457,12 @@
 #include <signal.h>
 #if HAVE_UNISTD_H
 #include <unistd.h>
+#if HAVE_SYS_MMAN_H
 #include <sys/mman.h>
+#endif
+#endif
+#ifdef _WIN32
+#include <windows.h>
 #endif
 #if HAVE_ATOMIC_H
 #include <atomic.h>
@@ -1919,24 +1924,17 @@ umem_depot_ws_reap(umem_cache_t *cp)
 }
 
 /*
- * RSEQ-based lock-free magazine fast path.
- *
- * When enabled (Linux 4.18+ with rseq support), the allocation
- * and free fast paths use the rseq CPU ID to select the per-CPU
- * magazine cache. The rseq CPU ID is a simple memory read (~1ns)
- * maintained by the kernel, providing the actual CPU number without
- * a syscall.
- *
- * With a true CPU ID, each thread accesses a unique per-CPU cache
- * slot (no hash collisions), so a single CAS on cc_rounds suffices
- * to serialize the rare case where migration occurs between CPU ID
- * read and magazine access. The CAS-based fast path was previously
- * racy because thread ID hashing caused multiple threads to map to
- * the same CPU slot; with rseq CPU IDs this cannot happen.
- *
- * Set to 1 by umem_init() when rseq registration succeeds.
+ * Assembly fastpath prototypes for rseq critical sections.
+ * These are implemented in umem_rseq_x86_64.S (or equivalent).
  */
-static int umem_lockfree_magazine = 0;
+#ifdef UMEM_RSEQ_AVAILABLE
+#if defined(__x86_64__) || defined(__aarch64__)
+extern void *umem_rseq_alloc_fastpath(umem_rseq_cache_t *cache,
+    int cpu_id);
+extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache,
+    void *buf, int cpu_id);
+#endif
+#endif
 
 static inline void __attribute__((always_inline))
 umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
@@ -2890,7 +2888,10 @@ umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
 {
 	size_t reclaim_size = cp->cache_slabsize - sizeof (umem_slab_t);
 
-#if defined(__FreeBSD__)
+#if defined(_WIN32)
+	(void) VirtualAlloc(sp->slab_base, reclaim_size,
+	    MEM_RESET, PAGE_READWRITE);
+#elif defined(__FreeBSD__)
 	(void) madvise(sp->slab_base, reclaim_size, MADV_FREE);
 #else
 	(void) madvise(sp->slab_base, reclaim_size, MADV_DONTNEED);

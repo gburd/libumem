@@ -35,11 +35,17 @@
 #include <sys/mman.h>
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #ifdef HAVE_SYS_SYSMACROS_H
 #include <sys/sysmacros.h>
 #endif
 
+#if HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 
 #include "vmem_base.h"
 
@@ -51,6 +57,15 @@
  */
 #define	ALLOC_PROT	PROT_READ | PROT_WRITE
 #define	FREE_PROT	PROT_NONE
+
+/*
+ * MAP_FAILED portability.
+ * On Windows without sys/mman.h, define MAP_FAILED for the fallback
+ * code path in vmem_mmap_top_alloc.
+ */
+#ifndef MAP_FAILED
+#define	MAP_FAILED	((void *)-1)
+#endif
 
 /*
  * MAP_ANON / MAP_ANONYMOUS portability.

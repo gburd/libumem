@@ -44,6 +44,9 @@
 #include <dlfcn.h>
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <fcntl.h>
 #include <string.h>
 

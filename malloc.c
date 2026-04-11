@@ -47,7 +47,12 @@
 /* External: umem readiness state */
 extern int umem_ready;
 
+#if HAVE_SYS_MMAN_H
 #include <sys/mman.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 /*
  * Bootstrap allocator: Used during early initialization to avoid deadlock
@@ -79,10 +84,17 @@ bootstrap_malloc(size_t size)
 	bootstrap_header_t *hdr;
 	size_t total_size = size + sizeof(bootstrap_header_t);
 
+#ifdef _WIN32
+	hdr = (bootstrap_header_t *)VirtualAlloc(NULL, total_size,
+	    MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	if (hdr == NULL)
+		return (NULL);
+#else
 	hdr = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
 	    MAP_PRIVATE | MAP_ANON, -1, 0);
 	if (hdr == MAP_FAILED)
 		return (NULL);
+#endif
 
 	hdr->magic = BOOTSTRAP_MAGIC;
 	hdr->size = total_size;
@@ -113,7 +125,11 @@ bootstrap_free(void *buf)
 	if (hdr->magic != BOOTSTRAP_MAGIC)
 		return;
 
+#ifdef _WIN32
+	(void) VirtualFree(hdr, 0, MEM_RELEASE);
+#else
 	(void) munmap(hdr, hdr->size);
+#endif
 }
 
 /*

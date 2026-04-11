@@ -9,6 +9,7 @@
 #include "config.h"
 
 #include <stdint.h>
+#include <time.h>
 #include <pthread.h>
 
 #ifdef HAVE_SYS_TIME_H
@@ -16,6 +17,15 @@
 #endif
 
 #ifdef _WIN32
+typedef char *caddr_t;
+#endif
+
+/*
+ * Thread return type and calling convention.
+ * MinGW provides pthreads, so we use the same path as Linux/macOS.
+ * Only native MSVC Win32 builds need DWORD/WINAPI.
+ */
+#if defined(_WIN32) && !defined(__MINGW32__)
 # define THR_RETURN DWORD
 # define THR_API WINAPI
 # define INLINE __inline
@@ -57,9 +67,16 @@ typedef struct timespec timestruc_t;
 typedef long long longlong_t;
 typedef struct timespec timespec_t;
 static INLINE hrtime_t gethrtime(void) {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return (((uint64_t)tv.tv_sec) << 32) | tv.tv_usec;
+#if defined(_WIN32) && !defined(__MINGW32__)
+  LARGE_INTEGER freq, count;
+  QueryPerformanceFrequency(&freq);
+  QueryPerformanceCounter(&count);
+  return (hrtime_t)((count.QuadPart * 1000000000LL) / freq.QuadPart);
+#else
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (((uint64_t)ts.tv_sec) << 32) | (uint64_t)ts.tv_nsec;
+#endif
 }
 # define thr_self()                pthread_self()
 static INLINE thread_t _thr_self(void) {

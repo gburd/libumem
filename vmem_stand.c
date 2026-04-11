@@ -40,8 +40,12 @@
 
 #include <errno.h>
 #include <limits.h>
+#ifdef HAVE_SYS_SYSMACROS_H
 #include <sys/sysmacros.h>
+#endif
+#if HAVE_SYS_MMAN_H
 #include <sys/mman.h>
+#endif
 #include <unistd.h>
 #include <strings.h>
 

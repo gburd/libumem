@@ -45,7 +45,9 @@
 #include <alloca.h>
 #elif defined(__GNUC__)
 /* GCC always provides __builtin_alloca */
-#define alloca __builtin_alloca
+# ifndef alloca
+#  define alloca __builtin_alloca
+# endif
 #endif
 
 #ifdef HAVE_SYS_SYSMACROS_H
@@ -520,6 +522,16 @@ struct umem_cache {
 	umem_magtype_t	*cache_magtype;		/* magazine type */
 	umem_maglist_t	cache_full;		/* full magazines */
 	umem_maglist_t	cache_empty;		/* empty magazines */
+
+#ifdef UMEM_RSEQ_AVAILABLE
+	/*
+	 * Per-CPU rseq layer
+	 * Each CPU has its own magazine cache accessed via rseq critical
+	 * sections. Array of umem_rseq_get_ncpus() entries, allocated
+	 * with mmap for page-aligned per-CPU access.
+	 */
+	umem_rseq_cache_t *cache_rseq;		/* per-CPU rseq caches */
+#endif
 
 #ifdef UMEM_NUMA_AVAILABLE
 	/*
