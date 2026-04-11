@@ -126,6 +126,25 @@ umem_ptc_init(void)
 			size_to_bin_table[size / 8] = bin;
 		}
 	}
+
+	/*
+	 * Disable PTC for size classes whose backing cache has debug
+	 * flags enabled. PTC bypasses the magazine layer and would
+	 * skip UMF_AUDIT/UMF_DEADBEEF/UMF_REDZONE checking.
+	 */
+	for (bin = 0; bin < PTC_NBINS; bin++) {
+		umem_cache_t *cp;
+		size = ptc_size_classes[bin];
+		if (size == 0)
+			continue;
+		cp = umem_alloc_table[(size - 1) >> UMEM_ALIGN_SHIFT];
+		if (cp != NULL &&
+		    (cp->cache_flags & (UMF_AUDIT | UMF_DEADBEEF | UMF_REDZONE))) {
+			if (size / 8 < sizeof(size_to_bin_table)) {
+				size_to_bin_table[size / 8] = -1;
+			}
+		}
+	}
 }
 
 /*
