@@ -132,6 +132,26 @@ umem_ptc_init(void)
 		}
 	}
 
+	/*
+	 * Disable PTC for size classes whose backing cache has debug
+	 * flags enabled. PTC bypasses the magazine layer and would
+	 * skip UMF_AUDIT/UMF_DEADBEEF/UMF_REDZONE checking.
+	 */
+	for (bin = 0; bin < PTC_NBINS; bin++) {
+		umem_cache_t *cp;
+		size = ptc_size_classes[bin];
+		if (size == 0)
+			continue;
+		cp = umem_alloc_table[(size - 1) >> UMEM_ALIGN_SHIFT];
+		if (cp != NULL &&
+		    (cp->cache_flags &
+		    (UMF_AUDIT | UMF_DEADBEEF | UMF_REDZONE))) {
+			if (size / 8 < sizeof(size_to_bin_table)) {
+				size_to_bin_table[size / 8] = -1;
+			}
+		}
+	}
+
 	ptc_table_ready = 1;
 }
 
@@ -302,7 +322,14 @@ umem_ptc_free(void *ptr, size_t size)
 }
 
 /*
- * Flush cached objects from a bin to the magazine layer
+ * Flush cached objects from a bin to the magazine layer.
+ * Uses batch free to take cc_lock once instead of per-object.
+ *
+ * Objects flushed here enter the per-CPU magazine via umem_cache_free_batch(),
+ * which is intentional: the magazine layer is the correct next level in
+ * the caching hierarchy (PTC -> magazine -> depot -> slab). This means
+ * flushed objects may be re-cached in magazines rather than immediately
+ * reaching the depot, but that is the desired behavior for warm reuse.
  */
 void
 umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)

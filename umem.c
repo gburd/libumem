@@ -390,9 +390,9 @@
  *	umem_update_lock
  *	umem_flags_lock
  *	umem_cache_t's:
- *		cache_lock
- *		cache_full.ml_lock / cache_empty.ml_lock
  *		cache_cpu[*].cc_lock
+ *		cache_full.ml_lock / cache_empty.ml_lock
+ *		cache_lock
  *	umem_log_header_t's:
  *		lh_cpu[*].clh_lock
  *		lh_lock
