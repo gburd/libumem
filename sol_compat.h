@@ -49,6 +49,20 @@ typedef char *caddr_t;
 #ifdef _WIN32
 #define bcopy(s, d, n)  	memcpy(d, s, n)
 #define bzero(m, s)			memset(m, 0, s)
+/*
+ * MinGW may not declare gettimeofday even with sys/time.h.
+ * Provide a compat wrapper using clock_gettime(CLOCK_REALTIME).
+ */
+static INLINE int umem_gettimeofday(struct timeval *tv, void *tz)
+{
+  struct timespec ts;
+  (void)tz;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  tv->tv_sec = ts.tv_sec;
+  tv->tv_usec = (long)(ts.tv_nsec / 1000);
+  return 0;
+}
+#define gettimeofday(tv, tz) umem_gettimeofday(tv, tz)
 #endif
 
 /*
