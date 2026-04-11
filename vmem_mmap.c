@@ -55,8 +55,10 @@
  * generation in the heap), which has been removed.
  * W^X enforcement on modern OSes (FreeBSD, OpenBSD) rejects RWX mappings.
  */
+#ifndef _WIN32
 #define	ALLOC_PROT	PROT_READ | PROT_WRITE
 #define	FREE_PROT	PROT_NONE
+#endif
 
 /*
  * MAP_FAILED portability.
@@ -67,6 +69,7 @@
 #define	MAP_FAILED	((void *)-1)
 #endif
 
+#ifndef _WIN32
 /*
  * MAP_ANON / MAP_ANONYMOUS portability.
  * POSIX does not define either; MAP_ANONYMOUS is the Linux/glibc name,
@@ -85,6 +88,7 @@
 #define	MAP_NORESERVE	0
 #endif
 #define	FREE_FLAGS	MAP_PRIVATE | MAP_ANON | MAP_NORESERVE
+#endif /* !_WIN32 */
 
 #ifdef MAP_ALIGN
 #define	CHUNKSIZE	(64*1024)	/* 64 kilobytes */
@@ -162,7 +166,11 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 		if (ret != NULL)
 			return (ret);
 		else {
+#ifdef _WIN32
+			(void) VirtualFree(buf, 0, MEM_RELEASE);
+#else
 			(void) munmap(buf, size);
+#endif
 			errno = old_errno;
 			return (NULL);
 		}
