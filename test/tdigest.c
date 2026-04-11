@@ -5,6 +5,7 @@
 #include "tdigest.h"
 #include <errno.h>
 #include <stdint.h>
+#include <float.h>
 
 #ifndef TD_MALLOC_INCLUDE
 #define TD_MALLOC_INCLUDE "td_malloc.h"
@@ -152,8 +153,8 @@ void td_reset(td_histogram_t *h) {
     if (!h) {
         return;
     }
-    h->min = __DBL_MAX__;
-    h->max = -h->min;
+    h->min = DBL_MAX;
+    h->max = -DBL_MAX;
     h->merged_nodes = 0;
     h->merged_weight = 0;
     h->unmerged_nodes = 0;
