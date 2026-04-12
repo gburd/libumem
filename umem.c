@@ -700,7 +700,11 @@ umem_cache_t            umem_null_cache = {
 		DEFAULTMUTEX, NULL, 0, 0, 0, 0 /* cache_full */
 	}, {
 		DEFAULTMUTEX, NULL, 0, 0, 0, 0 /* cache_empty */
-	}, {
+	},
+	0,					/* cache_depot_ncpus */
+	NULL,					/* cache_depot_full */
+	NULL,					/* cache_depot_empty */
+	{
 		{
 			/* umem_cpu_cache_t: cc_lock, cc_alloc, cc_free, cc_loaded, cc_ploaded, cc_rounds, cc_prounds, cc_magsize, cc_flags */
 			DEFAULTMUTEX,           /* cc_lock */
@@ -1832,16 +1836,16 @@ atomic_cas_tagged_ptr(volatile umem_tagged_ptr_t *ptr,
  */
 
 /*
- * Allocate a magazine from the depot.
- * Simple mutex-based pop from a linked list.
+ * Pop a magazine from a single maglist, returning NULL if empty.
+ * Caller does NOT hold mlp->ml_lock; this function acquires it.
+ * Tracks contention on the cache if trylock fails.
  */
 static umem_magazine_t *
-umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
+umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
 {
 	umem_magazine_t *mp;
 
 	if (mutex_trylock(&mlp->ml_lock) != 0) {
-		/* Lock contention — track it for magazine auto-tuning */
 		atomic_add_64(&cp->cache_depot_contention, 1);
 		(void) mutex_lock(&mlp->ml_lock);
 	}
@@ -1859,18 +1863,14 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 	mlp->ml_alloc++;
 
 	(void) mutex_unlock(&mlp->ml_lock);
-
-	ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
 	return (mp);
 }
 
 /*
- * Free a magazine to the depot.
- * Simple mutex-based push to a linked list.
+ * Push a magazine onto a single maglist.
  */
 static void
-umem_depot_free(umem_cache_t *cp __attribute__((unused)),
-    umem_maglist_t *mlp, umem_magazine_t *mp)
+umem_depot_push(umem_maglist_t *mlp, umem_magazine_t *mp)
 {
 	(void) mutex_lock(&mlp->ml_lock);
 
@@ -1879,6 +1879,74 @@ umem_depot_free(umem_cache_t *cp __attribute__((unused)),
 	mlp->ml_total++;
 
 	(void) mutex_unlock(&mlp->ml_lock);
+}
+
+/*
+ * Allocate a magazine from the depot.
+ * Tries per-CPU depot first (our CPU, then steal from others),
+ * then falls back to the global depot list.
+ */
+static umem_magazine_t *
+umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
+{
+	umem_magazine_t *mp;
+	umem_maglist_t *pcpu_arr;
+	int ncpus = cp->cache_depot_ncpus;
+
+	if (ncpus > 0) {
+		int cpu = get_cached_cpu_hint() & (ncpus - 1);
+
+		pcpu_arr = (mlp == &cp->cache_full) ?
+		    cp->cache_depot_full : cp->cache_depot_empty;
+
+		/* Try our CPU's depot first */
+		mp = umem_depot_pop(cp, &pcpu_arr[cpu]);
+		if (mp != NULL) {
+			ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+			return (mp);
+		}
+
+		/* Steal from other CPUs */
+		for (int i = 1; i < ncpus; i++) {
+			int other = (cpu + i) & (ncpus - 1);
+			mp = umem_depot_pop(cp, &pcpu_arr[other]);
+			if (mp != NULL) {
+				ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+				return (mp);
+			}
+		}
+	}
+
+	/* Fall back to global depot */
+	mp = umem_depot_pop(cp, mlp);
+	if (mp != NULL) {
+		ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+	}
+	return (mp);
+}
+
+/*
+ * Free a magazine to the depot.
+ * Pushes to per-CPU depot if available, otherwise to global list.
+ */
+static void
+umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp,
+    umem_magazine_t *mp)
+{
+	int ncpus = cp->cache_depot_ncpus;
+
+	if (ncpus > 0) {
+		int cpu = get_cached_cpu_hint() & (ncpus - 1);
+		umem_maglist_t *pcpu_arr;
+
+		pcpu_arr = (mlp == &cp->cache_full) ?
+		    cp->cache_depot_full : cp->cache_depot_empty;
+
+		umem_depot_push(&pcpu_arr[cpu], mp);
+		return;
+	}
+
+	umem_depot_push(mlp, mp);
 }
 
 #ifdef UMEM_RSEQ_AVAILABLE
@@ -1936,22 +2004,32 @@ umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
 #endif /* UMEM_RSEQ_AVAILABLE */
 
 /*
+ * Update working set statistics for a single maglist.
+ */
+static void
+umem_maglist_ws_update(umem_maglist_t *mlp)
+{
+	(void) mutex_lock(&mlp->ml_lock);
+	mlp->ml_reaplimit = mlp->ml_min;
+	mlp->ml_min = mlp->ml_total;
+	(void) mutex_unlock(&mlp->ml_lock);
+}
+
+/*
  * Update the working set statistics for cp's depot.
  */
 static void
 umem_depot_ws_update(umem_cache_t *cp)
 {
-	/* Full magazines */
-	(void) mutex_lock(&cp->cache_full.ml_lock);
-	cp->cache_full.ml_reaplimit = cp->cache_full.ml_min;
-	cp->cache_full.ml_min = cp->cache_full.ml_total;
-	(void) mutex_unlock(&cp->cache_full.ml_lock);
+	int i;
 
-	/* Empty magazines */
-	(void) mutex_lock(&cp->cache_empty.ml_lock);
-	cp->cache_empty.ml_reaplimit = cp->cache_empty.ml_min;
-	cp->cache_empty.ml_min = cp->cache_empty.ml_total;
-	(void) mutex_unlock(&cp->cache_empty.ml_lock);
+	umem_maglist_ws_update(&cp->cache_full);
+	umem_maglist_ws_update(&cp->cache_empty);
+
+	for (i = 0; i < cp->cache_depot_ncpus; i++) {
+		umem_maglist_ws_update(&cp->cache_depot_full[i]);
+		umem_maglist_ws_update(&cp->cache_depot_empty[i]);
+	}
 }
 
 /*
@@ -1973,39 +2051,47 @@ umem_depot_reap_pop(umem_maglist_t *mlp)
 }
 
 /*
+ * Reap magazines from a single maglist that have fallen out of
+ * the working set.  full_rounds is the number of rounds to pass
+ * to umem_magazine_destroy (magsize for full mags, 0 for empty).
+ */
+static void
+umem_maglist_ws_reap(umem_cache_t *cp, umem_maglist_t *mlp,
+    int full_rounds)
+{
+	long reap;
+	umem_magazine_t *mp;
+
+	(void) mutex_lock(&mlp->ml_lock);
+	reap = MIN(mlp->ml_reaplimit, mlp->ml_min);
+	while (reap-- > 0) {
+		mp = umem_depot_reap_pop(mlp);
+		if (mp == NULL)
+			break;
+		ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+		umem_magazine_destroy(cp, mp, full_rounds);
+	}
+	(void) mutex_unlock(&mlp->ml_lock);
+}
+
+/*
  * Reap all magazines that have fallen out of the depot's working set.
  */
 static void
 umem_depot_ws_reap(umem_cache_t *cp)
 {
-	long reap;
-	umem_magazine_t *mp;
+	int magsize = cp->cache_magtype->mt_magsize;
+	int i;
 
 	ASSERT(cp->cache_next == NULL || IN_REAP());
 
-	/* Reap full magazines */
-	(void) mutex_lock(&cp->cache_full.ml_lock);
-	reap = MIN(cp->cache_full.ml_reaplimit, cp->cache_full.ml_min);
-	while (reap-- > 0) {
-		mp = umem_depot_reap_pop(&cp->cache_full);
-		if (mp == NULL)
-			break;
-		ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
-		umem_magazine_destroy(cp, mp, cp->cache_magtype->mt_magsize);
-	}
-	(void) mutex_unlock(&cp->cache_full.ml_lock);
+	umem_maglist_ws_reap(cp, &cp->cache_full, magsize);
+	umem_maglist_ws_reap(cp, &cp->cache_empty, 0);
 
-	/* Reap empty magazines */
-	(void) mutex_lock(&cp->cache_empty.ml_lock);
-	reap = MIN(cp->cache_empty.ml_reaplimit, cp->cache_empty.ml_min);
-	while (reap-- > 0) {
-		mp = umem_depot_reap_pop(&cp->cache_empty);
-		if (mp == NULL)
-			break;
-		ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
-		umem_magazine_destroy(cp, mp, 0);
+	for (i = 0; i < cp->cache_depot_ncpus; i++) {
+		umem_maglist_ws_reap(cp, &cp->cache_depot_full[i], magsize);
+		umem_maglist_ws_reap(cp, &cp->cache_depot_empty[i], 0);
 	}
-	(void) mutex_unlock(&cp->cache_empty.ml_lock);
 }
 
 
@@ -3523,6 +3609,44 @@ umem_cache_create(
 	cp->cache_empty.ml_reaplimit = 0;
 	cp->cache_empty.ml_alloc = 0;
 
+	/*
+	 * Allocate per-CPU depot arrays.
+	 * ncpus is already a power of 2 (rounded in umem_init).
+	 */
+	{
+		int ncpus = (int)umem_max_ncpus;
+		size_t arr_size = ncpus * sizeof (umem_maglist_t);
+
+		cp->cache_depot_ncpus = ncpus;
+		cp->cache_depot_full = (umem_maglist_t *)mmap(NULL,
+		    arr_size, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANON, -1, 0);
+		cp->cache_depot_empty = (umem_maglist_t *)mmap(NULL,
+		    arr_size, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANON, -1, 0);
+
+		if (cp->cache_depot_full == MAP_FAILED ||
+		    cp->cache_depot_empty == MAP_FAILED) {
+			if (cp->cache_depot_full != MAP_FAILED)
+				(void) munmap(cp->cache_depot_full, arr_size);
+			if (cp->cache_depot_empty != MAP_FAILED)
+				(void) munmap(cp->cache_depot_empty, arr_size);
+			cp->cache_depot_full = NULL;
+			cp->cache_depot_empty = NULL;
+			cp->cache_depot_ncpus = 0;
+		} else {
+			int i;
+			for (i = 0; i < ncpus; i++) {
+				(void) mutex_init(
+				    &cp->cache_depot_full[i].ml_lock,
+				    USYNC_THREAD, NULL);
+				(void) mutex_init(
+				    &cp->cache_depot_empty[i].ml_lock,
+				    USYNC_THREAD, NULL);
+			}
+		}
+	}
+
 	for (mtp = umem_magtype; chunksize <= mtp->mt_minbuf; mtp++)
 		continue;
 
@@ -3644,6 +3768,21 @@ umem_cache_destroy(umem_cache_t *cp)
 
 	(void) mutex_destroy(&cp->cache_full.ml_lock);
 	(void) mutex_destroy(&cp->cache_empty.ml_lock);
+
+	if (cp->cache_depot_ncpus > 0) {
+		int i;
+		size_t arr_size = cp->cache_depot_ncpus *
+		    sizeof (umem_maglist_t);
+		for (i = 0; i < cp->cache_depot_ncpus; i++) {
+			(void) mutex_destroy(
+			    &cp->cache_depot_full[i].ml_lock);
+			(void) mutex_destroy(
+			    &cp->cache_depot_empty[i].ml_lock);
+		}
+		(void) munmap(cp->cache_depot_full, arr_size);
+		(void) munmap(cp->cache_depot_empty, arr_size);
+	}
+
 	(void) mutex_destroy(&cp->cache_lock);
 
 	vmem_free(umem_cache_arena, cp, UMEM_CACHE_SIZE(umem_max_ncpus));

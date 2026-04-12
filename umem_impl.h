@@ -524,6 +524,11 @@ struct umem_cache {
 	umem_maglist_t	cache_full;		/* full magazines */
 	umem_maglist_t	cache_empty;		/* empty magazines */
 
+	/* Per-CPU depot layer — eliminates cross-CPU contention */
+	int		cache_depot_ncpus;	/* number of per-CPU depot slots */
+	umem_maglist_t	*cache_depot_full;	/* array[ncpus] of full mag lists */
+	umem_maglist_t	*cache_depot_empty;	/* array[ncpus] of empty mag lists */
+
 #ifdef UMEM_RSEQ_AVAILABLE
 	/*
 	 * Per-CPU rseq layer

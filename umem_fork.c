@@ -44,11 +44,15 @@ umem_lockup_cache(umem_cache_t *cp)
 
 	/*
 	 * Lock order must match normal operation: cache_lock first,
-	 * then depot locks, then per-CPU locks (outermost to innermost).
+	 * then depot locks (global then per-CPU), then per-CPU cache locks.
 	 */
 	(void) mutex_lock(&cp->cache_lock);
 	(void) mutex_lock(&cp->cache_full.ml_lock);
 	(void) mutex_lock(&cp->cache_empty.ml_lock);
+	for (idx = 0; idx < cp->cache_depot_ncpus; idx++) {
+		(void) mutex_lock(&cp->cache_depot_full[idx].ml_lock);
+		(void) mutex_lock(&cp->cache_depot_empty[idx].ml_lock);
+	}
 	for (idx = 0; idx < ncpus; idx++)
 		(void) mutex_lock(&cp->cache_cpu[idx].cc_lock);
 }
@@ -62,6 +66,10 @@ umem_release_cache(umem_cache_t *cp)
 	/* Release in reverse of acquisition order */
 	for (idx = ncpus - 1; idx >= 0; idx--)
 		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);
+	for (idx = cp->cache_depot_ncpus - 1; idx >= 0; idx--) {
+		(void) mutex_unlock(&cp->cache_depot_empty[idx].ml_lock);
+		(void) mutex_unlock(&cp->cache_depot_full[idx].ml_lock);
+	}
 	(void) mutex_unlock(&cp->cache_empty.ml_lock);
 	(void) mutex_unlock(&cp->cache_full.ml_lock);
 	(void) mutex_unlock(&cp->cache_lock);
