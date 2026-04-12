@@ -31,6 +31,8 @@ extern MunitSuite suite_magazine_tune;
 extern MunitSuite suite_cache_consistency;
 extern MunitSuite suite_umem_stats;
 extern MunitSuite suite_depot_consistency;
+extern MunitSuite suite_sbo;
+extern MunitSuite suite_arena;
 
 static MunitSuite* test_suites[] = {
     &suite_umem_alloc,
@@ -53,6 +55,8 @@ static MunitSuite* test_suites[] = {
     &suite_cache_consistency,
     &suite_umem_stats,
     &suite_depot_consistency,
+    &suite_sbo,
+    &suite_arena,
     NULL
 };
 

@@ -112,6 +112,8 @@ libumem_la_SOURCES = init_lib.c \
 			umem_hooks.h \
 			umem_ptc.c \
 			umem_ptc.h \
+			umem_arena.c \
+			umem_arena.h \
 			$(STUB_SOURCES) \
 			$(FREEBSD_SOURCES) \
 			$(PERCPU_SOURCES) \
@@ -204,7 +206,9 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_magazine_tune.c \
 			 test/unit/test_cache_consistency.c \
 			 test/unit/test_umem_stats.c \
-			 test/unit/test_depot_consistency.c
+			 test/unit/test_depot_consistency.c \
+			 test/unit/test_sbo.c \
+			 test/unit/test_arena.c
 test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread
 test_test_main_CPPFLAGS = -I$(srcdir)/test
@@ -289,7 +293,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 	test/bench/bench_framework.c test/bench/bench_framework.h test/bench/allocators.c \
 	test/property/prop_alloc_free.c
 
-nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h
+nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h umem_arena.h
 
 if ENABLE_PERCPU_CACHING
 nobase_include_HEADERS += umem_percpu.h

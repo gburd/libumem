@@ -26,6 +26,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <sched.h>
+#include <stdint.h>
 
 #include "umem_ptc.h"
 #include "umem_base.h"
@@ -425,4 +426,87 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 
 	/* Free the ptc structure itself */
 	umem_free(ptc, sizeof(umem_ptc_t));
+}
+
+/* ================================================================
+ * Small-Buffer Optimization (SBO)
+ *
+ * Thread-local bump allocator for tiny allocations (<= 128 bytes).
+ * ================================================================ */
+
+static __thread char sbo_buf[UMEM_SBO_BUFSZ]
+    __attribute__((tls_model("initial-exec"), aligned(UMEM_SBO_ALIGN)));
+static __thread size_t sbo_offset
+    __attribute__((tls_model("initial-exec"))) = 0;
+
+/*
+ * SBO is disabled when any debug flags are active on the smallest cache,
+ * or when PTC itself is disabled.
+ */
+int
+umem_sbo_enabled(void)
+{
+	if (!umem_ptc_enabled || !ptc_table_ready) {
+		return (0);
+	}
+	/* Check if debug flags are set on any small cache */
+	if (umem_flags & (UMF_AUDIT | UMF_DEADBEEF | UMF_REDZONE)) {
+		return (0);
+	}
+	return (1);
+}
+
+void *
+umem_sbo_alloc(size_t size, int umflags)
+{
+	size_t aligned_size;
+	size_t new_offset;
+	void *ptr;
+
+	(void)umflags;
+
+	if (!umem_sbo_enabled()) {
+		return (NULL);
+	}
+
+	if (size == 0 || size > UMEM_SBO_MAXALLOC) {
+		return (NULL);
+	}
+
+	/* Round up to alignment boundary */
+	aligned_size = (size + UMEM_SBO_ALIGN - 1) & ~(UMEM_SBO_ALIGN - 1);
+	new_offset = sbo_offset + aligned_size;
+
+	if (new_offset > UMEM_SBO_BUFSZ) {
+		/* Buffer full — reset and retry once */
+		sbo_offset = 0;
+		new_offset = aligned_size;
+		if (new_offset > UMEM_SBO_BUFSZ) {
+			return (NULL);
+		}
+	}
+
+	ptr = &sbo_buf[sbo_offset];
+	sbo_offset = new_offset;
+	return (ptr);
+}
+
+int
+umem_sbo_free(void *ptr, size_t size)
+{
+	(void)size;
+
+	/* Check if ptr falls within our thread-local SBO buffer */
+	if ((char *)ptr >= sbo_buf &&
+	    (char *)ptr < sbo_buf + UMEM_SBO_BUFSZ) {
+		/* No-op: SBO memory is freed on reset */
+		return (1);
+	}
+	return (0);
+}
+
+void
+umem_sbo_reset(void)
+{
+	sbo_offset = 0;
 }

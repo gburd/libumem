@@ -116,6 +116,49 @@ void umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size);
  */
 int umem_ptc_bin_refill(umem_ptc_bin_t *bin, size_t size);
 
+/*
+ * Small-Buffer Optimization (SBO)
+ *
+ * Thread-local bump allocator for tiny allocations (<= 128 bytes).
+ * Serves from a pre-allocated 4KB thread-local buffer with no metadata
+ * overhead and no locking (~3-5ns).
+ *
+ * Constraints:
+ * - When the buffer is full, it resets and all outstanding pointers from
+ *   the previous generation become invalid. Callers must not hold SBO
+ *   pointers across a reset boundary.
+ * - Free is a no-op for SBO pointers; memory is reclaimed only on reset.
+ * - Disabled when debug flags (UMF_AUDIT, UMF_DEADBEEF, UMF_REDZONE)
+ *   are active, falling back to umem_alloc().
+ */
+#define UMEM_SBO_BUFSZ		4096	/* per-thread SBO buffer size */
+#define UMEM_SBO_MAXALLOC	128	/* max allocation served by SBO */
+#define UMEM_SBO_ALIGN		16	/* bump pointer alignment */
+
+/*
+ * Allocate from the thread-local SBO buffer.
+ * Returns NULL if SBO is disabled, size > UMEM_SBO_MAXALLOC, or
+ * the buffer is full (caller should fall back to umem_alloc).
+ */
+void *umem_sbo_alloc(size_t size, int umflags);
+
+/*
+ * Free an SBO pointer. This is a no-op if ptr came from the SBO buffer.
+ * Returns 1 if ptr was an SBO pointer (caller should not free elsewhere),
+ * returns 0 if ptr is not from SBO (caller must free normally).
+ */
+int umem_sbo_free(void *ptr, size_t size);
+
+/*
+ * Reset the SBO buffer (all outstanding SBO pointers become invalid).
+ */
+void umem_sbo_reset(void);
+
+/*
+ * Check if SBO is enabled for the current thread.
+ */
+int umem_sbo_enabled(void);
+
 #ifdef __cplusplus
 }
 #endif

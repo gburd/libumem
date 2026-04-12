@@ -81,6 +81,39 @@ extern void umem_cache_free(umem_cache_t *, void *);
 
 extern void umem_reap(void);
 
+/*
+ * Small-Buffer Optimization (SBO) — thread-local bump allocator
+ *
+ * Provides sub-5ns allocations for sizes <= 128 bytes from a 4KB
+ * thread-local buffer. Free is a no-op; memory is reclaimed when
+ * the buffer resets (which happens automatically when full).
+ *
+ * WARNING: All SBO pointers from the current generation become invalid
+ * when the buffer resets. Do not hold SBO pointers across reset
+ * boundaries. Disabled when debug flags are active.
+ */
+extern void *umem_sbo_alloc(size_t, int);
+extern int umem_sbo_free(void *, size_t);
+extern void umem_sbo_reset(void);
+extern int umem_sbo_enabled(void);
+
+/*
+ * Scoped Arena Allocator — bump-pointer allocator backed by mmap
+ *
+ * Single-threaded bump allocator for scoped allocation patterns.
+ * Allocations are 16-byte aligned. Reset sets offset to 0 (instant
+ * bulk free). Destroy releases all backing memory.
+ *
+ * Not thread-safe: each arena should be used by one thread only.
+ */
+typedef struct umem_arena umem_arena_t;
+extern umem_arena_t *umem_arena_create(size_t, int);
+extern void *umem_arena_alloc(umem_arena_t *, size_t);
+extern void umem_arena_reset(umem_arena_t *);
+extern void umem_arena_destroy(umem_arena_t *);
+extern size_t umem_arena_available(const umem_arena_t *);
+extern size_t umem_arena_capacity(const umem_arena_t *);
+
 #ifdef	__cplusplus
 }
 #endif
