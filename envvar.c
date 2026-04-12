@@ -43,6 +43,7 @@
 #include "umem_base.h"
 #include "vmem_base.h"
 #include "umem_ptc.h"
+#include "umem_own.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
@@ -215,6 +216,10 @@ static umem_env_item_t umem_options_items[] = {
 	{ "tcache_max",		"Evolving",	ITEM_SIZE,
 		"Maximum size (in bytes) cached by tcache (default 448)",
 		NULL, 0, NULL, &umem_ptc_maxsize
+	},
+	{ "ownership",		"Evolving",	ITEM_UINT,
+		"Enable ownership/borrowing debug mode (1=enable, 0=disable)",
+		NULL, 0,	&umem_ownership_debug
 	},
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };
