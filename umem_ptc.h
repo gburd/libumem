@@ -36,7 +36,7 @@ extern "C" {
  * maintaining thread-local bins of recently freed objects.
  *
  * Design:
- * - Thread-local cache for allocations <= ptc_maxsize (default 448 bytes)
+ * - Thread-local cache for allocations <= ptc_maxsize (default 2048 bytes)
  * - Array of bins, one per size class
  * - Each bin holds up to PTC_NSLOTS pointers
  * - Zero synchronization for cache hit
@@ -44,7 +44,7 @@ extern "C" {
  */
 
 #define PTC_NSLOTS 32        /* slots per bin */
-#define PTC_NBINS 16         /* number of small size classes */
+#define PTC_NBINS 28         /* number of size classes (up to 2048B) */
 
 /*
  * Per-bin structure holding cached objects
@@ -69,7 +69,7 @@ typedef struct umem_ptc {
 /*
  * Global configuration
  */
-extern size_t umem_ptc_maxsize;      /* max size cached (default 448) */
+extern size_t umem_ptc_maxsize;      /* max size cached (default 2048) */
 extern int umem_ptc_enabled;         /* ptc globally enabled */
 
 /*
