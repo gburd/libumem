@@ -68,24 +68,27 @@ static int tests_failed = 0;
 } while (0)
 
 /*
- * PTC size classes (LP64).  The first 16 entries of umem_alloc_sizes[]
- * are what PTC covers, corresponding to TMEM_NENTRIES=16.
+ * PTC size classes covering allocations up to 2048 bytes.
  *
- * LP64: 8, 16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448
- * ILP32: 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256
+ * LP64: 8..2048 (25 active classes)
+ * ILP32: 8..2048 (28 active classes)
  */
 #ifdef _LP64
 static const size_t ptc_sizes[] = {
 	8, 16, 32, 48, 64, 80, 96, 112,
-	128, 160, 192, 224, 256, 320, 384, 448
+	128, 160, 192, 224, 256, 320, 384, 448,
+	512, 640, 768, 896, 1024, 1280, 1536, 1792,
+	2048
 };
-#define PTC_MAX_SIZE 448
+#define PTC_MAX_SIZE 2048
 #else
 static const size_t ptc_sizes[] = {
 	8, 16, 24, 32, 40, 48, 56, 64,
-	80, 96, 112, 128, 160, 192, 224, 256
+	80, 96, 112, 128, 160, 192, 224, 256,
+	320, 384, 448, 512, 640, 768, 896, 1024,
+	1280, 1536, 1792, 2048
 };
-#define PTC_MAX_SIZE 256
+#define PTC_MAX_SIZE 2048
 #endif
 #define NUM_PTC_SIZES (sizeof (ptc_sizes) / sizeof (ptc_sizes[0]))
 
