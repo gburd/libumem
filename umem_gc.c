@@ -41,6 +41,7 @@
 #include <umem_impl.h>
 #include "umem_base.h"
 #include "umem_gc.h"
+#include "umem_gc_roots.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
@@ -298,6 +299,119 @@ gc_create_caches(void)
 	}
 
 	return (0);
+}
+
+/* ----------------------------------------------------------------
+ * Mark phase: work queue for iterative marking
+ * ---------------------------------------------------------------- */
+
+#define	GC_MARK_QUEUE_INIT	256
+
+typedef struct gc_mark_queue {
+	umem_gc_header_t	**mq_items;
+	size_t			mq_count;
+	size_t			mq_capacity;
+} gc_mark_queue_t;
+
+static gc_mark_queue_t gc_mark_queue;
+
+static int
+gc_mark_queue_init(gc_mark_queue_t *q)
+{
+	q->mq_items = umem_alloc(
+	    GC_MARK_QUEUE_INIT * sizeof (umem_gc_header_t *), UMEM_DEFAULT);
+	if (q->mq_items == NULL)
+		return (-1);
+	q->mq_count = 0;
+	q->mq_capacity = GC_MARK_QUEUE_INIT;
+	return (0);
+}
+
+static void
+gc_mark_queue_destroy(gc_mark_queue_t *q)
+{
+	if (q->mq_items != NULL) {
+		umem_free(q->mq_items,
+		    q->mq_capacity * sizeof (umem_gc_header_t *));
+		q->mq_items = NULL;
+	}
+	q->mq_count = 0;
+	q->mq_capacity = 0;
+}
+
+static int
+gc_mark_queue_push(gc_mark_queue_t *q, umem_gc_header_t *hdr)
+{
+	if (q->mq_count >= q->mq_capacity) {
+		size_t new_cap = q->mq_capacity * 2;
+		umem_gc_header_t **new_items = umem_alloc(
+		    new_cap * sizeof (umem_gc_header_t *), UMEM_DEFAULT);
+		if (new_items == NULL)
+			return (-1);
+		memcpy(new_items, q->mq_items,
+		    q->mq_count * sizeof (umem_gc_header_t *));
+		umem_free(q->mq_items,
+		    q->mq_capacity * sizeof (umem_gc_header_t *));
+		q->mq_items = new_items;
+		q->mq_capacity = new_cap;
+	}
+	q->mq_items[q->mq_count++] = hdr;
+	return (0);
+}
+
+static umem_gc_header_t *
+gc_mark_queue_pop(gc_mark_queue_t *q)
+{
+	if (q->mq_count == 0)
+		return (NULL);
+	return (q->mq_items[--q->mq_count]);
+}
+
+/*
+ * Mark callback invoked by the root scanner for each potential pointer.
+ * If the value points to a GC-managed object, mark it and enqueue
+ * for recursive scanning (unless atomic).
+ */
+static void
+gc_mark_callback(void *potential_ptr)
+{
+	umem_gc_header_t *hdr = umem_gc_find_header(potential_ptr);
+	if (hdr == NULL)
+		return;
+
+	uint32_t mark_val = atomic_load(&gc_mark_value);
+	if (hdr->gc_mark == mark_val)
+		return;
+
+	umem_gc_mark_object(hdr);
+
+	if (!(hdr->gc_flags & UMEM_GC_ATOMIC))
+		(void) gc_mark_queue_push(&gc_mark_queue, hdr);
+}
+
+/*
+ * Scan a marked non-atomic object's contents for interior pointers.
+ * Each word-aligned value is checked as a potential GC pointer.
+ */
+static void
+gc_scan_object(umem_gc_header_t *hdr)
+{
+	void *data = UMEM_GC_USER_PTR(hdr);
+	umem_gc_scan_stack(data, (char *)data + hdr->gc_size,
+	    gc_mark_callback);
+}
+
+/*
+ * Drain the mark queue: pop objects and scan their contents.
+ * New objects discovered during scanning are pushed back onto the queue.
+ */
+static void
+gc_drain_mark_queue(void)
+{
+	umem_gc_header_t *hdr;
+
+	while ((hdr = gc_mark_queue_pop(&gc_mark_queue)) != NULL)
+		gc_scan_object(hdr);
 }
 
 /* ----------------------------------------------------------------
@@ -692,19 +806,28 @@ umem_gc_collect(void)
 
 	size_t allocated_before = atomic_load(&gc_bytes_allocated);
 
-	/* Phase 1: Mark (stub - actual marking done by root scanner) */
+	/* Phase 1: Mark */
 	gc_reset_marks();
 	atomic_store(&gc_phase, GC_PHASE_MARK);
 
-	/*
-	 * The root scanner (Task #2) will call umem_gc_mark_object() on
-	 * reachable objects. For now, we proceed directly to remark/sweep.
-	 * When the root scanner is integrated, it will be called here:
-	 *   umem_gc_scan_roots();
-	 */
+	/* Initialize mark work queue */
+	if (gc_mark_queue_init(&gc_mark_queue) != 0) {
+		(void) pthread_mutex_unlock(&gc_collect_lock);
+		return;
+	}
 
-	/* Phase 2: Remark (STW pause placeholder) */
+	/* Scan all roots (stacks, registers, data segments) */
+	umem_gc_scan_all_roots(gc_mark_callback);
+
+	/* Drain work queue: recursively scan non-atomic marked objects */
+	gc_drain_mark_queue();
+
+	/* Phase 2: Remark (STW pause - rescan for missed references) */
 	atomic_store(&gc_phase, GC_PHASE_REMARK);
+	umem_gc_scan_all_roots(gc_mark_callback);
+	gc_drain_mark_queue();
+
+	gc_mark_queue_destroy(&gc_mark_queue);
 
 	/* Phase 3: Sweep */
 	atomic_store(&gc_phase, GC_PHASE_SWEEP);

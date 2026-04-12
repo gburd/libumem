@@ -34,6 +34,7 @@ extern MunitSuite suite_depot_consistency;
 extern MunitSuite suite_sbo;
 extern MunitSuite suite_arena;
 extern MunitSuite suite_umem_own;
+extern MunitSuite suite_gc;
 
 static MunitSuite* test_suites[] = {
     &suite_umem_alloc,
@@ -59,6 +60,7 @@ static MunitSuite* test_suites[] = {
     &suite_depot_consistency,
     &suite_sbo,
     &suite_arena,
+    &suite_gc,
     NULL
 };
 
