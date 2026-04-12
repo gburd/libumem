@@ -116,6 +116,8 @@ libumem_la_SOURCES = init_lib.c \
 			umem_arena.h \
 			umem_own.c \
 			umem_own.h \
+			umem_gc.c \
+			umem_gc.h \
 			umem_gc_roots.c \
 			umem_gc_roots.h \
 			$(STUB_SOURCES) \
