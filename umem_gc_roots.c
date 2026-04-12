@@ -30,7 +30,7 @@
 
 #include "config.h"
 #include "umem_gc_roots.h"
-#include "sol_compat.h"
+#include <umem_impl.h>
 
 #include <setjmp.h>
 #include <string.h>
