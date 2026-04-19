@@ -60,6 +60,7 @@ static MunitSuite* test_suites[] = {
     &suite_sbo,
     &suite_arena,
     &suite_gc,
+    &suite_coverage,
     &suite_sparsemap,
     &suite_vmem,
     &suite_vmem_sbrk,

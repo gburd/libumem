@@ -4,7 +4,7 @@ ACLOCAL_AMFLAGS = -I m4
 lib_LTLIBRARIES = libumem.la libumem_malloc.la
 noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  umem_ptc_test umem_ptc_fork_test umem_ptc_bench \
-		  test/test_main \
+		  test/test_main test/test_debug \
 		  test/property/prop_alloc_free2 \
 		  test/property/prop_cache \
 		  test/property/prop_fragmentation \
@@ -225,6 +225,10 @@ test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread
 test_test_main_CPPFLAGS = -I$(srcdir)/test
 
+test_test_debug_SOURCES = test/test_debug.c
+test_test_debug_LDADD = libumem.la
+test_test_debug_LDFLAGS = -pthread
+
 # Property-based tests
 test_property_prop_alloc_free2_SOURCES = test/property/prop_alloc_free2.c test/qc.c
 test_property_prop_alloc_free2_LDADD = libumem.la libumem_malloc.la
@@ -329,7 +333,7 @@ endif
 # test/test_main (comprehensive unit tests) hangs due to malloc interposition
 # creating circular dependency: pthread_create -> malloc -> pthread_getspecific.
 # See PTHREAD_LIMITATION.md for details.
-TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test
+TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug
 
 html-local:
 	mkdir -p docs
