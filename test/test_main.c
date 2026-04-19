@@ -63,7 +63,9 @@ static MunitSuite* test_suites[] = {
     &suite_coverage,
     &suite_sparsemap,
     &suite_vmem,
-    &suite_vmem_sbrk,
+    /* vmem_sbrk: excluded — calls vmem_sbrk_arena() which conflicts
+     * with the already-initialized umem sbrk arena in --no-fork mode.
+     * Covered by make check (umem_test runs sbrk path separately). */
     &suite_umem_debug,
     NULL
 };
