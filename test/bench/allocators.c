@@ -59,9 +59,11 @@ static void umem_free_wrapper(void *ptr);
 
 static void umem_do_init(void) {
     const char *paths[] = {
-        "./libs/libumem.so.0",
+        "./.libs/libumem.so.0",
         ".libs/libumem.so.0",
+        "../.libs/libumem.so.0",
         "libumem.so.0",
+        "libumem.so",
         NULL
     };
 
