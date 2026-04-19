@@ -645,6 +645,17 @@ static umem_cpu_t *umem_cpus = &umem_startup_cpu;       /* cpu list */
  */
 __thread int cached_cpu_hint = -1;
 
+/*
+ * NUMA cpu-to-node mapping table.
+ *
+ * Maps each depot CPU slot to its NUMA node. On non-NUMA systems
+ * or when libnuma is unavailable, all entries are 0 (single node).
+ * Populated during umem_init() after umem_max_ncpus is finalized.
+ */
+#define UMEM_MAX_DEPOT_CPUS 256
+static int umem_cpu_node[UMEM_MAX_DEPOT_CPUS];
+static int umem_num_nodes = 1;
+
 volatile uint32_t umem_reaping;
 
 thread_t                umem_update_thr;
@@ -704,6 +715,15 @@ umem_cache_t            umem_null_cache = {
 	0,					/* cache_depot_ncpus */
 	NULL,					/* cache_depot_full */
 	NULL,					/* cache_depot_empty */
+	0,					/* cache_depot_local */
+	0,					/* cache_depot_remote */
+	0,					/* cache_depot_cross_node */
+#ifdef UMEM_RSEQ_AVAILABLE
+	NULL,					/* cache_rseq */
+#endif
+#ifdef UMEM_NUMA_AVAILABLE
+	NULL,					/* cache_numa_info */
+#endif
 	{
 		{
 			/* umem_cpu_cache_t: cc_lock, cc_alloc, cc_free, cc_loaded, cc_ploaded, cc_rounds, cc_prounds, cc_magsize, cc_flags */
@@ -1883,8 +1903,18 @@ umem_depot_push(umem_maglist_t *mlp, umem_magazine_t *mp)
 
 /*
  * Allocate a magazine from the depot.
- * Tries per-CPU depot first (our CPU, then steal from others),
- * then falls back to the global depot list.
+ * Tries per-CPU depot first (our CPU, then steal from same NUMA node,
+ * then steal from any CPU), then falls back to the global depot list.
+ *
+ * NUMA-aware stealing order:
+ *   1. Local CPU depot
+ *   2. Other CPUs on the same NUMA node
+ *   3. CPUs on remote NUMA nodes
+ *   4. Global depot
+ *
+ * This ordering keeps memory locality high on NUMA systems: objects freed
+ * on a CPU are physically close to that CPU's node, so stealing from a
+ * same-node CPU avoids cross-node memory traffic.
  *
  * Lock ordering: caller must NOT hold cp->cache_lock.
  * The depot locks (ml_lock) are below cache_lock in the hierarchy.
@@ -1900,29 +1930,47 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 
 	if (ncpus > 0) {
 		int cpu = get_cached_cpu_hint() & (ncpus - 1);
+		int local_node = umem_cpu_node[cpu];
 
 		pcpu_arr = (mlp == &cp->cache_full) ?
 		    cp->cache_depot_full : cp->cache_depot_empty;
 
-		/* Try our CPU's depot first */
+		/* 1. Try local CPU depot */
 		mp = umem_depot_pop(cp, &pcpu_arr[cpu]);
 		if (mp != NULL) {
 			ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+			cp->cache_depot_local++;
 			return (mp);
 		}
 
-		/* Steal from other CPUs */
+		/* 2. Steal from same NUMA node first */
 		for (int i = 1; i < ncpus; i++) {
 			int other = (cpu + i) & (ncpus - 1);
+			if (umem_cpu_node[other] != local_node)
+				continue;
 			mp = umem_depot_pop(cp, &pcpu_arr[other]);
 			if (mp != NULL) {
 				ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+				cp->cache_depot_remote++;
+				return (mp);
+			}
+		}
+
+		/* 3. Steal from remote NUMA nodes */
+		for (int i = 1; i < ncpus; i++) {
+			int other = (cpu + i) & (ncpus - 1);
+			if (umem_cpu_node[other] == local_node)
+				continue;
+			mp = umem_depot_pop(cp, &pcpu_arr[other]);
+			if (mp != NULL) {
+				ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+				cp->cache_depot_cross_node++;
 				return (mp);
 			}
 		}
 	}
 
-	/* Fall back to global depot */
+	/* 4. Fall back to global depot */
 	mp = umem_depot_pop(cp, mlp);
 	if (mp != NULL) {
 		ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
@@ -4298,6 +4346,29 @@ umem_init(void)
 	}
 	umem_cpus = new_cpus;
 	umem_cpu_mask = (umem_max_ncpus - 1);
+
+	/*
+	 * Build the CPU-to-NUMA-node mapping table.
+	 *
+	 * When libnuma is available, query the actual topology.
+	 * Otherwise all CPUs map to node 0 (single-node assumption).
+	 * The depot stealing loop uses this to prefer same-node CPUs.
+	 */
+	{
+		uint32_t ncpus_map = umem_max_ncpus;
+		if (ncpus_map > UMEM_MAX_DEPOT_CPUS)
+			ncpus_map = UMEM_MAX_DEPOT_CPUS;
+		memset(umem_cpu_node, 0, sizeof (umem_cpu_node));
+#ifdef HAVE_LIBNUMA
+		if (numa_available() >= 0) {
+			umem_num_nodes = numa_max_node() + 1;
+			for (uint32_t ci = 0; ci < ncpus_map; ci++) {
+				int node = numa_node_of_cpu((int)ci);
+				umem_cpu_node[ci] = (node >= 0) ? node : 0;
+			}
+		}
+#endif
+	}
 
 	if (umem_maxverify == 0)
 		umem_maxverify = maxverify;

@@ -569,6 +569,11 @@ struct umem_cache {
 	umem_maglist_t	*cache_depot_full;	/* array[ncpus] of full mag lists */
 	umem_maglist_t	*cache_depot_empty;	/* array[ncpus] of empty mag lists */
 
+	/* NUMA-aware depot statistics */
+	uint64_t	cache_depot_local;	/* hits from local CPU */
+	uint64_t	cache_depot_remote;	/* steals from same NUMA node */
+	uint64_t	cache_depot_cross_node;	/* steals from remote NUMA node */
+
 #ifdef UMEM_RSEQ_AVAILABLE
 	/*
 	 * Per-CPU rseq layer

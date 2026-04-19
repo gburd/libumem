@@ -452,6 +452,21 @@ umem_cache_free_percpu_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
  * NUMA-Aware Allocation
  */
 
+/*
+ * NUMA-aware allocation.
+ *
+ * On NUMA systems with libnuma, uses numa_alloc_onnode() to bind
+ * memory to the requested node. This is a hint to the kernel's
+ * page allocator; the pages will be physically allocated on that
+ * node if memory is available there.
+ *
+ * Without libnuma, falls through to regular umem_alloc(). The
+ * per-CPU depot already provides implicit NUMA locality: objects
+ * freed by a CPU on node N stay in that CPU's depot and are
+ * recycled to threads running on the same CPU (and thus same node).
+ * The NUMA-aware stealing order in umem_depot_alloc() further
+ * preserves this by preferring same-node CPUs.
+ */
 void *
 umem_alloc_numa(size_t size, int numa_node, int umflag)
 {
@@ -463,14 +478,11 @@ umem_alloc_numa(size_t size, int numa_node, int umflag)
 		if (ptr != NULL) {
 			return ptr;
 		}
-		/* Fall through to regular allocation on failure */
 	}
+#else
+	(void)numa_node;
 #endif
 
-	/*
-	 * Fallback to regular allocation.
-	 * NUMA integration with vmem arenas deferred to 3.0.
-	 */
 	return umem_alloc(size, umflag);
 }
 
@@ -511,12 +523,31 @@ umem_percpu_stats(umem_cache_t *cp, int cpu_id, umem_percpu_cache_t *stats)
 void
 umem_numa_stats(umem_cache_t *cp, umem_numa_stats_t *stats)
 {
+	if (stats == NULL)
+		return;
+
+	memset(stats, 0, sizeof (*stats));
+
 	/*
-	 * NUMA statistics tracking deferred to 3.0.
-	 * Will need counters for local/remote allocations and
-	 * cross-node magazine misses.
+	 * Aggregate NUMA-aware depot counters from the cache.
+	 * These are incremented in umem_depot_alloc() based on
+	 * whether the magazine came from the local CPU, a same-node
+	 * CPU, or a cross-node CPU.
 	 */
-	memset(stats, 0, sizeof(*stats));
+	stats->local_allocs = cp->cache_depot_local;
+	stats->remote_allocs = cp->cache_depot_remote;
+	stats->cross_node_allocs = cp->cache_depot_cross_node;
+
+	/*
+	 * Free-side locality: currently we always free to the local
+	 * CPU's depot (umem_depot_free uses get_cached_cpu_hint),
+	 * so all frees are local. Remote frees would occur if a
+	 * thread migrates between the alloc and free, but the depot
+	 * push always targets the current CPU.
+	 */
+	stats->local_frees = cp->cache_depot_local +
+	    cp->cache_depot_remote + cp->cache_depot_cross_node;
+	stats->remote_frees = 0;
 }
 
 void

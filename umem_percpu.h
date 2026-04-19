@@ -65,13 +65,18 @@ typedef struct umem_percpu_cache {
 
 /*
  * NUMA statistics per cache
+ *
+ * Tracks locality of depot magazine operations. "local" means the
+ * allocation came from the same CPU's depot slot, "remote" means it was
+ * stolen from a different CPU on the same NUMA node, "cross_node" means
+ * it was stolen from a CPU on a different NUMA node.
  */
 typedef struct umem_numa_stats {
-	uint64_t	ns_local_allocs;	/* allocations from local node */
-	uint64_t	ns_remote_allocs;	/* allocations from remote node */
-	uint64_t	ns_cross_node_misses;	/* magazine misses needing remote */
-	uint64_t	ns_local_bytes;		/* bytes allocated locally */
-	uint64_t	ns_remote_bytes;	/* bytes allocated remotely */
+	uint64_t	local_allocs;		/* from local CPU depot */
+	uint64_t	remote_allocs;		/* stolen from same NUMA node */
+	uint64_t	cross_node_allocs;	/* stolen from different NUMA node */
+	uint64_t	local_frees;		/* freed to local CPU depot */
+	uint64_t	remote_frees;		/* freed to different CPU depot */
 } umem_numa_stats_t;
 
 /*
