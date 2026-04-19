@@ -1,15 +1,14 @@
 /*
- * Allocator implementations for benchmarking
- * Note: Uses dlopen to load allocators dynamically to avoid malloc override
+ * Allocator implementations for benchmarking.
+ * umem is linked directly (no dlopen needed).
  */
 
 #include "bench_framework.h"
+#include <umem.h>
 #include <stdlib.h>
 #include <string.h>
-#include <dlfcn.h>
 #include <stdio.h>
-
-#define UMEM_DEFAULT 0
+#include <pthread.h>
 
 /* ========== libc (system malloc) ========== */
 static void* libc_alloc(size_t size) {
@@ -38,13 +37,6 @@ allocator_ops_t allocator_libc = {
 };
 
 /* ========== libumem (dynamically loaded) ========== */
-static void *umem_handle = NULL;
-static void* (*umem_alloc_fn)(size_t, int) = NULL;
-static void* (*umem_zalloc_fn)(size_t, int) = NULL;
-static void (*umem_free_fn)(void*, size_t) = NULL;
-static pthread_once_t umem_once = PTHREAD_ONCE_INIT;
-static int umem_init_result = 0;
-
 /* Size tracking header - prepended to each allocation */
 typedef struct {
     size_t size;
@@ -57,55 +49,10 @@ typedef struct {
 static void* umem_alloc_wrapper(size_t size);
 static void umem_free_wrapper(void *ptr);
 
-static void umem_do_init(void) {
-    const char *paths[] = {
-        "./.libs/libumem.so.0",
-        ".libs/libumem.so.0",
-        "../.libs/libumem.so.0",
-        "libumem.so.0",
-        "libumem.so",
-        NULL
-    };
-
-    for (int i = 0; paths[i] != NULL; i++) {
-        umem_handle = dlopen(paths[i], RTLD_LAZY | RTLD_GLOBAL);
-        if (umem_handle) break;
-    }
-
-    if (!umem_handle) {
-        fprintf(stderr, "Failed to load libumem: %s\n", dlerror());
-        return;
-    }
-
-    umem_alloc_fn = dlsym(umem_handle, "umem_alloc");
-    umem_zalloc_fn = dlsym(umem_handle, "umem_zalloc");
-    umem_free_fn = dlsym(umem_handle, "umem_free");
-
-    if (!umem_alloc_fn || !umem_zalloc_fn || !umem_free_fn) {
-        fprintf(stderr, "Failed to load umem symbols: %s\n", dlerror());
-        dlclose(umem_handle);
-        umem_handle = NULL;
-        return;
-    }
-
-    umem_init_result = 1;
-}
-
-static int umem_init_once(void) {
-    pthread_once(&umem_once, umem_do_init);
-    return umem_init_result;
-
-    return 1;
-}
-
 static void* umem_alloc_wrapper(size_t size) {
-    if (!umem_init_once()) {
-        return NULL;
-    }
-
     /* Allocate extra space for size header */
     size_t total_size = size + sizeof(umem_size_header_t);
-    void *raw_ptr = umem_alloc_fn(total_size, UMEM_DEFAULT);
+    void *raw_ptr = umem_alloc(total_size, UMEM_DEFAULT);
     if (!raw_ptr) {
         return NULL;
     }
@@ -120,13 +67,9 @@ static void* umem_alloc_wrapper(size_t size) {
 }
 
 static void* umem_calloc_wrapper(size_t nmemb, size_t size) {
-    if (!umem_init_once()) {
-        return NULL;
-    }
-
     size_t user_size = nmemb * size;
     size_t total_size = user_size + sizeof(umem_size_header_t);
-    void *raw_ptr = umem_zalloc_fn(total_size, UMEM_DEFAULT);
+    void *raw_ptr = umem_zalloc(total_size, UMEM_DEFAULT);
     if (!raw_ptr) {
         return NULL;
     }
@@ -141,7 +84,7 @@ static void* umem_calloc_wrapper(size_t nmemb, size_t size) {
 }
 
 static void* umem_realloc_wrapper(void *ptr, size_t new_size) {
-    if (!umem_init_once()) return NULL;
+    /* umem is linked directly — no init needed */
 
     /* Standard realloc behavior */
     if (!ptr) {
@@ -179,7 +122,6 @@ static void* umem_realloc_wrapper(void *ptr, size_t new_size) {
 
 static void umem_free_wrapper(void *ptr) {
     if (!ptr) return;
-    if (!umem_init_once()) return;
 
     /* Get header before user pointer */
     umem_size_header_t *header = ((umem_size_header_t *)ptr) - 1;
@@ -192,7 +134,7 @@ static void umem_free_wrapper(void *ptr) {
     }
 
     /* Free with original size */
-    umem_free_fn((void *)header, header->size);
+    umem_free((void *)header, header->size);
 }
 
 allocator_ops_t allocator_umem = {
