@@ -120,6 +120,8 @@ libumem_la_SOURCES = init_lib.c \
 			umem_gc.h \
 			umem_gc_roots.c \
 			umem_gc_roots.h \
+			umem_sparsemap.c \
+			umem_sparsemap.h \
 			$(STUB_SOURCES) \
 			$(FREEBSD_SOURCES) \
 			$(PERCPU_SOURCES) \
@@ -216,7 +218,8 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_sbo.c \
 			 test/unit/test_arena.c \
 			 test/unit/test_umem_own.c \
-			 test/unit/test_gc.c
+			 test/unit/test_gc.c \
+			 test/unit/test_sparsemap.c
 test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread
 test_test_main_CPPFLAGS = -I$(srcdir)/test
