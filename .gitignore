@@ -208,6 +208,10 @@ benchmark*.log
 apply_*.sh
 apply_*.py
 
+# Generated helper scripts
+gen_compile_commands.*
+check_tcache.c
+
 # Experimental features not yet integrated
 depot_functions_lockfree.c
 umem_htm.[ch]
