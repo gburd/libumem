@@ -43,10 +43,7 @@ static MunitSuite* test_suites[] = {
     &suite_umem_advanced,
     &suite_umem_cache,
     &suite_umem_align,
-    &suite_umem_debug,
     &suite_umem_audit,
-    &suite_vmem,
-    &suite_vmem_sbrk,
     &suite_umem_hooks,
     &error_path_suite,
     &rare_flags_suite,
@@ -63,6 +60,9 @@ static MunitSuite* test_suites[] = {
     &suite_arena,
     &suite_gc,
     &suite_sparsemap,
+    &suite_vmem,
+    &suite_vmem_sbrk,
+    &suite_umem_debug,
     NULL
 };
 
