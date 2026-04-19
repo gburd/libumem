@@ -52,6 +52,13 @@
 
 #ifdef __FreeBSD__
 #include <machine/param.h>
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
+#if defined(__APPLE__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #endif
 
 void
@@ -108,9 +115,11 @@ umem_get_max_ncpus(void)
 {
 #ifdef linux
   /*
-   * HACK: sysconf() will invoke malloc() on Linux as part of reading
-   * in /proc/stat. To avoid recursion in the malloc replacement
-   * version of libumem, read /proc/stat into a static buffer.
+   * On Linux, sysconf(_SC_NPROCESSORS_ONLN) reads /proc/stat via
+   * glibc, which calls malloc internally. Since umem_get_max_ncpus
+   * is called during umem_init before the allocator is fully ready,
+   * we read /proc/stat directly into a static buffer to avoid
+   * recursive malloc.
    */
   static int ncpus = 0;
 
@@ -142,20 +151,47 @@ umem_get_max_ncpus(void)
 
   return ncpus;
 
-#else /* !linux */
-
-#if _SC_NPROCESSORS_ONLN
-  return (2 * sysconf(_SC_NPROCESSORS_ONLN));
-#elif defined(_SC_NPROCESSORS_CONF)
-  return (2 * sysconf(_SC_NPROCESSORS_CONF));
 #elif defined(_WIN32)
+
   SYSTEM_INFO info;
   GetSystemInfo(&info);
   return info.dwNumberOfProcessors;
-#else
-  /* XXX: determine CPU count on other platforms */
-  return (1);
+
+#else /* !linux, !_WIN32 */
+
+  /*
+   * Non-Linux POSIX: sysconf is safe here because vmem is already
+   * initialized by the time umem_get_max_ncpus is called, so any
+   * malloc from sysconf's internals can be satisfied.
+   */
+#ifdef _SC_NPROCESSORS_ONLN
+  {
+    long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpus > 0)
+      return ((int)(2 * ncpus));
+  }
 #endif
+
+#ifdef _SC_NPROCESSORS_CONF
+  {
+    long ncpus = sysconf(_SC_NPROCESSORS_CONF);
+    if (ncpus > 0)
+      return ((int)(2 * ncpus));
+  }
+#endif
+
+#if defined(__FreeBSD__) || defined(__APPLE__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__)
+  {
+    int mib[2] = { CTL_HW, HW_NCPU };
+    int ncpus = 0;
+    size_t len = sizeof (ncpus);
+    if (sysctl(mib, 2, &ncpus, &len, NULL, 0) == 0 && ncpus > 0)
+      return (2 * ncpus);
+  }
+#endif
+
+  return (1);
 
 #endif /* linux */
 }

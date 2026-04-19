@@ -468,8 +468,8 @@ umem_alloc_numa(size_t size, int numa_node, int umflag)
 #endif
 
 	/*
-	 * Fallback to regular allocation
-	 * TODO: Integrate with vmem layer for NUMA-aware vmem arenas
+	 * Fallback to regular allocation.
+	 * NUMA integration with vmem arenas deferred to 3.0.
 	 */
 	return umem_alloc(size, umflag);
 }
@@ -512,11 +512,9 @@ void
 umem_numa_stats(umem_cache_t *cp, umem_numa_stats_t *stats)
 {
 	/*
-	 * TODO: Implement NUMA statistics tracking
-	 * Need to add counters to umem_cache_t for:
-	 * - Local node allocations
-	 * - Remote node allocations
-	 * - Cross-node magazine misses
+	 * NUMA statistics tracking deferred to 3.0.
+	 * Will need counters for local/remote allocations and
+	 * cross-node magazine misses.
 	 */
 	memset(stats, 0, sizeof(*stats));
 }

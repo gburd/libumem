@@ -67,12 +67,14 @@ extern int umem_ready;
  *   pthread_create -> malloc -> umem_init -> pthread_once -> malloc
  */
 #define BOOTSTRAP_MAGIC 0xB007B007B007B007ULL
+#define BOOTSTRAP_MAX_DEPTH 16
 
 typedef struct bootstrap_header {
 	uint64_t magic;
 	size_t size;
 } bootstrap_header_t;
 
+static __thread int bootstrap_depth;
 
 /*
  * Exposed for malloc_interpose.c
@@ -84,20 +86,32 @@ bootstrap_malloc(size_t size)
 	bootstrap_header_t *hdr;
 	size_t total_size = size + sizeof(bootstrap_header_t);
 
+	if (++bootstrap_depth > BOOTSTRAP_MAX_DEPTH) {
+		const char msg[] = "libumem: fatal bootstrap malloc "
+		    "recursion (depth > 16)\n";
+		(void) write(STDERR_FILENO, msg, sizeof (msg) - 1);
+		abort();
+	}
+
 #ifdef _WIN32
 	hdr = (bootstrap_header_t *)VirtualAlloc(NULL, total_size,
 	    MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	if (hdr == NULL)
+	if (hdr == NULL) {
+		bootstrap_depth--;
 		return (NULL);
+	}
 #else
 	hdr = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
 	    MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (hdr == MAP_FAILED)
+	if (hdr == MAP_FAILED) {
+		bootstrap_depth--;
 		return (NULL);
+	}
 #endif
 
 	hdr->magic = BOOTSTRAP_MAGIC;
 	hdr->size = total_size;
+	bootstrap_depth--;
 	return (void *)(hdr + 1);
 }
 

@@ -42,6 +42,7 @@
 #include "umem_base.h"
 #include "umem_gc.h"
 #include "umem_gc_roots.h"
+#include "umem_sparsemap.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
@@ -125,6 +126,15 @@ static _Atomic uint64_t gc_finalizers_run;
 /* Collection lock (only one collection at a time) */
 static pthread_mutex_t gc_collect_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* Page-level sparsemap for O(1) GC pointer lookup */
+static umem_sparsemap_t *gc_pagemap;
+
+/* Finalizer recursion guard: prevents GC_MALLOC during finalization */
+static __thread int gc_in_finalizer;
+
+/* Maximum finalizer iterations before timeout */
+#define	GC_FINALIZER_MAX_ITER	10000
+
 /* ----------------------------------------------------------------
  * Size class lookup
  * ---------------------------------------------------------------- */
@@ -173,6 +183,8 @@ gc_object_add(umem_gc_header_t *hdr)
 	hdr->gc_prev = &gc_objects_sentinel;
 	gc_objects_sentinel.gc_next->gc_prev = hdr;
 	gc_objects_sentinel.gc_next = hdr;
+	if (gc_pagemap != NULL)
+		(void) umem_sparsemap_set(gc_pagemap, UMEM_GC_USER_PTR(hdr));
 	(void) pthread_mutex_unlock(&gc_objects_lock);
 }
 
@@ -186,6 +198,8 @@ gc_object_remove_locked(umem_gc_header_t *hdr)
 	hdr->gc_next->gc_prev = hdr->gc_prev;
 	hdr->gc_next = NULL;
 	hdr->gc_prev = NULL;
+	if (gc_pagemap != NULL)
+		umem_sparsemap_clear(gc_pagemap, UMEM_GC_USER_PTR(hdr));
 }
 
 /* ----------------------------------------------------------------
@@ -380,7 +394,7 @@ gc_mark_callback(void *potential_ptr)
 		return;
 
 	uint32_t mark_val = atomic_load(&gc_mark_value);
-	if (hdr->gc_mark == mark_val)
+	if (atomic_load(&hdr->gc_mark) == mark_val)
 		return;
 
 	umem_gc_mark_object(hdr);
@@ -440,13 +454,16 @@ gc_free_object(umem_gc_header_t *hdr)
 
 /*
  * Run finalizer for a GC object, if one is registered.
+ * Sets the gc_in_finalizer guard to prevent GC_MALLOC recursion.
  */
 static void
 gc_run_finalizer(umem_gc_header_t *hdr)
 {
 	if ((hdr->gc_flags & UMEM_GC_FINALIZE) && hdr->gc_finalizer != NULL) {
 		void *user_ptr = UMEM_GC_USER_PTR(hdr);
+		gc_in_finalizer++;
 		hdr->gc_finalizer(user_ptr, hdr->gc_finalizer_data);
+		gc_in_finalizer--;
 		atomic_fetch_add(&gc_finalizers_run, 1);
 	}
 }
@@ -482,7 +499,7 @@ gc_sweep(void)
 			continue;
 		}
 
-		if (hdr->gc_mark != mark_val) {
+		if (atomic_load(&hdr->gc_mark) != mark_val) {
 			gc_object_remove_locked(hdr);
 
 			if (hdr->gc_flags & UMEM_GC_FINALIZE) {
@@ -500,7 +517,7 @@ gc_sweep(void)
 	(void) pthread_mutex_unlock(&gc_objects_lock);
 
 	/* Finalize phase */
-	atomic_store(&gc_phase, GC_PHASE_FINALIZE);
+	atomic_store_explicit(&gc_phase, GC_PHASE_FINALIZE, memory_order_release);
 
 	while (finalize_list != NULL) {
 		hdr = finalize_list;
@@ -565,8 +582,18 @@ umem_gc_init(void)
 		return (-1);
 	}
 
+	/* Create page-level sparsemap for O(1) pointer lookup */
+	gc_pagemap = umem_sparsemap_create(0);
+	if (gc_pagemap == NULL) {
+		(void) pthread_key_delete(gc_thread_key);
+		(void) pthread_mutex_unlock(&gc_init_lock);
+		return (-1);
+	}
+
 	/* Create size-classed GC caches */
 	if (gc_create_caches() != 0) {
+		umem_sparsemap_destroy(gc_pagemap);
+		gc_pagemap = NULL;
 		(void) pthread_key_delete(gc_thread_key);
 		(void) pthread_mutex_unlock(&gc_init_lock);
 		return (-1);
@@ -648,6 +675,12 @@ gc_maybe_collect(void)
 void *
 umem_gc_alloc(size_t size, int flags)
 {
+	if (gc_in_finalizer) {
+		(void) fprintf(stderr, "umem_gc_alloc: allocation during "
+		    "finalization is not permitted\n");
+		return (NULL);
+	}
+
 	if (!gc_initialized) {
 		if (umem_gc_init() != 0)
 			return (NULL);
@@ -683,7 +716,7 @@ umem_gc_alloc(size_t size, int flags)
 	}
 
 	/* Initialize the GC header */
-	hdr->gc_mark = 0;
+	atomic_store(&hdr->gc_mark, 0);
 	hdr->gc_flags = (flags & UMEM_GC_ATOMIC) ? UMEM_GC_ATOMIC : 0;
 	hdr->gc_size = size;
 	hdr->gc_finalizer = NULL;
@@ -808,7 +841,7 @@ umem_gc_collect(void)
 
 	/* Phase 1: Mark */
 	gc_reset_marks();
-	atomic_store(&gc_phase, GC_PHASE_MARK);
+	atomic_store_explicit(&gc_phase, GC_PHASE_MARK, memory_order_release);
 
 	/* Initialize mark work queue */
 	if (gc_mark_queue_init(&gc_mark_queue) != 0) {
@@ -823,14 +856,14 @@ umem_gc_collect(void)
 	gc_drain_mark_queue();
 
 	/* Phase 2: Remark (STW pause - rescan for missed references) */
-	atomic_store(&gc_phase, GC_PHASE_REMARK);
+	atomic_store_explicit(&gc_phase, GC_PHASE_REMARK, memory_order_release);
 	umem_gc_scan_all_roots(gc_mark_callback);
 	gc_drain_mark_queue();
 
 	gc_mark_queue_destroy(&gc_mark_queue);
 
 	/* Phase 3: Sweep */
-	atomic_store(&gc_phase, GC_PHASE_SWEEP);
+	atomic_store_explicit(&gc_phase, GC_PHASE_SWEEP, memory_order_release);
 	size_t bytes_freed = gc_sweep();
 
 	/* Update threshold based on survival rate */
@@ -849,7 +882,7 @@ umem_gc_collect(void)
 	atomic_fetch_add(&gc_collections, 1);
 
 	/* Return to idle */
-	atomic_store(&gc_phase, GC_PHASE_IDLE);
+	atomic_store_explicit(&gc_phase, GC_PHASE_IDLE, memory_order_release);
 
 	(void) pthread_mutex_unlock(&gc_collect_lock);
 }
@@ -892,7 +925,7 @@ void
 umem_gc_get_stats(umem_gc_stats_t *stats)
 {
 	stats->gcs_heap_size = atomic_load(&gc_heap_size);
-	stats->gcs_free_bytes = 0; /* TODO: aggregate from caches */
+	stats->gcs_free_bytes = 0; /* deferred to 3.0: aggregate from GC caches */
 	stats->gcs_total_allocated = atomic_load(&gc_total_allocated);
 	stats->gcs_bytes_allocated = atomic_load(&gc_bytes_allocated);
 	stats->gcs_bytes_survived = atomic_load(&gc_bytes_survived);
@@ -910,7 +943,7 @@ umem_gc_get_heap_size(void)
 size_t
 umem_gc_get_free_bytes(void)
 {
-	return (0); /* TODO: aggregate from GC caches */
+	return (0); /* deferred to 3.0: aggregate from GC caches */
 }
 
 size_t
@@ -926,13 +959,13 @@ umem_gc_get_total_bytes(void)
 umem_gc_phase_t
 umem_gc_get_phase(void)
 {
-	return (atomic_load(&gc_phase));
+	return (atomic_load_explicit(&gc_phase, memory_order_acquire));
 }
 
 void
 umem_gc_set_phase(umem_gc_phase_t phase)
 {
-	atomic_store(&gc_phase, phase);
+	atomic_store_explicit(&gc_phase, phase, memory_order_release);
 }
 
 uint32_t
@@ -948,14 +981,19 @@ umem_gc_get_mark_value(void)
 /*
  * Check if a pointer is a GC-managed allocation and return its header.
  *
- * This performs a linear scan of the global object list. For production
- * use, this should be replaced with a hash table or interval tree for
- * O(1) lookup. The current implementation is correct but O(n).
+ * Uses a page-level sparsemap for O(1) fast-path rejection: if no GC
+ * objects reside on the page containing ptr, we can immediately return
+ * NULL without scanning the object list. When the page is tracked, we
+ * fall through to a linear scan to confirm the exact pointer.
  */
 umem_gc_header_t *
 umem_gc_find_header(void *ptr)
 {
 	if (ptr == NULL)
+		return (NULL);
+
+	/* Fast path: reject if no GC objects on this page */
+	if (gc_pagemap != NULL && !umem_sparsemap_test(gc_pagemap, ptr))
 		return (NULL);
 
 	umem_gc_header_t *candidate = UMEM_GC_HEADER(ptr);
@@ -982,7 +1020,10 @@ umem_gc_mark_object(umem_gc_header_t *hdr)
 		return;
 
 	uint32_t mark_val = atomic_load(&gc_mark_value);
-	hdr->gc_mark = mark_val;
+	uint32_t old = atomic_load(&hdr->gc_mark);
+	if (old == mark_val)
+		return;
+	atomic_compare_exchange_strong(&hdr->gc_mark, &old, mark_val);
 }
 
 void

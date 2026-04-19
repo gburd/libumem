@@ -1534,7 +1534,7 @@ static MunitTest vmem_tests[] = {
     { "/stress", test_vmem_stress, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/walk", test_vmem_walk, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/xfree", test_vmem_xfree, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
-    /* TODO: vmem_xcreate not yet implemented */
+    /* vmem_xcreate not yet implemented — deferred to 3.0 */
     /* { "/import", test_vmem_import, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }, */
     { "/boundaries", test_vmem_boundaries, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/nocross", test_vmem_nocross, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },

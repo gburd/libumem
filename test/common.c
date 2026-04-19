@@ -51,7 +51,7 @@ tsc(void)
 return 0;
 }
 
-// TODO remove me, this is only used for debugging.
+/* Debug helpers for sparsemap testing */
 #ifdef SPARSEMAP_TESTING
 char *QCC_showSparsemap(void *value, int len);
 char *QCC_showChunk(void *value, int len);
@@ -423,7 +423,7 @@ sm_add_span(sparsemap_t *map, int map_size, int span_length)
   } while (attempts);
   for (sparsemap_idx_t i = placed_at; i < placed_at + span_length; i++) {
     if (sparsemap_set(map, i) != i) {
-      return placed_at; // TODO error?
+      return placed_at;
     }
   }
   return placed_at;

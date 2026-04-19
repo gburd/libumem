@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdatomic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,7 +56,7 @@ typedef enum umem_gc_phase {
  * The user pointer returned by umem_gc_alloc() points just past this header.
  */
 typedef struct umem_gc_header {
-	uint32_t	gc_mark;	/* mark bit for current cycle */
+	_Atomic uint32_t gc_mark;	/* mark bit for current cycle */
 	uint32_t	gc_flags;	/* UMEM_GC_ATOMIC, etc. */
 	size_t		gc_size;	/* user-visible allocation size */
 	void		(*gc_finalizer)(void *, void *);
