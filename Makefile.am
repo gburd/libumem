@@ -219,7 +219,8 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_arena.c \
 			 test/unit/test_umem_own.c \
 			 test/unit/test_gc.c \
-			 test/unit/test_sparsemap.c
+			 test/unit/test_sparsemap.c \
+			 test/unit/test_coverage.c
 test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread
 test_test_main_CPPFLAGS = -I$(srcdir)/test
