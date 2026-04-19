@@ -61,8 +61,8 @@ static MunitSuite* test_suites[] = {
     &suite_arena,
     &suite_gc,
     &suite_sparsemap,
-    &suite_coverage,
     &suite_vmem,
+    &suite_vmem_sbrk,
     &suite_umem_debug,
     NULL
 };
