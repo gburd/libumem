@@ -1885,6 +1885,11 @@ umem_depot_push(umem_maglist_t *mlp, umem_magazine_t *mp)
  * Allocate a magazine from the depot.
  * Tries per-CPU depot first (our CPU, then steal from others),
  * then falls back to the global depot list.
+ *
+ * Lock ordering: caller must NOT hold cp->cache_lock.
+ * The depot locks (ml_lock) are below cache_lock in the hierarchy.
+ * Holding cache_lock while acquiring ml_lock would invert the order
+ * used by umem_lockup_cache() in the fork handler.
  */
 static umem_magazine_t *
 umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
@@ -1928,6 +1933,9 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 /*
  * Free a magazine to the depot.
  * Pushes to per-CPU depot if available, otherwise to global list.
+ *
+ * Lock ordering: caller must NOT hold cp->cache_lock.
+ * See umem_depot_alloc() for rationale.
  */
 static void
 umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp,
@@ -4173,29 +4181,11 @@ umem_init(void)
 		    sizeof (umem_cpu_cache_t), UMEM_CPU_CACHE_SIZE);
 	}
 
-#if defined(_LP64) && !defined(ARCH_SPARC)
-	/*
-	 * Verify that the virtual address space fits in 48 bits.
-	 * The lock-free depot uses tagged pointers that pack a 48-bit
-	 * pointer with a 16-bit version counter in a 64-bit word.
-	 * If a heap address uses more than 48 bits, tagged pointers
-	 * will silently corrupt data.
-	 *
-	 * Skipped on SPARC: SPARC V9 sign-extends virtual addresses,
-	 * placing mmap/stack addresses above 48 bits even though the
-	 * hardware VA space is 44 bits.
-	 */
-	{
-		volatile char probe;
-		uintptr_t addr = (uintptr_t)&probe;
-		if (addr & ~UMEM_PTR_MASK) {
-			umem_panic("umem: virtual address %p exceeds 48 bits;"
-			    " tagged pointers will fail.  Rebuild with"
-			    " 48-bit VA or disable lock-free depot.\n",
-			    (void *)addr);
-		}
+	if (umem_tagged_ptr_check() != 0) {
+		umem_panic("umem: virtual address space exceeds 48 bits;"
+		    " tagged pointers will fail.  Rebuild with"
+		    " 48-bit VA or disable lock-free depot.\n");
 	}
-#endif
 
 	umem_max_ncpus = umem_get_max_ncpus();
 

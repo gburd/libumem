@@ -441,6 +441,46 @@ umem_tagged_ptr_make(void *ptr, uint16_t ver)
 }
 
 /*
+ * Verify at runtime that the tagged pointer scheme works on this platform.
+ * Checks that a stack address fits within UMEM_PTR_MASK.
+ *
+ * On ARMv8.2+ with 52-bit VA (LVA) or RISC-V Sv57 (57-bit VA), the
+ * 48-bit mask is insufficient. We detect these at runtime and panic
+ * with a clear message rather than silently corrupting data.
+ *
+ * Returns 0 on success, -1 if tagged pointers cannot be used safely.
+ */
+static inline int
+umem_tagged_ptr_check(void)
+{
+#if defined(_LP64) && !defined(ARCH_SPARC)
+	volatile char probe;
+	uintptr_t addr = (uintptr_t)&probe;
+
+	if (addr & ~(uintptr_t)UMEM_PTR_MASK) {
+#if defined(__aarch64__)
+		/*
+		 * ARMv8.2+ with 52-bit VA (LVA): the 48-bit mask
+		 * would need to be widened to 0x000FFFFFFFFFFFFFULL.
+		 * This is not yet supported.
+		 */
+		return (-1);
+#elif defined(__riscv) && (__riscv_xlen == 64)
+		/*
+		 * RISC-V Sv57 uses 57-bit VA which exceeds even a
+		 * 52-bit mask. Tagged pointers cannot work here
+		 * without 128-bit atomics.
+		 */
+		return (-1);
+#else
+		return (-1);
+#endif
+	}
+#endif
+	return (0);
+}
+
+/*
  * The magazine lists used in the depot.
  * Each list is protected by its own mutex for simple, correct locking.
  * The depot is a cold path — the hot path is the per-CPU magazine layer.

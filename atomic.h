@@ -100,6 +100,15 @@ _umem_atomic_cas_ulong(volatile unsigned long *target, unsigned long cmp,
 	(atomic_fetch_add_explicit((_Atomic(uint64_t) *)(p), \
 	    (uint64_t)(v), memory_order_relaxed) + (uint64_t)(v))
 
+/*
+ * Atomic add with acquire-release ordering for synchronization variables.
+ * Returns the NEW value (old + delta).
+ */
+#undef atomic_add_64_acq_rel
+#define atomic_add_64_acq_rel(p, v) \
+	(atomic_fetch_add_explicit((_Atomic(uint64_t) *)(p), \
+	    (uint64_t)(v), memory_order_acq_rel) + (uint64_t)(v))
+
 /* Atomic swap */
 #define atomic_swap_uint(target, new) \
 	atomic_exchange_explicit((_Atomic(uint_t) *)(target), (new), \

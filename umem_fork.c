@@ -32,8 +32,23 @@
 #include <unistd.h>
 
 /*
- * The following functions are for pre- and post-fork1(2) handling.  See
- * "Lock Ordering" in lib/libumem/common/umem.c for the lock ordering used.
+ * The following functions are for pre- and post-fork1(2) handling.
+ *
+ * Lock ordering (must be acquired in this order to avoid deadlock):
+ *
+ *   1. umem_init_lock
+ *   2. vmem locks (vmem_lockup / vmem_sbrk_lockup)
+ *   3. umem_cache_lock
+ *   4. umem_update_lock
+ *   5. umem_flags_lock
+ *   6. cache_lock (per-cache slab layer lock)
+ *   7. ml_lock (depot magazine list locks: global full, global empty,
+ *              then per-CPU full/empty in CPU order)
+ *   8. cc_lock (per-CPU cache locks, in CPU order)
+ *   9. log header per-CPU locks, then lh_lock
+ *
+ * See "Lock Ordering" in umem.c for the full specification.
+ * umem_depot_alloc/free must NOT be called while holding cache_lock.
  */
 
 static void

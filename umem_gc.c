@@ -665,8 +665,10 @@ umem_gc_unregister_thread(void)
 static void
 gc_maybe_collect(void)
 {
-	size_t allocated = atomic_load(&gc_bytes_allocated);
-	size_t thresh = atomic_load(&gc_threshold);
+	size_t allocated = atomic_load_explicit(&gc_bytes_allocated,
+	    memory_order_acquire);
+	size_t thresh = atomic_load_explicit(&gc_threshold,
+	    memory_order_acquire);
 
 	if (allocated > thresh)
 		umem_gc_collect();
@@ -921,11 +923,35 @@ umem_gc_register_finalizer(void *ptr,
  * Public API: Statistics
  * ---------------------------------------------------------------- */
 
+/*
+ * Aggregate free bytes across all GC size-classed caches.
+ * Free buffers = buftotal - (slab_alloc - slab_free).
+ */
+static size_t
+gc_aggregate_free_bytes(void)
+{
+	size_t free_bytes = 0;
+
+	for (int i = 0; i < GC_NUM_SIZE_CLASSES; i++) {
+		umem_cache_t *cp = gc_caches[i];
+		if (cp == NULL)
+			continue;
+		uint64_t alloc = cp->cache_slab_alloc;
+		uint64_t freed = cp->cache_slab_free;
+		uint64_t total = cp->cache_buftotal;
+		uint64_t in_use = (alloc >= freed) ? (alloc - freed) : 0;
+		if (total > in_use)
+			free_bytes += (total - in_use) * cp->cache_bufsize;
+	}
+
+	return (free_bytes);
+}
+
 void
 umem_gc_get_stats(umem_gc_stats_t *stats)
 {
 	stats->gcs_heap_size = atomic_load(&gc_heap_size);
-	stats->gcs_free_bytes = 0; /* deferred to 3.0: aggregate from GC caches */
+	stats->gcs_free_bytes = gc_aggregate_free_bytes();
 	stats->gcs_total_allocated = atomic_load(&gc_total_allocated);
 	stats->gcs_bytes_allocated = atomic_load(&gc_bytes_allocated);
 	stats->gcs_bytes_survived = atomic_load(&gc_bytes_survived);
@@ -943,7 +969,7 @@ umem_gc_get_heap_size(void)
 size_t
 umem_gc_get_free_bytes(void)
 {
-	return (0); /* deferred to 3.0: aggregate from GC caches */
+	return (gc_aggregate_free_bytes());
 }
 
 size_t
