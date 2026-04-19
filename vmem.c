@@ -974,8 +974,19 @@ vmem_xalloc(vmem_t *vmp, size_t size, size_t align, size_t phase,
 			ASSERT(vmp->vm_nsegfree >= resv);
 			vmp->vm_nsegfree -= resv;	/* reserve our segs */
 			(void) mutex_unlock(&vmp->vm_lock);
-			vaddr = vmp->vm_source_alloc(vmp->vm_source, asize,
-			    vmflag & VM_UMFLAGS);
+			if (vmp->vm_cflags & VMC_XALLOC) {
+				size_t xsize = asize;
+				vaddr = ((vmem_ximport_t *)
+				    vmp->vm_source_alloc)(
+				    vmp->vm_source, &xsize,
+				    vmflag & VM_UMFLAGS);
+				if (vaddr != NULL)
+					asize = xsize;
+			} else {
+				vaddr = vmp->vm_source_alloc(
+				    vmp->vm_source, asize,
+				    vmflag & VM_UMFLAGS);
+			}
 			(void) mutex_lock(&vmp->vm_lock);
 			vmp->vm_nsegfree += resv;	/* claim reservation */
 			if (vaddr != NULL) {
@@ -1549,6 +1560,31 @@ vmem_create(const char *name, void *base, size_t size, size_t quantum,
 		vmem_destroy(vmp);
 		return (NULL);
 	}
+
+	return (vmp);
+}
+
+/*
+ * Create an arena with an extended import function (vmem_ximport_t).
+ *
+ * The extended import function receives the requested size as a pointer,
+ * allowing it to increase the actual allocation size (e.g., to reduce
+ * future imports by allocating in larger chunks). The VMC_XALLOC flag
+ * is set internally so vmem_xalloc() knows to use the extended calling
+ * convention when importing from the source arena.
+ */
+vmem_t *
+vmem_xcreate(const char *name, void *base, size_t size, size_t quantum,
+    vmem_ximport_t *afunc, vmem_free_t *ffunc, vmem_t *source,
+    size_t qcache_max, int vmflag)
+{
+	vmem_t *vmp;
+
+	vmp = vmem_create(name, base, size, quantum,
+	    (vmem_alloc_t *)afunc, ffunc, source, qcache_max, vmflag);
+
+	if (vmp != NULL)
+		vmp->vm_cflags |= VMC_XALLOC;
 
 	return (vmp);
 }

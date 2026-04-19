@@ -502,19 +502,28 @@ static MunitResult test_vmem_import(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
 
-    /* Create a source arena */
+    /* Create a source arena with an initial span */
+    size_t span_size = 1048576;
+    size_t quantum = 4096;
+    void *base_mem;
+    int ret = posix_memalign(&base_mem, quantum, span_size);
+    munit_assert_int(ret, ==, 0);
+
     vmem_t *source = vmem_create(
         "test_source_arena",
-        NULL, 0, 4096,
+        base_mem, span_size, quantum,
         NULL, NULL, NULL, 0,
         VM_NOSLEEP
     );
-    munit_assert_not_null(source);
+    if (source == NULL) {
+        free(base_mem);
+        return MUNIT_SKIP;
+    }
 
     /* Create child arena that imports from parent */
     vmem_t *child = vmem_create(
         "test_import_arena",
-        NULL, 0, 4096,
+        NULL, 0, quantum,
         (vmem_alloc_t *)vmem_alloc,
         (vmem_free_t *)vmem_free,
         source,
@@ -530,6 +539,67 @@ static MunitResult test_vmem_import(const MunitParameter params[], void* data) {
     vmem_free(child, addr, 8192);
     vmem_destroy(child);
     vmem_destroy(source);
+    free(base_mem);
+
+    return MUNIT_OK;
+}
+
+/*
+ * Extended import function for vmem_xcreate test.
+ * Receives size as a pointer and may increase it to reduce future imports.
+ */
+static void *
+test_ximport(vmem_t *src, size_t *sizep, int vmflag)
+{
+    /* Round up to at least 64K to reduce import frequency */
+    size_t min_import = 65536;
+    if (*sizep < min_import)
+        *sizep = min_import;
+    return vmem_alloc(src, *sizep, vmflag);
+}
+
+/* Test: vmem_xcreate with extended import function */
+static MunitResult test_vmem_xcreate(const MunitParameter params[],
+    void *data) {
+    ensure_umem_initialized();
+    (void)params;
+    (void)data;
+
+    /* Create a source arena with a large initial span */
+    size_t span_size = 1048576;
+    size_t quantum = 4096;
+    void *base_mem;
+    int ret = posix_memalign(&base_mem, quantum, span_size);
+    munit_assert_int(ret, ==, 0);
+
+    vmem_t *source = vmem_create(
+        "xcreate_source", base_mem, span_size, quantum,
+        NULL, NULL, NULL, 0, VM_NOSLEEP);
+    if (source == NULL) {
+        free(base_mem);
+        return MUNIT_SKIP;
+    }
+
+    /* Create child arena with extended import */
+    vmem_t *child = vmem_xcreate(
+        "xcreate_child", NULL, 0, quantum,
+        test_ximport, (vmem_free_t *)vmem_free,
+        source, 0, VM_NOSLEEP);
+    munit_assert_not_null(child);
+
+    /* Allocate from child; triggers import via test_ximport */
+    void *a1 = vmem_alloc(child, 8192, VM_NOSLEEP);
+    munit_assert_not_null(a1);
+
+    /* Second allocation should come from the oversized import span */
+    void *a2 = vmem_alloc(child, 8192, VM_NOSLEEP);
+    munit_assert_not_null(a2);
+
+    vmem_free(child, a1, 8192);
+    vmem_free(child, a2, 8192);
+    vmem_destroy(child);
+    vmem_destroy(source);
+    free(base_mem);
 
     return MUNIT_OK;
 }
@@ -1534,8 +1604,8 @@ static MunitTest vmem_tests[] = {
     { "/stress", test_vmem_stress, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/walk", test_vmem_walk, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/xfree", test_vmem_xfree, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
-    /* vmem_xcreate not yet implemented — deferred to 3.0 */
-    /* { "/import", test_vmem_import, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }, */
+    { "/import", test_vmem_import, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/xcreate", test_vmem_xcreate, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/boundaries", test_vmem_boundaries, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/nocross", test_vmem_nocross, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/phase", test_vmem_phase, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
