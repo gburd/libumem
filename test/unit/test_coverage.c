@@ -869,6 +869,11 @@ test_rapid_cache_lifecycle(const MunitParameter params[], void *data)
 
 /* ---- Suite definition ---- */
 
+/* Forward declarations for additional coverage tests */
+static MunitResult test_cov_update_thread_trigger(const MunitParameter[], void*);
+static MunitResult test_cov_malloc_interpose(const MunitParameter[], void*);
+static MunitResult test_cov_vmem_operations(const MunitParameter[], void*);
+
 static MunitTest coverage_tests[] = {
     { "/batch_alloc_free", test_batch_alloc_free, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
@@ -934,6 +939,10 @@ static MunitTest coverage_tests[] = {
       MUNIT_TEST_OPTION_NONE, NULL },
     { "/rapid_cache_lifecycle", test_rapid_cache_lifecycle, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
+    { "/update_thread_trigger", test_cov_update_thread_trigger, NULL, NULL,
+      MUNIT_TEST_OPTION_NONE, NULL },
+    { "/malloc_interpose_paths", test_cov_malloc_interpose, NULL, NULL,
+      MUNIT_TEST_OPTION_NONE, NULL },
     { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }
 };
 
@@ -944,3 +953,87 @@ MunitSuite suite_coverage = {
     1,
     MUNIT_SUITE_OPTION_NONE
 };
+
+/*
+ * Additional coverage: trigger update thread and envvar parsing
+ */
+
+static MunitResult
+test_cov_update_thread_trigger(const MunitParameter params[], void *data)
+{
+    (void)params; (void)data;
+    /* Allocate and free enough to trigger magazine reaping */
+    umem_cache_t *cp = umem_cache_create("cov_update", 64, 0,
+        NULL, NULL, NULL, NULL, NULL, 0);
+    munit_assert_not_null(cp);
+
+    void *ptrs[500];
+    for (int i = 0; i < 500; i++) {
+        ptrs[i] = umem_cache_alloc(cp, UMEM_DEFAULT);
+        munit_assert_not_null(ptrs[i]);
+    }
+    for (int i = 0; i < 500; i++)
+        umem_cache_free(cp, ptrs[i]);
+
+    /* Force reap which exercises update thread code paths */
+    umem_reap();
+
+    /* Sleep briefly to let update thread process */
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 }; /* 100ms */
+    nanosleep(&ts, NULL);
+
+    umem_reap();
+    umem_cache_destroy(cp);
+    return MUNIT_OK;
+}
+
+static MunitResult
+test_cov_malloc_interpose(const MunitParameter params[], void *data)
+{
+    (void)params; (void)data;
+    /* Exercise malloc paths that go through libumem when interposed */
+    void *p1 = umem_alloc(7, UMEM_DEFAULT);  /* Odd size */
+    void *p2 = umem_alloc(1, UMEM_DEFAULT);  /* Minimum */
+    void *p3 = umem_alloc(131072, UMEM_DEFAULT); /* UMEM_MAXBUF */
+    
+    munit_assert_not_null(p1);
+    munit_assert_not_null(p2);
+    munit_assert_not_null(p3);
+    
+    umem_free(p1, 7);
+    umem_free(p2, 1);
+    umem_free(p3, 131072);
+    return MUNIT_OK;
+}
+
+static MunitResult
+test_cov_vmem_operations(const MunitParameter params[], void *data)
+{
+    (void)params; (void)data;
+    /* Exercise vmem paths: create arena with source, allocate, free */
+    vmem_t *src = vmem_create("cov_src", NULL, 0, 64,
+        NULL, NULL, NULL, 0, VM_NOSLEEP);
+    if (src == NULL) return MUNIT_SKIP;
+    
+    /* Add a span */
+    void *span = malloc(8192);
+    munit_assert_not_null(span);
+    void *added = vmem_add(src, span, 8192, VM_NOSLEEP);
+    if (added == NULL) {
+        free(span);
+        vmem_destroy(src);
+        return MUNIT_SKIP;
+    }
+    
+    /* Allocate from it */
+    void *v1 = vmem_alloc(src, 128, VM_NOSLEEP);
+    void *v2 = vmem_alloc(src, 256, VM_NOSLEEP);
+    if (v1) vmem_free(src, v1, 128);
+    if (v2) vmem_free(src, v2, 256);
+    
+    /* Walk the arena */
+    vmem_walk(src, VMEM_ALLOC | VMEM_FREE, NULL, NULL);
+    
+    free(span);
+    return MUNIT_OK;
+}
