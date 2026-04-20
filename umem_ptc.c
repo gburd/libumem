@@ -45,9 +45,10 @@ int umem_ptc_enabled = 1;            /* enabled by default for performance */
 
 /*
  * Thread-local storage for ptc
- * Using __thread with initial-exec TLS model for fast access
+ * Using __thread with initial-exec TLS model for fast access.
+ * Non-static so umem.c can inline the PTC fast path.
  */
-static __thread umem_ptc_t *thread_ptc
+__thread umem_ptc_t *thread_ptc
     __attribute__((tls_model("initial-exec"))) = NULL;
 
 /*
@@ -66,6 +67,13 @@ static int ptc_key_initialized = 0;
  */
 static int8_t size_to_bin_table[PTC_NBINS * 32];
 static int ptc_table_ready;
+
+/*
+ * Pre-computed bin table indexed by umem_alloc_table index.
+ * For each index in [0, UMEM_MAXBUF >> UMEM_ALIGN_SHIFT), stores the
+ * PTC bin index or -1 if not PTC-eligible. Populated by umem_ptc_init().
+ */
+int8_t umem_ptc_bin_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT];
 
 /*
  * Size classes we cache (matching umem's small size classes)
@@ -160,6 +168,30 @@ umem_ptc_init(void)
 	}
 
 	ptc_table_ready = 1;
+
+	/*
+	 * Build umem_ptc_bin_table: for each alloc_table index,
+	 * compute the PTC bin. This allows umem.c to inline the
+	 * PTC lookup without calling umem_ptc_size_to_bin().
+	 */
+	{
+		size_t idx;
+		size_t table_size = UMEM_MAXBUF >> UMEM_ALIGN_SHIFT;
+
+		for (idx = 0; idx < table_size; idx++) {
+			size_t alloc_size = (idx + 1) << UMEM_ALIGN_SHIFT;
+			size_t rounded = (alloc_size + 7) & ~(size_t)7;
+			size_t bin_idx = rounded / 8;
+
+			if (rounded > umem_ptc_maxsize ||
+			    bin_idx >= sizeof(size_to_bin_table)) {
+				umem_ptc_bin_table[idx] = -1;
+			} else {
+				umem_ptc_bin_table[idx] =
+				    size_to_bin_table[bin_idx];
+			}
+		}
+	}
 }
 
 /*

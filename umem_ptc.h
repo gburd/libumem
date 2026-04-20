@@ -73,6 +73,18 @@ extern size_t umem_ptc_maxsize;      /* max size cached (default 2048) */
 extern int umem_ptc_enabled;         /* ptc globally enabled */
 
 /*
+ * Pre-computed bin table indexed by umem_alloc_table index.
+ * Maps (size - 1) >> UMEM_ALIGN_SHIFT to PTC bin index (-1 if not eligible).
+ * Populated during umem_ptc_init().
+ */
+extern int8_t umem_ptc_bin_table[];
+
+/*
+ * Thread-local PTC pointer, accessible from umem.c for inlined fast path.
+ */
+extern __thread umem_ptc_t *thread_ptc;
+
+/*
  * Size class to bin index mapping
  * Returns -1 if size is not eligible for per-thread caching
  */
