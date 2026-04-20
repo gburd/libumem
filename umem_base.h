@@ -83,6 +83,7 @@ extern volatile uint32_t umem_reaping;
  * umem.c: tunables
  */
 extern uint32_t umem_max_ncpus;
+extern umem_cpu_t *umem_cpus;
 
 extern uint32_t umem_stack_depth;
 extern uint32_t umem_reap_interval;

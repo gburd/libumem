@@ -639,7 +639,7 @@ static umem_cpu_t umem_startup_cpu = {  /* initial, single, cpu */
 };
 
 static uint32_t umem_cpu_mask = 0;                      /* global cpu mask */
-static umem_cpu_t *umem_cpus = &umem_startup_cpu;       /* cpu list */
+umem_cpu_t *umem_cpus = &umem_startup_cpu;              /* cpu list */
 
 /*
  * Per-thread cached CPU hint to reduce CPUHINT() syscall overhead.
@@ -2214,13 +2214,6 @@ _umem_cache_alloc(umem_cache_t *cp, int umflag)
 	int rounds;
 
 retry:
-	/*
-	 * Track allocation operations for magazine tuning.
-	 */
-	if (unlikely(umem_magazine_tuning)) {
-		atomic_add_64(&cp->cache_alloc_ops, 1);
-	}
-
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 
 	/*
@@ -2295,9 +2288,6 @@ retry:
 		 * magazine was full, exchange them and try again.
 		 */
 		if (ccp->cc_prounds > 0) {
-			if (unlikely(umem_magazine_tuning)) {
-				atomic_add_64(&cp->cache_mag_reloads, 1);
-			}
 			umem_cpu_reload(ccp, ccp->cc_ploaded, ccp->cc_prounds);
 			continue;
 		}
@@ -2316,9 +2306,6 @@ retry:
 			if (ccp->cc_ploaded != NULL)
 				umem_depot_free(cp, &cp->cache_empty,
 				    ccp->cc_ploaded);
-			if (unlikely(umem_magazine_tuning)) {
-				atomic_add_64(&cp->cache_mag_reloads, 1);
-			}
 			umem_cpu_reload(ccp, fmp, ccp->cc_magsize);
 			continue;
 		}
@@ -2530,9 +2517,6 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 		 * magazine was empty, exchange them and try again.
 		 */
 		if (ccp->cc_prounds == 0) {
-			if (unlikely(umem_magazine_tuning)) {
-				atomic_add_64(&cp->cache_mag_reloads, 1);
-			}
 			umem_cpu_reload(ccp, ccp->cc_ploaded, ccp->cc_prounds);
 			continue;
 		}
@@ -2551,9 +2535,6 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 			if (ccp->cc_ploaded != NULL)
 				umem_depot_free(cp, &cp->cache_full,
 				    ccp->cc_ploaded);
-			if (unlikely(umem_magazine_tuning)) {
-				atomic_add_64(&cp->cache_mag_reloads, 1);
-			}
 			umem_cpu_reload(ccp, emp, 0);
 			continue;
 		}
@@ -3202,35 +3183,35 @@ umem_cache_update(umem_cache_t *cp)
 	 * Only active when umem_magazine_tuning is enabled.
 	 */
 	if (unlikely(umem_magazine_tuning) && cp->cache_magtype != NULL) {
+		/*
+		 * Compute alloc_ops by summing per-CPU cc_alloc counters
+		 * instead of using an atomic counter on the hot path.
+		 */
+		uint64_t allocs = 0;
+		uint32_t ci;
+		for (ci = 0; ci <= cp->cache_cpu_mask; ci++) {
+			umem_cpu_cache_t *tc =
+			    (umem_cpu_cache_t *)((char *)cp +
+			    umem_cpus[ci].cpu_cache_offset);
+			allocs += tc->cc_alloc;
+		}
+		cp->cache_alloc_ops = allocs;
+
 		uint64_t reloads = cp->cache_mag_reloads;
-		uint64_t allocs = cp->cache_alloc_ops;
 		uint64_t reload_delta = reloads - cp->cache_mag_reloads_prev;
 		uint64_t alloc_delta = allocs - cp->cache_alloc_ops_prev;
 
 		cp->cache_mag_reloads_prev = reloads;
 		cp->cache_alloc_ops_prev = allocs;
 
-		/*
-		 * Calculate reload frequency as percentage.
-		 * High reload frequency (>15%) indicates magazines are too small.
-		 * Low reload frequency (<2%) with memory pressure suggests we can shrink.
-		 */
 		if (alloc_delta > 100) {
-			uint64_t reload_pct = (reload_delta * 100) / alloc_delta;
-
-			/*
-			 * High reload frequency: increase magazine size to reduce thrashing.
-			 */
+			uint64_t reload_pct = (reload_delta * 100) /
+			    alloc_delta;
 			if (reload_pct > 15 &&
-			    cp->cache_chunksize < cp->cache_magtype->mt_maxbuf) {
+			    cp->cache_chunksize <
+			    cp->cache_magtype->mt_maxbuf) {
 				update_flags |= UMU_MAGAZINE_RESIZE;
 			}
-			/*
-			 * Low reload frequency with memory pressure: shrink magazine.
-			 * Note: Magazine shrinking is not currently implemented in
-			 * umem_cache_magazine_resize(), so this is a placeholder for
-			 * future enhancement.
-			 */
 		}
 	}
 

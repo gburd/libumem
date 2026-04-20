@@ -138,6 +138,12 @@ typedef struct profile_state {
 	int                 in_phase;
 	double              prev_rates[UMP_MAX_CACHES];
 
+	/* Entropy-based random workload detection */
+	int                 random_workload;
+
+	/* Pre-built index: cache walk order -> profile cache index */
+	int                 cache_to_profile_idx[UMP_MAX_CACHES];
+
 	/* Replay state (loaded profile) */
 	ump_file_header_t          loaded_header;
 	profile_cache_record_t     loaded_caches[UMP_MAX_CACHES];
@@ -199,24 +205,23 @@ find_or_add_cache(const char *name, size_t bufsize)
 }
 
 /*
- * Compute cosine similarity between two rate vectors.
+ * L1 distance phase matcher with early exit.
+ * Returns 1 if current and profiled rate vectors are within 20% L1 distance,
+ * exits early if distance exceeds 30% of the running total.
  */
-static double
-cosine_similarity(const double *a, const double *b, uint32_t n)
+static int
+phase_matches(double *current, double *profiled, int n)
 {
-	double dot = 0.0, mag_a = 0.0, mag_b = 0.0;
-	uint32_t i;
+	double sum_diff = 0, sum_total = 0;
+	int i;
 
 	for (i = 0; i < n; i++) {
-		dot += a[i] * b[i];
-		mag_a += a[i] * a[i];
-		mag_b += b[i] * b[i];
+		sum_diff += fabs(current[i] - profiled[i]);
+		sum_total += current[i] + profiled[i];
+		if (sum_diff > sum_total * 0.3)
+			return 0;
 	}
-
-	if (mag_a < 1e-12 || mag_b < 1e-12)
-		return 0.0;
-
-	return dot / (sqrt(mag_a) * sqrt(mag_b));
+	return (sum_total > 0 && sum_diff / sum_total < 0.2);
 }
 
 /*
@@ -261,7 +266,8 @@ umem_profile_sample(void)
 		return;
 
 	if (ps->mode == UMEM_PROFILE_USE) {
-		umem_profile_check_phase();
+		if (!ps->random_workload)
+			umem_profile_check_phase();
 		return;
 	}
 
@@ -277,7 +283,18 @@ umem_profile_sample(void)
 		if (idx < 0)
 			continue;
 
-		uint64_t alloc_ops = cp->cache_alloc_ops;
+		/*
+		 * Compute alloc_ops from per-CPU cc_alloc counters
+		 * instead of using the removed hot-path atomic.
+		 */
+		uint64_t alloc_ops = 0;
+		uint32_t ci;
+		for (ci = 0; ci <= cp->cache_cpu_mask; ci++) {
+			umem_cpu_cache_t *tc =
+			    (umem_cpu_cache_t *)((char *)cp +
+			    umem_cpus[ci].cpu_cache_offset);
+			alloc_ops += tc->cc_alloc;
+		}
 		uint64_t slab_free = cp->cache_slab_free;
 		uint64_t buftotal = cp->cache_buftotal;
 		uint64_t mag_reloads = cp->cache_mag_reloads;
@@ -313,6 +330,35 @@ umem_profile_sample(void)
 		ps->prev_rates[idx] = alloc_rate;
 	}
 	(void) mutex_unlock(&umem_cache_lock);
+
+	/*
+	 * Entropy check: if the allocation rate distribution is
+	 * near-uniform random, skip recording this sample and
+	 * mark the workload as random. Shannon entropy > 90% of
+	 * log2(num_caches) indicates near-uniform distribution.
+	 */
+	if (ps->num_caches > 1) {
+		double total_rate = 0.0;
+		uint32_t ei;
+
+		for (ei = 0; ei < ps->num_caches; ei++)
+			total_rate += ps->cur_alloc_rates[ei];
+
+		if (total_rate > 0.0) {
+			double entropy = 0.0;
+			for (ei = 0; ei < ps->num_caches; ei++) {
+				double p = ps->cur_alloc_rates[ei] / total_rate;
+				if (p > 1e-12)
+					entropy -= p * log2(p);
+			}
+			double max_entropy = log2((double)ps->num_caches);
+			if (entropy > max_entropy * 0.9) {
+				ps->random_workload = 1;
+				return;
+			}
+		}
+	}
+	ps->random_workload = 0;
 
 	/*
 	 * Phase boundary detection: if any cache had a significant
@@ -494,6 +540,38 @@ umem_profile_load(const char *path)
 
 	(void) close(fd);
 	ps->current_phase_idx = -1;
+
+	/*
+	 * Build cache walk order -> profile cache index mapping.
+	 * Walk live caches once and match by name against the loaded
+	 * profile to eliminate O(n^2) strcmp in check_phase.
+	 */
+	for (i = 0; i < UMP_MAX_CACHES; i++)
+		ps->cache_to_profile_idx[i] = -1;
+
+	{
+		umem_cache_t *cp;
+		uint32_t walk_idx = 0;
+
+		(void) mutex_lock(&umem_cache_lock);
+		for (cp = umem_null_cache.cache_next;
+		    cp != &umem_null_cache;
+		    cp = cp->cache_next) {
+			if (walk_idx >= UMP_MAX_CACHES)
+				break;
+			for (i = 0; i < ps->loaded_header.num_caches; i++) {
+				if (strcmp(ps->loaded_caches[i].name,
+				    cp->cache_name) == 0) {
+					ps->cache_to_profile_idx[walk_idx] =
+					    (int)i;
+					break;
+				}
+			}
+			walk_idx++;
+		}
+		(void) mutex_unlock(&umem_cache_lock);
+	}
+
 	return 0;
 
 fail:
@@ -587,36 +665,46 @@ umem_profile_check_phase(void)
 		return;
 
 	/*
-	 * Build current rate vector by walking all caches.
+	 * Build current rate vector using the pre-built index array
+	 * to avoid O(n^2) string comparisons.
 	 */
 	double current_rates[UMP_MAX_CACHES];
 	uint32_t ncaches = 0;
+	uint32_t walk_idx = 0;
+
+	memset(current_rates, 0, sizeof(current_rates));
 
 	(void) mutex_lock(&umem_cache_lock);
 	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
 	    cp = cp->cache_next) {
-		if (ncaches >= UMP_MAX_CACHES)
+		if (walk_idx >= UMP_MAX_CACHES)
 			break;
 
-		uint64_t alloc_ops = cp->cache_alloc_ops;
-		int idx = -1;
+		int idx = ps->cache_to_profile_idx[walk_idx];
+		walk_idx++;
 
-		for (i = 0; i < ps->loaded_header.num_caches; i++) {
-			if (strcmp(ps->loaded_caches[i].name,
-			    cp->cache_name) == 0) {
-				idx = (int)i;
-				break;
-			}
+		if (idx < 0)
+			continue;
+
+		/*
+		 * Compute alloc_ops by summing per-CPU cc_alloc counters
+		 * instead of relying on the atomic hot-path counter.
+		 */
+		uint64_t alloc_ops = 0;
+		uint32_t cpu;
+		for (cpu = 0; cpu <= cp->cache_cpu_mask; cpu++) {
+			umem_cpu_cache_t *ccp =
+			    (umem_cpu_cache_t *)((char *)cp +
+			    umem_cpus[cpu].cpu_cache_offset);
+			alloc_ops += ccp->cc_alloc;
 		}
 
-		if (idx >= 0) {
-			double rate = (double)(alloc_ops -
-			    ps->prev_alloc_ops[idx]);
-			ps->prev_alloc_ops[idx] = alloc_ops;
-			current_rates[idx] = rate;
-			if ((uint32_t)idx >= ncaches)
-				ncaches = (uint32_t)idx + 1;
-		}
+		double rate = (double)(alloc_ops -
+		    ps->prev_alloc_ops[idx]);
+		ps->prev_alloc_ops[idx] = alloc_ops;
+		current_rates[idx] = rate;
+		if ((uint32_t)idx >= ncaches)
+			ncaches = (uint32_t)idx + 1;
 	}
 	(void) mutex_unlock(&umem_cache_lock);
 
@@ -624,10 +712,10 @@ umem_profile_check_phase(void)
 		return;
 
 	/*
-	 * Compare current rates against each profiled phase.
+	 * Compare current rates against each profiled phase
+	 * using L1 distance with early exit.
 	 */
 	int best_phase = -1;
-	double best_sim = 0.0;
 
 	for (i = 0; i < ps->loaded_header.num_phases; i++) {
 		profile_phase_t *ph = &ps->loaded_phases[i];
@@ -642,15 +730,13 @@ umem_profile_check_phase(void)
 		for (j = n; j < ncaches; j++)
 			phase_rates[j] = 0.0;
 
-		double sim = cosine_similarity(current_rates, phase_rates,
-		    ncaches);
-		if (sim > best_sim) {
-			best_sim = sim;
+		if (phase_matches(current_rates, phase_rates, (int)ncaches)) {
 			best_phase = (int)i;
+			break;
 		}
 	}
 
-	if (best_sim < UMP_SIMILARITY_THRESHOLD)
+	if (best_phase < 0)
 		return;
 
 	if (best_phase == ps->current_phase_idx)
@@ -668,42 +754,37 @@ umem_profile_check_phase(void)
 	profile_phase_t *next_ph = &ps->loaded_phases[next_idx];
 
 	(void) mutex_lock(&umem_cache_lock);
+	walk_idx = 0;
 	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
 	    cp = cp->cache_next) {
-		for (i = 0; i < next_ph->num_caches &&
-		    i < ps->loaded_header.num_caches; i++) {
-			if (strcmp(ps->loaded_caches[i].name,
-			    cp->cache_name) == 0) {
-				uint64_t target_bufs =
-				    next_ph->snapshots[i].buftotal;
-				if (target_bufs > cp->cache_buftotal) {
-					/*
-					 * Pre-allocate to fill the gap.
-					 * We do a limited pre-allocation here
-					 * (max 64 bufs) to avoid blocking the
-					 * update thread for too long.
-					 */
-					uint64_t gap =
-					    target_bufs - cp->cache_buftotal;
-					if (gap > 64)
-						gap = 64;
-					uint32_t j;
-					void *tmp[64];
-					uint32_t got = 0;
-					(void) mutex_unlock(&umem_cache_lock);
-					for (j = 0; j < (uint32_t)gap; j++) {
-						tmp[j] = _umem_cache_alloc(cp,
-						    UMEM_DEFAULT);
-						if (tmp[j] == NULL)
-							break;
-						got++;
-					}
-					for (j = 0; j < got; j++)
-						_umem_cache_free(cp, tmp[j]);
-					(void) mutex_lock(&umem_cache_lock);
-				}
-				break;
+		if (walk_idx >= UMP_MAX_CACHES)
+			break;
+
+		int idx = ps->cache_to_profile_idx[walk_idx];
+		walk_idx++;
+
+		if (idx < 0 || (uint32_t)idx >= next_ph->num_caches)
+			continue;
+
+		uint64_t target_bufs = next_ph->snapshots[idx].buftotal;
+		if (target_bufs > cp->cache_buftotal) {
+			uint64_t gap = target_bufs - cp->cache_buftotal;
+			if (gap > 64)
+				gap = 64;
+			uint32_t j;
+			void *tmp[64];
+			uint32_t got = 0;
+			(void) mutex_unlock(&umem_cache_lock);
+			for (j = 0; j < (uint32_t)gap; j++) {
+				tmp[j] = _umem_cache_alloc(cp,
+				    UMEM_DEFAULT);
+				if (tmp[j] == NULL)
+					break;
+				got++;
 			}
+			for (j = 0; j < got; j++)
+				_umem_cache_free(cp, tmp[j]);
+			(void) mutex_lock(&umem_cache_lock);
 		}
 	}
 	(void) mutex_unlock(&umem_cache_lock);
