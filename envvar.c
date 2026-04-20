@@ -44,6 +44,7 @@
 #include "vmem_base.h"
 #include "umem_ptc.h"
 #include "umem_own.h"
+#include "umem_profile.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
@@ -125,6 +126,8 @@ static arg_process_t umem_log_process;
 
 static size_t umem_size_tempval;
 static arg_process_t umem_size_process;
+
+static arg_process_t umem_profile_process;
 
 const char *____umem_environ_msg_options = "-- UMEM_OPTIONS --";
 
@@ -220,6 +223,11 @@ static umem_env_item_t umem_options_items[] = {
 	{ "ownership",		"Evolving",	ITEM_UINT,
 		"Enable ownership/borrowing debug mode (1=enable, 0=disable)",
 		NULL, 0,	&umem_ownership_debug
+	},
+	{ "profile",		"Evolving",	ITEM_SPECIAL,
+		"=record:/path or =use:/path for allocation profiling",
+		NULL, 0, NULL,
+		NULL,				&umem_profile_process
 	},
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };
@@ -581,6 +589,33 @@ fail:
 
 }
 #endif
+
+char umem_profile_spec[512];
+
+static int
+umem_profile_process(const umem_env_item_t *item, const char *item_arg)
+{
+	(void)item;
+
+	if (item_arg == NULL) {
+		log_message("UMEM_OPTIONS: profile: requires =record:/path "
+		    "or =use:/path\n");
+		return (ARG_BAD);
+	}
+
+	if (strncmp(item_arg, "record:", 7) != 0 &&
+	    strncmp(item_arg, "use:", 4) != 0) {
+		log_message("UMEM_OPTIONS: profile: must be "
+		    "profile=record:/path or profile=use:/path\n");
+		return (ARG_BAD);
+	}
+
+	(void) strncpy(umem_profile_spec, item_arg,
+	    sizeof (umem_profile_spec) - 1);
+	umem_profile_spec[sizeof (umem_profile_spec) - 1] = '\0';
+
+	return (ARG_SUCCESS);
+}
 
 static int
 process_item(const umem_env_item_t *item, const char *item_arg)

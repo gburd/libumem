@@ -421,6 +421,7 @@
 #include "umem_ptc.h"
 #include "umem_simd.h"
 #include "umem_stacktrace.h"
+#include "umem_profile.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
@@ -4416,6 +4417,19 @@ umem_init(void)
 #endif
 
 	umem_stacktrace_init();
+
+	/*
+	 * Initialize allocation profiling if configured via UMEM_OPTIONS
+	 * (profile=record:/path or profile=use:/path) or the UMEM_PROFILE
+	 * environment variable.
+	 */
+	{
+		const char *profile_env = getenv("UMEM_PROFILE");
+		if (umem_profile_spec[0] != '\0')
+			(void) umem_profile_init(umem_profile_spec);
+		else if (profile_env != NULL && profile_env[0] != '\0')
+			(void) umem_profile_init(profile_env);
+	}
 
 	/*
 	 * initialization done, ready to go

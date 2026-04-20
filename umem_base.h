@@ -150,6 +150,7 @@ extern int umem_create_update_thread(void);
  */
 void umem_setup_envvars(int);
 void umem_process_envvars(void);
+extern char umem_profile_spec[512];
 
 /*
  * malloc.c: traditional malloc/free interface
