@@ -220,3 +220,5 @@ umem_numa.[ch]
 # Temporary cleanup directory
 tmp/
 compile_commands.json
+.idea/
+.vscode/
