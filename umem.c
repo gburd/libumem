@@ -2004,6 +2004,53 @@ umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp,
 	umem_depot_push(mlp, mp);
 }
 
+/*
+ * Flush all per-thread magazines back to depot.
+ * Called from umem_ptc_destroy() at thread exit.
+ * For each bin with a loaded/previous magazine, free every cached
+ * object back to the slab layer, then return the empty magazine
+ * to the depot's empty list.
+ */
+void
+umem_ptc_mag_flush_all(umem_ptc_t *ptc)
+{
+	int bin_idx;
+
+	for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
+		umem_ptc_mag_t *mag = &ptc->mags[bin_idx];
+		umem_cache_t *cp = (umem_cache_t *)mag->cache;
+
+		if (cp == NULL)
+			continue;
+
+		/* Flush objects from loaded magazine */
+		if (mag->loaded != NULL) {
+			int r;
+			for (r = 0; r < mag->rounds; r++) {
+				void *buf = mag->loaded->mag_round[r];
+				if (buf != NULL)
+					_umem_cache_free(cp, buf);
+			}
+			mag->rounds = 0;
+			umem_depot_free(cp, &cp->cache_empty, mag->loaded);
+			mag->loaded = NULL;
+		}
+
+		/* Flush objects from previous magazine */
+		if (mag->previous != NULL) {
+			int r;
+			for (r = 0; r < mag->prounds; r++) {
+				void *buf = mag->previous->mag_round[r];
+				if (buf != NULL)
+					_umem_cache_free(cp, buf);
+			}
+			mag->prounds = 0;
+			umem_depot_free(cp, &cp->cache_empty, mag->previous);
+			mag->previous = NULL;
+		}
+	}
+}
+
 #ifdef UMEM_RSEQ_AVAILABLE
 static void *
 umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
@@ -2758,6 +2805,75 @@ umem_alloc_retry:
 						return
 						    (b->slots[--b->count]);
 					}
+					/*
+					 * PTC bin empty — try per-thread
+					 * magazine before taking cc_lock.
+					 */
+					{
+					umem_ptc_mag_t *mag =
+					    &ptc->mags[(int)bin];
+					if (mag->rounds > 0) {
+						mag->rounds--;
+						buf = mag->loaded->
+						    mag_round[mag->rounds];
+						return (buf);
+					}
+					/*
+					 * Loaded mag empty — swap with
+					 * previous magazine.
+					 */
+					if (mag->prounds > 0) {
+						umem_magazine_t *tmp;
+						int tmp_r;
+						tmp = mag->loaded;
+						tmp_r = mag->rounds;
+						mag->loaded = mag->previous;
+						mag->rounds = mag->prounds;
+						mag->previous = tmp;
+						mag->prounds = tmp_r;
+						mag->rounds--;
+						buf = mag->loaded->
+						    mag_round[mag->rounds];
+						return (buf);
+					}
+					/*
+					 * Both mags empty — refill from
+					 * depot (only lock acquisition).
+					 */
+					if (mag->cache == NULL)
+						mag->cache = cp;
+					{
+					umem_magazine_t *fmp;
+					fmp = umem_depot_alloc(cp,
+					    &cp->cache_full);
+					if (fmp != NULL) {
+						if (mag->loaded != NULL) {
+						    if (mag->previous)
+							umem_depot_free(cp,
+							    &cp->cache_empty,
+							    mag->previous);
+						    mag->previous =
+							mag->loaded;
+						    mag->prounds =
+							mag->rounds;
+						}
+						mag->loaded = fmp;
+						mag->rounds =
+						    mag->magsize > 0 ?
+						    mag->magsize :
+						    cp->cache_magtype->
+						    mt_magsize;
+						if (mag->magsize == 0)
+						    mag->magsize =
+							cp->cache_magtype->
+							mt_magsize;
+						mag->rounds--;
+						buf = mag->loaded->
+						    mag_round[mag->rounds];
+						return (buf);
+					}
+					}
+					}
 				}
 			}
 		}
@@ -2859,10 +2975,81 @@ _umem_free(void *buf, size_t size)
 						b->slots[b->count++] = buf;
 						return;
 					}
+					/*
+					 * PTC bin full — try per-thread
+					 * magazine before taking cc_lock.
+					 */
+					{
+					umem_ptc_mag_t *mag =
+					    &ptc->mags[(int)bin];
+					if (mag->cache == NULL)
+						mag->cache = cp;
+					if (mag->loaded != NULL &&
+					    mag->rounds < mag->magsize) {
+						mag->loaded->
+						    mag_round[mag->rounds] =
+						    buf;
+						mag->rounds++;
+						return;
+					}
+					/*
+					 * Loaded mag full — swap with
+					 * previous magazine.
+					 */
+					if (mag->previous != NULL &&
+					    mag->prounds < mag->magsize) {
+						umem_magazine_t *tmp;
+						int tmp_r;
+						tmp = mag->loaded;
+						tmp_r = mag->rounds;
+						mag->loaded = mag->previous;
+						mag->rounds = mag->prounds;
+						mag->previous = tmp;
+						mag->prounds = tmp_r;
+						mag->loaded->
+						    mag_round[mag->rounds] =
+						    buf;
+						mag->rounds++;
+						return;
+					}
+					/*
+					 * Both mags full — flush loaded
+					 * to depot, get empty magazine.
+					 */
+					{
+					umem_magazine_t *emp;
+					if (mag->loaded != NULL) {
+						umem_depot_free(cp,
+						    &cp->cache_full,
+						    mag->loaded);
+					}
+					emp = umem_depot_alloc(cp,
+					    &cp->cache_empty);
+					if (emp != NULL) {
+						mag->loaded = emp;
+						mag->rounds = 0;
+						if (mag->magsize == 0)
+						    mag->magsize =
+							cp->cache_magtype->
+							mt_magsize;
+						mag->loaded->
+						    mag_round[mag->rounds] =
+						    buf;
+						mag->rounds++;
+						return;
+					}
+					/*
+					 * No empty mag from depot —
+					 * loaded was already donated,
+					 * so clear it and fall through.
+					 */
+					mag->loaded = NULL;
+					mag->rounds = 0;
+					}
+					}
 				}
 			}
 		}
-
 
 		if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);

@@ -46,6 +46,25 @@ extern "C" {
 #define PTC_NSLOTS 32        /* slots per bin */
 #define PTC_NBINS 28         /* number of size classes (up to 2048B) */
 
+/* Forward declaration */
+struct umem_magazine;
+struct umem_cache;
+
+/*
+ * Per-thread magazine: thread-local loaded/previous magazine pair.
+ * Sits between PTC bins and the depot, eliminating cc_lock contention.
+ * When the PTC bin is empty/full, the thread magazine provides/accepts
+ * objects without taking any lock. Only depot refill/flush takes a lock.
+ */
+typedef struct umem_ptc_mag {
+	struct umem_magazine *loaded;   /* currently loaded magazine */
+	struct umem_magazine *previous; /* previously loaded magazine */
+	int rounds;                     /* rounds remaining in loaded */
+	int prounds;                    /* rounds remaining in previous */
+	int magsize;                    /* capacity of magazine */
+	struct umem_cache *cache;       /* owning cache (set on first use) */
+} umem_ptc_mag_t;
+
 /*
  * Per-bin structure holding cached objects
  */
@@ -60,6 +79,7 @@ typedef struct umem_ptc_bin {
  */
 typedef struct umem_ptc {
 	umem_ptc_bin_t bins[PTC_NBINS];
+	umem_ptc_mag_t mags[PTC_NBINS]; /* per-thread magazines */
 	uint64_t alloc_count;   /* statistics */
 	uint64_t free_count;
 	uint64_t hits;
@@ -117,6 +137,11 @@ void umem_ptc_destroy(umem_ptc_t *ptc);
  * Initialize ptc subsystem (called during umem initialization)
  */
 void umem_ptc_init(void);
+
+/*
+ * Flush all per-thread magazines back to depot (called at thread exit)
+ */
+void umem_ptc_mag_flush_all(umem_ptc_t *ptc);
 
 /*
  * Flush a bin to the magazine layer

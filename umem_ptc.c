@@ -444,6 +444,9 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 		return;
 	}
 
+	/* Flush all per-thread magazines back to depot first */
+	umem_ptc_mag_flush_all(ptc);
+
 	/* Flush all bins back to magazine layer incrementally,
 	 * yielding between bins to reduce thread-exit latency spike */
 	for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
