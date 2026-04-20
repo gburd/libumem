@@ -9,6 +9,7 @@
 #include <umem_impl.h>
 #include <stdio.h>
 #include <string.h>
+#include "umem_stacktrace.h"
 
 /*
  * Dump information about a single audit buffer
@@ -35,12 +36,14 @@ umem_dump_audit_buffer(umem_bufctl_audit_t *bcp)
 	    (unsigned long)bcp->bc_thread);
 
 	if (bcp->bc_depth > 0) {
+		int max_frames = bcp->bc_depth < 10 ? bcp->bc_depth : 10;
+		char buf[512];
 		(void) fprintf(stderr, "  Stack trace (%d frames):\n",
 		    bcp->bc_depth);
-		int max_frames = bcp->bc_depth < 10 ? bcp->bc_depth : 10;
 		for (int i = 0; i < max_frames; i++) {
-			(void) fprintf(stderr, "    [%2d] %p\n",
-			    i, (void *)bcp->bc_stack[i]);
+			umem_stacktrace_format(bcp->bc_stack[i], i,
+			    buf, sizeof(buf));
+			(void) fprintf(stderr, "  %s\n", buf);
 		}
 	} else {
 		(void) fprintf(stderr, "  No stack trace available\n");

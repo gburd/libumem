@@ -84,6 +84,8 @@ AM_CCASFLAGS =
 libumem_la_SOURCES = init_lib.c \
 			umem_agent_support.c \
 			umem_fail.c \
+			umem_stacktrace.c \
+			umem_stacktrace.h \
 			umem_fork.c \
 			umem_update_thread.c \
 			vmem_mmap.c \
@@ -220,7 +222,8 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_umem_own.c \
 			 test/unit/test_gc.c \
 			 test/unit/test_sparsemap.c \
-			 test/unit/test_coverage.c
+			 test/unit/test_coverage.c \
+			 test/unit/test_stacktrace.c
 test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread
 test_test_main_CPPFLAGS = -I$(srcdir)/test

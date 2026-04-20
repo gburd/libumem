@@ -420,6 +420,7 @@
 #include "vmem_base.h"
 #include "umem_ptc.h"
 #include "umem_simd.h"
+#include "umem_stacktrace.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
@@ -1122,7 +1123,6 @@ umem_error(int error, umem_cache_t *cparg, void *bufarg)
 
 	if (bcp != NULL && unlikely(cp->cache_flags & UMF_AUDIT) &&
 	    error != UMERR_BADBUFCTL) {
-		int d;
 		timespec_t ts;
 		hrtime_t diff;
 		umem_bufctl_audit_t *bcap = (umem_bufctl_audit_t *)bcp;
@@ -1135,10 +1135,8 @@ umem_error(int error, umem_cache_t *cparg, void *bufarg)
 		umem_printf("thread=%p  time=T-%ld.%09ld  slab=%p  cache: %s\n",
 		    (void *)(intptr_t)bcap->bc_thread, ts.tv_sec, ts.tv_nsec,
 		    (void *)sp, cp->cache_name);
-		for (d = 0; d < MIN(bcap->bc_depth, umem_stack_depth); d++) {
-			(void) print_sym((void *)bcap->bc_stack[d]);
-			umem_printf("\n");
-		}
+		umem_stacktrace_print(bcap->bc_stack,
+		    (int)MIN(bcap->bc_depth, umem_stack_depth), NULL);
 	}
 
 	umem_err_recoverable("umem: heap corruption detected");
@@ -4416,6 +4414,8 @@ umem_init(void)
 	 */
 	umem_ptc_init();
 #endif
+
+	umem_stacktrace_init();
 
 	/*
 	 * initialization done, ready to go

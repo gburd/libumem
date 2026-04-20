@@ -196,6 +196,13 @@ AC_COMPILE_IFELSE(
 
 AC_CHECK_LIB(dl,dlopen)
 
+# Check for elfutils libdw (DWARF debug info for stack traces)
+AC_CHECK_LIB(dw, dwfl_begin, [HAVE_LIBDW=yes], [HAVE_LIBDW=no])
+if test "x$HAVE_LIBDW" = "xyes"; then
+    AC_DEFINE(HAVE_LIBDW, 1, [Have elfutils libdw for DWARF stack traces])
+    LIBS="$LIBS -ldw"
+fi
+
 AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h thread.h sys/frame.h sys/stack.h alloca.h])
 AC_CHECK_FUNCS([issetugid mallinfo mallinfo2 malloc_stats malloc_usable_size])
 
@@ -439,4 +446,5 @@ Configuration summary:
   AddressSanitizer: $asan
   UBSanitizer:      $ubsan
   ThreadSanitizer:  $tsan
+  libdw (DWARF):    $HAVE_LIBDW
 "

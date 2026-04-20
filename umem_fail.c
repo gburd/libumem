@@ -41,6 +41,7 @@
 #include <stdio.h>
 
 #include "misc.h"
+#include "umem_stacktrace.h"
 
 static volatile int umem_exiting = 0;
 #define	UMEM_EXIT_ABORT	1
@@ -113,15 +114,10 @@ print_stacktrace(void)
 	 * if we are in a signal context, checking for it will recurse
 	 */
 	uint_t nframes = getpcstack(cur_stack, ERR_STACK_FRAMES, 0);
-	uint_t idx;
 
 	if (nframes > SKIP_FRAMES) {
-		umem_printf("stack trace:\n");
-
-		for (idx = SKIP_FRAMES; idx < nframes; idx++) {
-			(void) print_sym((void *)cur_stack[idx]);
-			umem_printf("\n");
-		}
+		umem_stacktrace_print(cur_stack + SKIP_FRAMES,
+		    (int)(nframes - SKIP_FRAMES), "stack trace:");
 	}
 }
 
