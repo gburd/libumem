@@ -1,0 +1,555 @@
+libumem - User Guide and Examples
+=================================
+
+This document covers how to build, use, and debug applications with
+libumem.  It includes a complete example of integrating umem as the
+memory allocator for a PostgreSQL-style memory context system.
+
+
+1. Overview
+-----------
+
+libumem is a slab-based memory allocator originally developed by Sun
+Microsystems for Solaris.  This port brings the same allocator to
+Linux, FreeBSD, macOS, and other POSIX systems.
+
+Key properties:
+
+  - Slab allocation with per-CPU magazines for low contention
+  - Object caching (constructor/destructor callbacks)
+  - Built-in debugging: buffer auditing, redzone checking, guard
+    pages, allocation stack traces
+  - Per-thread caching for small allocations
+  - Environment-variable-driven debug modes (no recompilation needed)
+  - Scoped arena allocator for temporary allocations
+  - Ownership/borrowing system inspired by Rust
+  - Conservative garbage collector with Boehm-compatible API
+  - Allocation profiling with phase detection
+
+The primary advantage over malloc/free is that umem detects memory
+corruption at the point it happens rather than letting it silently
+corrupt unrelated data.  The debug modes add overhead, but the release
+mode is competitive with system malloc.
+
+
+2. Building
+-----------
+
+From the repository root:
+
+    ./configure
+    make -j$(nproc)
+    make check
+
+To install system-wide:
+
+    sudo make install
+    sudo ldconfig
+
+To use without installing (for testing or development):
+
+    LD_LIBRARY_PATH=.libs ./your_app
+
+To intercept malloc/free in an existing application:
+
+    LD_PRELOAD=.libs/libumem_malloc.so ./your_app
+
+This replaces the system allocator with umem for the target process
+without any code changes.
+
+
+3. Basic Usage
+--------------
+
+There are two allocation interfaces: raw allocation and object caches.
+
+Raw allocation (drop-in replacement for malloc/free):
+
+    #include <umem.h>
+
+    void *p = umem_alloc(256, UMEM_DEFAULT);
+    if (p == NULL) {
+        /* handle allocation failure */
+    }
+    /* use p */
+    umem_free(p, 256);  /* caller must supply size */
+
+    void *z = umem_zalloc(1024, UMEM_DEFAULT);  /* zero-filled */
+    umem_free(z, 1024);
+
+The UMEM_NOFAIL flag can be used instead of UMEM_DEFAULT to make
+allocations that never return NULL (they call exit() on failure
+instead).  Register a callback with umem_nofail_callback() to
+customize this behavior.
+
+Object caches (for fixed-size objects allocated repeatedly):
+
+    static umem_cache_t *widget_cache;
+
+    /* Create once during initialization */
+    widget_cache = umem_cache_create("widget_cache",
+        sizeof(widget_t),  /* object size */
+        0,                 /* alignment (0 = default) */
+        widget_constructor,  /* called on new slab objects */
+        widget_destructor,   /* called when slab is destroyed */
+        NULL,              /* reclaim callback (optional) */
+        NULL,              /* callback argument */
+        NULL,              /* vmem source (NULL = default) */
+        0);                /* flags */
+
+    /* Fast allocation from cache */
+    widget_t *w = umem_cache_alloc(widget_cache, UMEM_DEFAULT);
+    /* ... use w ... */
+    umem_cache_free(widget_cache, w);
+
+    /* Destroy when done */
+    umem_cache_destroy(widget_cache);
+
+Object caches are the core of umem's performance.  Objects are kept
+in magazines (per-CPU freelists), so allocation and free are often
+just a pointer swap with no locking.
+
+
+4. Debug Modes
+--------------
+
+All debug modes are controlled by the UMEM_DEBUG environment variable.
+No recompilation is needed.  Set the variable before your application
+starts.
+
+  UMEM_DEBUG=default
+
+    Enables the full debugging suite: audit (stack traces), contents
+    logging, and guards (deadbeef patterns + redzone checking).  This
+    is the recommended setting during development.
+
+    Overhead: 2-5x slower allocations, significant memory overhead
+    for stack trace storage.
+
+    What it catches: buffer overflows, use-after-free, double-free,
+    uninitialized memory reads, memory leaks (via stack traces).
+
+  UMEM_DEBUG=audit
+
+    Enables allocation/free stack trace recording.  Each buffer gets
+    a transaction record with the stack trace of the code that last
+    allocated or freed it.
+
+    Overhead: ~2x slower allocations due to stack unwinding.
+
+    What it catches: memory leaks (you can identify who allocated
+    leaked buffers), use-after-free (the free stack trace shows who
+    freed it).
+
+    You can control the stack depth:  UMEM_DEBUG=audit=20
+    records 20 frames instead of the default.
+
+  UMEM_DEBUG=guards
+
+    Enables deadbeef pattern filling and redzone checking.  Freed
+    memory is filled with 0xdeadbeef.  A redzone sentinel (0xfeedface)
+    is placed after each allocation.  On every free, umem verifies
+    that the patterns are intact.
+
+    Overhead: ~1.5x slower frees due to pattern verification.
+
+    What it catches: buffer overflows (redzone corruption), writes
+    to freed memory (deadbeef pattern corruption), partial
+    double-frees.
+
+  UMEM_DEBUG=firewall=<minbytes>
+
+    Places every allocation of at least <minbytes> bytes so that
+    its end is adjacent to an unmapped page.  Any buffer overflow
+    immediately triggers a segfault.
+
+    Overhead: one page of virtual memory wasted per allocation.
+
+    What it catches: buffer overflows (immediately, at the point
+    of the overflowing write, not at the next free).
+
+    Example:  UMEM_DEBUG=firewall=64
+    puts a guard page after every allocation >= 64 bytes.
+
+  UMEM_DEBUG=lite
+
+    Lightweight checking with minimal overhead.  Suitable for
+    production use when you need some safety net but cannot afford
+    the full debug cost.
+
+Options can be combined:
+
+    UMEM_DEBUG=audit,guards
+    UMEM_DEBUG=audit=16,firewall=128,verbose
+
+
+5. Stack Traces on Error
+-------------------------
+
+When umem detects memory corruption (with UMEM_DEBUG=audit or
+UMEM_DEBUG=default), it prints a diagnostic message to stderr
+that includes GDB-style stack traces:
+
+    umem: buffer 0x7f4a8c001200 (size 64, cache "umem_alloc_64"):
+      previous transaction was a free:
+        #0  0x7f4a8a012e3a in umem_cache_free+0x1a ()
+        #1  0x7f4a8a012f4b in umem_free+0x4b ()
+        #2  0x00000040123c in process_query+0x8c () at handler.c:142
+        #3  0x000000401056 in main+0x56 () at server.c:38
+
+To get file:line information in the stack traces, compile your
+application with debug symbols:
+
+    gcc -g -O2 -o myapp myapp.c -lumem
+
+The stack traces use the libumem built-in unwinder (based on
+libunwind or frame pointers, depending on platform).  For best
+results, avoid -fomit-frame-pointer.
+
+
+6. PostgreSQL Integration Example
+----------------------------------
+
+The files in this directory demonstrate how to integrate umem with
+PostgreSQL's MemoryContext system.  See:
+
+    umem_palloc.h    Public header
+    umem_palloc.c    Implementation and demo
+
+The key idea is to create one set of umem caches per MemoryContext.
+Each context can have different debug flags:
+
+    /* Production context: no debug overhead */
+    UmemContext *top = umem_context_create(
+        "TopMemoryContext", 8192, 0);
+
+    /* Development: audit this subsystem */
+    UmemContext *exec = umem_context_create(
+        "ExecutorContext", 4096, UMEM_CTX_DEBUG_AUDIT);
+
+    /* Investigating a bug: enable guard patterns */
+    UmemContext *tuple = umem_context_create(
+        "TupleContext", 2048, UMEM_CTX_DEBUG_GUARDS);
+
+Each context owns size-classed caches (32, 64, 128, ... bytes).
+Allocations are routed to the smallest cache that fits.
+
+To trace a memory leak in a specific PostgreSQL subsystem:
+
+  1. Create that subsystem's context with UMEM_CTX_DEBUG_AUDIT.
+  2. Run the workload.
+  3. Call umem_context_stats() to see outstanding allocations.
+  4. Set UMEM_DEBUG=audit to get stack traces in the output.
+
+To build and run the demo:
+
+    cd examples
+    make
+    LD_LIBRARY_PATH=../.libs ./umem_palloc_demo
+
+To see debug diagnostics:
+
+    UMEM_DEBUG=default LD_LIBRARY_PATH=../.libs ./umem_palloc_demo
+
+
+7. GDB/LLDB Debugging Commands
+-------------------------------
+
+When debugging a core dump or live process that uses libumem, these
+GDB commands are useful.
+
+Print the global umem flags (shows which debug modes are active):
+
+    (gdb) print umem_flags
+
+Walk the cache list (all umem caches are in a linked list):
+
+    (gdb) set $cp = umem_null_cache.cache_next
+    (gdb) while $cp != &umem_null_cache
+     > printf "cache: %s  size: %d  alloc: %llu  free: %llu\n", \
+     >   $cp->cache_name, $cp->cache_bufsize, \
+     >   $cp->cache_alloc, $cp->cache_free
+     > set $cp = $cp->cache_next
+     > end
+
+Inspect a specific buffer's buftag (when guards are active):
+
+    (gdb) set $bt = (umem_buftag_t *)((char *)$buf + $cache_bufsize)
+    (gdb) print/x *$bt
+
+    The bt_redzone field should be 0xfeedface.  If it is not, the
+    buffer was overflowed.
+
+Get the allocation stack trace for a buffer (when audit is active):
+
+    (gdb) set $bcp = (umem_bufctl_audit_t *)$bt->bt_bufctl
+    (gdb) print $bcp->bc_depth
+    (gdb) print $bcp->bc_stack[0]@$bcp->bc_depth
+
+    Then use "info symbol <address>" to resolve each frame.
+
+In LLDB, the equivalent commands use "expr" instead of "print" and
+"p" instead of "set":
+
+    (lldb) expr umem_flags
+    (lldb) p (umem_buftag_t *)((char *)buf + cache_bufsize)
+
+
+8. Allocation Profiling
+------------------------
+
+libumem can record allocation profiles that capture per-cache
+allocation rates and detect behavioral phases in your application.
+
+Record a profile:
+
+    UMEM_OPTIONS=profile=record:/tmp/myapp.ump ./myapp
+
+This creates a binary .ump file containing timestamped allocation
+counts for each cache.
+
+Analyze a profile:
+
+    tools/umem_profile_dump /tmp/myapp.ump
+
+The dump tool shows:
+
+  - Per-cache allocation counts and rates
+  - Detected phases (startup, steady-state, shutdown)
+  - Phase transitions with timestamps
+  - Thread-level allocation breakdowns
+
+Use a recorded profile to pre-warm caches on startup:
+
+    UMEM_OPTIONS=profile=use:/tmp/myapp.ump ./myapp
+
+This pre-creates magazines based on the recorded steady-state
+allocation pattern, reducing warmup time.
+
+Profiling adds approximately 3-5% overhead to allocation-heavy
+workloads.  It is designed to be safe for production use.
+
+
+9. Ownership Tracking
+----------------------
+
+libumem includes an ownership/borrowing system inspired by Rust's
+ownership model.  It tracks who owns each allocation and detects
+common memory safety violations at runtime.
+
+Basic usage:
+
+    #include <umem_own.h>
+
+    /* Allocate with ownership tracking */
+    umem_owned_t *buf = umem_own_alloc(256, UMEM_DEFAULT);
+
+    /* Get a pointer to the data */
+    void *ptr = umem_deref(buf);
+    memcpy(ptr, data, 256);
+
+    /* Borrow a read-only reference */
+    umem_ref_t ref = umem_borrow(buf);
+    const void *rptr = ref.ref_data;
+    /* ... read from rptr ... */
+    umem_unborrow(ref);
+
+    /* Borrow a mutable reference (exclusive) */
+    umem_ref_t mref = umem_borrow_mut(buf);
+    void *mptr = mref.ref_data;
+    /* ... write to mptr ... */
+    umem_unborrow(mref);
+
+    /* Transfer ownership */
+    umem_owned_t *new_owner = umem_move(buf);
+    /* buf is now invalid; using it triggers a violation */
+
+    /* Release the allocation */
+    umem_drop(new_owner);
+
+Two modes of operation:
+
+  Lightweight (always on when using umem_own_alloc):
+    Tracks ownership state and reference counts.  Approximately 2%
+    overhead.  Catches double-free and use-after-free.
+
+  Full debug (UMEM_OPTIONS=ownership):
+    Adds thread affinity checks, borrow conflict detection, and
+    stack capture on alloc.  Approximately 15% overhead.  Catches
+    data races (concurrent mutable borrows), cross-thread ownership
+    violations, and leaked allocations at shutdown.
+
+Violations detected:
+
+    UMEM_OWN_USE_AFTER_FREE     Dereference after umem_drop()
+    UMEM_OWN_USE_AFTER_MOVE     Dereference after umem_move()
+    UMEM_OWN_DOUBLE_FREE        Calling umem_drop() twice
+    UMEM_OWN_BORROW_CONFLICT    Mutable borrow while other borrows exist
+    UMEM_OWN_THREAD_VIOLATION   Access from wrong thread (debug mode)
+    UMEM_OWN_LEAK               Owned allocation not freed at shutdown
+
+Register a custom error handler:
+
+    void my_handler(umem_own_error_t err,
+        const umem_owned_t *owned, const char *msg) {
+        fprintf(stderr, "ownership violation: %s\n", msg);
+        abort();
+    }
+    umem_own_set_error_handler(my_handler);
+
+
+10. Garbage Collection
+-----------------------
+
+libumem includes a conservative garbage collector with a Boehm GC
+compatible API.  It uses umem's slab allocator as the backing store,
+so you get umem's debugging features on GC-managed memory too.
+
+Basic usage:
+
+    #include <umem_gc.h>
+
+    /* Initialize once */
+    GC_INIT();
+
+    /* Allocate (may contain pointers -- will be scanned) */
+    void *p = GC_MALLOC(256);
+
+    /* Allocate atomic (no pointers -- skip scanning) */
+    char *s = GC_MALLOC_ATOMIC(128);
+
+    /* Explicit free (optional -- GC will collect it) */
+    GC_FREE(p);
+
+    /* Force a collection cycle */
+    GC_gcollect();
+
+For multi-threaded applications, each thread must register:
+
+    /* In each thread's entry function */
+    GC_register_my_thread();
+    /* ... do work ... */
+    GC_unregister_my_thread();
+
+Finalizers (called before the object is collected):
+
+    void my_finalizer(void *obj, void *client_data) {
+        close(*(int *)obj);  /* close a file descriptor */
+    }
+    GC_REGISTER_FINALIZER(p, my_finalizer, NULL, NULL, NULL);
+
+Hybrid usage -- mix manual and collected allocations:
+
+    /* Manual (fast, deterministic lifetime) */
+    widget_t *w = umem_cache_alloc(widget_cache, UMEM_DEFAULT);
+    /* ... */
+    umem_cache_free(widget_cache, w);
+
+    /* Collected (convenient, no explicit free needed) */
+    node_t *n = GC_MALLOC(sizeof(node_t));
+    n->left = GC_MALLOC(sizeof(node_t));
+    /* n and n->left will be collected when unreachable */
+
+The GC uses a mark-sweep algorithm with concurrent marking and
+stop-the-world remark and finalize phases.
+
+
+11. Arena Allocator
+--------------------
+
+libumem provides a scoped arena allocator for temporary allocation
+patterns where many allocations share a common lifetime (parsers,
+request handlers, query processing).
+
+    #include <umem.h>
+
+    /* Create an arena with 64KB of backing memory */
+    umem_arena_t *arena = umem_arena_create(65536, UMEM_DEFAULT);
+
+    /* Bump-pointer allocation (16-byte aligned, very fast) */
+    char *buf = umem_arena_alloc(arena, 1024);
+    int *ids = umem_arena_alloc(arena, 100 * sizeof(int));
+
+    /* Check remaining space */
+    size_t avail = umem_arena_available(arena);
+
+    /* Reset: instant bulk free (sets offset back to 0) */
+    umem_arena_reset(arena);
+    /* All previous pointers from this arena are now invalid */
+
+    /* Allocate again from the reset arena */
+    char *buf2 = umem_arena_alloc(arena, 512);
+
+    /* Destroy releases all backing memory */
+    umem_arena_destroy(arena);
+
+Arenas are not thread-safe.  Each thread should use its own arena.
+The backing memory is obtained via mmap and returned via munmap.
+
+Arenas are ideal for request-scoped allocation in servers: create
+an arena per request, allocate freely during processing, then reset
+or destroy the arena when the request is complete.
+
+
+12. Environment Variables Reference
+-------------------------------------
+
+UMEM_DEBUG
+
+    Controls debug checking on allocations.
+
+    default         Enable audit, contents, and guards
+    audit[=frames]  Record stack traces (default depth: 15 frames)
+    contents[=bytes]  Store freed object contents (with UMEM_LOGGING)
+    guards          Enable deadbeef fill and redzone checking
+    firewall=bytes  Guard pages for allocations >= bytes
+    lite            Lightweight checking
+    verbose         Print error messages to stderr
+    nosignal        Abort on allocations from signal handlers
+    noabort         Do not abort on recoverable errors
+    mtbf=N          Inject allocation failures (mean time between)
+    random          Randomize debug flags per cache
+
+    Multiple options separated by commas:
+        UMEM_DEBUG=audit=20,guards,verbose
+
+UMEM_OPTIONS
+
+    Controls allocator tuning and optional features.
+
+    perthread_cache=bytes   Size of per-thread cache (default: varies)
+    tcache=0|1              Enable/disable per-thread caching
+    tcache_max=bytes        Maximum object size for per-thread cache
+    reclaim=0|1             Enable background slab reclamation
+    reclaim_delay=seconds   Delay before dirty slabs are reclaimed
+    ownership=0|1           Enable full ownership/borrowing debug
+    profile=record:/path    Record allocation profile to file
+    profile=use:/path       Use recorded profile for cache warmup
+    sbrk_minalloc=bytes     Minimum sbrk heap allocation chunk
+    sbrk_pagesize=bytes     Preferred sbrk heap page size
+
+    Multiple options separated by commas:
+        UMEM_OPTIONS=tcache=1,perthread_cache=65536,reclaim=1
+
+UMEM_LOGGING
+
+    Controls internal transaction logging.
+
+    transaction[=size]  Log allocation/free transactions
+    contents[=size]     Log freed object contents
+    fail[=size]         Log failed allocations
+    slab[=size]         Log slab creation events
+
+    The size parameter sets the log buffer size in bytes.
+
+    Multiple options separated by commas:
+        UMEM_LOGGING=transaction,contents
+
+
+Files in this Directory
+-----------------------
+
+    README             This file
+    umem_palloc.h      PostgreSQL integration header
+    umem_palloc.c      PostgreSQL integration implementation and demo
+    GNUmakefile        Standalone build for the demo
