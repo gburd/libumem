@@ -729,6 +729,7 @@ umem_profile_init(const char *mode_and_path)
 		    sizeof(ps->path) - 1);
 		ps->path[sizeof(ps->path) - 1] = '\0';
 		(void) gettimeofday(&ps->start_time, NULL);
+		atexit(umem_profile_fini);
 		return 0;
 	}
 
@@ -754,6 +755,9 @@ umem_profile_fini(void)
 	profile_state_t *ps = &profile_state;
 
 	if (ps->mode == UMEM_PROFILE_RECORD) {
+		/* Take a final sample to capture end-state, even if
+		 * the update thread never ran (short-lived processes) */
+		umem_profile_sample();
 		(void) write_profile(ps->path);
 	}
 
