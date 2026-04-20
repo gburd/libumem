@@ -18,9 +18,10 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_multithreaded \
 		  test/integration/test_realloc_bootstrap \
 		  test/integration/test_debug_features \
-		  test/integration/test_threading_stress
+		  test/integration/test_threading_stress \
+		  tools/umem_profile_dump
 
-libumem_la_LDFLAGS = -lpthread $(NUMA_LIBS)
+libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS)
 
 # Conditionally include stub_stand.c for Solaris/Illumos
 if SOLARIS_BUILD
@@ -112,6 +113,8 @@ libumem_la_SOURCES = init_lib.c \
 			umem_hooks.h \
 			umem_ptc.c \
 			umem_ptc.h \
+			umem_profile.c \
+			umem_profile.h \
 			umem_arena.c \
 			umem_arena.h \
 			umem_own.c \
@@ -220,9 +223,10 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_umem_own.c \
 			 test/unit/test_gc.c \
 			 test/unit/test_sparsemap.c \
-			 test/unit/test_coverage.c
+			 test/unit/test_coverage.c \
+			 test/unit/test_profile.c
 test_test_main_LDADD = libumem.la
-test_test_main_LDFLAGS = -pthread
+test_test_main_LDFLAGS = -pthread -lm
 test_test_main_CPPFLAGS = -I$(srcdir)/test
 
 test_test_debug_SOURCES = test/test_debug.c
@@ -295,6 +299,10 @@ test_integration_test_threading_stress_SOURCES = test/integration/test_threading
 test_integration_test_threading_stress_LDADD = libumem.la libumem_malloc.la
 test_integration_test_threading_stress_LDFLAGS = -pthread
 test_integration_test_threading_stress_CPPFLAGS = -I$(srcdir)/test
+
+tools_umem_profile_dump_SOURCES = tools/umem_profile_dump.c
+tools_umem_profile_dump_LDADD =
+tools_umem_profile_dump_LDFLAGS = -lm
 
 man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
