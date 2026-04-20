@@ -810,6 +810,7 @@ umem_profile_init(const char *mode_and_path)
 		    sizeof(ps->path) - 1);
 		ps->path[sizeof(ps->path) - 1] = '\0';
 		(void) gettimeofday(&ps->start_time, NULL);
+		umem_magazine_tuning = 1;
 		atexit(umem_profile_fini);
 		return 0;
 	}

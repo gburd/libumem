@@ -1,0 +1,16 @@
+# Expected profile characteristics (not exact values):
+# num_caches >= 5
+# num_phases >= 2
+# Cache names include: prof_32, prof_64, prof_128, prof_256, prof_512
+# Phase 0 (startup): alloc_rate > 1000 for prof_* caches, buftotal > 1000
+# Phase 1 (steady): alloc_rate in range 100-5000 for prof_* caches
+# Phase 2 (shutdown): alloc_rate near 0, buftotal stable or declining
+#
+# The profile dump should contain:
+# - A header line "=== umem profile ==="
+# - "caches:" field with value >= 5
+# - "phases:" field with value >= 2
+# - Per-cache rows for each of the 5 prof_* size classes
+# - Phase records showing distinct allocation patterns
+# - At least one phase with alloc_rate > 1000 (the burst)
+# - At least one phase with alloc_rate near 0 (quiescent)
