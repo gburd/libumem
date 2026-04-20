@@ -13,6 +13,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/bench_simd \
 		  test/bench/bench_simd_threshold \
 		  test/bench/bench_numa_hash \
+		  test/bench/bench_profile_test \
 		  test/integration/test_signals \
 		  test/integration/test_oom \
 		  test/integration/test_multithreaded \
@@ -272,6 +273,10 @@ test_bench_bench_numa_hash_CPPFLAGS = -I$(srcdir)
 test_bench_bench_numa_hash_LDADD =
 test_bench_bench_numa_hash_LDFLAGS = -pthread -lm $(NUMA_LIBS)
 
+test_bench_bench_profile_test_SOURCES = test/bench/bench_profile_test.c
+test_bench_bench_profile_test_LDADD = libumem.la
+test_bench_bench_profile_test_LDFLAGS = -pthread -lm
+
 # Integration tests
 test_integration_test_multithreaded_SOURCES = test/integration/test_multithreaded.c test/munit.c
 test_integration_test_multithreaded_LDADD = libumem.la
@@ -318,6 +323,8 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
 	test/tdigest.c test/tdigest.h test/common.c test/common.h \
 	test/bench/bench_framework.c test/bench/bench_framework.h test/bench/allocators.c \
+	test/bench/bench_profile_test.c test/bench/expected_profile.txt \
+	test/bench/verify_profile.sh \
 	test/property/prop_alloc_free.c
 
 nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h umem_arena.h
