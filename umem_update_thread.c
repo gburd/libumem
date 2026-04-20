@@ -113,7 +113,8 @@ THR_API umem_update_thread(void *arg)
 			 * until all such work is finished.
 			 */
 			umem_cache_applyall(umem_cache_update);
-			umem_profile_sample();
+			if (unlikely(umem_profile_active))
+				umem_profile_sample();
 
 			(void) mutex_lock(&umem_update_lock);
 			in_update = 1;

@@ -150,9 +150,16 @@ typedef struct profile_state {
 	profile_phase_t            loaded_phases[UMP_MAX_PHASES];
 	int                        current_phase_idx;
 
+	/* Auto-shutdown flags */
+	int                 profile_written;  /* profile flushed to disk */
+	int                 converged;        /* USE mode phase matched */
+
 } profile_state_t;
 
 static profile_state_t profile_state;
+
+/* Global flag: non-zero when profiling is active (RECORD or USE) */
+int umem_profile_active = 0;
 
 /* ================================================================
  * Utility helpers
@@ -251,6 +258,8 @@ compute_optimal_magsize(uint64_t total_reloads, uint64_t total_allocs)
 	return 255;
 }
 
+static int write_profile(const char *path);
+
 /* ================================================================
  * Recording
  * ================================================================ */
@@ -266,6 +275,11 @@ umem_profile_sample(void)
 		return;
 
 	if (ps->mode == UMEM_PROFILE_USE) {
+		if (ps->converged) {
+			ps->mode = UMEM_PROFILE_OFF;
+			umem_profile_active = 0;
+			return;
+		}
 		if (!ps->random_workload)
 			umem_profile_check_phase();
 		return;
@@ -384,6 +398,28 @@ umem_profile_sample(void)
 
 		ps->num_phases++;
 		ps->in_phase = 1;
+	}
+
+	/*
+	 * Auto-stop recording once all caches have been stable for
+	 * UMP_STEADY_INTERVALS consecutive samples. Write the profile
+	 * to disk immediately so it survives SIGTERM/SIGKILL.
+	 */
+	if (!ps->profile_written && ps->num_caches > 0) {
+		int all_stable = 1;
+		uint32_t si;
+		for (si = 0; si < ps->num_caches; si++) {
+			if (ps->stable_intervals[si] < UMP_STEADY_INTERVALS) {
+				all_stable = 0;
+				break;
+			}
+		}
+		if (all_stable) {
+			(void) write_profile(ps->path);
+			ps->profile_written = 1;
+			ps->mode = UMEM_PROFILE_OFF;
+			umem_profile_active = 0;
+		}
 	}
 }
 
@@ -788,6 +824,8 @@ umem_profile_check_phase(void)
 		}
 	}
 	(void) mutex_unlock(&umem_cache_lock);
+
+	ps->converged = 1;
 }
 
 /* ================================================================
@@ -811,6 +849,7 @@ umem_profile_init(const char *mode_and_path)
 		ps->path[sizeof(ps->path) - 1] = '\0';
 		(void) gettimeofday(&ps->start_time, NULL);
 		umem_magazine_tuning = 1;
+		umem_profile_active = 1;
 		atexit(umem_profile_fini);
 		return 0;
 	}
@@ -825,6 +864,7 @@ umem_profile_init(const char *mode_and_path)
 			return -1;
 		}
 		(void) gettimeofday(&ps->start_time, NULL);
+		umem_profile_active = 1;
 		return 0;
 	}
 
@@ -836,14 +876,14 @@ umem_profile_fini(void)
 {
 	profile_state_t *ps = &profile_state;
 
-	if (ps->mode == UMEM_PROFILE_RECORD) {
-		/* Take a final sample to capture end-state, even if
-		 * the update thread never ran (short-lived processes) */
+	if (ps->mode == UMEM_PROFILE_RECORD && !ps->profile_written) {
 		umem_profile_sample();
 		(void) write_profile(ps->path);
+		ps->profile_written = 1;
 	}
 
 	ps->mode = UMEM_PROFILE_OFF;
+	umem_profile_active = 0;
 }
 
 /* ================================================================

@@ -82,6 +82,13 @@ int  umem_profile_init(const char *mode_and_path);
 void umem_profile_fini(void);
 
 /*
+ * Non-zero when profiling is active (RECORD or USE mode).
+ * Checked by the update thread to avoid function call overhead
+ * when profiling is disabled.
+ */
+extern int umem_profile_active;
+
+/*
  * Called from the update thread every reap interval to sample
  * cache statistics and detect phase transitions.
  */
