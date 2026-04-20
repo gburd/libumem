@@ -73,7 +73,7 @@ static int ptc_table_ready;
  * For each index in [0, UMEM_MAXBUF >> UMEM_ALIGN_SHIFT), stores the
  * PTC bin index or -1 if not PTC-eligible. Populated by umem_ptc_init().
  */
-int8_t umem_ptc_bin_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT];
+int8_t umem_ptc_bin_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT] = { [0 ... (UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) - 1] = -1 };
 
 /*
  * Size classes we cache (matching umem's small size classes)
@@ -295,8 +295,6 @@ umem_ptc_alloc(size_t size)
 	/* Fast path: take from cache */
 	if (bin->count > 0) {
 		ptr = bin->slots[--bin->count];
-		ptc->alloc_count++;
-		ptc->hits++;
 		return (ptr);
 	}
 
@@ -304,13 +302,10 @@ umem_ptc_alloc(size_t size)
 	if (umem_ptc_bin_refill(bin, umem_ptc_bin_size(bin_idx)) == 0) {
 		if (bin->count > 0) {
 			ptr = bin->slots[--bin->count];
-			ptc->alloc_count++;
-			ptc->hits++;
 			return (ptr);
 		}
 	}
 
-	ptc->misses++;
 	return (NULL);
 }
 
@@ -343,7 +338,6 @@ umem_ptc_free(void *ptr, size_t size)
 	/* Fast path: cache it */
 	if (bin->count < PTC_NSLOTS) {
 		bin->slots[bin->count++] = ptr;
-		ptc->free_count++;
 		return (0);
 	}
 
@@ -353,7 +347,6 @@ umem_ptc_free(void *ptr, size_t size)
 	/* Try again after flush */
 	if (bin->count < PTC_NSLOTS) {
 		bin->slots[bin->count++] = ptr;
-		ptc->free_count++;
 		return (0);
 	}
 

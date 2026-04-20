@@ -2729,31 +2729,30 @@ _umem_alloc(size_t size, int umflag)
 	void *buf;
 umem_alloc_retry:
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
-		umem_cache_t *cp = umem_alloc_table[index];
+		umem_cache_t *cp;
 		/*
 		 * Inlined PTC fast path for small allocations.
-		 * Skip PTC when debug flags are active — buftag
-		 * validation must not be bypassed.
+		 * The bin_table encodes -1 for disabled PTC, debug
+		 * caches, and ineligible sizes — one check covers all.
 		 */
-		if (likely(umem_ptc_enabled) &&
-		    likely(!(cp->cache_flags & UMF_BUFTAG))) {
-			umem_ptc_t *ptc = thread_ptc;
-			if (likely(ptc != NULL)) {
-				int8_t bin = umem_ptc_bin_table[index];
-				if (likely(bin >= 0)) {
+		{
+			int8_t bin = umem_ptc_bin_table[index];
+			if (likely(bin >= 0)) {
+				umem_ptc_t *ptc = thread_ptc;
+				if (unlikely(ptc == NULL))
+					ptc = umem_ptc_get();
+				if (likely(ptc != NULL)) {
 					umem_ptc_bin_t *b =
 					    &ptc->bins[(int)bin];
 					if (likely(b->count > 0)) {
-						buf = b->slots[--b->count];
-						ptc->alloc_count++;
-						ptc->hits++;
-						return (buf);
+						return
+						    (b->slots[--b->count]);
 					}
 				}
 			}
-			/* PTC miss — fall through to magazine layer */
 		}
 
+		cp = umem_alloc_table[index];
 		buf = _umem_cache_alloc(cp, umflag);
 		if (unlikely(cp->cache_flags & UMF_BUFTAG) && buf != NULL) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
@@ -2822,12 +2821,32 @@ _umem_free(void *buf, size_t size)
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
 
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
-		umem_cache_t *cp = umem_alloc_table[index];
+		umem_cache_t *cp;
 
 		/*
-		 * Handle debug checking before tcache to ensure correctness.
-		 * Debug checks must run even for tcache allocations.
+		 * Inlined PTC free fast path for small allocations.
+		 * The bin_table encodes -1 for debug caches, so PTC
+		 * never bypasses buftag validation.
 		 */
+		{
+			int8_t bin = umem_ptc_bin_table[index];
+			if (likely(bin >= 0)) {
+				umem_ptc_t *ptc = thread_ptc;
+				if (unlikely(ptc == NULL))
+					ptc = umem_ptc_get();
+				if (likely(ptc != NULL)) {
+					umem_ptc_bin_t *b =
+					    &ptc->bins[(int)bin];
+					if (likely(b->count < PTC_NSLOTS)) {
+						b->slots[b->count++] = buf;
+						return;
+					}
+				}
+			}
+		}
+
+		cp = umem_alloc_table[index];
+
 		if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
 			uint32_t *ip = (uint32_t *)btp;
@@ -2849,28 +2868,6 @@ _umem_free(void *buf, size_t size)
 				return;
 			}
 			btp->bt_redzone = UMEM_REDZONE_PATTERN;
-		}
-
-		/*
-		 * Inlined PTC free fast path for small allocations.
-		 * Skip PTC when debug flags are active.
-		 */
-		if (likely(umem_ptc_enabled) &&
-		    likely(!(cp->cache_flags & UMF_BUFTAG))) {
-			umem_ptc_t *ptc = thread_ptc;
-			if (likely(ptc != NULL)) {
-				int8_t bin = umem_ptc_bin_table[index];
-				if (likely(bin >= 0)) {
-					umem_ptc_bin_t *b =
-					    &ptc->bins[(int)bin];
-					if (likely(b->count < PTC_NSLOTS)) {
-						b->slots[b->count++] = buf;
-						ptc->free_count++;
-						return;
-					}
-				}
-			}
-			/* PTC full or miss — fall through to magazine layer */
 		}
 
 		_umem_cache_free(cp, buf);
