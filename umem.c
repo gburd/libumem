@@ -2727,20 +2727,30 @@ _umem_alloc(size_t size, int umflag)
 {
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
 	void *buf;
+	static __thread int ptc_initializing = 0;
 umem_alloc_retry:
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
-		umem_cache_t *cp;
+		umem_cache_t *cp = umem_alloc_table[index];
 		/*
 		 * Inlined PTC fast path for small allocations.
 		 * The bin_table encodes -1 for disabled PTC, debug
 		 * caches, and ineligible sizes — one check covers all.
+		 *
+		 * The cp lookup is done before the PTC block so the
+		 * CPU can begin the dependent load while we check the
+		 * thread-local cache, avoiding a pipeline stall on
+		 * PTC miss under contention.
 		 */
 		{
 			int8_t bin = umem_ptc_bin_table[index];
 			if (likely(bin >= 0)) {
 				umem_ptc_t *ptc = thread_ptc;
-				if (unlikely(ptc == NULL))
+				if (unlikely(ptc == NULL) &&
+				    !ptc_initializing) {
+					ptc_initializing = 1;
 					ptc = umem_ptc_get();
+					ptc_initializing = 0;
+				}
 				if (likely(ptc != NULL)) {
 					umem_ptc_bin_t *b =
 					    &ptc->bins[(int)bin];
@@ -2752,7 +2762,6 @@ umem_alloc_retry:
 			}
 		}
 
-		cp = umem_alloc_table[index];
 		buf = _umem_cache_alloc(cp, umflag);
 		if (unlikely(cp->cache_flags & UMF_BUFTAG) && buf != NULL) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
@@ -2819,21 +2828,30 @@ void
 _umem_free(void *buf, size_t size)
 {
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
+	static __thread int ptc_initializing_free = 0;
 
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
-		umem_cache_t *cp;
+		umem_cache_t *cp = umem_alloc_table[index];
 
 		/*
 		 * Inlined PTC free fast path for small allocations.
 		 * The bin_table encodes -1 for debug caches, so PTC
 		 * never bypasses buftag validation.
+		 *
+		 * The cp lookup is done before the PTC block so the
+		 * CPU can begin the dependent load while we check the
+		 * thread-local cache.
 		 */
 		{
 			int8_t bin = umem_ptc_bin_table[index];
 			if (likely(bin >= 0)) {
 				umem_ptc_t *ptc = thread_ptc;
-				if (unlikely(ptc == NULL))
+				if (unlikely(ptc == NULL) &&
+				    !ptc_initializing_free) {
+					ptc_initializing_free = 1;
 					ptc = umem_ptc_get();
+					ptc_initializing_free = 0;
+				}
 				if (likely(ptc != NULL)) {
 					umem_ptc_bin_t *b =
 					    &ptc->bins[(int)bin];
@@ -2845,7 +2863,6 @@ _umem_free(void *buf, size_t size)
 			}
 		}
 
-		cp = umem_alloc_table[index];
 
 		if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
 			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
