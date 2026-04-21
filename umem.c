@@ -3294,14 +3294,12 @@ umem_cache_reap(umem_cache_t *cp)
 	umem_depot_ws_reap(cp);
 
 	/*
-	 * Also trigger slab page reclamation so that explicit umem_reap()
-	 * calls return empty slab pages to the OS via madvise.
+	 * Slab page reclamation (madvise) is handled by the update
+	 * thread via umem_cache_update() → umem_cache_reclaim_pages().
+	 * We don't call it here because reclaim_pages drops and
+	 * reacquires cache_lock internally, creating a race window
+	 * under heavy allocation pressure.
 	 */
-	if (umem_reclaim_enabled) {
-		(void) mutex_lock(&cp->cache_lock);
-		umem_cache_reclaim_pages(cp);
-		(void) mutex_unlock(&cp->cache_lock);
-	}
 
 	/*
 	 * Reap the magazine shell cache too, so magazine shells

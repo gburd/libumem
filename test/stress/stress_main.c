@@ -352,7 +352,10 @@ scenario_memory_pressure(int duration_sec, scenario_result_t *result)
 
 	size_t cap = (PRESSURE_TARGET_MB * 1024UL * 1024UL) / PRESSURE_OBJ_SIZE;
 	void **pool = calloc(cap, sizeof(void *));
-	if (!pool) {
+	size_t *sizes = calloc(cap, sizeof(size_t));
+	if (!pool || !sizes) {
+		free(pool);
+		free(sizes);
 		result->name = "pressure";
 		result->errors = 1;
 		return;
@@ -375,6 +378,7 @@ scenario_memory_pressure(int duration_sec, scenario_result_t *result)
 			errors++;
 			break;
 		}
+		sizes[count] = PRESSURE_OBJ_SIZE;
 		memset(pool[count], 0xCC, PRESSURE_OBJ_SIZE);
 		lat_record(&lat, t1 - t0);
 		count++;
@@ -390,8 +394,9 @@ scenario_memory_pressure(int duration_sec, scenario_result_t *result)
 		/* Free some to get down to hold level */
 		while (count > hold && count > 0) {
 			count--;
-			umem_free(pool[count], PRESSURE_OBJ_SIZE);
+			umem_free(pool[count], sizes[count]);
 			pool[count] = NULL;
+			sizes[count] = 0;
 			ops++;
 		}
 
@@ -408,6 +413,7 @@ scenario_memory_pressure(int duration_sec, scenario_result_t *result)
 				errors++;
 				break;
 			}
+			sizes[count] = sz;
 			memset(pool[count], 0xDD, sz < 256 ? sz : 256);
 			lat_record(&lat, t1 - t0);
 			count++;
@@ -419,12 +425,13 @@ scenario_memory_pressure(int duration_sec, scenario_result_t *result)
 			peak_rss = rss;
 	}
 
-	/* Cleanup - free with original size since we mixed sizes */
+	/* Cleanup - free with tracked sizes */
 	for (size_t i = 0; i < count; i++) {
 		if (pool[i])
-			umem_free(pool[i], PRESSURE_OBJ_SIZE);
+			umem_free(pool[i], sizes[i]);
 	}
 	free(pool);
+	free(sizes);
 
 	uint64_t elapsed = now_ns() - start;
 
