@@ -450,12 +450,13 @@ scenario_memory_pressure(int duration_sec, scenario_result_t *result)
 #define PC_QUEUE_SIZE 8192
 
 typedef struct {
+	atomic_ulong seq;
 	void *ptr;
 	size_t size;
 } pc_item_t;
 
 typedef struct {
-	pc_item_t items[PC_QUEUE_SIZE];
+	_Alignas(64) pc_item_t items[PC_QUEUE_SIZE];
 	_Alignas(64) atomic_ulong head;
 	_Alignas(64) atomic_ulong tail;
 	atomic_int producers_done;
@@ -467,36 +468,47 @@ pc_queue_init(pc_queue_t *q)
 	atomic_init(&q->head, 0);
 	atomic_init(&q->tail, 0);
 	atomic_init(&q->producers_done, 0);
-	memset(q->items, 0, sizeof(q->items));
+	for (int i = 0; i < PC_QUEUE_SIZE; i++)
+		atomic_init(&q->items[i].seq, (unsigned long)i);
 }
 
 static bool
 pc_push(pc_queue_t *q, void *ptr, size_t sz)
 {
-	unsigned long h = atomic_load_explicit(&q->head, memory_order_relaxed);
-	unsigned long t = atomic_load_explicit(&q->tail, memory_order_acquire);
-	if (h - t >= PC_QUEUE_SIZE)
+	unsigned long h = atomic_load_explicit(&q->head,
+	    memory_order_relaxed);
+	pc_item_t *slot = &q->items[h % PC_QUEUE_SIZE];
+	unsigned long seq = atomic_load_explicit(&slot->seq,
+	    memory_order_acquire);
+	if (seq != h)
 		return false;
-	if (!atomic_compare_exchange_weak_explicit(&q->head, &h, h + 1,
-	    memory_order_acq_rel, memory_order_relaxed))
+	if (!atomic_compare_exchange_weak_explicit(&q->head, &h,
+	    h + 1, memory_order_relaxed, memory_order_relaxed))
 		return false;
-	q->items[h % PC_QUEUE_SIZE].ptr = ptr;
-	q->items[h % PC_QUEUE_SIZE].size = sz;
+	slot->ptr = ptr;
+	slot->size = sz;
+	atomic_store_explicit(&slot->seq, h + 1,
+	    memory_order_release);
 	return true;
 }
 
 static bool
 pc_pop(pc_queue_t *q, void **ptr, size_t *sz)
 {
-	unsigned long t = atomic_load_explicit(&q->tail, memory_order_relaxed);
-	unsigned long h = atomic_load_explicit(&q->head, memory_order_acquire);
-	if (t >= h)
+	unsigned long t = atomic_load_explicit(&q->tail,
+	    memory_order_relaxed);
+	pc_item_t *slot = &q->items[t % PC_QUEUE_SIZE];
+	unsigned long seq = atomic_load_explicit(&slot->seq,
+	    memory_order_acquire);
+	if (seq != t + 1)
 		return false;
-	if (!atomic_compare_exchange_weak_explicit(&q->tail, &t, t + 1,
-	    memory_order_acq_rel, memory_order_relaxed))
+	if (!atomic_compare_exchange_weak_explicit(&q->tail, &t,
+	    t + 1, memory_order_relaxed, memory_order_relaxed))
 		return false;
-	*ptr = q->items[t % PC_QUEUE_SIZE].ptr;
-	*sz = q->items[t % PC_QUEUE_SIZE].size;
+	*ptr = slot->ptr;
+	*sz = slot->size;
+	atomic_store_explicit(&slot->seq,
+	    t + PC_QUEUE_SIZE, memory_order_release);
 	return true;
 }
 
@@ -662,14 +674,19 @@ thrash_worker(void *arg)
 	while (now_ns() < deadline) {
 		int idx = (int)rng_range(&rng, 0, CACHE_THRASH_COUNT - 1);
 
+		/*
+		 * Hold the per-cache lock for the entire alloc/free
+		 * batch so the main thread cannot destroy the cache
+		 * while we are using it.
+		 */
 		pthread_mutex_lock(&shared->cache_locks[idx]);
 		umem_cache_t *c = shared->caches[idx];
-		pthread_mutex_unlock(&shared->cache_locks[idx]);
 
-		if (!c)
+		if (!c) {
+			pthread_mutex_unlock(&shared->cache_locks[idx]);
 			continue;
+		}
 
-		/* Alloc batch from this cache */
 		void *objs[CACHE_OBJ_PER_CACHE];
 		int alloc_count = 0;
 
@@ -686,9 +703,10 @@ thrash_worker(void *arg)
 			pthread_mutex_unlock(&shared->lat_lock);
 		}
 
-		/* Free them all */
 		for (int i = 0; i < alloc_count; i++)
 			umem_cache_free(c, objs[i]);
+
+		pthread_mutex_unlock(&shared->cache_locks[idx]);
 
 		ops += (uint64_t)alloc_count * 2;
 	}
