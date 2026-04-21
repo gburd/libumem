@@ -222,3 +222,7 @@ tmp/
 compile_commands.json
 .idea/
 .vscode/
+examples/umem_palloc_demo
+test/bench/bench_debug_overhead
+test/bench/bench_profile_test
+test/stress/stress_main
