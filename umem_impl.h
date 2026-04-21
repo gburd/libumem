@@ -573,6 +573,7 @@ struct umem_cache {
 	uint64_t	cache_depot_local;	/* hits from local CPU */
 	uint64_t	cache_depot_remote;	/* steals from same NUMA node */
 	uint64_t	cache_depot_cross_node;	/* steals from remote NUMA node */
+	uint64_t	cache_mag_total;	/* total magazine shells outstanding */
 
 #ifdef UMEM_RSEQ_AVAILABLE
 	/*

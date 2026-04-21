@@ -720,6 +720,7 @@ umem_cache_t            umem_null_cache = {
 	0,					/* cache_depot_local */
 	0,					/* cache_depot_remote */
 	0,					/* cache_depot_cross_node */
+	0,					/* cache_mag_total */
 #ifdef UMEM_RSEQ_AVAILABLE
 	NULL,					/* cache_rseq */
 #endif
@@ -1814,6 +1815,7 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 
 done:
 	ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+	atomic_add_64(&cp->cache_mag_total, -1ULL);
 	_umem_cache_free(cp->cache_magtype->mt_cache, mp);
 }
 
@@ -1945,11 +1947,13 @@ umem_depot_destroy_stale(umem_cache_t *cp, int is_full,
 		    sizeof (void *)) - 1;
 		for (int r = 0; r < magsize; r++) {
 			void *buf = mp->mag_round[r];
+			mp->mag_round[r] = NULL;
 			if (buf != NULL)
 				umem_slab_free(cp, buf);
 		}
 	}
 
+	atomic_add_64(&cp->cache_mag_total, -1ULL);
 	_umem_cache_free(mag_cache, mp);
 }
 
@@ -2070,6 +2074,7 @@ umem_ptc_mag_return(umem_cache_t *cp, umem_maglist_t *mlp,
 		umem_cache_t *mag_cache =
 		    ((umem_slab_t *)P2END(
 		    (uintptr_t)(mp), PAGESIZE) - 1)->slab_cache;
+		atomic_add_64(&cp->cache_mag_total, -1ULL);
 		_umem_cache_free(mag_cache, mp);
 	}
 }
@@ -2098,6 +2103,7 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 			int r;
 			for (r = 0; r < mag->rounds; r++) {
 				void *buf = mag->loaded->mag_round[r];
+				mag->loaded->mag_round[r] = NULL;
 				if (buf != NULL)
 					_umem_cache_free(cp, buf);
 			}
@@ -2112,6 +2118,7 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 			int r;
 			for (r = 0; r < mag->prounds; r++) {
 				void *buf = mag->previous->mag_round[r];
+				mag->previous->mag_round[r] = NULL;
 				if (buf != NULL)
 					_umem_cache_free(cp, buf);
 			}
@@ -2255,6 +2262,34 @@ umem_maglist_ws_reap(umem_cache_t *cp, umem_maglist_t *mlp,
 }
 
 /*
+ * Maximum magazines per per-CPU depot slot.  After normal working-set
+ * reaping, any per-CPU list still above this threshold gets its
+ * ml_min lowered so the NEXT reap cycle will drain the excess
+ * through the normal two-update-cycle working-set path.
+ */
+#define	UMEM_DEPOT_PERCPU_MAX	8
+
+/*
+ * After reaping, mark per-CPU depot lists that still hold too many
+ * magazines so that the next working-set update cycle will make them
+ * reapable.  This avoids destroying magazines that are still in the
+ * active working set while bounding long-term accumulation.
+ */
+static void
+umem_maglist_mark_excess(umem_maglist_t *mlp)
+{
+	(void) mutex_lock(&mlp->ml_lock);
+	if (mlp->ml_total > UMEM_DEPOT_PERCPU_MAX) {
+		long excess = mlp->ml_total - UMEM_DEPOT_PERCPU_MAX;
+		if (mlp->ml_reaplimit < excess)
+			mlp->ml_reaplimit = excess;
+		if (mlp->ml_min > UMEM_DEPOT_PERCPU_MAX)
+			mlp->ml_min = UMEM_DEPOT_PERCPU_MAX;
+	}
+	(void) mutex_unlock(&mlp->ml_lock);
+}
+
+/*
  * Reap all magazines that have fallen out of the depot's working set.
  */
 static void
@@ -2271,6 +2306,13 @@ umem_depot_ws_reap(umem_cache_t *cp)
 	for (i = 0; i < cp->cache_depot_ncpus; i++) {
 		umem_maglist_ws_reap(cp, &cp->cache_depot_full[i], magsize);
 		umem_maglist_ws_reap(cp, &cp->cache_depot_empty[i], 0);
+
+		/*
+		 * Mark excess per-CPU depot magazines for reaping
+		 * on the next update cycle.
+		 */
+		umem_maglist_mark_excess(&cp->cache_depot_full[i]);
+		umem_maglist_mark_excess(&cp->cache_depot_empty[i]);
 	}
 }
 
@@ -2676,6 +2718,8 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 		(void) mutex_lock(&ccp->cc_lock);
 
 		if (emp != NULL) {
+			atomic_add_64(&cp->cache_mag_total, 1);
+
 			/*
 			 * Initialize the new magazine with SIMD.
 			 * This zeroes all pointers efficiently using
@@ -2692,6 +2736,7 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 			if (ccp->cc_magsize != mtp->mt_magsize) {
 				(void) mutex_unlock(&ccp->cc_lock);
 				_umem_cache_free(mtp->mt_cache, emp);
+				atomic_add_64(&cp->cache_mag_total, -1ULL);
 				(void) mutex_lock(&ccp->cc_lock);
 				continue;
 			}
@@ -2787,10 +2832,12 @@ umem_cache_free_batch(umem_cache_t *cp, void **bufs, int count)
 		(void) mutex_lock(&ccp->cc_lock);
 
 		if (emp != NULL) {
+			atomic_add_64(&cp->cache_mag_total, 1);
 			umem_mag_init_fast(emp->mag_round, mtp->mt_magsize);
 			if (ccp->cc_magsize != mtp->mt_magsize) {
 				(void) mutex_unlock(&ccp->cc_lock);
 				_umem_cache_free(mtp->mt_cache, emp);
+				atomic_add_64(&cp->cache_mag_total, -1ULL);
 				(void) mutex_lock(&ccp->cc_lock);
 				continue;
 			}
@@ -3226,6 +3273,8 @@ umem_firewall_va_free(vmem_t *vmp, void *addr, size_t size)
 	vmem_free(vmp, addr, size + vmp->vm_quantum);
 }
 
+static void umem_cache_reclaim_pages(umem_cache_t *cp);
+
 /*
  * Reclaim all unused memory from a cache.
  */
@@ -3243,6 +3292,24 @@ umem_cache_reap(umem_cache_t *cp)
 		cp->cache_reclaim(cp->cache_private);
 
 	umem_depot_ws_reap(cp);
+
+	/*
+	 * Also trigger slab page reclamation so that explicit umem_reap()
+	 * calls return empty slab pages to the OS via madvise.
+	 */
+	if (umem_reclaim_enabled) {
+		(void) mutex_lock(&cp->cache_lock);
+		umem_cache_reclaim_pages(cp);
+		(void) mutex_unlock(&cp->cache_lock);
+	}
+
+	/*
+	 * Reap the magazine shell cache too, so magazine shells
+	 * return to vmem when the user cache shrinks.
+	 */
+	if (cp->cache_magtype && cp->cache_magtype->mt_cache) {
+		umem_depot_ws_reap(cp->cache_magtype->mt_cache);
+	}
 }
 
 /*
