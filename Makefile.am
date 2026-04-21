@@ -20,6 +20,8 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_realloc_bootstrap \
 		  test/integration/test_debug_features \
 		  test/integration/test_threading_stress \
+		  test/stress/stress_main \
+		  test/bench/bench_debug_overhead \
 		  tools/umem_profile_dump
 
 libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS)
@@ -307,6 +309,16 @@ test_integration_test_threading_stress_SOURCES = test/integration/test_threading
 test_integration_test_threading_stress_LDADD = libumem.la libumem_malloc.la
 test_integration_test_threading_stress_LDFLAGS = -pthread
 test_integration_test_threading_stress_CPPFLAGS = -I$(srcdir)/test
+
+# Stress test (long-running, use -d 10 for quick CI)
+test_stress_stress_main_SOURCES = test/stress/stress_main.c
+test_stress_stress_main_LDADD = libumem.la
+test_stress_stress_main_LDFLAGS = -pthread
+
+# Debug overhead benchmark
+test_bench_bench_debug_overhead_SOURCES = test/bench/bench_debug_overhead.c
+test_bench_bench_debug_overhead_LDADD = libumem.la
+test_bench_bench_debug_overhead_LDFLAGS = -pthread
 
 tools_umem_profile_dump_SOURCES = tools/umem_profile_dump.c
 tools_umem_profile_dump_LDADD =
