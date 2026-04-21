@@ -43,8 +43,11 @@ extern "C" {
  * - Fallback to magazine layer when full/empty
  */
 
-#define PTC_NSLOTS 32        /* slots per bin */
-#define PTC_NBINS 28         /* number of size classes (up to 2048B) */
+#define PTC_NSLOTS_SMALL  128  /* bins 0-12: sizes <=256B */
+#define PTC_NSLOTS_MEDIUM  64  /* bins 13-20: sizes 257-1024B */
+#define PTC_NSLOTS_LARGE   32  /* bins 21-27: sizes 1025-2048B */
+#define PTC_NSLOTS        128  /* max capacity (for struct sizing) */
+#define PTC_NBINS 28           /* number of size classes (up to 2048B) */
 
 /* Forward declaration */
 struct umem_magazine;
@@ -103,6 +106,18 @@ extern int8_t umem_ptc_bin_table[];
  * Thread-local PTC pointer, accessible from umem.c for inlined fast path.
  */
 extern __thread umem_ptc_t *thread_ptc;
+
+/*
+ * Return the slot capacity for a given bin index.
+ * Small bins (<=256B) get 128 slots, medium (<=1024B) get 64, large get 32.
+ */
+static inline int
+ptc_bin_capacity(int bin)
+{
+	if (bin < 13) return (PTC_NSLOTS_SMALL);
+	if (bin < 21) return (PTC_NSLOTS_MEDIUM);
+	return (PTC_NSLOTS_LARGE);
+}
 
 /*
  * Size class to bin index mapping

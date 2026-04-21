@@ -336,7 +336,7 @@ umem_ptc_free(void *ptr, size_t size)
 	bin = &ptc->bins[bin_idx];
 
 	/* Fast path: cache it */
-	if (bin->count < PTC_NSLOTS) {
+	if (bin->count < ptc_bin_capacity(bin_idx)) {
 		bin->slots[bin->count++] = ptr;
 		return (0);
 	}
@@ -345,7 +345,7 @@ umem_ptc_free(void *ptr, size_t size)
 	umem_ptc_bin_flush(bin, umem_ptc_bin_size(bin_idx));
 
 	/* Try again after flush */
-	if (bin->count < PTC_NSLOTS) {
+	if (bin->count < ptc_bin_capacity(bin_idx)) {
 		bin->slots[bin->count++] = ptr;
 		return (0);
 	}
@@ -407,11 +407,17 @@ umem_ptc_bin_refill(umem_ptc_bin_t *bin, size_t size)
 {
 	int i;
 	int refill_count;
+	int bin_idx;
 	void *ptr;
 	umem_cache_t *cp;
 
+	/* Determine bin index from size to get correct capacity */
+	bin_idx = umem_ptc_size_to_bin(size);
+	if (bin_idx < 0)
+		return (-1);
+
 	/* Refill half the bin */
-	refill_count = PTC_NSLOTS / 2;
+	refill_count = ptc_bin_capacity(bin_idx) / 2;
 
 	/* Look up the appropriate cache */
 	cp = umem_alloc_table[(size - 1) >> UMEM_ALIGN_SHIFT];

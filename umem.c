@@ -1902,6 +1902,148 @@ umem_depot_push(umem_maglist_t *mlp, umem_magazine_t *mp)
 	(void) mutex_unlock(&mlp->ml_lock);
 }
 
+/* Forward declaration for use in trylock depot functions */
+static void umem_depot_destroy_stale(umem_cache_t *, int, umem_magazine_t *);
+
+/*
+ * Non-blocking depot pop for PTC refill path.
+ * Returns NULL immediately if the lock is contended or list is empty.
+ * Never blocks on a mutex, eliminating p99 latency spikes.
+ */
+static umem_magazine_t *
+umem_depot_pop_trylock(umem_maglist_t *mlp)
+{
+	umem_magazine_t *mp;
+
+	if (mutex_trylock(&mlp->ml_lock) != 0)
+		return (NULL);
+
+	mp = mlp->ml_list;
+	if (mp == NULL) {
+		(void) mutex_unlock(&mlp->ml_lock);
+		return (NULL);
+	}
+
+	mlp->ml_list = mp->mag_next;
+	mlp->ml_total--;
+	if (mlp->ml_total < mlp->ml_min)
+		mlp->ml_min = mlp->ml_total;
+	mlp->ml_alloc++;
+
+	(void) mutex_unlock(&mlp->ml_lock);
+	return (mp);
+}
+
+/*
+ * Non-blocking depot push for PTC flush path.
+ * Returns 0 on success, -1 if lock contended.
+ */
+static int
+umem_depot_push_trylock(umem_maglist_t *mlp, umem_magazine_t *mp)
+{
+	if (mutex_trylock(&mlp->ml_lock) != 0)
+		return (-1);
+
+	mp->mag_next = mlp->ml_list;
+	mlp->ml_list = mp;
+	mlp->ml_total++;
+
+	(void) mutex_unlock(&mlp->ml_lock);
+	return (0);
+}
+
+/*
+ * Non-blocking depot alloc for PTC refill path.
+ * Tries per-CPU depots then global depot, all with trylock.
+ * Returns NULL rather than blocking on any contended lock.
+ */
+static umem_magazine_t *
+umem_depot_alloc_trylock(umem_cache_t *cp, umem_maglist_t *mlp)
+{
+	umem_magazine_t *mp;
+	umem_maglist_t *pcpu_arr;
+	int ncpus = cp->cache_depot_ncpus;
+	int is_full = (mlp == &cp->cache_full);
+
+	if (ncpus > 0) {
+		int cpu = get_cached_cpu_hint() & (ncpus - 1);
+
+		pcpu_arr = is_full ?
+		    cp->cache_depot_full : cp->cache_depot_empty;
+
+		/* Try local CPU depot (trylock) */
+		mp = umem_depot_pop_trylock(&pcpu_arr[cpu]);
+		if (mp != NULL) {
+			if (unlikely(!UMEM_MAGAZINE_VALID(cp, mp))) {
+				umem_depot_destroy_stale(
+				    cp, is_full, mp);
+			} else {
+				cp->cache_depot_local++;
+				return (mp);
+			}
+		}
+
+		/* Scan other CPUs with trylock only */
+		for (int i = 1; i < ncpus; i++) {
+			int other = (cpu + i) & (ncpus - 1);
+			mp = umem_depot_pop_trylock(&pcpu_arr[other]);
+			if (mp != NULL) {
+				if (unlikely(
+				    !UMEM_MAGAZINE_VALID(cp, mp))) {
+					umem_depot_destroy_stale(
+					    cp, is_full, mp);
+					continue;
+				}
+				cp->cache_depot_remote++;
+				return (mp);
+			}
+		}
+	}
+
+	/* Try global depot (trylock) */
+	mp = umem_depot_pop_trylock(mlp);
+	if (mp != NULL) {
+		if (unlikely(!UMEM_MAGAZINE_VALID(cp, mp))) {
+			umem_depot_destroy_stale(cp, is_full, mp);
+			return (NULL);
+		}
+	}
+	return (mp);
+}
+
+/*
+ * Non-blocking depot free for PTC flush path.
+ * Falls back to blocking push only if trylock fails on all targets.
+ */
+static void
+umem_depot_free_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
+    umem_magazine_t *mp)
+{
+	int ncpus = cp->cache_depot_ncpus;
+
+	if (ncpus > 0) {
+		int cpu = get_cached_cpu_hint() & (ncpus - 1);
+		umem_maglist_t *pcpu_arr;
+
+		pcpu_arr = (mlp == &cp->cache_full) ?
+		    cp->cache_depot_full : cp->cache_depot_empty;
+
+		if (umem_depot_push_trylock(&pcpu_arr[cpu], mp) == 0)
+			return;
+
+		/* Local contended, try other CPUs */
+		for (int i = 1; i < ncpus; i++) {
+			int other = (cpu + i) & (ncpus - 1);
+			if (umem_depot_push_trylock(
+			    &pcpu_arr[other], mp) == 0)
+				return;
+		}
+	}
+
+	/* All trylock failed — fall back to blocking push */
+	umem_depot_push(mlp, mp);
+}
+
 /*
  * Allocate a magazine from the depot.
  * Tries per-CPU depot first (our CPU, then steal from same NUMA node,
@@ -2070,6 +2212,26 @@ umem_ptc_mag_return(umem_cache_t *cp, umem_maglist_t *mlp,
 {
 	if (UMEM_MAGAZINE_VALID(cp, mp)) {
 		umem_depot_free(cp, mlp, mp);
+	} else {
+		umem_cache_t *mag_cache =
+		    ((umem_slab_t *)P2END(
+		    (uintptr_t)(mp), PAGESIZE) - 1)->slab_cache;
+		atomic_add_64(&cp->cache_mag_total, -1ULL);
+		_umem_cache_free(mag_cache, mp);
+	}
+}
+
+/*
+ * Non-blocking variant of umem_ptc_mag_return for PTC fast paths.
+ * Uses trylock depot access. Falls back to blocking only for stale
+ * magazine destruction (rare, only during magazine resize).
+ */
+static void
+umem_ptc_mag_return_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
+    umem_magazine_t *mp)
+{
+	if (UMEM_MAGAZINE_VALID(cp, mp)) {
+		umem_depot_free_trylock(cp, mlp, mp);
 	} else {
 		umem_cache_t *mag_cache =
 		    ((umem_slab_t *)P2END(
@@ -2963,13 +3125,13 @@ umem_alloc_retry:
 					}
 					/*
 					 * Both mags empty — refill from
-					 * depot (only lock acquisition).
+					 * depot (trylock only, never blocks).
 					 */
 					if (mag->cache == NULL)
 						mag->cache = cp;
 					{
 					umem_magazine_t *fmp;
-					fmp = umem_depot_alloc(cp,
+					fmp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_full);
 					if (fmp != NULL) {
 					    int new_magsize =
@@ -2983,12 +3145,12 @@ umem_alloc_retry:
 						     * happened; destroy
 						     * stale magazines.
 						     */
-						    umem_ptc_mag_return(
+						    umem_ptc_mag_return_trylock(
 							cp,
 							&cp->cache_empty,
 							mag->loaded);
 						    if (mag->previous)
-							umem_ptc_mag_return(
+							umem_ptc_mag_return_trylock(
 							    cp,
 							    &cp->cache_empty,
 							    mag->previous);
@@ -2996,7 +3158,7 @@ umem_alloc_retry:
 						    mag->prounds = 0;
 						} else {
 						    if (mag->previous)
-							umem_ptc_mag_return(
+							umem_ptc_mag_return_trylock(
 							    cp,
 							    &cp->cache_empty,
 							    mag->previous);
@@ -3113,7 +3275,8 @@ _umem_free(void *buf, size_t size)
 				if (likely(ptc != NULL)) {
 					umem_ptc_bin_t *b =
 					    &ptc->bins[(int)bin];
-					if (likely(b->count < PTC_NSLOTS)) {
+					if (likely(b->count <
+					    ptc_bin_capacity((int)bin))) {
 						b->slots[b->count++] = buf;
 						return;
 					}
@@ -3157,6 +3320,7 @@ _umem_free(void *buf, size_t size)
 					/*
 					 * Both mags full — flush loaded
 					 * to depot, get empty magazine.
+					 * Uses trylock to avoid blocking.
 					 */
 					{
 					umem_magazine_t *emp;
@@ -3164,7 +3328,7 @@ _umem_free(void *buf, size_t size)
 					    cp->cache_magtype->
 					    mt_magsize;
 					if (mag->loaded != NULL) {
-						umem_ptc_mag_return(cp,
+						umem_ptc_mag_return_trylock(cp,
 						    &cp->cache_full,
 						    mag->loaded);
 					}
@@ -3174,13 +3338,13 @@ _umem_free(void *buf, size_t size)
 					 */
 					if (mag->previous != NULL &&
 					    mag->magsize != new_magsize) {
-						umem_ptc_mag_return(cp,
+						umem_ptc_mag_return_trylock(cp,
 						    &cp->cache_empty,
 						    mag->previous);
 						mag->previous = NULL;
 						mag->prounds = 0;
 					}
-					emp = umem_depot_alloc(cp,
+					emp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_empty);
 					if (emp != NULL) {
 						mag->loaded = emp;
