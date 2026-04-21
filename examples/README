@@ -211,35 +211,133 @@ results, avoid -fomit-frame-pointer.
 ----------------------------------
 
 The files in this directory demonstrate how to integrate umem with
-PostgreSQL's MemoryContext system.  See:
+PostgreSQL's MemoryContext system using budget-based memory contexts.
+See:
 
     umem_palloc.h    Public header
     umem_palloc.c    Implementation and demo
 
-The key idea is to create one set of umem caches per MemoryContext.
-Each context can have different debug flags:
+Each UmemBudgetContext wraps a vmem arena.  A budget caps how much
+memory the arena can dispense.  When the budget is exhausted, callers
+either block (backpressure), get NULL, or abort, depending on flags.
 
-    /* Production context: no debug overhead */
-    UmemContext *top = umem_context_create(
-        "TopMemoryContext", 8192, 0);
 
-    /* Development: audit this subsystem */
-    UmemContext *exec = umem_context_create(
-        "ExecutorContext", 4096, UMEM_CTX_DEBUG_AUDIT);
+6.1 Memory Budgets
+~~~~~~~~~~~~~~~~~~~
 
-    /* Investigating a bug: enable guard patterns */
-    UmemContext *tuple = umem_context_create(
-        "TupleContext", 2048, UMEM_CTX_DEBUG_GUARDS);
+Each context is created with a maximum byte budget:
 
-Each context owns size-classed caches (32, 64, 128, ... bytes).
-Allocations are routed to the smallest cache that fits.
+    UmemBudgetContext *top = umem_budget_create(
+        "TopMemoryContext", 512 * 1024 * 1024, 0);
 
-To trace a memory leak in a specific PostgreSQL subsystem:
+The budget is enforced on every allocation.  vmem_size(arena,
+VMEM_ALLOC) is checked against the budget before each vmem_alloc().
+If the allocation would exceed the budget, the allocator tries
+umem_reap() to reclaim cached memory, then applies backpressure
+or returns NULL depending on flags.
 
-  1. Create that subsystem's context with UMEM_CTX_DEBUG_AUDIT.
-  2. Run the workload.
-  3. Call umem_context_stats() to see outstanding allocations.
-  4. Set UMEM_DEBUG=audit to get stack traces in the output.
+
+6.2 Backpressure
+~~~~~~~~~~~~~~~~~
+
+When a context's budget is exceeded:
+
+  - Default (no flags): the calling thread waits on a condition
+    variable with a 100ms timeout, retrying up to 50 times.  Each
+    umem_budget_free() signals the condition variable, waking
+    blocked allocators.
+
+  - UMEM_BUDGET_NOWAIT: return NULL immediately.
+
+  - UMEM_BUDGET_NOFAIL: abort() with a diagnostic message.
+
+This models PostgreSQL's behavior where query execution should block
+rather than fail when the shared buffer pool is full, while DDL
+operations might prefer NOWAIT.
+
+
+6.3 Pre-allocation
+~~~~~~~~~~~~~~~~~~~
+
+Use UMEM_BUDGET_PREALLOC for latency-sensitive contexts:
+
+    UmemBudgetContext *hot = umem_budget_create(
+        "HotPath", 64 * 1024, UMEM_BUDGET_PREALLOC);
+
+This mmaps the entire budget with MAP_POPULATE, faulting in all
+pages at creation time.  The vmem arena is created on this fixed
+backing region with no import function, so it cannot grow.
+Allocations never trigger page faults.
+
+Without PREALLOC, the arena grows on demand via the default vmem
+heap.  The budget is still enforced, but page faults may occur.
+
+
+6.4 Shared Memory
+~~~~~~~~~~~~~~~~~~
+
+For multi-process PostgreSQL deployments, shared memory contexts
+let multiple backends allocate from the same pool:
+
+    /* Postmaster creates the segment */
+    UmemBudgetContext *shm = umem_shared_create(
+        "shared_buffers", 128 * 1024 * 1024, 0);
+
+    /* After fork, each backend attaches */
+    UmemBudgetContext *my_view = umem_shared_attach(
+        "shared_buffers");
+
+    /* Use it */
+    void *buf = umem_budget_alloc(my_view, 8192);
+    /* ... */
+    umem_budget_free(my_view, buf, 8192);
+
+    /* Backend detaches (does not unlink the segment) */
+    umem_shared_detach(my_view);
+
+This uses POSIX shared memory (shm_open/ftruncate/mmap MAP_SHARED).
+The vmem arena metadata is per-process, so each attached process
+gets its own vmem handle over the shared backing.
+
+Note: cross-process vmem_alloc coordination requires external
+locking.  This demo shows the single-process attach/detach path.
+
+
+6.5 Hierarchy
+~~~~~~~~~~~~~~
+
+Contexts form parent/child trees.  A child's allocations count
+against both its own budget and all ancestor budgets:
+
+    UmemBudgetContext *top = umem_budget_create(
+        "TopMemCtx", 512 * 1024 * 1024,
+        UMEM_BUDGET_PREALLOC);
+
+    UmemBudgetContext *exec = umem_budget_create_child(
+        top, "ExecutorCtx", 64 * 1024 * 1024,
+        UMEM_BUDGET_AUDIT);
+
+    UmemBudgetContext *tuple = umem_budget_create_child(
+        exec, "TupleCtx", 16 * 1024 * 1024,
+        UMEM_BUDGET_GUARDS);
+
+Deleting a parent recursively deletes all children.  Resetting a
+context destroys and recreates its arena; child contexts are not
+affected (they have their own arenas).
+
+
+6.6 Per-Context Debugging
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Different contexts can have different debug levels:
+
+    UMEM_BUDGET_AUDIT    enable allocation stack traces
+    UMEM_BUDGET_GUARDS   enable redzone + deadbeef patterns
+    UMEM_BUDGET_OWN      enable ownership tracking
+
+This lets you enable heavy debugging on a suspected subsystem
+while keeping production-level overhead on the rest.
+
 
 To build and run the demo:
 
@@ -550,6 +648,6 @@ Files in this Directory
 -----------------------
 
     README             This file
-    umem_palloc.h      PostgreSQL integration header
-    umem_palloc.c      PostgreSQL integration implementation and demo
+    umem_palloc.h      Budget-based memory context header
+    umem_palloc.c      Implementation and demo (budgets, backpressure, shm)
     GNUmakefile        Standalone build for the demo

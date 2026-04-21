@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -I.. -g -O2 -Wall -Wextra
-LDFLAGS = -L../.libs -lumem -lpthread
+LDFLAGS = -L../.libs -lumem -lpthread -lrt
 
 all: umem_palloc_demo
 

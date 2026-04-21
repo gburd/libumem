@@ -1,66 +1,85 @@
 /*
- * umem_palloc.h - PostgreSQL MemoryContext backed by libumem
+ * umem_palloc.h - Budget-based memory contexts backed by libumem
  *
- * Minimal PostgreSQL MemoryContext types for standalone compilation.
- * In a real integration, include postgres.h instead.
+ * Provides PostgreSQL-style per-context memory management with:
+ *   - Memory budgets with enforcement and backpressure
+ *   - Pre-allocated backing via mmap(MAP_POPULATE)
+ *   - Shared memory support for multi-process access
+ *   - Parent/child context hierarchy
+ *   - Per-context debug flags (audit, guards, ownership)
  *
- * This header demonstrates how to map PostgreSQL's per-context memory
- * management onto umem's slab allocator, gaining debug features like
- * buffer auditing, redzone checking, and guard pages on a per-context
- * basis.
+ * Each UmemBudgetContext wraps a vmem arena. The budget caps how much
+ * memory the arena can dispense. When the budget is exhausted, callers
+ * either block (backpressure), get NULL, or abort, depending on flags.
  */
 
 #ifndef UMEM_PALLOC_H
 #define UMEM_PALLOC_H
 
 #include <umem.h>
+#include <sys/vmem.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <pthread.h>
+
+/* Context flags */
+#define UMEM_BUDGET_PREALLOC   0x0001  /* mmap entire budget upfront */
+#define UMEM_BUDGET_SHARED     0x0002  /* backed by POSIX shared memory */
+#define UMEM_BUDGET_AUDIT      0x0010  /* enable UMF_AUDIT on caches */
+#define UMEM_BUDGET_GUARDS     0x0020  /* enable redzone + deadbeef */
+#define UMEM_BUDGET_OWN        0x0040  /* enable ownership tracking */
+#define UMEM_BUDGET_NOWAIT     0x0100  /* return NULL when over budget */
+#define UMEM_BUDGET_NOFAIL     0x0200  /* abort() when over budget */
+
+typedef struct UmemBudgetContext UmemBudgetContext;
 
 /*
- * Context creation flags -- each maps to a set of umem debug features.
- * These can be combined with bitwise OR.
+ * Create a top-level budget context. budget is the maximum number of
+ * bytes this context may have outstanding at any time.
  */
-#define UMEM_CTX_DEBUG_AUDIT    0x01  /* enable UMF_AUDIT on this context */
-#define UMEM_CTX_DEBUG_GUARDS   0x02  /* enable deadbeef+redzone */
-#define UMEM_CTX_DEBUG_FIREWALL 0x04  /* enable guard pages */
-#define UMEM_CTX_TRACK_OWNER    0x08  /* enable ownership tracking */
+UmemBudgetContext *umem_budget_create(const char *name,
+    size_t budget, int flags);
 
 /*
- * Opaque context handle. Internally manages a set of umem caches
- * covering common allocation sizes (power-of-two size classes).
+ * Create a child context whose allocations count against both its own
+ * budget and the parent's budget.
  */
-typedef struct UmemContext UmemContext;
+UmemBudgetContext *umem_budget_create_child(
+    UmemBudgetContext *parent, const char *name,
+    size_t budget, int flags);
 
-/*
- * Create a new memory context. name is used for diagnostics.
- * block_size is the maximum single allocation size supported
- * (allocations larger than block_size will fall through to
- * umem_alloc directly). flags is a combination of UMEM_CTX_*
- * constants.
- */
-UmemContext *umem_context_create(const char *name,
-    size_t block_size, int flags);
+/* Destroy the context, its arena, and any backing memory. */
+void umem_budget_delete(UmemBudgetContext *ctx);
 
-/* Allocate size bytes from context (uninitialized). */
-void *umem_context_alloc(UmemContext *ctx, size_t size);
+/* Allocate size bytes (uninitialized). */
+void *umem_budget_alloc(UmemBudgetContext *ctx, size_t size);
 
-/* Allocate size bytes from context (zero-filled). */
-void *umem_context_alloc0(UmemContext *ctx, size_t size);
+/* Allocate size bytes (zero-filled). */
+void *umem_budget_alloc0(UmemBudgetContext *ctx, size_t size);
 
 /* Free a previous allocation. size must match the original request. */
-void umem_context_free(UmemContext *ctx, void *ptr, size_t size);
+void umem_budget_free(UmemBudgetContext *ctx, void *ptr, size_t size);
 
-/* Reallocate: grow or shrink. old_size must match original request. */
-void *umem_context_realloc(UmemContext *ctx, void *ptr,
-    size_t old_size, size_t new_size);
+/* Destroy and recreate the arena. All prior pointers are invalid. */
+void umem_budget_reset(UmemBudgetContext *ctx);
 
-/* Destroy all caches, recreate them. All prior allocations invalid. */
-void umem_context_reset(UmemContext *ctx);
+/*
+ * Shared memory contexts. umem_shared_create() creates a new POSIX
+ * shared memory segment and builds a vmem arena on top of it.
+ * umem_shared_attach() opens an existing segment by name.
+ * umem_shared_detach() unmaps without unlinking the segment.
+ */
+UmemBudgetContext *umem_shared_create(const char *name,
+    size_t size, int flags);
+UmemBudgetContext *umem_shared_attach(const char *name);
+void umem_shared_detach(UmemBudgetContext *ctx);
 
-/* Destroy the context and free all resources. */
-void umem_context_delete(UmemContext *ctx);
-
-/* Print context statistics to stderr. */
-void umem_context_stats(UmemContext *ctx);
+/* Query functions */
+size_t umem_budget_used(UmemBudgetContext *ctx);
+size_t umem_budget_available(UmemBudgetContext *ctx);
+size_t umem_budget_peak(UmemBudgetContext *ctx);
+int    umem_budget_under_pressure(UmemBudgetContext *ctx);
+void   umem_budget_stats(UmemBudgetContext *ctx, FILE *fp);
 
 #endif /* UMEM_PALLOC_H */
