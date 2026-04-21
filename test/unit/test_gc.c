@@ -5,6 +5,7 @@
  * finalizers, thread safety, hybrid manual+GC, linked lists, statistics.
  */
 
+#define UMEM_ENABLE_EXPERIMENTAL
 #include "../munit.h"
 #include "../../umem_gc.h"
 #include <umem.h>

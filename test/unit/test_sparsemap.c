@@ -2,6 +2,7 @@
  * Unit tests for the GC sparsemap (page-level hash map).
  */
 
+#define UMEM_ENABLE_EXPERIMENTAL
 #include "../munit.h"
 #include "../../umem_sparsemap.h"
 #include "../../umem_gc.h"

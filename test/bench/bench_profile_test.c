@@ -38,6 +38,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#define UMEM_ENABLE_EXPERIMENTAL
 #include "../../umem.h"
 #include "../../umem_profile.h"
 

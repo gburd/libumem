@@ -27,6 +27,15 @@
 #ifndef _UMEM_OWN_H
 #define	_UMEM_OWN_H
 
+/*
+ * EXPERIMENTAL API -- not production-ready.
+ * This API may change without notice. Do not use in production code
+ * without thorough testing. See README.md for stability guarantees.
+ */
+#if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(HAVE_CONFIG_H)
+#error "This header requires #define UMEM_ENABLE_EXPERIMENTAL before inclusion"
+#endif
+
 #include <sys/types.h>
 #include <umem.h>
 #include <stdint.h>

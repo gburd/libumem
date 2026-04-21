@@ -2,6 +2,7 @@
  * Unit tests for umem ownership/borrowing system.
  */
 
+#define UMEM_ENABLE_EXPERIMENTAL
 #include "../munit.h"
 #include "../../umem_own.h"
 #include <string.h>

@@ -23,6 +23,15 @@
 #ifndef _UMEM_GC_H
 #define	_UMEM_GC_H
 
+/*
+ * EXPERIMENTAL API -- not production-ready.
+ * This API may change without notice. Do not use in production code
+ * without thorough testing. See README.md for stability guarantees.
+ */
+#if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(HAVE_CONFIG_H)
+#error "This header requires #define UMEM_ENABLE_EXPERIMENTAL before inclusion"
+#endif
+
 #include <sys/types.h>
 #include <stdint.h>
 #include <stddef.h>

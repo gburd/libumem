@@ -31,6 +31,12 @@ corruption at the point it happens rather than letting it silently
 corrupt unrelated data.  The debug modes add overhead, but the release
 mode is competitive with system malloc.
 
+NOTE: Ownership (umem_own.h), garbage collection (umem_gc.h, gc.h),
+allocation profiling (umem_profile.h), and budget contexts
+(umem_palloc.h) are EXPERIMENTAL APIs.  They may change without
+notice.  External code must #define UMEM_ENABLE_EXPERIMENTAL before
+including these headers.
+
 
 2. Building
 -----------

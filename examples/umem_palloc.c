@@ -9,6 +9,7 @@
  * Run:    LD_LIBRARY_PATH=../.libs ./umem_palloc_demo
  */
 
+#define UMEM_ENABLE_EXPERIMENTAL
 #include "umem_palloc.h"
 
 #include <errno.h>
