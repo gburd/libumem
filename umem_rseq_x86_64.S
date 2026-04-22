@@ -75,7 +75,7 @@ umem_rseq_alloc_fastpath:
 	leaq	.Lrseq_alloc_start(%rip), %rcx
 	subq	%rcx, %rax
 	movq	%rax, 16(%rsp)
-	leaq	.Lrseq_alloc_abort(%rip), %rax
+	leaq	.Lrseq_alloc_abort_handler(%rip), %rax
 	movq	%rax, 24(%rsp)
 
 	/* Point rseq_cs to our descriptor using runtime offset */
@@ -87,7 +87,7 @@ umem_rseq_alloc_fastpath:
 	LOAD_FS_OFFSET %rax
 	movl	%fs:RSEQ_CPU_ID_OFFSET(%rax), %ecx
 	cmpl	%esi, %ecx
-	jne	.Lrseq_alloc_abort
+	jne	.Lrseq_alloc_abort_handler
 
 	movl	CACHE_ROUNDS_OFFSET(%rbx), %edx
 	testl	%edx, %edx
@@ -117,8 +117,8 @@ umem_rseq_alloc_fastpath:
 	jmp	.Lrseq_alloc_post_commit
 
 	.align	32
-.Lrseq_alloc_abort:
-	.byte	RSEQ_SIG >> 24, RSEQ_SIG >> 16, RSEQ_SIG >> 8, RSEQ_SIG
+	.long	RSEQ_SIG
+.Lrseq_alloc_abort_handler:
 	incq	CACHE_RESTART_COUNT_OFFSET(%rbx)
 	LOAD_FS_OFFSET %rax
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)
@@ -166,7 +166,7 @@ umem_rseq_free_fastpath:
 	leaq	.Lrseq_free_start(%rip), %rcx
 	subq	%rcx, %rax
 	movq	%rax, 16(%rsp)
-	leaq	.Lrseq_free_abort(%rip), %rax
+	leaq	.Lrseq_free_abort_handler(%rip), %rax
 	movq	%rax, 24(%rsp)
 
 	/* Point rseq_cs to our descriptor using runtime offset */
@@ -178,7 +178,7 @@ umem_rseq_free_fastpath:
 	LOAD_FS_OFFSET %rax
 	movl	%fs:RSEQ_CPU_ID_OFFSET(%rax), %ecx
 	cmpl	%r12d, %ecx
-	jne	.Lrseq_free_abort
+	jne	.Lrseq_free_abort_handler
 
 	movq	CACHE_LOADED_MAG_OFFSET(%rbx), %rcx
 	testq	%rcx, %rcx
@@ -218,8 +218,8 @@ umem_rseq_free_fastpath:
 	ret
 
 	.align	32
-.Lrseq_free_abort:
-	.byte	RSEQ_SIG >> 24, RSEQ_SIG >> 16, RSEQ_SIG >> 8, RSEQ_SIG
+	.long	RSEQ_SIG
+.Lrseq_free_abort_handler:
 	incq	CACHE_RESTART_COUNT_OFFSET(%rbx)
 	LOAD_FS_OFFSET %rax
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)

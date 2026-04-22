@@ -93,8 +93,8 @@ umem_rseq_alloc_fastpath:
 	sub	x1, x1, x0
 	str	x1, [x21, #16]
 	/* abort_ip */
-	adrp	x2, .Lrseq_alloc_abort
-	add	x2, x2, :lo12:.Lrseq_alloc_abort
+	adrp	x2, .Lrseq_alloc_abort_handler
+	add	x2, x2, :lo12:.Lrseq_alloc_abort_handler
 	str	x2, [x21, #24]
 
 	/* Get TLS base via TPIDR_EL0 */
@@ -113,7 +113,7 @@ umem_rseq_alloc_fastpath:
 	/* Verify CPU hasn't changed */
 	ldr	w1, [x0, #4]	/* Load current cpu_id */
 	cmp	w1, w20
-	b.ne	.Lrseq_alloc_abort
+	b.ne	.Lrseq_alloc_abort_handler
 
 	/* Load rounds */
 	ldr	w2, [x19, #CACHE_ROUNDS_OFFSET]
@@ -161,8 +161,8 @@ umem_rseq_alloc_fastpath:
 
 	/* ABORT HANDLER */
 	.align	5
-.Lrseq_alloc_abort:
 	.inst	RSEQ_SIG
+.Lrseq_alloc_abort_handler:
 
 	/* Increment restart counter */
 	ldr	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
@@ -238,8 +238,8 @@ umem_rseq_free_fastpath:
 	add	x1, x1, :lo12:.Lrseq_free_post_commit
 	sub	x1, x1, x0
 	str	x1, [x22, #16]
-	adrp	x2, .Lrseq_free_abort
-	add	x2, x2, :lo12:.Lrseq_free_abort
+	adrp	x2, .Lrseq_free_abort_handler
+	add	x2, x2, :lo12:.Lrseq_free_abort_handler
 	str	x2, [x22, #24]
 
 	/* Get TLS base */
@@ -257,7 +257,7 @@ umem_rseq_free_fastpath:
 	/* Verify CPU */
 	ldr	w1, [x0, #4]
 	cmp	w1, w21
-	b.ne	.Lrseq_free_abort
+	b.ne	.Lrseq_free_abort_handler
 
 	/* Load loaded_mag pointer */
 	ldr	x4, [x19, #CACHE_LOADED_MAG_OFFSET]
@@ -307,8 +307,8 @@ umem_rseq_free_fastpath:
 
 	/* ABORT HANDLER */
 	.align	5
-.Lrseq_free_abort:
 	.inst	RSEQ_SIG
+.Lrseq_free_abort_handler:
 
 	/* Increment restart counter */
 	ldr	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]

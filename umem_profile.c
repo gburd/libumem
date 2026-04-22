@@ -36,6 +36,9 @@
 #include "config.h"
 #include "umem_base.h"
 #include "umem_profile.h"
+#ifdef UMEM_RSEQ_AVAILABLE
+#include "umem_rseq.h"
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
@@ -309,6 +312,13 @@ umem_profile_sample(void)
 			    umem_cpus[ci].cpu_cache_offset);
 			alloc_ops += tc->cc_alloc;
 		}
+#ifdef UMEM_RSEQ_AVAILABLE
+		if (cp->cache_rseq != NULL) {
+			int ncpus = umem_rseq_get_ncpus();
+			for (int ri = 0; ri < ncpus; ri++)
+				alloc_ops += cp->cache_rseq[ri].alloc_count;
+		}
+#endif
 		uint64_t slab_free = cp->cache_slab_free;
 		uint64_t buftotal = cp->cache_buftotal;
 		uint64_t mag_reloads = cp->cache_mag_reloads;
