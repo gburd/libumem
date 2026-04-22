@@ -22,6 +22,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_threading_stress \
 		  test/stress/stress_main \
 		  test/bench/bench_debug_overhead \
+		  test/bench/bench_cache_rseq \
 		  tools/umem_profile_dump
 
 libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS)
@@ -319,6 +320,11 @@ test_stress_stress_main_LDFLAGS = -pthread
 test_bench_bench_debug_overhead_SOURCES = test/bench/bench_debug_overhead.c
 test_bench_bench_debug_overhead_LDADD = libumem.la
 test_bench_bench_debug_overhead_LDFLAGS = -pthread
+
+# Cache RSEQ benchmark
+test_bench_bench_cache_rseq_SOURCES = test/bench/bench_cache_rseq.c test/tdigest.c
+test_bench_bench_cache_rseq_LDADD = libumem.la
+test_bench_bench_cache_rseq_LDFLAGS = -pthread -lm
 
 tools_umem_profile_dump_SOURCES = tools/umem_profile_dump.c
 tools_umem_profile_dump_LDADD =
