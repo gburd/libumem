@@ -124,9 +124,8 @@ AC_SUBST(GENASM_DIR)
 AM_CONDITIONAL(ARCH_SPARC, [test "x$arch_sparc" = "xyes"])
 
 # Detect hardware cache line size for false-sharing avoidance.
-# Default is 64 bytes (correct for x86_64, RISC-V, UltraSPARC-III/IV).
-# Override with --with-cache-line-size=N for platforms like SPARC T-series
-# or Apple M-series that use 128-byte coherence lines.
+# Auto-detection tries getconf, sysfs, then falls back to architecture defaults.
+# Override with --with-cache-line-size=N if auto-detection is wrong.
 AC_ARG_WITH([cache-line-size],
     [AS_HELP_STRING([--with-cache-line-size=N],
         [Override hardware cache line size in bytes (default: auto-detect)])],
@@ -134,7 +133,37 @@ AC_ARG_WITH([cache-line-size],
     [cache_line_size=auto])
 
 if test "x$cache_line_size" = "xauto"; then
-    cache_line_size=64
+    AC_MSG_CHECKING([hardware cache line size])
+    cache_line_size=
+    # Try getconf (POSIX, works on Linux/FreeBSD/Illumos)
+    if test -z "$cache_line_size"; then
+        cache_line_size=`getconf LEVEL1_DCACHE_LINESIZE 2>/dev/null`
+        if test "x$cache_line_size" = "x0" || test "x$cache_line_size" = "x"; then
+            cache_line_size=
+        fi
+    fi
+    # Try sysfs (Linux)
+    if test -z "$cache_line_size" && test -f /sys/devices/system/cpu/cpu0/cache/index0/coherency_line_size; then
+        cache_line_size=`cat /sys/devices/system/cpu/cpu0/cache/index0/coherency_line_size 2>/dev/null`
+    fi
+    # Try sysctl (FreeBSD/macOS)
+    if test -z "$cache_line_size"; then
+        cache_line_size=`sysctl -n hw.cachelinesize 2>/dev/null`
+    fi
+    # Architecture-based defaults if detection failed
+    if test -z "$cache_line_size" || test "$cache_line_size" -lt 16 2>/dev/null; then
+        case "$host_cpu" in
+            aarch64*|arm64*)
+                # Apple M-series uses 128B, most ARM64 uses 64B
+                cache_line_size=64 ;;
+            sparc*|sparcv9)
+                # UltraSPARC-III/IV: 64B, T-series: 128B coherence
+                cache_line_size=64 ;;
+            *)
+                cache_line_size=64 ;;
+        esac
+    fi
+    AC_MSG_RESULT([$cache_line_size bytes])
 fi
 AC_DEFINE_UNQUOTED(UMEM_CACHE_LINE_SIZE_CONFIG, [$cache_line_size],
     [Hardware cache line size for false-sharing avoidance])
