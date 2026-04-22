@@ -42,6 +42,9 @@ extern "C" {
 
 typedef struct umem_sparsemap umem_sparsemap_t;
 
+/* Opaque per-page object list head (stored in sparsemap entries) */
+struct umem_gc_header;
+
 /*
  * Create a new sparsemap with an initial capacity (number of buckets).
  * Returns NULL on allocation failure.
@@ -78,6 +81,33 @@ int umem_sparsemap_test(umem_sparsemap_t *map, void *ptr);
  * Return the number of pages currently tracked.
  */
 size_t umem_sparsemap_count(umem_sparsemap_t *map);
+
+/*
+ * Per-page object list management for O(1) find_header.
+ * Objects are linked via gc_page_next in umem_gc_header_t.
+ */
+
+/*
+ * Add a GC object header to the per-page list for its page.
+ * Returns 0 on success, -1 on failure.
+ */
+int umem_sparsemap_add_object(umem_sparsemap_t *map,
+    struct umem_gc_header *hdr, void *user_ptr);
+
+/*
+ * Remove a GC object header from the per-page list.
+ */
+void umem_sparsemap_remove_object(umem_sparsemap_t *map,
+    struct umem_gc_header *hdr, void *user_ptr);
+
+/*
+ * Find the GC header for a user pointer by checking the per-page list.
+ * Returns the header if found, NULL otherwise.
+ * This is O(k) where k is the number of GC objects on the page
+ * (typically 1-4).
+ */
+struct umem_gc_header *umem_sparsemap_find_object(umem_sparsemap_t *map,
+    void *ptr);
 
 #ifdef __cplusplus
 }

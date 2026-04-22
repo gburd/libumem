@@ -49,6 +49,11 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
+#include <signal.h>
+#include <setjmp.h>
+#include <semaphore.h>
+#include <sched.h>
+#include <time.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -126,6 +131,13 @@ static _Atomic uint64_t gc_finalizers_run;
 /* Collection lock (only one collection at a time) */
 static pthread_mutex_t gc_collect_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/*
+ * Phase rwlock: prevents mark phase from starting while a realloc
+ * is pinning an object. Reallocs take a read lock (concurrent with
+ * each other), mark phase takes a write lock (exclusive).
+ */
+static pthread_rwlock_t gc_phase_rwlock = PTHREAD_RWLOCK_INITIALIZER;
+
 /* Page-level sparsemap for O(1) GC pointer lookup */
 static umem_sparsemap_t *gc_pagemap;
 
@@ -134,6 +146,152 @@ static __thread int gc_in_finalizer;
 
 /* Maximum finalizer iterations before timeout */
 #define	GC_FINALIZER_MAX_ITER	10000
+
+/* ----------------------------------------------------------------
+ * Stop-the-world (STW) mechanism
+ *
+ * Uses SIGUSR2 to suspend all registered GC threads during root
+ * scanning. Signal handler saves registers and blocks on a per-thread
+ * semaphore until the collector releases it.
+ * ---------------------------------------------------------------- */
+
+#define	GC_SUSPEND_SIGNAL	SIGUSR2
+#define	GC_STW_TIMEOUT_SEC	5
+
+static pthread_t gc_stw_coordinator;
+static _Atomic int gc_stw_suspended_count;
+static _Atomic int gc_stw_target_count;
+static int gc_stw_installed;	/* signal handler installed */
+
+/*
+ * Get the thread registry from umem_gc_roots.c.
+ * We need direct access for STW signal delivery.
+ */
+extern umem_gc_thread_info_t umem_gc_threads[];
+extern int umem_gc_nthreads;
+extern mutex_t umem_gc_threads_lock;
+
+static void
+gc_suspend_handler(int signo)
+{
+	int i;
+	pthread_t self = pthread_self();
+
+	(void)signo;
+
+	/* Find our thread info */
+	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
+		if (umem_gc_threads[i].gcti_registered &&
+		    pthread_equal(umem_gc_threads[i].gcti_thread, self)) {
+			umem_gc_threads[i].gcti_suspended = 1;
+			atomic_fetch_add(&gc_stw_suspended_count, 1);
+
+			/* Block until resumed */
+			while (sem_wait(&umem_gc_threads[i].gcti_resume_sem)
+			    == -1 && errno == EINTR)
+				;
+
+			umem_gc_threads[i].gcti_suspended = 0;
+			return;
+		}
+	}
+
+	/* Not a registered GC thread: ignore */
+}
+
+static int
+gc_install_stw_signal(void)
+{
+	struct sigaction sa;
+
+	if (gc_stw_installed)
+		return (0);
+
+	(void) memset(&sa, 0, sizeof (sa));
+	sa.sa_handler = gc_suspend_handler;
+	sa.sa_flags = SA_RESTART;
+	sigfillset(&sa.sa_mask);
+
+	if (sigaction(GC_SUSPEND_SIGNAL, &sa, NULL) != 0)
+		return (-1);
+
+	gc_stw_installed = 1;
+	return (0);
+}
+
+static void gc_resume_the_world(void);
+
+/*
+ * Suspend all registered GC threads except the caller.
+ * Returns 0 on success, -1 on timeout.
+ */
+static int
+gc_stop_the_world(void)
+{
+	int i;
+	int target = 0;
+	struct timespec deadline;
+
+	gc_stw_coordinator = pthread_self();
+	atomic_store(&gc_stw_suspended_count, 0);
+
+	(void) mutex_lock(&umem_gc_threads_lock);
+
+	/* Count and signal all other registered threads */
+	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
+		if (!umem_gc_threads[i].gcti_registered)
+			continue;
+		if (pthread_equal(umem_gc_threads[i].gcti_thread,
+		    gc_stw_coordinator))
+			continue;
+		(void) pthread_kill(umem_gc_threads[i].gcti_thread,
+		    GC_SUSPEND_SIGNAL);
+		target++;
+	}
+
+	(void) mutex_unlock(&umem_gc_threads_lock);
+
+	atomic_store(&gc_stw_target_count, target);
+
+	if (target == 0)
+		return (0);
+
+	/* Wait for all threads to suspend with timeout */
+	(void) clock_gettime(CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += GC_STW_TIMEOUT_SEC;
+
+	while (atomic_load(&gc_stw_suspended_count) < target) {
+		struct timespec now;
+		(void) clock_gettime(CLOCK_REALTIME, &now);
+		if (now.tv_sec > deadline.tv_sec ||
+		    (now.tv_sec == deadline.tv_sec &&
+		    now.tv_nsec >= deadline.tv_nsec)) {
+			gc_resume_the_world();
+			return (-1);
+		}
+		sched_yield();
+	}
+
+	return (0);
+}
+
+/*
+ * Resume all suspended GC threads.
+ */
+static void
+gc_resume_the_world(void)
+{
+	int i;
+
+	(void) mutex_lock(&umem_gc_threads_lock);
+
+	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
+		if (umem_gc_threads[i].gcti_suspended)
+			(void) sem_post(&umem_gc_threads[i].gcti_resume_sem);
+	}
+
+	(void) mutex_unlock(&umem_gc_threads_lock);
+}
 
 /* ----------------------------------------------------------------
  * Size class lookup
@@ -178,13 +336,15 @@ gc_alloc_size(size_t total_size)
 static void
 gc_object_add(umem_gc_header_t *hdr)
 {
+	void *user_ptr = UMEM_GC_USER_PTR(hdr);
+
 	(void) pthread_mutex_lock(&gc_objects_lock);
 	hdr->gc_next = gc_objects_sentinel.gc_next;
 	hdr->gc_prev = &gc_objects_sentinel;
 	gc_objects_sentinel.gc_next->gc_prev = hdr;
 	gc_objects_sentinel.gc_next = hdr;
 	if (gc_pagemap != NULL)
-		(void) umem_sparsemap_set(gc_pagemap, UMEM_GC_USER_PTR(hdr));
+		(void) umem_sparsemap_add_object(gc_pagemap, hdr, user_ptr);
 	(void) pthread_mutex_unlock(&gc_objects_lock);
 }
 
@@ -194,12 +354,14 @@ gc_object_add(umem_gc_header_t *hdr)
 static void
 gc_object_remove_locked(umem_gc_header_t *hdr)
 {
+	void *user_ptr = UMEM_GC_USER_PTR(hdr);
+
 	hdr->gc_prev->gc_next = hdr->gc_next;
 	hdr->gc_next->gc_prev = hdr->gc_prev;
 	hdr->gc_next = NULL;
 	hdr->gc_prev = NULL;
 	if (gc_pagemap != NULL)
-		umem_sparsemap_clear(gc_pagemap, UMEM_GC_USER_PTR(hdr));
+		umem_sparsemap_remove_object(gc_pagemap, hdr, user_ptr);
 }
 
 /* ----------------------------------------------------------------
@@ -602,6 +764,9 @@ umem_gc_init(void)
 	/* Set initial threshold */
 	atomic_store(&gc_threshold, GC_MIN_THRESHOLD);
 
+	/* Install STW signal handler (non-fatal if it fails) */
+	(void) gc_install_stw_signal();
+
 	gc_initialized = 1;
 	(void) pthread_mutex_unlock(&gc_init_lock);
 
@@ -772,8 +937,15 @@ umem_gc_realloc(void *ptr, size_t new_size)
 		}
 	}
 
-	/* Pin old object so GC triggered by alloc won't free it */
+	/*
+	 * Pin old object so GC triggered by alloc won't free it.
+	 * Take read lock to prevent mark phase from starting before
+	 * the pin is visible — otherwise mark could read flags before
+	 * pin, then sweep could free the object during our copy.
+	 */
+	(void) pthread_rwlock_rdlock(&gc_phase_rwlock);
 	old_hdr->gc_flags |= UMEM_GC_PINNED;
+	(void) pthread_rwlock_unlock(&gc_phase_rwlock);
 
 	/* Allocate new, copy, free old */
 	int flags = old_hdr->gc_flags & UMEM_GC_ATOMIC;
@@ -847,9 +1019,13 @@ umem_gc_collect(void)
 
 	size_t allocated_before = atomic_load(&gc_bytes_allocated);
 
-	/* Phase 1: Mark */
+	/* Phase 1: Mark
+	 * Take write lock to ensure all concurrent reallocs have
+	 * finished pinning their objects before we start marking. */
+	(void) pthread_rwlock_wrlock(&gc_phase_rwlock);
 	gc_reset_marks();
 	atomic_store_explicit(&gc_phase, GC_PHASE_MARK, memory_order_release);
+	(void) pthread_rwlock_unlock(&gc_phase_rwlock);
 
 	/* Initialize mark work queue */
 	if (gc_mark_queue_init(&gc_mark_queue) != 0) {
@@ -857,16 +1033,29 @@ umem_gc_collect(void)
 		return;
 	}
 
+	/*
+	 * Stop the world: suspend all other threads so root scanning
+	 * sees a consistent snapshot of stacks and registers.
+	 * If STW fails (timeout), fall back to best-effort scanning.
+	 */
+	int stw_active = 0;
+	if (gc_stw_installed)
+		stw_active = (gc_stop_the_world() == 0);
+
 	/* Scan all roots (stacks, registers, data segments) */
 	umem_gc_scan_all_roots(gc_mark_callback);
 
 	/* Drain work queue: recursively scan non-atomic marked objects */
 	gc_drain_mark_queue();
 
-	/* Phase 2: Remark (STW pause - rescan for missed references) */
+	/* Phase 2: Remark — rescan for missed references */
 	atomic_store_explicit(&gc_phase, GC_PHASE_REMARK, memory_order_release);
 	umem_gc_scan_all_roots(gc_mark_callback);
 	gc_drain_mark_queue();
+
+	/* Resume the world after marking is complete */
+	if (stw_active)
+		gc_resume_the_world();
 
 	gc_mark_queue_destroy(&gc_mark_queue);
 
@@ -1024,24 +1213,27 @@ umem_gc_find_header(void *ptr)
 	if (ptr == NULL)
 		return (NULL);
 
-	/* Fast path: reject if no GC objects on this page */
-	if (gc_pagemap != NULL && !umem_sparsemap_test(gc_pagemap, ptr))
-		return (NULL);
+	/* O(1) lookup via per-page object lists in sparsemap */
+	if (gc_pagemap != NULL)
+		return (umem_sparsemap_find_object(gc_pagemap, ptr));
 
-	umem_gc_header_t *candidate = UMEM_GC_HEADER(ptr);
+	/* Fallback: O(n) scan if sparsemap not available */
+	{
+		umem_gc_header_t *candidate = UMEM_GC_HEADER(ptr);
 
-	(void) pthread_mutex_lock(&gc_objects_lock);
+		(void) pthread_mutex_lock(&gc_objects_lock);
 
-	umem_gc_header_t *hdr = gc_objects_sentinel.gc_next;
-	while (hdr != &gc_objects_sentinel) {
-		if (hdr == candidate) {
-			(void) pthread_mutex_unlock(&gc_objects_lock);
-			return (hdr);
+		umem_gc_header_t *hdr = gc_objects_sentinel.gc_next;
+		while (hdr != &gc_objects_sentinel) {
+			if (hdr == candidate) {
+				(void) pthread_mutex_unlock(&gc_objects_lock);
+				return (hdr);
+			}
+			hdr = hdr->gc_next;
 		}
-		hdr = hdr->gc_next;
-	}
 
-	(void) pthread_mutex_unlock(&gc_objects_lock);
+		(void) pthread_mutex_unlock(&gc_objects_lock);
+	}
 	return (NULL);
 }
 

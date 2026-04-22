@@ -28,15 +28,13 @@
  * This API may change without notice. Do not use in production code
  * without thorough testing. See README.md for stability guarantees.
  *
- * Known limitations:
- *  - No stop-the-world: root scanning reads active thread stacks without
- *    suspending threads. This is best-effort and can miss roots or read
- *    stale data. A future version should add STW via signals.
- *  - umem_gc_realloc() may trigger collection that frees the source
- *    object before the copy completes. Pin the source or disable GC
- *    during realloc in a future fix.
- *  - find_header() is O(n) under a global lock. Replace with hash table
- *    (sparsemap) for workloads above ~10K GC objects.
+ * Implementation notes:
+ *  - Stop-the-world uses SIGUSR2 to suspend threads during root scanning.
+ *    Falls back to best-effort scanning if STW setup fails or times out.
+ *  - gc_realloc pins the source object under a phase rwlock so GC cannot
+ *    free it during the copy.
+ *  - find_header uses per-page object lists in the sparsemap for O(1)
+ *    lookup (O(k) where k = objects on same page, typically 1-4).
  */
 #if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(_UMEM_INTERNAL)
 #error "This header requires #define UMEM_ENABLE_EXPERIMENTAL before inclusion"
@@ -82,6 +80,7 @@ typedef struct umem_gc_header {
 	void		*gc_finalizer_data;
 	struct umem_gc_header *gc_next;	/* global GC object list */
 	struct umem_gc_header *gc_prev;	/* doubly-linked for O(1) removal */
+	struct umem_gc_header *gc_page_next; /* per-page list for find_header */
 } umem_gc_header_t;
 
 /*

@@ -27,6 +27,8 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include <signal.h>
+#include <semaphore.h>
 #include <pthread.h>
 
 #ifdef	__cplusplus
@@ -42,6 +44,8 @@ typedef struct umem_gc_thread_info {
 	void		*gcti_stack_base;
 	size_t		gcti_stack_size;
 	int		gcti_registered;
+	volatile sig_atomic_t gcti_suspended;	/* set by STW handler */
+	sem_t		gcti_resume_sem;	/* wait for resume */
 } umem_gc_thread_info_t;
 
 /* Maximum threads the GC can track */

@@ -35,6 +35,7 @@
 
 #include <umem.h>
 #include "umem_sparsemap.h"
+#include "umem_gc.h"
 
 #include <string.h>
 
@@ -50,8 +51,9 @@
 #define	SM_TOMBSTONE	((uintptr_t)1)
 
 typedef struct sm_entry {
-	uintptr_t	se_page;	/* page-aligned address, or sentinel */
-	uint32_t	se_count;	/* number of GC objects on this page */
+	uintptr_t		se_page;	/* page-aligned address, or sentinel */
+	uint32_t		se_count;	/* number of GC objects on this page */
+	struct umem_gc_header	*se_objects;	/* per-page object list head */
 } sm_entry_t;
 
 struct umem_sparsemap {
@@ -316,4 +318,119 @@ umem_sparsemap_count(umem_sparsemap_t *map)
 		return (0);
 
 	return (map->sm_count);
+}
+
+/* ----------------------------------------------------------------
+ * Per-page object list management
+ * ---------------------------------------------------------------- */
+
+int
+umem_sparsemap_add_object(umem_sparsemap_t *map,
+    struct umem_gc_header *hdr, void *user_ptr)
+{
+	uintptr_t page;
+	sm_entry_t *e;
+
+	if (map == NULL || hdr == NULL)
+		return (-1);
+
+	page = sm_page_of(map, user_ptr);
+	e = sm_lookup(map, page);
+
+	if (e != NULL) {
+		/* Page already tracked: prepend to per-page list */
+		hdr->gc_page_next = e->se_objects;
+		e->se_objects = hdr;
+		e->se_count++;
+		return (0);
+	}
+
+	/* New page: need to insert entry */
+	{
+		size_t used = map->sm_count + map->sm_tombstones;
+		if (used * SM_LOAD_DEN >= map->sm_capacity * SM_LOAD_NUM) {
+			if (sm_resize(map, map->sm_capacity * 2) != 0)
+				return (-1);
+		}
+	}
+
+	{
+		size_t idx = sm_hash(page, map->sm_capacity);
+		for (;;) {
+			e = &map->sm_buckets[idx];
+			if (e->se_page == SM_EMPTY ||
+			    e->se_page == SM_TOMBSTONE) {
+				if (e->se_page == SM_TOMBSTONE)
+					map->sm_tombstones--;
+				e->se_page = page;
+				e->se_count = 1;
+				e->se_objects = hdr;
+				hdr->gc_page_next = NULL;
+				map->sm_count++;
+				return (0);
+			}
+			idx = (idx + 1) & (map->sm_capacity - 1);
+		}
+	}
+}
+
+void
+umem_sparsemap_remove_object(umem_sparsemap_t *map,
+    struct umem_gc_header *hdr, void *user_ptr)
+{
+	uintptr_t page;
+	sm_entry_t *e;
+	struct umem_gc_header **pp;
+
+	if (map == NULL || hdr == NULL)
+		return;
+
+	page = sm_page_of(map, user_ptr);
+	e = sm_lookup(map, page);
+	if (e == NULL)
+		return;
+
+	/* Unlink from per-page list */
+	for (pp = &e->se_objects; *pp != NULL; pp = &(*pp)->gc_page_next) {
+		if (*pp == hdr) {
+			*pp = hdr->gc_page_next;
+			hdr->gc_page_next = NULL;
+			e->se_count--;
+
+			/* Last object on this page: remove entry */
+			if (e->se_count == 0) {
+				e->se_page = SM_TOMBSTONE;
+				e->se_objects = NULL;
+				map->sm_count--;
+				map->sm_tombstones++;
+			}
+			return;
+		}
+	}
+}
+
+struct umem_gc_header *
+umem_sparsemap_find_object(umem_sparsemap_t *map, void *ptr)
+{
+	uintptr_t page;
+	sm_entry_t *e;
+	struct umem_gc_header *hdr;
+	struct umem_gc_header *candidate;
+
+	if (map == NULL || ptr == NULL)
+		return (NULL);
+
+	page = sm_page_of(map, ptr);
+	e = sm_lookup(map, page);
+	if (e == NULL)
+		return (NULL);
+
+	candidate = UMEM_GC_HEADER(ptr);
+
+	for (hdr = e->se_objects; hdr != NULL; hdr = hdr->gc_page_next) {
+		if (hdr == candidate)
+			return (hdr);
+	}
+
+	return (NULL);
 }
