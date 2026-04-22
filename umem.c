@@ -1866,6 +1866,14 @@ umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
 {
 	umem_magazine_t *mp;
 
+	/*
+	 * Prefetch the list head before acquiring the lock.
+	 * On a lock miss, this lets the cache line warm up
+	 * during the mutex spin/sleep, saving ~50-100ns on
+	 * the critical path after the lock is acquired.
+	 */
+	UMEM_PREFETCH_READ(&mlp->ml_list);
+
 	if (mutex_trylock(&mlp->ml_lock) != 0) {
 		atomic_add_64(&cp->cache_depot_contention, 1);
 		(void) mutex_lock(&mlp->ml_lock);
@@ -1884,6 +1892,13 @@ umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
 	mlp->ml_alloc++;
 
 	(void) mutex_unlock(&mlp->ml_lock);
+
+	/*
+	 * Prefetch the first few magazine rounds so they are
+	 * warm in cache when the caller starts allocating.
+	 */
+	UMEM_PREFETCH_READ(&mp->mag_round[0]);
+
 	return (mp);
 }
 
@@ -1915,6 +1930,8 @@ umem_depot_pop_trylock(umem_maglist_t *mlp)
 {
 	umem_magazine_t *mp;
 
+	UMEM_PREFETCH_READ(&mlp->ml_list);
+
 	if (mutex_trylock(&mlp->ml_lock) != 0)
 		return (NULL);
 
@@ -1931,6 +1948,9 @@ umem_depot_pop_trylock(umem_maglist_t *mlp)
 	mlp->ml_alloc++;
 
 	(void) mutex_unlock(&mlp->ml_lock);
+
+	UMEM_PREFETCH_READ(&mp->mag_round[0]);
+
 	return (mp);
 }
 
