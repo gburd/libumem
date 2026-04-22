@@ -57,6 +57,7 @@ extern __attribute__((weak)) unsigned int __rseq_size;
 /* Global state */
 int umem_rseq_enabled = 0;
 int umem_rseq_asm_safe = 0;
+int umem_rseq_fs_offset = 0;
 static int umem_rseq_ncpus = 0;
 static int umem_rseq_use_glibc = 0;
 static pthread_key_t umem_rseq_key;
@@ -178,7 +179,40 @@ umem_rseq_init(void)
 	}
 
 	umem_rseq_enabled = 1;
-	umem_rseq_asm_safe = !umem_rseq_use_glibc;
+
+	/*
+	 * Set FS-relative offset for the assembly fast path.
+	 * When glibc manages rseq, use __rseq_offset directly.
+	 * Otherwise, compute offset from umem_rseq_area TLS symbol.
+	 */
+	if (umem_rseq_use_glibc) {
+		umem_rseq_fs_offset = (int)__rseq_offset;
+		umem_rseq_asm_safe = 1;
+	} else {
+#if defined(__x86_64__)
+		/*
+		 * Compute the FS-relative offset of umem_rseq_area.
+		 * The @gottpoff relocation gives a negative offset
+		 * from the thread pointer (%fs:0).
+		 */
+		long tls_off;
+		__asm__ volatile (
+		    "movq umem_rseq_area@gottpoff(%%rip), %0"
+		    : "=r"(tls_off));
+		umem_rseq_fs_offset = (int)tls_off;
+		umem_rseq_asm_safe = 1;
+#else
+		umem_rseq_asm_safe = 0;
+#endif
+	}
+
+	if (umem_rseq_asm_safe && getenv("UMEM_DEBUG") != NULL) {
+		fprintf(stderr, "umem: rseq assembly fast path enabled"
+		    " (glibc=%d, fs_offset=%d, ncpus=%d)\n",
+		    umem_rseq_use_glibc, umem_rseq_fs_offset,
+		    umem_rseq_ncpus);
+	}
+
 	return 0;
 }
 

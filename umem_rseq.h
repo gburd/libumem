@@ -100,6 +100,7 @@ typedef struct umem_rseq_cache {
  */
 extern int umem_rseq_enabled;		/* rseq available and enabled */
 extern int umem_rseq_asm_safe;		/* safe to use assembly fast path */
+extern int umem_rseq_fs_offset;		/* FS-relative offset to rseq struct */
 extern __thread int umem_rseq_registered;	/* Thread has registered rseq */
 extern __thread struct umem_rseq umem_rseq_area; /* Per-thread rseq area */
 extern __thread volatile uint32_t *umem_rseq_cpu_idp; /* Ptr to active cpu_id */
