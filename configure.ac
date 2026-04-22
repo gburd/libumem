@@ -123,6 +123,22 @@ esac
 AC_SUBST(GENASM_DIR)
 AM_CONDITIONAL(ARCH_SPARC, [test "x$arch_sparc" = "xyes"])
 
+# Detect hardware cache line size for false-sharing avoidance.
+# Default is 64 bytes (correct for x86_64, RISC-V, UltraSPARC-III/IV).
+# Override with --with-cache-line-size=N for platforms like SPARC T-series
+# or Apple M-series that use 128-byte coherence lines.
+AC_ARG_WITH([cache-line-size],
+    [AS_HELP_STRING([--with-cache-line-size=N],
+        [Override hardware cache line size in bytes (default: auto-detect)])],
+    [cache_line_size=$withval],
+    [cache_line_size=auto])
+
+if test "x$cache_line_size" = "xauto"; then
+    cache_line_size=64
+fi
+AC_DEFINE_UNQUOTED(UMEM_CACHE_LINE_SIZE_CONFIG, [$cache_line_size],
+    [Hardware cache line size for false-sharing avoidance])
+
 # aarch64-specific checks
 if test "$GENASM_DIR" = "aarch64"; then
     # Check for ARM-specific features

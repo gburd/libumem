@@ -122,9 +122,16 @@ extern "C" {
 #define	UMEM_REDZONE_BYTE		0xbb
 
 /*
- * Cache line size and alignment macros
+ * Cache line size and alignment macros.
+ * Use the configure-detected value if available, otherwise default to 64.
+ * Override at configure time with --with-cache-line-size=N for platforms
+ * that use larger coherence lines (e.g., SPARC T-series: 128B).
  */
+#ifdef UMEM_CACHE_LINE_SIZE_CONFIG
+#define	UMEM_CACHE_LINE_SIZE	UMEM_CACHE_LINE_SIZE_CONFIG
+#else
 #define	UMEM_CACHE_LINE_SIZE	64
+#endif
 #define	UMEM_CACHE_ALIGNED	__attribute__((aligned(UMEM_CACHE_LINE_SIZE)))
 
 /*
