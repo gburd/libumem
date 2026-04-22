@@ -50,8 +50,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
-#include <setjmp.h>
-#include <semaphore.h>
 #include <sched.h>
 #include <time.h>
 
@@ -171,6 +169,9 @@ extern umem_gc_thread_info_t umem_gc_threads[];
 extern int umem_gc_nthreads;
 extern mutex_t umem_gc_threads_lock;
 
+/* Global flag cleared by gc_resume_the_world */
+static volatile sig_atomic_t gc_stw_hold;
+
 static void
 gc_suspend_handler(int signo)
 {
@@ -186,9 +187,12 @@ gc_suspend_handler(int signo)
 			umem_gc_threads[i].gcti_suspended = 1;
 			atomic_fetch_add(&gc_stw_suspended_count, 1);
 
-			/* Block until resumed */
-			while (sem_wait(&umem_gc_threads[i].gcti_resume_sem)
-			    == -1 && errno == EINTR)
+			/*
+			 * Spin until resumed. We avoid sem_wait here
+			 * because it is not async-signal-safe on all
+			 * platforms (notably FreeBSD).
+			 */
+			while (gc_stw_hold)
 				;
 
 			umem_gc_threads[i].gcti_suspended = 0;
@@ -233,6 +237,7 @@ gc_stop_the_world(void)
 	struct timespec deadline;
 
 	gc_stw_coordinator = pthread_self();
+	gc_stw_hold = 1;
 	atomic_store(&gc_stw_suspended_count, 0);
 
 	(void) mutex_lock(&umem_gc_threads_lock);
@@ -281,16 +286,8 @@ gc_stop_the_world(void)
 static void
 gc_resume_the_world(void)
 {
-	int i;
-
-	(void) mutex_lock(&umem_gc_threads_lock);
-
-	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
-		if (umem_gc_threads[i].gcti_suspended)
-			(void) sem_post(&umem_gc_threads[i].gcti_resume_sem);
-	}
-
-	(void) mutex_unlock(&umem_gc_threads_lock);
+	/* Clear hold flag: all spinning signal handlers will return */
+	gc_stw_hold = 0;
 }
 
 /* ----------------------------------------------------------------

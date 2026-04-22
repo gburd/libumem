@@ -103,7 +103,6 @@ umem_gc_thread_register(void)
 	umem_gc_threads[slot].gcti_stack_base = NULL;
 	umem_gc_threads[slot].gcti_stack_size = 0;
 	umem_gc_threads[slot].gcti_suspended = 0;
-	(void) sem_init(&umem_gc_threads[slot].gcti_resume_sem, 0, 0);
 	umem_gc_threads[slot].gcti_registered = 1;
 
 	umem_gc_get_stack_bounds_for(
@@ -130,7 +129,6 @@ umem_gc_thread_unregister(void)
 			umem_gc_threads[i].gcti_registered = 0;
 			umem_gc_threads[i].gcti_stack_base = NULL;
 			umem_gc_threads[i].gcti_stack_size = 0;
-			(void) sem_destroy(&umem_gc_threads[i].gcti_resume_sem);
 			umem_gc_nthreads--;
 			mutex_unlock(&umem_gc_threads_lock);
 			return (0);
