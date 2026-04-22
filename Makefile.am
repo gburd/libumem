@@ -144,7 +144,7 @@ libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir)
 libumem_malloc_la_LIBADD = libumem.la
 
 # Initialize flags unconditionally to avoid += errors
-AM_CFLAGS = -fno-builtin-calloc $(SIMD_CFLAGS)
+AM_CFLAGS = -fno-builtin-calloc $(SIMD_CFLAGS) -D_UMEM_INTERNAL
 AM_LDFLAGS =
 
 # Add coverage flags if enabled
@@ -333,9 +333,7 @@ tools_umem_profile_dump_LDFLAGS = -lm
 man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 	$(man3_MANS) \
-	NIX_USAGE.md IMPLEMENTATION_STATUS.md \
 	scripts/run-coverage.sh scripts/run-sanitizers.sh \
-	gen_compile_commands.py \
 	tools/gdb/umem_gdb.py tools/lldb/umem_lldb.py \
 	examples/palloc_integration.c examples/README.md \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
@@ -345,8 +343,9 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 	test/bench/verify_profile.sh \
 	test/property/prop_alloc_free.c
 
-nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h umem_arena.h
-nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h umem_own.h umem_gc.h gc.h
+nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h \
+	umem_arena.h umem_own.h umem_gc.h gc.h \
+	umem_profile.h umem_stacktrace.h
 
 if ENABLE_PERCPU_CACHING
 nobase_include_HEADERS += umem_percpu.h

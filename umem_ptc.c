@@ -32,6 +32,9 @@
 #include "umem_base.h"
 #include "umem_impl.h"
 
+_Static_assert(_UMEM_PTC_CACHE_LINE == UMEM_CACHE_LINE_SIZE,
+    "PTC cache line size must match UMEM_CACHE_LINE_SIZE");
+
 /*
  * External reference to umem_alloc_table
  */
@@ -167,8 +170,6 @@ umem_ptc_init(void)
 		}
 	}
 
-	ptc_table_ready = 1;
-
 	/*
 	 * Build umem_ptc_bin_table: for each alloc_table index,
 	 * compute the PTC bin. This allows umem.c to inline the
@@ -192,6 +193,9 @@ umem_ptc_init(void)
 			}
 		}
 	}
+
+	/* Publish after all tables are fully populated */
+	ptc_table_ready = 1;
 }
 
 /*
@@ -384,11 +388,6 @@ umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
 	/* Look up the appropriate cache */
 	cp = umem_alloc_table[(size - 1) >> UMEM_ALIGN_SHIFT];
 	if (cp == NULL) {
-		/* No cache - free directly */
-		for (i = 0; i < flush_count; i++) {
-			ptr = bin->slots[--bin->count];
-			umem_free(ptr, size);
-		}
 		return;
 	}
 
@@ -453,14 +452,20 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 	/* Flush all per-thread magazines back to depot first */
 	umem_ptc_mag_flush_all(ptc);
 
-	/* Flush all bins back to magazine layer incrementally,
-	 * yielding between bins to reduce thread-exit latency spike */
-	for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
-		bin = &ptc->bins[bin_idx];
-		if (bin->count > 0) {
-			umem_ptc_bin_flush(bin,
-			    umem_ptc_bin_size(bin_idx));
-			sched_yield();
+	/* Flush all bins back to magazine layer */
+	{
+		int flushed = 0;
+		for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
+			bin = &ptc->bins[bin_idx];
+			if (bin->count > 0) {
+				umem_ptc_bin_flush(bin,
+				    umem_ptc_bin_size(bin_idx));
+				flushed += bin->count;
+				if (flushed >= 64) {
+					sched_yield();
+					flushed = 0;
+				}
+			}
 		}
 	}
 

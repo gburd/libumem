@@ -100,6 +100,8 @@ umem_arena_alloc(umem_arena_t *arena, size_t size)
 		return (NULL);
 	}
 
+	if (size > SIZE_MAX - (ARENA_ALIGN - 1))
+		return (NULL);
 	aligned_size = (size + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
 	new_offset = arena->offset + aligned_size;
 

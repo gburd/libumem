@@ -138,6 +138,11 @@ umem_rseq_available(void)
 		return 1;
 	}
 
+	/*
+	 * EBUSY: already registered (glibc 2.35+ pre-registered).
+	 * EINVAL: bad args but syscall exists (kernel supports rseq).
+	 * ENOSYS would mean no kernel support (falls through to 0).
+	 */
 	if (errno == EBUSY || errno == EINVAL) {
 		return 1;
 	}

@@ -460,14 +460,10 @@ umem_move(umem_owned_t *from)
 	}
 
 	/*
-	 * Move is a logical transfer: the source handle becomes
-	 * invalid and the same pointer is returned as the new owner.
-	 * In debug mode, update the owner thread to the caller.
+	 * Move is a logical transfer: the source handle is returned
+	 * with the new owner. State stays OWNED — the caller becomes
+	 * the owner. No intermediate state is observable.
 	 */
-	atomic_store_explicit(&l->ohl_state, UMEM_OWN_STATE_MOVED,
-	    memory_order_release);
-	atomic_store_explicit(&l->ohl_state, UMEM_OWN_STATE_OWNED,
-	    memory_order_release);
 
 	if (is_debug_mode()) {
 		own_hdr_debug_t *d = to_debug(from);
@@ -499,11 +495,15 @@ umem_clone(const umem_owned_t *src, size_t size)
 		return (NULL);
 	}
 
+	/* Clamp to source allocation size to prevent overread */
+	size_t src_size = to_lite_c(src)->ohl_alloc_size;
+	size_t copy_size = (size < src_size) ? size : src_size;
+
 	umem_owned_t *dst = umem_own_alloc(size, UMEM_DEFAULT);
 	if (dst == NULL)
 		return (NULL);
 
-	memcpy(to_data(dst), to_data_c(src), size);
+	memcpy(to_data(dst), to_data_c(src), copy_size);
 	return (dst);
 }
 
@@ -519,7 +519,7 @@ umem_own_cache_alloc(umem_cache_t *cp, int flags)
 		return (NULL);
 
 	umem_owned_t *o = (umem_owned_t *)raw;
-	init_header(o, 0);
+	init_header(o, cp->cache_bufsize);
 	return (o);
 }
 

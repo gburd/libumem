@@ -27,8 +27,18 @@
  * EXPERIMENTAL API -- not production-ready.
  * This API may change without notice. Do not use in production code
  * without thorough testing. See README.md for stability guarantees.
+ *
+ * Known limitations:
+ *  - No stop-the-world: root scanning reads active thread stacks without
+ *    suspending threads. This is best-effort and can miss roots or read
+ *    stale data. A future version should add STW via signals.
+ *  - umem_gc_realloc() may trigger collection that frees the source
+ *    object before the copy completes. Pin the source or disable GC
+ *    during realloc in a future fix.
+ *  - find_header() is O(n) under a global lock. Replace with hash table
+ *    (sparsemap) for workloads above ~10K GC objects.
  */
-#if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(HAVE_CONFIG_H)
+#if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(_UMEM_INTERNAL)
 #error "This header requires #define UMEM_ENABLE_EXPERIMENTAL before inclusion"
 #endif
 

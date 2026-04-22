@@ -43,11 +43,13 @@ extern "C" {
  * - Fallback to magazine layer when full/empty
  */
 
-#define PTC_NSLOTS_SMALL  128  /* bins 0-12: sizes <=256B */
-#define PTC_NSLOTS_MEDIUM  64  /* bins 13-20: sizes 257-1024B */
-#define PTC_NSLOTS_LARGE   32  /* bins 21-27: sizes 1025-2048B */
+#define PTC_NSLOTS_SMALL  128  /* bins 0-(PTC_BIN_MEDIUM-1): sizes <=256B */
+#define PTC_NSLOTS_MEDIUM  64  /* bins PTC_BIN_MEDIUM-(PTC_BIN_LARGE-1) */
+#define PTC_NSLOTS_LARGE   32  /* bins PTC_BIN_LARGE-(PTC_NBINS-1) */
 #define PTC_NSLOTS        128  /* max capacity (for struct sizing) */
 #define PTC_NBINS 28           /* number of size classes (up to 2048B) */
+#define PTC_BIN_MEDIUM    13   /* first bin for medium sizes (257-1024B) */
+#define PTC_BIN_LARGE     21   /* first bin for large sizes (1025-2048B) */
 
 /* Forward declaration */
 struct umem_magazine;
@@ -69,13 +71,21 @@ typedef struct umem_ptc_mag {
 } umem_ptc_mag_t;
 
 /*
+ * Default cache line size for alignment. Must match UMEM_CACHE_LINE_SIZE
+ * in umem_impl.h (which may be overridden by configure --with-cache-line-size).
+ */
+#ifndef _UMEM_PTC_CACHE_LINE
+#define _UMEM_PTC_CACHE_LINE 64
+#endif
+
+/*
  * Per-bin structure holding cached objects
  */
 typedef struct umem_ptc_bin {
 	void *slots[PTC_NSLOTS];
 	uint16_t count;         /* current number of cached objects */
 	uint16_t low_water;     /* for auto-tuning (future) */
-} __attribute__((aligned(64))) umem_ptc_bin_t;
+} __attribute__((aligned(_UMEM_PTC_CACHE_LINE))) umem_ptc_bin_t;
 
 /*
  * Per-thread cache structure
@@ -114,8 +124,8 @@ extern __thread umem_ptc_t *thread_ptc;
 static inline int
 ptc_bin_capacity(int bin)
 {
-	if (bin < 13) return (PTC_NSLOTS_SMALL);
-	if (bin < 21) return (PTC_NSLOTS_MEDIUM);
+	if (bin < PTC_BIN_MEDIUM) return (PTC_NSLOTS_SMALL);
+	if (bin < PTC_BIN_LARGE) return (PTC_NSLOTS_MEDIUM);
 	return (PTC_NSLOTS_LARGE);
 }
 

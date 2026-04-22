@@ -3,6 +3,7 @@
 *.la
 *.o
 *.libs
+.cache/
 INSTALL
 Makefile.in
 aclocal.m4

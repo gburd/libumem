@@ -89,7 +89,7 @@ static umem_cache_t *gc_caches[GC_NUM_SIZE_CLASSES];
  * ---------------------------------------------------------------- */
 
 /* Initialization state */
-static int gc_initialized;
+static _Atomic int gc_initialized;
 static pthread_mutex_t gc_init_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* GC phase */
@@ -772,11 +772,16 @@ umem_gc_realloc(void *ptr, size_t new_size)
 		}
 	}
 
+	/* Pin old object so GC triggered by alloc won't free it */
+	old_hdr->gc_flags |= UMEM_GC_PINNED;
+
 	/* Allocate new, copy, free old */
 	int flags = old_hdr->gc_flags & UMEM_GC_ATOMIC;
 	void *new_ptr = umem_gc_alloc(new_size, flags);
-	if (new_ptr == NULL)
+	if (new_ptr == NULL) {
+		old_hdr->gc_flags &= ~UMEM_GC_PINNED;
 		return (NULL);
+	}
 
 	size_t copy_size = (old_size < new_size) ? old_size : new_size;
 	memcpy(new_ptr, ptr, copy_size);
@@ -791,6 +796,7 @@ umem_gc_realloc(void *ptr, size_t new_size)
 		old_hdr->gc_finalizer = NULL;
 	}
 
+	old_hdr->gc_flags &= ~UMEM_GC_PINNED;
 	umem_gc_free(ptr);
 	return (new_ptr);
 }
