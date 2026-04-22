@@ -169,14 +169,15 @@ test_sparsemap_resize(const MunitParameter params[], void *data)
 	munit_assert_not_null(map);
 
 	/*
-	 * Insert entries for many distinct "pages" by using synthetic
-	 * page-aligned addresses. We use addresses that are far apart
-	 * to ensure they map to different pages.
+	 * Insert entries for many distinct pages by using synthetic
+	 * page-aligned addresses. Use 64K stride to guarantee each
+	 * address lands on a separate page regardless of page size
+	 * (4K on x86, 8K on SPARC, up to 64K on some ARM64).
 	 */
 	size_t n = 500;
+	uintptr_t stride = 0x10000;	/* 64K between addresses */
 	for (size_t i = 0; i < n; i++) {
-		/* Synthetic page address: 0x10000 + i * 0x1000 */
-		void *fake_ptr = (void *)(uintptr_t)(0x10000 + i * 0x1000);
+		void *fake_ptr = (void *)(uintptr_t)(0x100000 + i * stride);
 		int rc = umem_sparsemap_set(map, fake_ptr);
 		munit_assert_int(rc, ==, 0);
 	}
@@ -185,17 +186,17 @@ test_sparsemap_resize(const MunitParameter params[], void *data)
 
 	/* Verify all pages are found */
 	for (size_t i = 0; i < n; i++) {
-		void *fake_ptr = (void *)(uintptr_t)(0x10000 + i * 0x1000);
+		void *fake_ptr = (void *)(uintptr_t)(0x100000 + i * stride);
 		munit_assert_int(umem_sparsemap_test(map, fake_ptr), !=, 0);
 	}
 
 	/* Verify a non-existent page is not found */
-	void *missing = (void *)(uintptr_t)(0x10000 + n * 0x1000);
+	void *missing = (void *)(uintptr_t)(0x100000 + n * stride);
 	munit_assert_int(umem_sparsemap_test(map, missing), ==, 0);
 
 	/* Clear all entries */
 	for (size_t i = 0; i < n; i++) {
-		void *fake_ptr = (void *)(uintptr_t)(0x10000 + i * 0x1000);
+		void *fake_ptr = (void *)(uintptr_t)(0x100000 + i * stride);
 		umem_sparsemap_clear(map, fake_ptr);
 	}
 

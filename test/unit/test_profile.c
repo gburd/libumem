@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define TEST_PROFILE_PATH "/tmp/claude-1000/test_profile.ump"
+#define TEST_PROFILE_PATH "/tmp/test_umem_profile.ump"
 
 /*
  * Test 1: Record a profile during an allocation workload and verify
