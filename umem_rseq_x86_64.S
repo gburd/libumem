@@ -117,8 +117,8 @@ umem_rseq_alloc_fastpath:
 	jmp	.Lrseq_alloc_post_commit
 
 	.align	32
+	.long	RSEQ_SIG	/* signature BEFORE label — kernel reads *(abort_ip-4) */
 .Lrseq_alloc_abort:
-	.byte	RSEQ_SIG >> 24, RSEQ_SIG >> 16, RSEQ_SIG >> 8, RSEQ_SIG
 	incq	CACHE_RESTART_COUNT_OFFSET(%rbx)
 	LOAD_FS_OFFSET %rax
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)
@@ -218,8 +218,8 @@ umem_rseq_free_fastpath:
 	ret
 
 	.align	32
+	.long	RSEQ_SIG	/* signature BEFORE label — kernel reads *(abort_ip-4) */
 .Lrseq_free_abort:
-	.byte	RSEQ_SIG >> 24, RSEQ_SIG >> 16, RSEQ_SIG >> 8, RSEQ_SIG
 	incq	CACHE_RESTART_COUNT_OFFSET(%rbx)
 	LOAD_FS_OFFSET %rax
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)
