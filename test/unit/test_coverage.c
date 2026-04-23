@@ -887,7 +887,9 @@ static MunitResult test_malloc_realloc_coverage(const MunitParameter[], void *);
 static MunitResult test_malloc_memalign_coverage(const MunitParameter[], void *);
 static MunitResult test_malloc_valloc_coverage(const MunitParameter[], void *);
 static MunitResult test_malloc_posix_memalign_coverage(const MunitParameter[], void *);
+#ifdef HAVE_MALLOC_USABLE_SIZE
 static MunitResult test_malloc_usable_size_coverage(const MunitParameter[], void *);
+#endif
 static MunitResult test_stacktrace_init_format(const MunitParameter[], void *);
 static MunitResult test_stacktrace_print(const MunitParameter[], void *);
 static MunitResult test_profile_init_record(const MunitParameter[], void *);
@@ -1010,8 +1012,10 @@ static MunitTest coverage_tests[] = {
       MUNIT_TEST_OPTION_NONE, NULL },
     { "/malloc_posix_memalign_coverage", test_malloc_posix_memalign_coverage, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
+#ifdef HAVE_MALLOC_USABLE_SIZE
     { "/malloc_usable_size_coverage", test_malloc_usable_size_coverage, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
+#endif
     { "/stacktrace_init_format", test_stacktrace_init_format, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
     { "/stacktrace_print", test_stacktrace_print, NULL, NULL,
@@ -1293,7 +1297,9 @@ extern void *realloc(void *, size_t);
 extern void *memalign(size_t, size_t);
 extern void *valloc(size_t);
 extern int posix_memalign(void **, size_t, size_t);
+#ifdef HAVE_MALLOC_USABLE_SIZE
 extern size_t malloc_usable_size(void *);
+#endif
 
 static MunitResult
 test_malloc_calloc_coverage(const MunitParameter params[], void *data)
@@ -1399,6 +1405,7 @@ test_malloc_posix_memalign_coverage(const MunitParameter params[], void *data)
     return MUNIT_OK;
 }
 
+#ifdef HAVE_MALLOC_USABLE_SIZE
 static MunitResult
 test_malloc_usable_size_coverage(const MunitParameter params[], void *data)
 {
@@ -1413,6 +1420,7 @@ test_malloc_usable_size_coverage(const MunitParameter params[], void *data)
     free(p);
     return MUNIT_OK;
 }
+#endif
 
 /* ---- umem_stacktrace.c coverage ---- */
 
@@ -1444,7 +1452,11 @@ test_stacktrace_print(const MunitParameter params[], void *data)
     uintptr_t pcs[5];
     pcs[0] = (uintptr_t)&test_stacktrace_print;
     pcs[1] = (uintptr_t)&test_stacktrace_init_format;
+#ifdef HAVE_MALLOC_USABLE_SIZE
     pcs[2] = (uintptr_t)&test_malloc_usable_size_coverage;
+#else
+    pcs[2] = (uintptr_t)&test_malloc_posix_memalign_coverage;
+#endif
     pcs[3] = (uintptr_t)&umem_stacktrace_init;
     pcs[4] = (uintptr_t)&umem_cache_create;
 
