@@ -761,8 +761,14 @@ umem_gc_init(void)
 	/* Set initial threshold */
 	atomic_store(&gc_threshold, GC_MIN_THRESHOLD);
 
-	/* Install STW signal handler (non-fatal if it fails) */
+	/*
+	 * Install STW signal handler. Currently only on Linux where
+	 * SIGUSR2 + pthread_kill + spin-in-handler is well-tested.
+	 * FreeBSD/Illumos fall back to best-effort root scanning.
+	 */
+#ifdef __linux__
 	(void) gc_install_stw_signal();
+#endif
 
 	gc_initialized = 1;
 	(void) pthread_mutex_unlock(&gc_init_lock);
