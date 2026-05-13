@@ -1,0 +1,255 @@
+.\" umem(1) -- runtime introspection for libumem-using processes.
+.TH UMEM 1 "2025-01" "libumem" "User Commands"
+.SH NAME
+umem \- runtime introspection for libumem-using processes
+.SH SYNOPSIS
+.B umem
+.B \-\-pid
+.I PID
+.I CMD
+.RI [ ARGS... ]
+.br
+.B umem
+.B \-\-core
+.I CORE
+.B \-\-exe
+.I BIN
+.I CMD
+.RI [ ARGS... ]
+.br
+.B umem
+.B \-\-dump
+.I FILE
+.I CMD
+.RI [ ARGS... ]
+.SH DESCRIPTION
+.B umem
+is a command-line front-end for libumem's runtime introspection API.
+It surfaces the same information that
+.BR mdb (1)
+exposes on Solaris through the
+.BR ::findleaks ", " ::umem_log ", " ::umastat ", " ::whatis ", and"
+.B ::bufctl_audit
+dcmds.
+.PP
+Internally,
+.B umem
+drives
+.BR gdb (1)
+in batch mode against the target process or core file and invokes the
+exported
+.BR umem_inspect (3)
+entry points (\fBumem_findleaks\fR, \fBumem_log_dump\fR,
+\fBumem_status_dump\fR, \fBumem_whatis\fR, \fBumem_walk_dump\fR) using
+the debugger's expression evaluator.  In offline mode
+.RB ( \-\-dump )
+it bypasses the debugger and reads a binary snapshot directly via the
+\fBumem_dump_reader\fR(1) helper.
+.SH MODES
+.TP
+.BI \-\-pid " PID"
+Attach to a live process.  The process must be linked against
+\fBlibumem\fR.  The target is paused for the duration of each
+sub-command and detached afterwards.
+.TP
+\fB\-\-core\fR \fICORE\fR \fB\-\-exe\fR \fIBIN\fR
+Read a core dump.  Requires the original binary so the debugger can
+resolve symbols.  Read-only; no side effects on disk.
+.TP
+.BI \-\-dump " FILE"
+Read a binary snapshot previously written by
+\fBumem_inspect_snapshot\fR(3) (extension
+.IR .ums ", " .umsnap ", or " .bin ).
+The original process is not required; this mode parses the file
+directly with the
+.BR umem_dump_reader (1)
+helper.
+.SH COMMANDS
+.TP
+\fBfindleaks\fR \fB[\-f text|json]\fR \fB[\-n N]\fR
+Report buffers that are currently allocated, grouped by allocation
+stack-trace fingerprint and ranked by total bytes.  The default report
+shows the top 50 leak classes; use \fB\-n\fR to change this.  With
+\fB\-f json\fR the output is a single-line JSON object suitable for
+piping to
+.BR jq (1).
+.IP
+Allocator-internal caches
+.RB ( UMC_NOHASH ", " UMC_QCACHE )
+are filtered out, and buffers currently sitting in per-CPU magazines
+are subtracted (and reported as
+.IR cached_skipped )
+so the count reflects actual leaks.
+.IP
+For stack traces the target must run with
+.B UMEM_DEBUG=audit
+in its environment.  Without audit the count is still accurate but no
+stacks are recorded.
+.TP
+\fBlog\fR \fB[\-f text|json]\fR \fB[\-n N]\fR
+Dump the allocator transaction log in chronological order.  Each
+record represents an alloc or free event with thread, timestamp, and
+stack trace.  Requires the target to run with
+.BR UMEM_LOGGING=transaction= \fIsize\fR
+(for example
+.BR transaction=1m ).
+.TP
+\fBstatus\fR \fB[\-f text|json]\fR
+Per-cache summary (mdb's \fB::umastat\fR equivalent): bufsize, buffers
+in use, total buffers, memory in use, successful and failed
+allocations, depot contention.
+.TP
+\fBwalk\fR \fB[allocated|freed|log]\fR \fB[\-f text|json]\fR \fB[\-n N]\fR
+Stream every entry in the requested set without grouping.  Useful for
+custom downstream processing.  Default kind is
+.BR allocated .
+.TP
+\fBwhatis\fR \fIADDR\fR
+Resolve an address to its owning cache, slab, and allocation state
+(ALLOCATED, FREE, or CACHED).  When stack traces are available, also
+prints the alloc/free stack from the bufctl audit record.
+.TP
+\fBbufctl\fR \fIADDR\fR
+Alias for
+.BR whatis ;
+matches the mdb dcmd name
+.BR ::bufctl_audit .
+.TP
+.BI snapshot " PATH"
+Write a snapshot of allocator state to
+.IR PATH .
+If
+.I PATH
+ends in
+.IR .ums ", " .umsnap ", or " .bin
+the v2 binary format is used (parseable offline via
+.BR \-\-dump );
+otherwise a human-readable text dump is written.
+.SH OUTPUT FORMATS
+.TP
+.B text
+Default; human-readable.  Tables, headers, and stack traces match the
+Solaris mdb output closely enough that scripts written for mdb can
+often be ported with minimal changes.
+.TP
+.B json
+One JSON object per command, suitable for
+.BR jq (1)
+or downstream parsing.  Stable schema:
+.BR findleaks
+emits
+.IR total_buffers ", " total_bytes ", " cached_skipped ", " classes[];
+.B status
+emits
+.IR caches[];
+.B log
+emits
+.IR records[];
+.B walk
+emits
+.IR entries[].
+.SH ENVIRONMENT
+The following environment variables are read by the target process,
+not by
+.B umem
+itself.  Set them in the target's environment before launch.
+.TP
+.B UMEM_DEBUG=audit
+Record an allocation stack trace for every buffer.  Required for
+findleaks to emit stack traces and for whatis to show alloc context.
+~30% allocation overhead.
+.TP
+.BI UMEM_LOGGING=transaction= SIZE
+Enable the per-CPU transaction log of size
+.IR SIZE
+(suffix
+.BR k ", " m ", or " g
+permitted).  Required for
+.B umem log
+to return any records.  ~5% allocation overhead.
+.TP
+.B UMEM_STACKTRACE_ADDR2LINE=1
+Opt-in to forking
+.BR addr2line (1)
+for source-line resolution in stack traces.  Off by default because
+the fork interferes with debugger expression evaluation.
+.SH FILES
+.TP
+.I tools/gdb/umem_gdb.py
+GDB Python extension; sourced automatically by
+.BR umem .
+Can also be sourced interactively in
+.BR gdb (1).
+.TP
+.I tools/lldb/umem_lldb.py
+LLDB equivalent; same command set.
+.TP
+.I tools/umem_dump_reader
+Python reader for v2 binary snapshots (\fI.ums\fR files).  Invoked by
+.B umem
+in
+.B \-\-dump
+mode.
+.SH EXAMPLES
+Find the hottest leak class in a running daemon:
+.PP
+.nf
+.RS
+$ umem --pid $(pgrep mydaemon) findleaks -n 5
+.RE
+.fi
+.PP
+Snapshot state for offline analysis (production-friendly):
+.PP
+.nf
+.RS
+$ umem --pid 12345 snapshot /var/log/umem/$(date +%H).ums
+$ umem --dump /var/log/umem/14.ums findleaks
+.RE
+.fi
+.PP
+Watch leak growth over time:
+.PP
+.nf
+.RS
+$ while sleep 60; do
+>   umem --pid 12345 findleaks -f json |
+>     jq -r '"\\(now|todate) total=\\(.total_bytes)"'
+> done
+.RE
+.fi
+.PP
+Investigate a core dump:
+.PP
+.nf
+.RS
+$ umem --core core.12345 --exe ./myapp findleaks
+$ umem --core core.12345 --exe ./myapp log -n 100
+.RE
+.fi
+.SH EXIT STATUS
+Returns 0 on success, non-zero on error (target not running, missing
+debugger, malformed snapshot, etc.).
+.SH SEE ALSO
+.BR umem_alloc (3),
+.BR umem_inspect (3),
+.BR umem_debug (3),
+.BR umem_debugging (7),
+.BR gdb (1),
+.BR lldb (1),
+.BR mdb (1)
+.PP
+.I tools/DEBUGGING.md
+in the libumem source distribution covers full workflows and
+worked examples.
+.SH HISTORY
+The libumem allocator originated at Sun Microsystems in 2001 (Bonwick
+& Adams) as the userspace counterpart to the Solaris kernel's slab
+allocator.  Solaris exposed runtime introspection through
+.BR mdb (1)
+dcmds; this command restores those features on Linux, FreeBSD, and
+macOS.
+.SH AUTHOR
+The umem(1) front-end is part of the libumem revival project; see
+.B CHANGELOG.md
+for the maintenance history.

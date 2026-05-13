@@ -1,0 +1,118 @@
+# Forgejo Actions: build + test matrix.
+#
+# Runs on every push and PR.  Three modes are exercised:
+#   - normal:   plain build, runs make check (unit + e2e)
+#   - asan:     AddressSanitizer build, runs make check
+#   - ubsan:    UndefinedBehaviorSanitizer build, runs make check
+#   - coverage: gcov-instrumented build, captures lcov report
+#
+# The end-to-end debugger tests (test_inspect_e2e.sh, test_lldb_e2e.sh)
+# require gdb / lldb to be present.  We run them only in the `normal`
+# mode -- sanitizer builds change function-pointer types in ways the
+# debugger expression evaluator does not always handle.
+
+name: tests
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build:
+    name: ${{ matrix.mode }}
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [normal, asan, ubsan, coverage]
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 git ca-certificates \
+            gdb lldb python3 python3-dev \
+            jq lcov bc
+
+      - uses: actions/checkout@v4
+
+      - name: Generate configure
+        run: autoreconf -fvi
+
+      - name: Configure (${{ matrix.mode }})
+        run: |
+          case "${{ matrix.mode }}" in
+            normal)   ./configure ;;
+            asan)     ./configure --enable-asan ;;
+            ubsan)    ./configure --enable-ubsan ;;
+            coverage) ./configure --enable-coverage ;;
+          esac
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Unit tests
+        env:
+          ASAN_OPTIONS: detect_leaks=0:check_initialization_order=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          # Run the historical fast unit tests in every mode.
+          make check TESTS='umem_test umem_test2 umem_test3 \
+            umem_ptc_fork_test test/test_debug'
+
+      - name: Comprehensive unit suite (test_main)
+        if: matrix.mode == 'normal'
+        run: |
+          LD_LIBRARY_PATH=.libs test/.libs/test_main --no-fork
+        timeout-minutes: 10
+
+      - name: End-to-end debugger tests
+        if: matrix.mode == 'normal'
+        run: |
+          # gdb integration test (8 sub-tests).
+          ./test/debugger/test_inspect_e2e.sh
+          # lldb integration test (3 sub-tests).  Skips itself if
+          # lldb is not on PATH.
+          ./test/debugger/test_lldb_e2e.sh
+        timeout-minutes: 5
+
+      - name: Coverage report
+        if: matrix.mode == 'coverage'
+        run: |
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' '*/test/*' \
+            --output-file coverage.filtered.info
+          lcov --summary coverage.filtered.info
+          PCT=$(lcov --summary coverage.filtered.info 2>&1 \
+            | awk '/lines/ {print $2}' | tr -d '%')
+          echo "lines: ${PCT}%"
+          # Emit a Forgejo notice but never fail; coverage is tracked,
+          # not gated.
+          echo "::notice::line coverage ${PCT}%"
+
+      - name: Upload coverage HTML
+        if: matrix.mode == 'coverage'
+        uses: forgejo/upload-artifact@v3
+        with:
+          name: coverage-html
+          path: |
+            coverage.filtered.info
+          retention-days: 30
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: forgejo/upload-artifact@v3
+        with:
+          name: test-logs-${{ matrix.mode }}
+          path: |
+            test-suite.log
+            test/**/*.log
+            **/config.log
+          retention-days: 14

@@ -1,320 +1,437 @@
 """
-LLDB Python extension for debugging libumem
+libumem LLDB integration.
 
-Usage:
-    (lldb) command script import /path/to/umem_lldb.py
-    (lldb) umem-cache-list
-    (lldb) umem-whatis 0x7ffff7fb8040
-    (lldb) umem-bufinfo 0x7ffff7fb8040
-    (lldb) umem-leak-detect
-    (lldb) umem-stats
+Mirrors the GDB integration in tools/gdb/umem_gdb.py.  Calls into the
+library entry points exposed by umem_inspect.h on a live target.
+
+Load:
+
+    (lldb) command script import /path/to/tools/lldb/umem_lldb.py
+    (lldb) umem help
+
+Commands:
+
+    umem findleaks [-f text|json] [-n MAX_CLASSES]
+    umem log       [-f text|json] [-n MAX_RECORDS]
+    umem status    [-f text|json]
+    umem whatis  <addr>
+    umem bufctl  <addr>
+    umem snapshot <path>
+    umem break alloc [-s SIZE] [-c CACHE]
+    umem break free  [-a ADDR] [-c CACHE]
+    umem break error [-c CODE]
+    umem events on|off
 """
 
+import os
+import shlex
+import tempfile
+
 import lldb
-import sys
-
-class UmemError(Exception):
-    """Exception for umem-specific errors"""
-    pass
 
 
-class UmemCache:
-    """Wrapper for umem_cache_t structure"""
-
-    def __init__(self, cache_value):
-        self.value = cache_value
-
-    @property
-    def name(self):
-        """Get cache name"""
-        try:
-            name_field = self.value.GetChildMemberWithName('cache_name')
-            return name_field.GetSummary().strip('"')
-        except:
-            return "<unknown>"
-
-    @property
-    def bufsize(self):
-        """Get buffer size"""
-        try:
-            size_field = self.value.GetChildMemberWithName('cache_bufsize')
-            return size_field.GetValueAsUnsigned()
-        except:
-            return 0
-
-    @property
-    def alloc_count(self):
-        """Get allocation count"""
-        try:
-            alloc_field = self.value.GetChildMemberWithName('cache_alloc')
-            return alloc_field.GetValueAsUnsigned()
-        except:
-            return 0
-
-    @property
-    def free_count(self):
-        """Get free count"""
-        try:
-            free_field = self.value.GetChildMemberWithName('cache_free')
-            return free_field.GetValueAsUnsigned()
-        except:
-            return 0
-
-    @property
-    def bufs_inuse(self):
-        """Get buffers in use"""
-        return self.alloc_count - self.free_count
-
-    def __str__(self):
-        return f"{self.name:20s} {self.bufsize:6d}  {self.alloc_count:8d}  {self.free_count:8d}  {self.bufs_inuse:8d}"
+# ---------------------------------------------------------------------------
+# Inferior-call helpers.
+# ---------------------------------------------------------------------------
 
 
-def get_cache_list(target):
-    """Iterate through all umem caches"""
-    try:
-        # Find umem_null_cache
-        null_cache_list = target.FindFirstGlobalVariable('umem_null_cache')
-        if not null_cache_list.IsValid():
-            raise UmemError("Could not find umem_null_cache")
-
-        caches = []
-        current = null_cache_list.GetChildMemberWithName('cache_next')
-
-        visited = set()
-        max_iterations = 1000
-
-        for _ in range(max_iterations):
-            addr = current.GetValueAsUnsigned()
-            if addr == 0 or addr in visited:
-                break
-            visited.add(addr)
-
-            try:
-                cache = UmemCache(current.Dereference())
-                caches.append(cache)
-                current = current.Dereference().GetChildMemberWithName('cache_next')
-            except:
-                break
-
-        return caches
-
-    except Exception as e:
-        raise UmemError(f"Failed to get cache list: {e}")
+def _target(debugger):
+    return debugger.GetSelectedTarget()
 
 
-def umem_cache_list(debugger, command, result, internal_dict):
-    """List all umem caches"""
-    target = debugger.GetSelectedTarget()
-
-    if not target:
-        result.AppendMessage("No target selected")
-        return
-
-    try:
-        caches = get_cache_list(target)
-
-        if not caches:
-            result.AppendMessage("No caches found")
-            return
-
-        result.AppendMessage(f"{'Cache Name':20s} {'Size':>6s}  {'Alloc':>8s}  {'Free':>8s}  {'InUse':>8s}")
-        result.AppendMessage("-" * 60)
-
-        for cache in caches:
-            result.AppendMessage(str(cache))
-
-        result.AppendMessage(f"\nTotal: {len(caches)} caches")
-
-    except UmemError as e:
-        result.AppendMessage(f"Error: {e}")
-    except Exception as e:
-        result.AppendMessage(f"Unexpected error: {e}")
-        import traceback
-        result.AppendMessage(traceback.format_exc())
+def _process(target):
+    return target.GetProcess()
 
 
-def umem_whatis(debugger, command, result, internal_dict):
-    """Identify which cache owns an address"""
-    if not command:
-        result.AppendMessage("Usage: umem-whatis <address>")
-        return
-
-    target = debugger.GetSelectedTarget()
-    if not target:
-        result.AppendMessage("No target selected")
-        return
-
-    try:
-        # Evaluate address
-        value = target.EvaluateExpression(command)
-        if not value.IsValid():
-            result.AppendMessage(f"Invalid address: {command}")
-            return
-
-        addr = value.GetValueAsUnsigned()
-        result.AppendMessage(f"Address: 0x{addr:x}")
-
-        # Try to find cache (simplified)
-        result.AppendMessage("  Cache: <not implemented>")
-        result.AppendMessage("  Note: Full implementation requires slab walking")
-
-    except Exception as e:
-        result.AppendMessage(f"Error: {e}")
-
-
-def umem_bufinfo(debugger, command, result, internal_dict):
-    """Show detailed buffer information"""
-    if not command:
-        result.AppendMessage("Usage: umem-bufinfo <address>")
-        return
-
-    target = debugger.GetSelectedTarget()
-    if not target:
-        result.AppendMessage("No target selected")
-        return
-
-    try:
-        value = target.EvaluateExpression(command)
-        if not value.IsValid():
-            result.AppendMessage(f"Invalid address: {command}")
-            return
-
-        addr = value.GetValueAsUnsigned()
-        result.AppendMessage(f"Buffer: 0x{addr:x}")
-        result.AppendMessage("  Cache: <not implemented>")
-        result.AppendMessage("\nNote: Stack traces require audit mode (UMEM_DEBUG=audit)")
-        result.AppendMessage("  If audit is enabled, detailed information would appear here.")
-
-    except Exception as e:
-        result.AppendMessage(f"Error: {e}")
-
-
-def umem_leak_detect(debugger, command, result, internal_dict):
-    """Scan for memory leaks"""
-    target = debugger.GetSelectedTarget()
-    if not target:
-        result.AppendMessage("No target selected")
-        return
-
-    result.AppendMessage("Scanning for memory leaks...")
-    result.AppendMessage("\nNote: This is a simplified implementation.")
-    result.AppendMessage("Full leak detection requires:")
-    result.AppendMessage("  1. Audit mode enabled (UMEM_DEBUG=audit)")
-    result.AppendMessage("  2. Access to allocation records")
-    result.AppendMessage("  3. Reachability analysis from roots")
-    result.AppendMessage("\nFor production leak detection, consider:")
-    result.AppendMessage("  - Valgrind with --leak-check=full")
-    result.AppendMessage("  - AddressSanitizer with leak detection")
-    result.AppendMessage("  - heap profilers (gperftools, jemalloc profiling)")
-
-    try:
-        caches = get_cache_list(target)
-        total_inuse = 0
-
-        result.AppendMessage(f"\n{'Cache':20s} {'Buffers In Use':>15s}")
-        result.AppendMessage("-" * 40)
-
-        for cache in caches:
-            inuse = cache.bufs_inuse
-            if inuse > 0:
-                result.AppendMessage(f"{cache.name:20s} {inuse:15d}")
-                total_inuse += inuse
-
-        if total_inuse > 0:
-            result.AppendMessage(f"\nTotal buffers in use: {total_inuse}")
-        else:
-            result.AppendMessage("\nNo allocated buffers found")
-
-    except Exception as e:
-        result.AppendMessage(f"Error: {e}")
-
-
-def umem_stats(debugger, command, result, internal_dict):
-    """Show allocation statistics"""
-    target = debugger.GetSelectedTarget()
-    if not target:
-        result.AppendMessage("No target selected")
-        return
-
-    try:
-        caches = get_cache_list(target)
-
-        total_allocs = 0
-        total_frees = 0
-        total_inuse = 0
-        total_bytes = 0
-
-        for cache in caches:
-            total_allocs += cache.alloc_count
-            total_frees += cache.free_count
-            inuse = cache.bufs_inuse
-            total_inuse += inuse
-            total_bytes += inuse * cache.bufsize
-
-        result.AppendMessage("Cache Statistics:")
-        result.AppendMessage(f"  Total allocations: {total_allocs:,}")
-        result.AppendMessage(f"  Total frees:       {total_frees:,}")
-        result.AppendMessage(f"  Currently in use:  {total_inuse:,} buffers ({total_bytes:,} bytes)")
-
-        # Show top caches by usage
-        sorted_caches = sorted(
-            [(c, c.bufs_inuse) for c in caches],
-            key=lambda x: x[1],
-            reverse=True
+def _is_live(debugger, result):
+    t = _target(debugger)
+    if not t or not t.IsValid():
+        result.SetError("no target selected; `target create <binary>` first")
+        return False
+    p = _process(t)
+    if not p or not p.IsValid() or p.GetState() == lldb.eStateExited:
+        result.SetError(
+            "no running/paused process; `process launch` or `process attach`"
         )
-
-        result.AppendMessage("\nTop caches by usage:")
-        result.AppendMessage(f"{'Cache':20s} {'Buffers':>10s} {'Size':>10s} {'Total':>12s}")
-        result.AppendMessage("-" * 55)
-
-        for cache, inuse in sorted_caches[:10]:
-            if inuse > 0:
-                total = inuse * cache.bufsize
-                result.AppendMessage(f"{cache.name:20s} {inuse:10d} {cache.bufsize:10d} {total:12,} bytes")
-
-    except Exception as e:
-        result.AppendMessage(f"Error: {e}")
+        return False
+    return True
 
 
-def umem_help(debugger, command, result, internal_dict):
-    """Show help for umem debugging commands"""
-    result.AppendMessage("libumem LLDB Debugging Commands")
-    result.AppendMessage("=" * 60)
-    result.AppendMessage("")
-    result.AppendMessage("umem-cache-list      List all memory caches")
-    result.AppendMessage("umem-whatis <addr>   Identify which cache owns an address")
-    result.AppendMessage("umem-bufinfo <addr>  Show detailed buffer information")
-    result.AppendMessage("umem-leak-detect     Scan for memory leaks")
-    result.AppendMessage("umem-stats           Show allocation statistics")
-    result.AppendMessage("umem-help            Show this help")
-    result.AppendMessage("")
-    result.AppendMessage("Debug Modes (set via UMEM_DEBUG environment variable):")
-    result.AppendMessage("  default     - Default debug features")
-    result.AppendMessage("  audit       - Transaction logging with stack traces")
-    result.AppendMessage("  contents    - Fill buffers with patterns")
-    result.AppendMessage("  guards      - Red-zone guards")
-    result.AppendMessage("  verify      - Consistency checks")
-    result.AppendMessage("  firewall    - Guard pages")
-    result.AppendMessage("  deadbeef    - Fill freed memory")
-    result.AppendMessage("")
-    result.AppendMessage("Example usage:")
-    result.AppendMessage("  (lldb) command script import /path/to/umem_lldb.py")
-    result.AppendMessage("  (lldb) run")
-    result.AppendMessage("  (lldb) umem-cache-list")
-    result.AppendMessage("  (lldb) umem-whatis $rax")
-    result.AppendMessage("  (lldb) umem-bufinfo 0x7ffff7fb8040")
-    result.AppendMessage("")
-    result.AppendMessage("For full documentation, see docs/DEBUGGING.md")
+def _lookup_global(target, name):
+    s = target.FindFirstGlobalVariable(name)
+    if s and s.IsValid():
+        return s
+    return None
+
+
+def _evaluate(debugger, expr):
+    """Run an expression in the inferior and return the ValueObject."""
+    target = _target(debugger)
+    opts = lldb.SBExpressionOptions()
+    opts.SetIgnoreBreakpoints(True)
+    opts.SetTryAllThreads(True)
+    opts.SetTimeoutInMicroSeconds(60 * 1000 * 1000)  # 60s
+    opts.SetUnwindOnError(True)
+    # Don't trap on fork() inside the inferior -- the addr2line
+    # fallback used by umem_stacktrace forks a helper process.
+    if hasattr(opts, "SetStopOthers"):
+        opts.SetStopOthers(False)
+    return target.EvaluateExpression(expr, opts)
+
+
+def _call_library(debugger, result, expr):
+    """Call a library function that writes to a tmpfile and return the
+    file contents."""
+    with tempfile.NamedTemporaryFile(
+        mode="r", suffix=".umi", delete=False
+    ) as tf:
+        path = tf.name
+    try:
+        # lldb is stricter than gdb about function-pointer return
+        # types and parameter types -- cast everything explicitly.
+        fp_val = _evaluate(
+            debugger,
+            '((void *(*)(const char *, const char *)) fopen)("{}", "w")'
+            .format(path.replace('"', '\\"')),
+        )
+        if not fp_val.IsValid() or fp_val.GetValueAsUnsigned() == 0:
+            result.SetError("fopen failed in inferior (errno?)")
+            return None
+        fp = fp_val.GetValueAsUnsigned()
+        # libumem entry points all take FILE* as first arg.  Cast the
+        # tmpfile pointer through (void *) -> the inferior's FILE *.
+        full = expr.replace("$OUT$", "((struct _IO_FILE *) {})".format(fp))
+        v = _evaluate(debugger, full)
+        if v.GetError() is not None and v.GetError().Fail():
+            result.SetError(
+                "library call failed: " + str(v.GetError())
+            )
+        _evaluate(
+            debugger,
+            "((int (*)(void *)) fclose)((void *) {})".format(fp),
+        )
+        with open(path, "r") as f:
+            return f.read()
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _ensure_loaded(debugger, result):
+    target = _target(debugger)
+    if _lookup_global(target, "umem_null_cache") is None:
+        result.SetError(
+            "libumem not loaded in the inferior; start the target first"
+        )
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Command dispatcher: one parent command with subcommand routing.
+# ---------------------------------------------------------------------------
+
+
+def _fmt_to_enum(s):
+    return {"text": 0, "json": 1, "csv": 2}.get(s)
+
+
+def _umem_findleaks(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    fmt, n = "text", 50
+    while argv:
+        a = argv.pop(0)
+        if a in ("-f", "--format") and argv:
+            fmt = argv.pop(0)
+        elif a in ("-n", "--max-classes") and argv:
+            n = int(argv.pop(0))
+        else:
+            result.SetError("unknown arg: {}".format(a))
+            return
+    fe = _fmt_to_enum(fmt)
+    if fe is None:
+        result.SetError("unknown format: {}".format(fmt))
+        return
+    out = _call_library(
+        debugger, result,
+        "(unsigned long) umem_findleaks($OUT$, "
+        "(umem_inspect_format_t){}, (unsigned){})".format(fe, n),
+    )
+    if out is not None:
+        result.Print(out)
+
+
+def _umem_log(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    fmt, n = "text", 0
+    while argv:
+        a = argv.pop(0)
+        if a in ("-f", "--format") and argv:
+            fmt = argv.pop(0)
+        elif a in ("-n", "--max-records") and argv:
+            n = int(argv.pop(0))
+        else:
+            result.SetError("unknown arg: {}".format(a))
+            return
+    fe = _fmt_to_enum(fmt)
+    if fe is None:
+        result.SetError("unknown format: {}".format(fmt))
+        return
+    out = _call_library(
+        debugger, result,
+        "(unsigned long) umem_log_dump($OUT$, "
+        "(umem_inspect_format_t){}, (unsigned){})".format(fe, n),
+    )
+    if out is not None:
+        result.Print(out)
+
+
+def _umem_status(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    fmt = "text"
+    while argv:
+        a = argv.pop(0)
+        if a in ("-f", "--format") and argv:
+            fmt = argv.pop(0)
+        else:
+            result.SetError("unknown arg: {}".format(a))
+            return
+    fe = _fmt_to_enum(fmt)
+    if fe is None:
+        result.SetError("unknown format: {}".format(fmt))
+        return
+    out = _call_library(
+        debugger, result,
+        "(void) umem_status_dump($OUT$, (umem_inspect_format_t){})"
+        .format(fe),
+    )
+    if out is not None:
+        result.Print(out)
+
+
+def _umem_whatis(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    if not argv:
+        result.SetError("usage: umem whatis <addr>")
+        return
+    addr_expr = " ".join(argv)
+    addr_val = _evaluate(debugger, addr_expr)
+    if not addr_val.IsValid():
+        result.SetError("cannot evaluate address: {}".format(addr_expr))
+        return
+    out = _call_library(
+        debugger, result,
+        "(int) umem_bufctl_audit_dump($OUT$, (void *){})"
+        .format(addr_val.GetValueAsUnsigned()),
+    )
+    if out is not None:
+        result.Print(out)
+
+
+def _umem_snapshot(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    if not argv:
+        result.SetError("usage: umem snapshot <path>")
+        return
+    path = argv[0]
+    v = _evaluate(
+        debugger, '(int) umem_inspect_snapshot("{}")'.format(
+            path.replace('"', '\\"'))
+    )
+    if v.GetValueAsSigned() != 0:
+        result.SetError("snapshot failed")
+        return
+    result.Print("wrote snapshot to {}\n".format(path))
+
+
+_EVENT_SYMBOLS = {
+    "alloc": "umem_event_alloc",
+    "free":  "umem_event_free",
+    "error": "umem_event_error",
+}
+
+
+def _umem_break(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    if not argv:
+        result.SetError("usage: umem break alloc|free|error [-s N] [-a ADDR] [-c NAME]")
+        return
+    ev = argv.pop(0)
+    sym = _EVENT_SYMBOLS.get(ev)
+    if sym is None:
+        result.SetError("unknown event {}".format(ev))
+        return
+    size = None
+    addr = None
+    cache = None
+    code = None
+    while argv:
+        a = argv.pop(0)
+        if a in ("-s", "--size") and argv:
+            size = int(argv.pop(0), 0)
+        elif a in ("-a", "--addr") and argv:
+            addr = argv.pop(0)
+        elif a in ("-c", "--cache") and argv:
+            if ev == "error":
+                code = int(argv.pop(0), 0)
+            else:
+                cache = argv.pop(0)
+        else:
+            result.SetError("unknown arg: {}".format(a))
+            return
+
+    cond = None
+    parts = []
+    if size is not None:
+        parts.append("size >= {}".format(size))
+    if addr is not None:
+        parts.append("buf == (void *){}".format(addr))
+    if cache is not None:
+        parts.append(
+            'strcmp(((umem_cache_t *)cache)->cache_name, "{}") == 0'
+            .format(cache)
+        )
+    if code is not None:
+        parts.append("code == {}".format(code))
+    if parts:
+        cond = " && ".join(parts)
+
+    _evaluate(debugger, "(void) umem_inspect_enable_events(1)")
+    ci = debugger.GetCommandInterpreter()
+    res = lldb.SBCommandReturnObject()
+    if cond:
+        ci.HandleCommand(
+            'breakpoint set -n {} -c "{}"'.format(sym, cond.replace('"', '\\"')),
+            res,
+        )
+    else:
+        ci.HandleCommand("breakpoint set -n {}".format(sym), res)
+    if res.Succeeded():
+        result.Print(res.GetOutput() or "")
+    else:
+        result.SetError(res.GetError())
+
+
+def _umem_events(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    if not argv:
+        result.SetError("usage: umem events on|off")
+        return
+    a = argv[0].lower()
+    on = a in ("on", "1", "enable")
+    off = a in ("off", "0", "disable")
+    if not (on or off):
+        result.SetError("usage: umem events on|off")
+        return
+    _evaluate(
+        debugger,
+        "(void) umem_inspect_enable_events({})".format(1 if on else 0),
+    )
+    result.Print("umem events {}\n".format("enabled" if on else "disabled"))
+
+
+def _umem_help(debugger, argv, result):
+    result.Print("""\
+libumem LLDB integration
+========================
+
+Live dcmds:
+    umem findleaks [-f text|json] [-n N]
+    umem log       [-f text|json] [-n N]
+    umem status    [-f text|json]
+    umem whatis <addr>                    alias: umem bufctl <addr>
+    umem snapshot <path>
+
+Breakpoints on memory events:
+    umem events on
+    umem break alloc [-s SIZE] [-c CACHE]
+    umem break free  [-a ADDR] [-c CACHE]
+    umem break error [-c CODE]
+    umem events off
+
+Environment:
+    UMEM_DEBUG=audit
+    UMEM_LOGGING=transaction=1m
+
+See tools/DEBUGGING.md for worked examples.
+""")
+
+
+def _umem_walk(debugger, argv, result):
+    if not _is_live(debugger, result) or not _ensure_loaded(debugger, result):
+        return
+    kind, fmt, n = "allocated", "text", 0
+    while argv:
+        a = argv.pop(0)
+        if a in ("allocated", "freed", "log"):
+            kind = a
+        elif a in ("-f", "--format") and argv:
+            fmt = argv.pop(0)
+        elif a in ("-n", "--max") and argv:
+            n = int(argv.pop(0))
+        else:
+            result.SetError("unknown arg: {}".format(a))
+            return
+    fe = _fmt_to_enum(fmt)
+    if fe is None:
+        result.SetError("unknown format: {}".format(fmt))
+        return
+    out = _call_library(
+        debugger, result,
+        '(unsigned long) umem_walk_dump($OUT$, "{}", '
+        '(umem_inspect_format_t){}, (unsigned){})'.format(
+            kind, fe, n),
+    )
+    if out is not None:
+        result.Print(out)
+
+
+_DISPATCH = {
+    "findleaks": _umem_findleaks,
+    "log":       _umem_log,
+    "status":    _umem_status,
+    "whatis":    _umem_whatis,
+    "bufctl":    _umem_whatis,
+    "snapshot":  _umem_snapshot,
+    "walk":      _umem_walk,
+    "break":     _umem_break,
+    "events":    _umem_events,
+    "help":      _umem_help,
+}
+
+
+def umem_cmd(debugger, command, result, internal_dict):
+    """Top-level `umem` command dispatcher."""
+    argv = shlex.split(command or "")
+    if not argv:
+        _umem_help(debugger, [], result)
+        return
+    sub = argv.pop(0)
+    fn = _DISPATCH.get(sub)
+    if fn is None:
+        result.SetError(
+            "unknown subcommand '{}'; try `umem help`".format(sub)
+        )
+        return
+    fn(debugger, argv, result)
+
+
+# ---------------------------------------------------------------------------
+# Registration.
+# ---------------------------------------------------------------------------
 
 
 def __lldb_init_module(debugger, internal_dict):
-    """Initialize the module and register commands"""
-    debugger.HandleCommand('command script add -f umem_lldb.umem_cache_list umem-cache-list')
-    debugger.HandleCommand('command script add -f umem_lldb.umem_whatis umem-whatis')
-    debugger.HandleCommand('command script add -f umem_lldb.umem_bufinfo umem-bufinfo')
-    debugger.HandleCommand('command script add -f umem_lldb.umem_leak_detect umem-leak-detect')
-    debugger.HandleCommand('command script add -f umem_lldb.umem_stats umem-stats')
-    debugger.HandleCommand('command script add -f umem_lldb.umem_help umem-help')
-
-    print("libumem LLDB extension loaded")
-    print("Type 'umem-help' for available commands")
+    debugger.HandleCommand(
+        'command script add -f umem_lldb.umem_cmd umem'
+    )
+    print("libumem LLDB extension loaded.  Try `umem help`.")

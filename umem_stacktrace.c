@@ -282,6 +282,45 @@ resolve_addr2line(uintptr_t pc, const char **func, const char **file,
 }
 #endif /* !_WIN32 */
 
+/*
+ * Pre-warmer for backtrace(3) -- see getpcstack.c.  We expose this
+ * flag globally so getpcstack can refuse to call backtrace() until
+ * we've safely loaded libgcc_s outside any allocator-intercept path.
+ */
+int umem_backtrace_warmed = 0;
+
+/*
+ * Set to 1 by libumem_malloc.so's constructor when it installs malloc
+ * interposers.  In that mode backtrace() in the slab path recurses
+ * through libgcc_s's dlopen, so we refuse to warm.  Definition is in
+ * libumem.so so libumem_malloc.so can override it from its earlier
+ * (priority 101) constructor.
+ */
+int umem_malloc_is_interposing = 0;
+
+static void
+backtrace_warm(void)
+{
+#ifndef _WIN32
+#if defined(HAVE_EXECINFO_H) || defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+	extern int backtrace(void **, int);
+	void *frames[2];
+	(void) backtrace(frames, 2);
+	umem_backtrace_warmed = 1;
+#endif
+#endif
+}
+
+/*
+ * No constructor.  Pre-warming backtrace(3) at load time is unsafe
+ * because libumem.so's constructor may run before libumem_malloc.so
+ * has had a chance to register itself, and the libgcc_s dlopen path
+ * inside backtrace() may then recurse through umem_alloc.  Instead,
+ * the warming is done lazily from umem_stacktrace_init(), which
+ * callers (umem_findleaks etc.) invoke on the request path.
+ */
+
 int
 umem_stacktrace_init(void)
 {
@@ -291,6 +330,14 @@ umem_stacktrace_init(void)
 	return (resolver_tier);
 #else
 
+	/*
+	 * Warm backtrace() on the first call.  Skip if libumem_malloc
+	 * is interposing -- recursing through libgcc_s's dlopen would
+	 * land back in umem_alloc.
+	 */
+	if (!umem_backtrace_warmed && !umem_malloc_is_interposing)
+		backtrace_warm();
+
 #ifdef HAVE_LIBDW
 	if (init_libdw() == 0) {
 		resolver_tier = RESOLVE_LIBDW;
@@ -298,8 +345,17 @@ umem_stacktrace_init(void)
 	}
 #endif
 
-	if (check_addr2line()) {
-		resolver_tier = RESOLVE_ADDR2LINE;
+	/*
+	 * The addr2line fallback forks a helper process per request.
+	 * That is incompatible with debugger-driven inferior calls
+	 * (lldb's expression evaluator aborts on fork(); gdb tolerates
+	 * it but it is slow).  Default to off and let the caller opt
+	 * in via UMEM_STACKTRACE_ADDR2LINE=1 when running standalone.
+	 */
+	const char *env = getenv("UMEM_STACKTRACE_ADDR2LINE");
+	if (env != NULL && env[0] != '0' && env[0] != '\0') {
+		if (check_addr2line())
+			resolver_tier = RESOLVE_ADDR2LINE;
 	}
 
 	return (resolver_tier);

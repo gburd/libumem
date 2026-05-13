@@ -1,391 +1,546 @@
 """
-GDB Python extension for debugging libumem
+libumem GDB integration.
 
-Usage:
-    (gdb) source /path/to/umem_gdb.py
-    (gdb) umem-cache-list
-    (gdb) umem-whatis 0x7ffff7fb8040
-    (gdb) umem-bufinfo 0x7ffff7fb8040
-    (gdb) umem-leak-detect
-    (gdb) umem-stats
+The heavy lifting is in libumem itself (umem_inspect.c).  This file is a
+thin front-end: it exposes the mdb-style dcmds as GDB commands and, for
+a live (running or paused) target, invokes the library's entry points
+via `gdb.parse_and_eval("umem_findleaks(...)")`.
+
+Commands:
+
+    umem findleaks [-f text|json] [-n MAX_CLASSES]
+    umem log       [-f text|json] [-n MAX_RECORDS]
+    umem status    [-f text|json]
+    umem whatis  <addr>
+    umem bufctl  <addr>       # alias: bufctl_audit
+    umem walk    <addr_cache_name>
+
+    umem break alloc [-s SIZE] [-c CACHE]    # break on user allocs
+    umem break free  [-a ADDR] [-c CACHE]    # break on user frees
+    umem break error                         # break on detected corruption
+
+    umem events on|off                       # arm/disarm the hook points
+
+Load:
+
+    (gdb) source /path/to/tools/gdb/umem_gdb.py
+    (gdb) umem-help
 """
 
+import os
+import re
+import shlex
+import tempfile
+
 import gdb
-import struct
-import sys
-
-class UmemError(Exception):
-    """Exception for umem-specific errors"""
-    pass
-
-class UmemCache:
-    """Wrapper for umem_cache_t structure"""
-
-    def __init__(self, cache_ptr):
-        self.ptr = cache_ptr
-        self.cache = cache_ptr.dereference()
-
-    @property
-    def name(self):
-        """Get cache name"""
-        try:
-            return self.cache['cache_name'].string()
-        except:
-            return "<unknown>"
-
-    @property
-    def bufsize(self):
-        """Get buffer size"""
-        try:
-            return int(self.cache['cache_bufsize'])
-        except:
-            return 0
-
-    @property
-    def alloc_count(self):
-        """Get allocation count"""
-        try:
-            return int(self.cache['cache_alloc'])
-        except:
-            return 0
-
-    @property
-    def free_count(self):
-        """Get free count"""
-        try:
-            return int(self.cache['cache_free'])
-        except:
-            return 0
-
-    @property
-    def bufs_inuse(self):
-        """Get buffers in use"""
-        return self.alloc_count - self.free_count
-
-    def __str__(self):
-        return f"{self.name:20s} {self.bufsize:6d}  {self.alloc_count:8d}  {self.free_count:8d}  {self.bufs_inuse:8d}"
 
 
-def get_cache_list():
-    """Iterate through all umem caches"""
+# ---------------------------------------------------------------------------
+# Helpers.
+# ---------------------------------------------------------------------------
+
+
+def _symbol_exists(name: str) -> bool:
+    """Check whether a global symbol is available in the inferior."""
     try:
-        # Find umem_null_cache (head of cache list)
-        null_cache = gdb.parse_and_eval("umem_null_cache")
-        cache_next_field = "cache_next"
-
-        caches = []
-        current = null_cache[cache_next_field]
-
-        # Walk the circular list
-        visited = set()
-        while True:
-            addr = int(current)
-            if addr == 0 or addr in visited:
-                break
-            visited.add(addr)
-
-            try:
-                cache = UmemCache(current)
-                caches.append(cache)
-                current = current.dereference()[cache_next_field]
-            except:
-                break
-
-            # Safety: limit iterations
-            if len(caches) > 1000:
-                break
-
-        return caches
-    except Exception as e:
-        raise UmemError(f"Failed to get cache list: {e}")
+        s = gdb.lookup_global_symbol(name)
+        return s is not None
+    except gdb.error:
+        return False
 
 
-def find_cache_for_address(addr):
-    """Find which cache owns an address"""
-    caches = get_cache_list()
-
-    for cache in caches:
-        # Check if address belongs to this cache
-        # This is simplified - real implementation would check slabs
-        # For now, return None
-        pass
-
-    return None
-
-
-class UmemCacheListCommand(gdb.Command):
-    """List all umem caches
-
-    Usage: umem-cache-list
-
-    Shows all memory caches with their statistics.
-    """
-
-    def __init__(self):
-        super(UmemCacheListCommand, self).__init__(
-            "umem-cache-list",
-            gdb.COMMAND_DATA
+def _ensure_loaded() -> None:
+    """Raise if libumem isn't mapped into the inferior."""
+    if not _symbol_exists("umem_null_cache"):
+        raise gdb.GdbError(
+            "libumem does not appear to be loaded in the inferior.\n"
+            "Run the program first, then retry."
         )
 
-    def invoke(self, arg, from_tty):
-        try:
-            caches = get_cache_list()
 
-            if not caches:
-                print("No caches found")
-                return
-
-            print(f"{'Cache Name':20s} {'Size':>6s}  {'Alloc':>8s}  {'Free':>8s}  {'InUse':>8s}")
-            print("-" * 60)
-
-            for cache in caches:
-                print(cache)
-
-            print(f"\nTotal: {len(caches)} caches")
-
-        except UmemError as e:
-            print(f"Error: {e}")
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            import traceback
-            traceback.print_exc()
+def _ensure_running() -> None:
+    """Raise if the inferior is not started (no calls possible)."""
+    try:
+        inf = gdb.selected_inferior()
+        if inf is None or inf.pid == 0:
+            raise gdb.GdbError(
+                "This command requires a running or paused inferior.\n"
+                "Use `run`, `start`, or `attach <pid>` first."
+            )
+    except gdb.error as exc:
+        raise gdb.GdbError(str(exc))
 
 
-class UmemWhatisCommand(gdb.Command):
-    """Identify which cache owns an address
-
-    Usage: umem-whatis <address>
-
-    Example: umem-whatis 0x7ffff7fb8040
-    """
-
-    def __init__(self):
-        super(UmemWhatisCommand, self).__init__(
-            "umem-whatis",
-            gdb.COMMAND_DATA
+def _call_library(expr: str) -> str:
+    """Call a library function that writes to a tmpfile and return the
+    file contents.  We use a tmpfile instead of stderr redirection
+    because gdb's `call` captures stdout but libumem writes fputs() to
+    stderr, which is messier to redirect from inside gdb."""
+    with tempfile.NamedTemporaryFile(mode="r", suffix=".umi", delete=False) as tf:
+        path = tf.name
+    try:
+        # Cast all libc calls explicitly: glibc's debug symbols often
+        # lack return-type info under heavy optimisation, and gdb refuses
+        # to call functions of unknown return type.
+        fopen_expr = '((void *(*)(const char *, const char *)) fopen)("{}", "w")'.format(
+            path.replace('"', '\\"')
         )
-
-    def invoke(self, arg, from_tty):
-        if not arg:
-            print("Usage: umem-whatis <address>")
-            return
-
+        fp = gdb.parse_and_eval(fopen_expr)
+        if int(fp) == 0:
+            raise gdb.GdbError("fopen({}) failed in inferior".format(path))
+        full_expr = expr.replace("$OUT$", "(void *) {}".format(int(fp)))
+        gdb.parse_and_eval(full_expr)
+        gdb.parse_and_eval(
+            "((int (*)(void *)) fclose)((void *) {})".format(int(fp))
+        )
+        with open(path, "r") as f:
+            return f.read()
+    finally:
         try:
-            addr = gdb.parse_and_eval(arg)
-            addr_int = int(addr)
+            os.unlink(path)
+        except OSError:
+            pass
 
-            print(f"Address: 0x{addr_int:x}")
 
-            cache = find_cache_for_address(addr_int)
-            if cache:
-                print(f"  Cache: {cache.name}")
-                print(f"  Size: {cache.bufsize} bytes")
+# ---------------------------------------------------------------------------
+# Core command class (prefix 'umem').
+# ---------------------------------------------------------------------------
+
+
+class UmemPrefix(gdb.Command):
+    """Top-level `umem` prefix; use tab-completion for subcommands."""
+
+    def __init__(self) -> None:
+        super().__init__("umem", gdb.COMMAND_USER, prefix=True)
+
+
+UmemPrefix()
+
+
+# ---------------------------------------------------------------------------
+# `umem findleaks`
+# ---------------------------------------------------------------------------
+
+
+class UmemFindleaks(gdb.Command):
+    """Report currently allocated buffers grouped by stack-trace fingerprint.
+
+Usage:
+    umem findleaks [-f text|json] [-n MAX_CLASSES]
+
+Requires UMEM_DEBUG=audit for stack traces.  Without audit, counts are
+still accurate; only the representative stack is absent.  Allocator-
+internal caches (UMC_NOHASH / UMC_QCACHE) are filtered out by default.
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem findleaks", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        _ensure_running()
+        fmt, max_classes = "text", 50
+        args = shlex.split(arg or "")
+        while args:
+            a = args.pop(0)
+            if a in ("-f", "--format") and args:
+                fmt = args.pop(0)
+            elif a in ("-n", "--max-classes") and args:
+                max_classes = int(args.pop(0))
             else:
-                print("  Not found in any umem cache")
-                print("  (May be outside heap, or implementation limitation)")
-
-        except Exception as e:
-            print(f"Error: {e}")
-
-
-class UmemBufinfoCommand(gdb.Command):
-    """Show detailed buffer information
-
-    Usage: umem-bufinfo <address>
-
-    Shows allocation details including stack trace if audit mode is enabled.
-
-    Example: umem-bufinfo 0x7ffff7fb8040
-    """
-
-    def __init__(self):
-        super(UmemBufinfoCommand, self).__init__(
-            "umem-bufinfo",
-            gdb.COMMAND_DATA
+                raise gdb.GdbError("unknown arg: {}".format(a))
+        fmt_enum = {"text": 0, "json": 1, "csv": 2}.get(fmt)
+        if fmt_enum is None:
+            raise gdb.GdbError("unknown format: {}".format(fmt))
+        out = _call_library(
+            "(unsigned long) umem_findleaks($OUT$, {}, {})"
+            .format(fmt_enum, max_classes)
         )
+        gdb.write(out)
 
-    def invoke(self, arg, from_tty):
-        if not arg:
-            print("Usage: umem-bufinfo <address>")
-            return
 
-        try:
-            addr = gdb.parse_and_eval(arg)
-            addr_int = int(addr)
+UmemFindleaks()
 
-            print(f"Buffer: 0x{addr_int:x}")
 
-            # Try to find audit information
-            # This requires access to umem_bufctl_audit_t structure
-            # Implementation depends on having audit mode enabled
+class UmemWalk(gdb.Command):
+    """Stream every allocated/freed/log entry.
 
-            cache = find_cache_for_address(addr_int)
-            if cache:
-                print(f"  Cache: {cache.name}")
-                print(f"  Size: {cache.bufsize} bytes")
+Usage:
+    umem walk [allocated|freed|log] [-f text|json] [-n N]
+
+Default kind is 'allocated'.
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem walk", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        _ensure_running()
+        kind = "allocated"
+        fmt = "text"
+        n = 0
+        args = shlex.split(arg or "")
+        while args:
+            a = args.pop(0)
+            if a in ("allocated", "freed", "log"):
+                kind = a
+            elif a in ("-f", "--format") and args:
+                fmt = args.pop(0)
+            elif a in ("-n", "--max") and args:
+                n = int(args.pop(0))
             else:
-                print("  Cache: <not found>")
-
-            print("\nNote: Stack traces require audit mode (UMEM_DEBUG=audit)")
-            print("  If audit is enabled, detailed information would appear here.")
-
-        except Exception as e:
-            print(f"Error: {e}")
-
-
-class UmemLeakDetectCommand(gdb.Command):
-    """Scan for memory leaks
-
-    Usage: umem-leak-detect
-
-    Requires audit mode (UMEM_DEBUG=audit) to be enabled.
-    Scans all allocated buffers and reports potential leaks.
-    """
-
-    def __init__(self):
-        super(UmemLeakDetectCommand, self).__init__(
-            "umem-leak-detect",
-            gdb.COMMAND_DATA
+                raise gdb.GdbError("unknown arg: {}".format(a))
+        fmt_enum = {"text": 0, "json": 1}.get(fmt)
+        if fmt_enum is None:
+            raise gdb.GdbError("unknown format: {}".format(fmt))
+        out = _call_library(
+            '(unsigned long) umem_walk_dump($OUT$, "{}", {}, {})'
+            .format(kind, fmt_enum, n)
         )
+        gdb.write(out)
 
-    def invoke(self, arg, from_tty):
-        print("Scanning for memory leaks...")
-        print("\nNote: This is a simplified implementation.")
-        print("Full leak detection requires:")
-        print("  1. Audit mode enabled (UMEM_DEBUG=audit)")
-        print("  2. Access to allocation records")
-        print("  3. Reachability analysis from roots")
-        print("\nFor production leak detection, consider:")
-        print("  - Valgrind with --leak-check=full")
-        print("  - AddressSanitizer with leak detection")
-        print("  - heap profilers (gperftools, jemalloc profiling)")
 
-        try:
-            caches = get_cache_list()
-            total_inuse = 0
+UmemWalk()
 
-            print(f"\n{'Cache':20s} {'Buffers In Use':>15s}")
-            print("-" * 40)
 
-            for cache in caches:
-                inuse = cache.bufs_inuse
-                if inuse > 0:
-                    print(f"{cache.name:20s} {inuse:15d}")
-                    total_inuse += inuse
+# ---------------------------------------------------------------------------
+# `umem log`
+# ---------------------------------------------------------------------------
 
-            if total_inuse > 0:
-                print(f"\nTotal buffers in use: {total_inuse}")
+
+class UmemLog(gdb.Command):
+    """Dump the transaction log in chronological order.
+
+Usage:
+    umem log [-f text|json] [-n MAX_RECORDS]
+
+Requires UMEM_LOGGING=transaction=<size> (e.g. 1m).  Each record is
+one allocation or free event with thread, timestamp, and stack.
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem log", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        _ensure_running()
+        fmt, n = "text", 0
+        args = shlex.split(arg or "")
+        while args:
+            a = args.pop(0)
+            if a in ("-f", "--format") and args:
+                fmt = args.pop(0)
+            elif a in ("-n", "--max-records") and args:
+                n = int(args.pop(0))
             else:
-                print("\nNo allocated buffers found")
-
-        except Exception as e:
-            print(f"Error: {e}")
-
-
-class UmemStatsCommand(gdb.Command):
-    """Show allocation statistics
-
-    Usage: umem-stats
-
-    Displays overall allocation statistics and per-cache breakdown.
-    """
-
-    def __init__(self):
-        super(UmemStatsCommand, self).__init__(
-            "umem-stats",
-            gdb.COMMAND_DATA
+                raise gdb.GdbError("unknown arg: {}".format(a))
+        fmt_enum = {"text": 0, "json": 1}.get(fmt)
+        if fmt_enum is None:
+            raise gdb.GdbError("unknown format: {}".format(fmt))
+        out = _call_library(
+            "(unsigned long) umem_log_dump($OUT$, {}, {})".format(fmt_enum, n)
         )
+        gdb.write(out)
 
-    def invoke(self, arg, from_tty):
-        try:
-            caches = get_cache_list()
 
-            total_allocs = 0
-            total_frees = 0
-            total_inuse = 0
-            total_bytes = 0
+UmemLog()
 
-            for cache in caches:
-                total_allocs += cache.alloc_count
-                total_frees += cache.free_count
-                inuse = cache.bufs_inuse
-                total_inuse += inuse
-                total_bytes += inuse * cache.bufsize
 
-            print("Cache Statistics:")
-            print(f"  Total allocations: {total_allocs:,}")
-            print(f"  Total frees:       {total_frees:,}")
-            print(f"  Currently in use:  {total_inuse:,} buffers ({total_bytes:,} bytes)")
+# ---------------------------------------------------------------------------
+# `umem status`
+# ---------------------------------------------------------------------------
 
-            # Show top caches by usage
-            sorted_caches = sorted(
-                [(c, c.bufs_inuse) for c in caches],
-                key=lambda x: x[1],
-                reverse=True
+
+class UmemStatus(gdb.Command):
+    """Per-cache status (bufsize, inuse, total, memory, allocs, fails).
+
+Usage:
+    umem status [-f text|json]
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem status", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        _ensure_running()
+        fmt = "text"
+        args = shlex.split(arg or "")
+        while args:
+            a = args.pop(0)
+            if a in ("-f", "--format") and args:
+                fmt = args.pop(0)
+            else:
+                raise gdb.GdbError("unknown arg: {}".format(a))
+        fmt_enum = {"text": 0, "json": 1}.get(fmt)
+        if fmt_enum is None:
+            raise gdb.GdbError("unknown format: {}".format(fmt))
+        out = _call_library(
+            "(void) umem_status_dump($OUT$, {})".format(fmt_enum)
+        )
+        gdb.write(out)
+
+
+UmemStatus()
+
+
+# ---------------------------------------------------------------------------
+# `umem whatis` / `umem bufctl`
+# ---------------------------------------------------------------------------
+
+
+class UmemWhatis(gdb.Command):
+    """Resolve an address to its owning cache, slab, and state.
+
+Usage:
+    umem whatis <addr>
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem whatis", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        _ensure_running()
+        if not arg.strip():
+            raise gdb.GdbError("usage: umem whatis <addr>")
+        addr = gdb.parse_and_eval(arg)
+        out = _call_library(
+            "(int) umem_bufctl_audit_dump($OUT$, (void *){})"
+            .format(int(addr))
+        )
+        gdb.write(out)
+
+
+class UmemBufctl(gdb.Command):
+    """Alias for `umem whatis`; pretty-prints the bufctl_audit record."""
+
+    def __init__(self) -> None:
+        super().__init__("umem bufctl", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        gdb.execute("umem whatis {}".format(arg))
+
+
+UmemWhatis()
+UmemBufctl()
+
+
+# ---------------------------------------------------------------------------
+# Breakpoints -- the core of the "debug naturally" UX.
+# ---------------------------------------------------------------------------
+
+
+_EVENT_SYMBOLS = {
+    "alloc": "umem_event_alloc",
+    "free":  "umem_event_free",
+    "error": "umem_event_error",
+}
+
+
+class UmemBreak(gdb.Command):
+    """Set a conditional breakpoint on a umem memory event.
+
+Usage:
+    umem break alloc [-s SIZE] [-c CACHE]
+    umem break free  [-a ADDR] [-c CACHE]
+    umem break error [-c CODE]
+
+Examples:
+    umem break alloc -s 1048576        # any allocation >= 1 MB
+    umem break free  -a 0x7f1234000    # when this address is freed
+    umem break alloc -c umem_alloc_64  # only in the 64-byte size class
+    umem break error                   # any detected corruption
+
+The event hooks are disabled by default for ~1 cycle/alloc overhead.
+This command automatically runs `umem events on` if needed.
+
+Inside the breakpoint you have live access to `buf`, `size`, and
+`cache` arguments.  Typical follow-ups:
+    bt
+    umem whatis buf
+    p (char[16]) *buf
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem break", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        args = shlex.split(arg or "")
+        if not args:
+            raise gdb.GdbError(
+                "usage: umem break alloc|free|error [flags]"
+            )
+        ev = args.pop(0)
+        sym = _EVENT_SYMBOLS.get(ev)
+        if sym is None:
+            raise gdb.GdbError(
+                "unknown event '{}' (expected alloc, free, error)".format(ev)
             )
 
-            print("\nTop caches by usage:")
-            print(f"{'Cache':20s} {'Buffers':>10s} {'Size':>10s} {'Total':>12s}")
-            print("-" * 55)
+        size = None
+        addr = None
+        cache = None
+        code = None
+        while args:
+            a = args.pop(0)
+            if a in ("-s", "--size") and args:
+                size = int(args.pop(0), 0)
+            elif a in ("-a", "--addr") and args:
+                addr = args.pop(0)
+            elif a in ("-c", "--cache") and args:
+                cache = args.pop(0)
+            else:
+                raise gdb.GdbError("unknown arg: {}".format(a))
 
-            for cache, inuse in sorted_caches[:10]:
-                if inuse > 0:
-                    total = inuse * cache.bufsize
-                    print(f"{cache.name:20s} {inuse:10d} {cache.bufsize:10d} {total:12,} bytes")
+        conds = []
+        if size is not None:
+            conds.append("size >= {}".format(size))
+        if addr is not None:
+            conds.append("buf == (void *){}".format(addr))
+        if cache is not None and ev != "error":
+            conds.append(
+                'strcmp(((umem_cache_t *)cache)->cache_name, "{}") == 0'
+                .format(cache)
+            )
+        if code is not None and ev == "error":
+            conds.append("code == {}".format(code))
 
-        except Exception as e:
-            print(f"Error: {e}")
+        cond = ""
+        if conds:
+            cond = " if " + " && ".join(conds)
 
+        try:
+            _ensure_running()
+            gdb.execute("call (void) umem_inspect_enable_events(1)")
+        except gdb.GdbError:
+            # Will apply once the inferior starts.
+            pass
 
-class UmemHelpCommand(gdb.Command):
-    """Show help for umem debugging commands
-
-    Usage: umem-help
-    """
-
-    def __init__(self):
-        super(UmemHelpCommand, self).__init__(
-            "umem-help",
-            gdb.COMMAND_SUPPORT
+        cmd = "break {}{}".format(sym, cond)
+        gdb.execute(cmd)
+        gdb.write(
+            "breakpoint set on {}{}; remember to `umem events on` "
+            "if events weren't already enabled.\n".format(sym, cond or "")
         )
 
-    def invoke(self, arg, from_tty):
-        print("libumem GDB Debugging Commands")
-        print("=" * 60)
-        print()
-        print("umem-cache-list      List all memory caches")
-        print("umem-whatis <addr>   Identify which cache owns an address")
-        print("umem-bufinfo <addr>  Show detailed buffer information")
-        print("umem-leak-detect     Scan for memory leaks")
-        print("umem-stats           Show allocation statistics")
-        print("umem-help            Show this help")
-        print()
-        print("Debug Modes (set via UMEM_DEBUG environment variable):")
-        print("  default     - Default debug features")
-        print("  audit       - Transaction logging with stack traces")
-        print("  contents    - Fill buffers with patterns")
-        print("  guards      - Red-zone guards")
-        print("  verify      - Consistency checks")
-        print("  firewall    - Guard pages")
-        print("  deadbeef    - Fill freed memory")
-        print()
-        print("Example usage:")
-        print("  (gdb) source /path/to/umem_gdb.py")
-        print("  (gdb) run")
-        print("  (gdb) umem-cache-list")
-        print("  (gdb) umem-whatis $rax")
-        print("  (gdb) umem-bufinfo 0x7ffff7fb8040")
-        print()
-        print("For full documentation, see docs/DEBUGGING.md")
+
+UmemBreak()
 
 
-# Register all commands
-UmemCacheListCommand()
-UmemWhatisCommand()
-UmemBufinfoCommand()
-UmemLeakDetectCommand()
-UmemStatsCommand()
-UmemHelpCommand()
+class UmemEvents(gdb.Command):
+    """Enable or disable the umem event hook points.
 
-print("libumem GDB extension loaded")
-print("Type 'umem-help' for available commands")
+Usage:
+    umem events on
+    umem events off
+
+When off (default), the hook functions return immediately with ~1
+cycle of overhead per alloc/free.  When on, `umem break` breakpoints
+fire and any C callback registered via umem_inspect_set_event_cb runs.
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem events", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        _ensure_running()
+        arg = (arg or "").strip().lower()
+        if arg in ("on", "1", "enable"):
+            gdb.execute("call (void) umem_inspect_enable_events(1)")
+            gdb.write("umem events enabled\n")
+        elif arg in ("off", "0", "disable"):
+            gdb.execute("call (void) umem_inspect_enable_events(0)")
+            gdb.write("umem events disabled\n")
+        else:
+            raise gdb.GdbError("usage: umem events on|off")
+
+
+UmemEvents()
+
+
+# ---------------------------------------------------------------------------
+# `umem snapshot`
+# ---------------------------------------------------------------------------
+
+
+class UmemSnapshot(gdb.Command):
+    """Dump a human-readable snapshot to a file.
+
+Usage:
+    umem snapshot <path>
+"""
+
+    def __init__(self) -> None:
+        super().__init__("umem snapshot", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        _ensure_loaded()
+        _ensure_running()
+        path = (arg or "").strip()
+        if not path:
+            raise gdb.GdbError("usage: umem snapshot <path>")
+        res = gdb.parse_and_eval(
+            '(int) umem_inspect_snapshot("{}")'.format(path.replace('"', '\\"'))
+        )
+        if int(res) != 0:
+            raise gdb.GdbError("snapshot failed (errno)")
+        gdb.write("wrote snapshot to {}\n".format(path))
+
+
+UmemSnapshot()
+
+
+# ---------------------------------------------------------------------------
+# Help.
+# ---------------------------------------------------------------------------
+
+
+class UmemHelp(gdb.Command):
+    """Show libumem GDB integration help."""
+
+    def __init__(self) -> None:
+        super().__init__("umem help", gdb.COMMAND_SUPPORT)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        gdb.write("""\
+libumem GDB integration
+=======================
+
+Live dcmds (require a running/paused inferior):
+    umem findleaks [-f text|json] [-n N]
+    umem log       [-f text|json] [-n N]
+    umem status    [-f text|json]
+    umem whatis  <addr>          alias: umem bufctl <addr>
+    umem snapshot <path>
+
+Breakpoints on memory events:
+    umem events on                        # arm the hook points
+    umem break alloc [-s SIZE] [-c CACHE]
+    umem break free  [-a ADDR] [-c CACHE]
+    umem break error [-c CODE]
+    umem events off
+
+Environment required for the richest output:
+    UMEM_DEBUG=audit                 # record stack trace per buffer
+    UMEM_LOGGING=transaction=1m      # enable transaction log
+
+See tools/DEBUGGING.md for worked examples.
+""")
+
+
+UmemHelp()
+
+
+# Backwards-compatible aliases for the old hyphenated names.
+gdb.execute("define umem-findleaks\n  umem findleaks $arg0\nend", to_string=True)
+gdb.execute("define umem-log\n  umem log $arg0\nend", to_string=True)
+gdb.execute("define umem-status\n  umem status $arg0\nend", to_string=True)
+gdb.execute("define umem-whatis\n  umem whatis $arg0\nend", to_string=True)
+gdb.execute("define umem-help\n  umem help\nend", to_string=True)
+
+
+print("libumem GDB extension loaded.  Try `umem help`.")

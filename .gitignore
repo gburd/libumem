@@ -226,4 +226,17 @@ compile_commands.json
 examples/umem_palloc_demo
 test/bench/bench_debug_overhead
 test/bench/bench_profile_test
+test/bench/bench_cache_rseq
 test/stress/stress_main
+test/test_inspect
+test/test_inspect_live
+tools/umem_profile_dump.o
+umem-*.tar.bz2
+umem-*.tar.gz
+umem-*.tar.xz
+.memelord/
+.codex/
+.pi/
+opencode.json
+config/
+install/

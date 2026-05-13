@@ -220,6 +220,13 @@ __attribute__((constructor(101)))
 static void
 umem_interpose_init(void)
 {
+	/* Tell libumem we're acting as the process malloc.  This
+	 * disables backtrace(3)-based stack capture in the slab
+	 * paths, which would otherwise dlopen libgcc_s through us
+	 * and recurse fatally. */
+	extern int umem_malloc_is_interposing;
+	umem_malloc_is_interposing = 1;
+
 	/* Resolve libc functions */
 	atomic_store(&interpose_state, INTERPOSE_BOOTSTRAP);
 	resolve_libc_functions();

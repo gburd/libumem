@@ -3,7 +3,48 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2025-01
+
+### Headline: runtime debugging restored on Linux / FreeBSD / macOS
+
+libumem now ships `umem(1)`, a command-line tool that surfaces the
+Solaris `mdb` workflow on non-Solaris platforms.  The same commands
+(`findleaks`, `log`, `status`, `whatis`, `bufctl`, `walk`, `snapshot`,
+`break`) are also exposed inside `gdb` and `lldb` under the `umem`
+prefix.  See `tools/DEBUGGING.md`, `umem(1)`, and `umem_inspect(3)`.
+
+### New: introspection API and tooling
+
+- **`umem_inspect.h`** — in-process C API for findleaks, log dump,
+  per-cache status, address resolution, and binary snapshots.
+  All commands accept text or JSON output for tooling integration.
+- **`umem(1)`** — standalone CLI that drives `gdb` in batch mode
+  against a live pid, a core dump, or an offline snapshot file.
+- **`tools/gdb/umem_gdb.py`** and **`tools/lldb/umem_lldb.py`** —
+  same command set inside the debugger; conditional breakpoints on
+  allocation, free, and corruption events.
+- **Binary snapshot format** (`.ums`) — capture allocator state in
+  production, analyze offline.
+- **`tools/umem_dump_reader`** — Python reader for the binary
+  snapshot format; no live process required.
+- **End-to-end tests** under `test/debugger/` exercise the full
+  toolchain via gdb and lldb in `make check`.
+
+### Fixed: pre-existing bugs uncovered by the inspection work
+
+- **`getpcstack()` was a no-op on Linux x86_64.** `EC_UMEM_DUMMY_PCSTACK`
+  caused the function to return 0 unconditionally, silently
+  rendering `UMEM_DEBUG=audit` useless for its primary purpose
+  (associating allocations with allocation sites).  Replaced with
+  `backtrace(3)` fallback.
+- **`umem_audit.c` exported functions whose output was inaccurate.**
+  `umem_find_leaks()` reported `cache_buftotal` (total slots, not
+  buffers in use) as the leak count.  `umem_get_audit_info()` was a
+  stub returning NULL.  Replaced with thin forwarders to
+  `umem_inspect_*` so the documented behaviour now matches reality.
+- **`umem_stacktrace_init()` forked `addr2line` by default**, which
+  interferes with debugger expression evaluation.  The fork is now
+  opt-in via `UMEM_STACKTRACE_ADDR2LINE=1`.
 
 ### Rework Phases (0-5)
 

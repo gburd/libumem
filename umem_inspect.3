@@ -1,0 +1,240 @@
+.\" umem_inspect(3) -- libumem runtime introspection API.
+.TH UMEM_INSPECT 3 "2025-01" "libumem" "Library Functions"
+.SH NAME
+umem_findleaks, umem_log_dump, umem_status_dump, umem_whatis,
+umem_bufctl_audit_dump, umem_walk_allocated, umem_walk_freed,
+umem_walk_log, umem_walk_dump, umem_inspect_snapshot,
+umem_inspect_enable_events, umem_inspect_set_event_cb,
+umem_event_alloc, umem_event_free, umem_event_error \-
+runtime introspection for libumem
+.SH SYNOPSIS
+.nf
+.B #include <umem_inspect.h>
+.PP
+.BI "size_t umem_findleaks(FILE *" out ", umem_inspect_format_t " fmt ,
+.BI "    unsigned " max_classes );
+.BI "size_t umem_log_dump(FILE *" out ", umem_inspect_format_t " fmt ,
+.BI "    unsigned " max_records );
+.BI "void   umem_status_dump(FILE *" out ", umem_inspect_format_t " fmt );
+.BI "int    umem_whatis(const void *" addr ", umem_buffer_info_t *" out );
+.BI "int    umem_bufctl_audit_dump(FILE *" out ", const void *" addr );
+.PP
+.BI "size_t umem_walk_allocated(umem_buffer_cb_t " cb ", void *" arg );
+.BI "size_t umem_walk_freed(umem_buffer_cb_t " cb ", void *" arg );
+.BI "size_t umem_walk_log(umem_buffer_cb_t " cb ", void *" arg );
+.BI "size_t umem_walk_dump(FILE *" out ", const char *" kind ,
+.BI "    umem_inspect_format_t " fmt ", unsigned " max_entries );
+.PP
+.BI "int    umem_inspect_snapshot(const char *" path );
+.PP
+.BI "void   umem_inspect_enable_events(int " on );
+.BI "void   umem_inspect_set_event_cb(umem_event_cb_t " cb ", void *" arg ,
+.BI "    unsigned " event_mask );
+.BI "void   umem_event_alloc(void *" buf ", size_t " size ", void *" cache );
+.BI "void   umem_event_free (void *" buf ", size_t " size ", void *" cache );
+.BI "void   umem_event_error(int " code ", void *" buf ", void *" cache );
+.fi
+.PP
+Link with
+.BR \-lumem .
+.SH DESCRIPTION
+The
+.B umem_inspect
+family of functions exposes the introspection state that libumem
+already maintains under
+.B UMEM_DEBUG
+and
+.B UMEM_LOGGING
+to application code, debuggers, and external tools.  These are the
+non-Solaris equivalents of the
+.BR mdb (1)
+.BR ::findleaks ", " ::umem_log ", " ::umastat ", " ::whatis ", and"
+.B ::bufctl_audit
+dcmds.
+.PP
+All routines that take a
+.B FILE *
+argument may be passed
+.BR NULL ;
+output is then written to
+.BR stderr .
+All routines are safe to call against a running allocator: each cache
+is briefly locked while it is walked, but no global state is mutated.
+.SS umem_findleaks
+Walks every user-visible cache, enumerates buffers that are currently
+allocated, groups them by allocation stack-trace fingerprint, and
+emits the top
+.I max_classes
+classes ranked by total bytes.  Returns the number of buffers
+visited.
+.PP
+Buffers currently sitting in per-CPU magazines are detected and
+subtracted (and reported as
+.I cached_skipped
+in the JSON output) so the count reflects only buffers that have not
+yet been freed by the application.  Allocator-internal caches
+.RB ( UMC_NOHASH ", " UMC_QCACHE )
+are filtered out.
+.PP
+Stack traces are present only when the target was started with
+.BR UMEM_DEBUG=audit ;
+without audit the count is still accurate but the stacks are empty.
+.SS umem_log_dump
+Walks the per-CPU transaction-log ring buffer, sorts its entries by
+.BR bc_timestamp ,
+and emits each one (alloc or free event with thread, time, address,
+size, cache, and stack).  Requires
+.BR UMEM_LOGGING=transaction= \fIsize\fR
+in the target environment;
+.I size
+accepts
+.BR k ", " m ", or " g
+suffixes.  Returns the number of records emitted.
+.SS umem_status_dump
+Per-cache summary equivalent to mdb's
+.BR ::umastat :
+buffer size, buffers in use, total, memory in use, allocations,
+allocation failures, and depot contention.
+.SS umem_whatis
+Resolves
+.I addr
+to its owning cache, slab, and current state (allocated, free, or
+cached in a magazine).  Fills
+.I *out
+on success.  Prefers user-visible caches over the qcaches that back
+them: an address inside an
+.B umem_va_4096
+buffer that is itself a slab for
+.B umem_alloc_512
+will resolve to
+.BR umem_alloc_512 .
+Returns 0 on success, \-1 if
+.I addr
+is not in any libumem region (with
+.B errno
+set to
+.BR ENOENT ).
+.SS umem_bufctl_audit_dump
+Pretty-prints the bufctl audit record (as the mdb dcmd
+.B ::bufctl_audit
+does) for the buffer at
+.IR addr .
+Includes alloc thread, timestamp, and the captured stack trace when
+.B UMEM_DEBUG=audit
+is in effect.
+.SS umem_walk_allocated, umem_walk_freed, umem_walk_log
+Streaming walkers.  The callback
+.I cb
+is invoked once per entry with a
+.B umem_buffer_info_t
+that the callback may use, copy, or ignore.  Returning a non-zero
+value from
+.I cb
+stops the walk early.  All three walkers acquire each cache's lock
+for the duration of that cache's portion of the walk.
+.SS umem_walk_dump
+Convenience wrapper that streams every entry in
+.I kind
+.RB ( "\(dqallocated\(dq" ", " "\(dqfreed\(dq" ", or " "\(dqlog\(dq" )
+to
+.I out
+in the requested format.
+.SS umem_inspect_snapshot
+Writes a self-contained snapshot of allocator state to
+.IR path .
+If the path ends in
+.IR .ums ", " .umsnap ", or " .bin
+the v2 binary format is written (parseable offline by the
+.B umem_dump_reader
+helper); otherwise a human-readable text dump is produced.  Useful
+from
+.BR atexit (3),
+signal handlers, or admin endpoints.  Returns 0 on success, \-1 on
+I/O error.
+.SS umem_inspect_enable_events, umem_inspect_set_event_cb
+Toggle the event-hook subsystem.  When enabled, every alloc, free,
+and detected-corruption event calls a stable extern function
+.RB ( umem_event_alloc ", " umem_event_free ", " umem_event_error ).
+Set a debugger breakpoint on these to break on memory events with
+arbitrary conditions.
+.PP
+A C callback may also be registered with
+.B umem_inspect_set_event_cb;
+.I event_mask
+is a bitmask of
+.BR "UMEM_EV_ALLOC" ", " UMEM_EV_FREE ", " UMEM_EV_DOUBLE_FREE ", "
+.BR UMEM_EV_CORRUPT ", " UMEM_EV_ALLOC_FAIL .
+.PP
+When events are off (the default) the hook functions are reached but
+return immediately with ~1 cycle of overhead.
+.SS Event hook breakpoints
+The functions
+.BR umem_event_alloc ", " umem_event_free ", and " umem_event_error
+are intentionally simple stable symbols.  They are the natural target
+of a debugger breakpoint:
+.PP
+.RS
+.nf
+(gdb) break umem_event_alloc if size >= 1048576
+(gdb) break umem_event_free  if buf == 0x7fa9b0c00000
+(gdb) break umem_event_error
+.fi
+.RE
+.PP
+Or via the
+.BR umem (1)
+command-line wrapper:
+.PP
+.RS
+.nf
+$ umem --pid 12345 findleaks -f json | jq .
+.fi
+.RE
+.SH RETURN VALUES
+Routines documented as returning
+.B size_t
+return the number of items processed.  Routines documented as
+returning
+.B int
+return 0 on success and \-1 on failure (with
+.B errno
+set).
+.SH ENVIRONMENT
+.TP
+.B UMEM_DEBUG=audit
+Required for stack traces (every alloc/free records up to
+.I umem_stack_depth
+PCs into the bufctl audit record).
+.TP
+.BI UMEM_LOGGING=transaction= SIZE
+Required for
+.B umem_log_dump
+to return records.
+.TP
+.B UMEM_STACKTRACE_ADDR2LINE=1
+Opt-in: fork
+.BR addr2line (1)
+for source-line resolution in formatted stack output.  Off by default
+to keep debugger expression evaluation deterministic.
+.SH SEE ALSO
+.BR umem (1),
+.BR umem_alloc (3),
+.BR umem_cache_create (3),
+.BR umem_debug (3),
+.BR umem_debugging (7),
+.BR umem_dump_reader (1),
+.BR mdb (1)
+.PP
+.I tools/DEBUGGING.md
+in the libumem source distribution.
+.SH HISTORY
+The introspection API was added to the libumem revival in 2025 as the
+non-Solaris equivalent of the
+.BR mdb (1)
+.B ::findleaks
+and
+.B ::umem_log
+dcmds.  Prior to it, debugging libumem-using processes on Linux meant
+either core-dumping and groveling through 1\ MB of audit ring buffer
+by hand, or giving up and using
+.BR valgrind (1).

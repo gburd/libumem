@@ -139,10 +139,63 @@ int
 getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_signal)
 {
 #ifdef EC_UMEM_DUMMY_PCSTACK
-  (void) pcstack;
-  (void) pcstack_limit;
-  (void) check_signal;
-  return 0;
+	(void) check_signal;
+	if (pcstack_limit <= 0)
+		return (0);
+#if defined(HAVE_EXECINFO_H) || defined(__linux__) || defined(__FreeBSD__) || \
+    defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+	{
+		extern int backtrace(void **, int);
+		/*
+		 * Re-entry guard.  backtrace(3) lazily dlopens libgcc_s
+		 * the first time it is called per process; the dlopen
+		 * path itself calls malloc, which (when libumem is
+		 * intercepting via libumem_malloc.so) re-enters the
+		 * allocator and may call back into getpcstack.  We avoid
+		 * the recursion two ways:
+		 *
+		 *  1. A thread-local guard short-circuits any nested
+		 *     call to getpcstack while we are inside backtrace().
+		 *
+		 *  2. A process-wide "warmed" flag: the first invocation
+		 *     dlopens libgcc_s, which is dangerous when umem is
+		 *     the malloc.  Until backtrace() has been warmed once
+		 *     successfully via a non-allocator code path, we
+		 *     return zero rather than risk the dlopen recursion.
+		 *     umem_stacktrace_init() warms it explicitly.
+		 */
+		static __thread int in_backtrace = 0;
+		extern int umem_backtrace_warmed;
+		extern int umem_malloc_is_interposing;
+
+		if (in_backtrace)
+			return (0);
+		if (!umem_backtrace_warmed)
+			return (0);
+		if (umem_malloc_is_interposing)
+			return (0);
+		in_backtrace = 1;
+
+		void *raw[64];
+		int cap = pcstack_limit + 2;
+		if (cap > (int)(sizeof (raw) / sizeof (raw[0])))
+			cap = (int)(sizeof (raw) / sizeof (raw[0]));
+		int got = backtrace(raw, cap);
+
+		in_backtrace = 0;
+
+		if (got <= 2)
+			return (0);
+		int skip = 2;
+		int out = 0;
+		for (int i = skip; i < got && out < pcstack_limit; i++)
+			pcstack[out++] = (uintptr_t)raw[i];
+		return (out);
+	}
+#else
+	(void) pcstack;
+	return (0);
+#endif
 #else
 	struct frame *fp;
 	struct frame *nextfp, *minfp;

@@ -5,6 +5,7 @@ lib_LTLIBRARIES = libumem.la libumem_malloc.la
 noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  umem_ptc_test umem_ptc_fork_test umem_ptc_bench \
 		  test/test_main test/test_debug \
+		  test/test_inspect test/test_inspect_live \
 		  test/property/prop_alloc_free2 \
 		  test/property/prop_cache \
 		  test/property/prop_fragmentation \
@@ -62,12 +63,11 @@ else
 NUMA_SOURCES =
 endif
 
-# Conditionally include HTM support
-if ENABLE_HTM
-HTM_SOURCES = umem_htm.c umem_htm.h
-else
+# HTM (hardware transactional memory) support is currently disabled
+# at source-level; the umem_htm.[ch] files have not been written.
+# Keep the configure flag for forward compatibility but always treat
+# the source list as empty.
 HTM_SOURCES =
-endif
 
 # Conditionally include SPARC assembly on Solaris
 # The .S extension ensures the C preprocessor runs on the assembly
@@ -87,6 +87,8 @@ endif
 AM_CCASFLAGS =
 
 libumem_la_SOURCES = init_lib.c \
+			atomic.h \
+			sparsemap.h \
 			umem_agent_support.c \
 			umem_fail.c \
 			umem_stacktrace.c \
@@ -115,6 +117,8 @@ libumem_la_SOURCES = init_lib.c \
 			malloc_guard.c \
 			malloc_guard.h \
 			umem_audit.c \
+			umem_inspect.c \
+			umem_inspect.h \
 			umem_hooks.c \
 			umem_hooks.h \
 			umem_ptc.c \
@@ -330,11 +334,26 @@ tools_umem_profile_dump_SOURCES = tools/umem_profile_dump.c
 tools_umem_profile_dump_LDADD =
 tools_umem_profile_dump_LDFLAGS = -lm
 
-man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3
-EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
-	$(man3_MANS) \
+# Install the runtime introspection CLI on PATH.
+bin_SCRIPTS = tools/umem tools/umem_dump_reader
+
+# Pull the gdb / lldb scripts and the umem(1) entry point into the dist
+# tarball.
+debuggerdir = $(pkgdatadir)/debugger
+dbg_gdbdir = $(debuggerdir)/gdb
+dbg_lldbdir = $(debuggerdir)/lldb
+dbg_gdb_DATA = tools/gdb/umem_gdb.py
+dbg_lldb_DATA = tools/lldb/umem_lldb.py
+
+man1_MANS = umem.1
+man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3 umem_inspect.3
+man7_MANS = umem_debugging.7
+EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
+	$(man1_MANS) $(man3_MANS) $(man7_MANS) \
 	scripts/run-coverage.sh scripts/run-sanitizers.sh \
 	tools/gdb/umem_gdb.py tools/lldb/umem_lldb.py \
+	tools/umem tools/umem_dump_reader \
+	tools/DEBUGGING.md \
 	examples/palloc_integration.c examples/README.md \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
 	test/tdigest.c test/tdigest.h test/common.c test/common.h \
@@ -345,7 +364,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile umem_test4 \
 
 nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h \
 	umem_arena.h umem_own.h umem_gc.h gc.h \
-	umem_profile.h umem_stacktrace.h
+	umem_profile.h umem_stacktrace.h umem_inspect.h
 
 if ENABLE_PERCPU_CACHING
 nobase_include_HEADERS += umem_percpu.h
@@ -359,16 +378,28 @@ if ENABLE_NUMA
 nobase_include_HEADERS += umem_numa.h
 endif
 
-if ENABLE_HTM
-nobase_include_HEADERS += umem_htm.h
-endif
+# HTM is not implemented; the include line below is intentionally
+# absent.  See the HTM_SOURCES definition near the top.
 
 # Test suite
 # Using simple smoke tests that don't trigger pthread_create/malloc deadlock.
 # test/test_main (comprehensive unit tests) hangs due to malloc interposition
 # creating circular dependency: pthread_create -> malloc -> pthread_getspecific.
 # See PTHREAD_LIMITATION.md for details.
-TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug
+TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
+	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh
+
+TEST_EXTENSIONS = .sh
+SH_LOG_COMPILER = $(SHELL)
+
+test_test_inspect_SOURCES = test/test_inspect.c
+test_test_inspect_LDADD = libumem.la
+
+test_test_inspect_live_SOURCES = test/test_inspect_live.c
+test_test_inspect_live_LDADD = libumem.la
+
+dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
+	test/debugger/test_lldb_e2e.sh
 
 html-local:
 	mkdir -p docs

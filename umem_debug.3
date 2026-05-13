@@ -23,8 +23,10 @@ debugging features is controlled by environment variables.
 .sp
 .LP
 When the library detects an error, it writes a description of the error to an
-internal buffer that is readable with the \fB::umem_status\fR \fBmdb\fR(1)
-\fIdcmd\fR and then calls \fBabort\fR(3C).
+internal buffer that is readable with the \fBumem_inspect\fR(3) API
+(also surfaced via the \fBumem\fR(1) command and the
+\fB::umem_status\fR \fBmdb\fR(1) \fIdcmd\fR on Solaris) and then
+calls \fBabort\fR(3C).
 .SH ENVIRONMENT VARIABLES
 .sp
 .ne 2
@@ -422,7 +424,8 @@ MT-Level	MT-Safe
 .sp
 .LP
 \fBgdb\fR(1), \fBlldb\fR(1), \fBmdb\fR(1), \fBabort\fR(3C), \fBsignal\fR(3C),
-\fBumem_cache_create\fR(3MALLOC), \fBattributes\fR(5)
+\fBumem_cache_create\fR(3MALLOC), \fBumem_inspect\fR(3),
+\fBumem_debugging\fR(7), \fBumem\fR(1), \fBattributes\fR(5)
 .sp
 .LP
 \fBdocs/DEBUGGING.md\fR \- Comprehensive debugging guide with GDB/LLDB examples
@@ -505,10 +508,13 @@ To detect memory leaks:
 .in +2
 .nf
 UMEM_DEBUG=audit UMEM_LOGGING=transaction=10M ./myapp
-# Attach debugger after suspected leak
+# Inspect with the umem(1) tool, no debugger required:
+umem --pid $! findleaks
+umem --pid $! status
+# Or attach a debugger:
 (gdb) source /path/to/tools/gdb/umem_gdb.py
-(gdb) umem-leak-detect
-(gdb) umem-stats
+(gdb) umem findleaks
+(gdb) umem status
 .fi
 .in -2
 .sp
@@ -612,37 +618,55 @@ Available commands:
 .TP
 .ie t \(bu
 .el o
-\fBumem-cache-list\fR \- List all memory caches
+\fBumem findleaks\fR \- group allocated buffers by stack
 .RE
 .RS +4
 .TP
 .ie t \(bu
 .el o
-\fBumem-whatis\fR \- Identify which cache owns an address
+\fBumem log\fR \- chronological transaction log
 .RE
 .RS +4
 .TP
 .ie t \(bu
 .el o
-\fBumem-bufinfo\fR \- Show buffer allocation details
+\fBumem status\fR \- per-cache statistics
 .RE
 .RS +4
 .TP
 .ie t \(bu
 .el o
-\fBumem-leak-detect\fR \- Scan for memory leaks
+\fBumem walk\fR \- stream allocated / freed / log entries
 .RE
 .RS +4
 .TP
 .ie t \(bu
 .el o
-\fBumem-stats\fR \- Show allocation statistics
+\fBumem whatis\fR \- identify which cache owns an address
 .RE
 .RS +4
 .TP
 .ie t \(bu
 .el o
-\fBumem-help\fR \- Show help for all commands
+\fBumem bufctl\fR \- pretty-print the bufctl audit record
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+\fBumem snapshot\fR \- write binary or text snapshot for offline analysis
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+\fBumem break\fR \- conditional breakpoints on alloc / free / error events
+.RE
+.RS +4
+.TP
+.ie t \(bu
+.el o
+\fBumem help\fR \- show all commands
 .RE
 .RE
 .sp
@@ -665,8 +689,8 @@ Same commands as GDB extension.
 .LP
 These extensions provide runtime inspection of umem state. For detailed
 allocation information including stack traces, use with \fBUMEM_DEBUG=audit\fR.
-For complete documentation, see \fBdocs/DEBUGGING.md\fR and test programs
-in \fBtest/debugger/\fR.
+For complete documentation, see \fBumem_inspect\fR(3),
+\fBumem_debugging\fR(7), and \fBtools/DEBUGGING.md\fR in the source tree.
 .SS "Performance Impact"
 .sp
 .LP
@@ -711,10 +735,12 @@ To detect memory leaks:
 .in +2
 .nf
 UMEM_DEBUG=audit ./myapp
-# Attach debugger after leak suspected
+# Either use the umem(1) tool against the running process:
+umem --pid $(pgrep myapp) findleaks
+# Or attach a debugger:
 (gdb) source /path/to/tools/gdb/umem_gdb.py
-(gdb) umem-leak-detect
-(gdb) umem-stats
+(gdb) umem findleaks
+(gdb) umem status
 .fi
 .in -2
 .sp

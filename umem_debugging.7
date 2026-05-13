@@ -1,435 +1,313 @@
-'\" te
-.\" Copyright (c) 2024 libumem contributors.
+'\" t
+.\" Copyright (c) 2024-2025 libumem contributors.
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
-.TH UMEM_DEBUGGING 7 "December 2024"
+.TH UMEM_DEBUGGING 7 "2025-01" "libumem" "Miscellaneous Information"
 .SH NAME
-umem_debugging \- comprehensive debugging guide for libumem
+umem_debugging \- debugging guide for libumem on non-Solaris platforms
 .SH DESCRIPTION
-.sp
-.LP
-This manual provides a comprehensive guide to debugging memory issues using
-\fBlibumem\fR's debugging features. It covers common debugging workflows,
-debugger extensions, and performance considerations.
+This manual page covers the runtime debugging features of
+.B libumem
+on Linux, FreeBSD, and macOS.  On Solaris these features were exposed
+through
+.BR mdb (1)
+dcmds; on other platforms they are exposed through the
+.BR umem (1)
+command-line tool, the
+.BR umem_inspect (3)
+C API, and the GDB and LLDB integrations under
+.IR tools/ .
+.PP
+The relevant debug modes are controlled by environment variables in
+the target program, with no recompilation required.
 .SH ENABLING DEBUG MODE
-.sp
-.LP
-Debug features are controlled through environment variables set before running
-your application.
-.SS "Basic Debug Mode"
-.sp
-.in +2
+.SS Per-buffer audit (alloc + free stack capture)
+.PP
+.in +4
 .nf
-# Enable all debugging features (default mode)
-UMEM_DEBUG=default ./myapp
-
-# Equivalent to: UMEM_DEBUG=audit,contents,guards
-.fi
-.in -2
-.SS "Individual Features"
-.sp
-.in +2
-.nf
-# Guards only (pattern fill, redzone checking)
-UMEM_DEBUG=guards ./myapp
-
-# Auditing only (stack traces on alloc/free)
 UMEM_DEBUG=audit ./myapp
-
-# Multiple features
-UMEM_DEBUG=audit,guards ./myapp
 .fi
-.in -2
-.SS "With Logging"
-.sp
-.in +2
+.in -4
+.PP
+Records up to
+.I umem_stack_depth
+program counters into each buffer's bufctl audit record on every
+alloc and free.  Required for
+.B umem findleaks
+and
+.B umem whatis
+to print stack traces.  Overhead approximately 30%.
+.SS Transaction log (chronological history)
+.PP
+.in +4
 .nf
-# Enable transaction logging (64KB buffer)
-UMEM_DEBUG=audit UMEM_LOGGING=transaction ./myapp
-
-# Larger log buffer (1MB)
-UMEM_DEBUG=audit UMEM_LOGGING=transaction=1m ./myapp
-
-# Multiple logs
-UMEM_DEBUG=audit,contents \\
-UMEM_LOGGING=transaction=1m,contents=512k,fail=64k \\
-./myapp
+UMEM_LOGGING=transaction=1m ./myapp
 .fi
-.in -2
-.SH COMMON DEBUGGING WORKFLOWS
-.SS "Detecting Memory Leaks"
-.sp
-.LP
-Step 1: Run with auditing enabled
-.sp
-.in +2
-.nf
-UMEM_DEBUG=audit UMEM_LOGGING=transaction=1m ./myapp
-.fi
-.in -2
-.sp
-.LP
-Step 2: Reproduce the leak condition
-.sp
-.LP
-Step 3: Attach debugger (or core dump)
-.sp
-.in +2
-.nf
-gdb ./myapp <pid>
-(gdb) source /path/to/umem_gdb.py
-(gdb) umem-status
-# Shows leaked allocations with stack traces
-.fi
-.in -2
-.SS "Detecting Buffer Overruns"
-.sp
-.LP
-Enable guards mode:
-.sp
-.in +2
+.in -4
+.PP
+Records every alloc and free event to a per-CPU ring buffer.  The
+suffix accepts
+.BR k ", " m ", or " g .
+Required for
+.BR "umem log" .
+Overhead approximately 5%.
+.SS Buffer guards (overrun and use-after-free detection)
+.PP
+.in +4
 .nf
 UMEM_DEBUG=guards ./myapp
 .fi
-.in -2
-.sp
-.LP
-The program will abort immediately if:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Writing past the end of a buffer (redzone corruption)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Using a freed buffer (0xdeadbeef pattern corruption)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Double-freeing a buffer
-.RE
-.sp
-.LP
-Error details are written to the \fB::umem_status\fR buffer, viewable in
-a debugger.
-.SS "Detecting Use-After-Free"
-.sp
-.LP
-Guards mode fills freed buffers with the pattern \fB0xdeadbeef\fR. If this
-pattern is corrupted when the buffer is reallocated, the program aborts with
-a detailed error message.
-.sp
-.in +2
+.in -4
+.PP
+Adds redzone trailers and
+.B 0xdeadbeef
+fill on free.  Overrun, use-after-free, and double-free abort
+immediately at the offending operation, calling
+.B umem_event_error
+so debuggers can break.  Overhead 10\(en20%.
+.SS Combined debug
+.PP
+.in +4
 .nf
-UMEM_DEBUG=guards ./myapp
-# Program aborts if freed memory is accessed
+UMEM_DEBUG=default ./myapp        \&# audit + contents + guards
+UMEM_DEBUG=audit,guards ./myapp   \&# explicit combination
 .fi
-.in -2
-.SS "Detecting Uninitialized Memory"
-.sp
-.LP
-Guards mode fills newly allocated buffers with \fB0xbaddcafe\fR (after
-verifying the 0xdeadbeef pattern if the buffer was previously used). Seeing
-this pattern in your data indicates reading uninitialized memory.
-.sp
-.in +2
+.in -4
+.SH FINDING LEAKS
+.SS Live process
+.PP
+.in +4
 .nf
-UMEM_DEBUG=guards ./myapp
-# Look for 0xbaddcafe in corrupt data
+$ UMEM_DEBUG=audit UMEM_LOGGING=transaction=1m ./myapp &
+$ umem --pid $! findleaks
 .fi
-.in -2
-.SH DEBUGGER EXTENSIONS
-.SS "GDB Extension"
-.sp
-.LP
-Load the extension:
-.sp
-.in +2
+.in -4
+.PP
+.B findleaks
+reports buffers currently allocated, grouped by allocation stack
+fingerprint and ranked by total bytes.  Output mirrors
+.BR mdb (1)'s
+.BR ::findleaks .
+Buffers sitting in per-CPU magazines are subtracted (and reported as
+.IR cached_skipped ),
+so the count is the actual leak count.
+.PP
+For machine-readable output:
+.PP
+.in +4
 .nf
-(gdb) source /path/to/umem_gdb.py
+$ umem --pid $! findleaks -f json | jq '.classes[0]'
 .fi
-.in -2
-.sp
-.LP
-Available commands:
-.sp
-.ne 2
-.na
-\fBumem-status\fR
-.ad
-.RS 16n
-Display current umem status and any error messages. Shows leaked allocations
-if auditing is enabled.
-.RE
-.sp
-.ne 2
-.na
-\fBumem-cache\fR
-.ad
-.RS 16n
-List all umem caches with statistics (buffer size, allocations, etc.)
-.RE
-.sp
-.ne 2
-.na
-\fBumem-stats\fR or \fBumastat\fR
-.ad
-.RS 16n
-Show magazine layer statistics and Per-Thread Cache (PTC) efficiency.
-.RE
-.SS "LLDB Extension"
-.sp
-.LP
-Load the extension:
-.sp
-.in +2
+.in -4
+.SS Core dump
+.PP
+.in +4
 .nf
-(lldb) command script import /path/to/umem_lldb.py
+$ umem --core core.12345 --exe ./myapp findleaks
+$ umem --core core.12345 --exe ./myapp log -n 100
 .fi
-.in -2
-.sp
-.LP
-Available commands: \fBumem-status\fR, \fBumem-cache\fR, \fBumem-stats\fR
-.sp
-.LP
-Note: Command names use hyphens in LLDB (umem-status) vs. colons in MDB (::umem_status).
-.SS "Using Debugger Extensions Without UMEM_DEBUG"
-.sp
-.LP
-The debugger extensions work even without \fBUMEM_DEBUG\fR set. They provide:
-.RS +4
+.in -4
+.SS Offline (binary snapshot)
+.PP
+Take a snapshot in production:
+.PP
+.in +4
+.nf
+$ umem --pid $(pgrep myapp) snapshot /var/log/umem/$(date +%H).ums
+.fi
+.in -4
+.PP
+Analyze it later, anywhere:
+.PP
+.in +4
+.nf
+$ umem --dump /var/log/umem/14.ums findleaks
+$ umem --dump /var/log/umem/14.ums status
+$ umem --dump /var/log/umem/14.ums log
+.fi
+.in -4
+.SH INTROSPECTION COMMANDS
+The
+.BR umem (1)
+CLI, the
+.BR gdb (1)
+.B umem
+prefix, and the
+.BR lldb (1)
+.B umem
+prefix accept the same set of commands.  Inside a debugger:
+.PP
+.in +4
+.nf
+(gdb) source /path/to/tools/gdb/umem_gdb.py
+(gdb) umem help
+.fi
+.in -4
+.PP
+.RS
+.TP 14
+.B findleaks
+group allocated buffers by stack fingerprint
 .TP
-.ie t \(bu
-.el o
-Cache statistics
-.RE
-.RS +4
+.B log
+chronological transaction log
 .TP
-.ie t \(bu
-.el o
-Magazine efficiency
-.RE
-.RS +4
+.B status
+per-cache stats (\fB::umastat\fR equivalent)
 .TP
-.ie t \(bu
-.el o
-PTC hit rates
-.RE
-.RS +4
+.B walk
+stream every entry (\fIallocated\fR, \fIfreed\fR, \fIlog\fR)
 .TP
-.ie t \(bu
-.el o
-Memory overhead analysis
+.B whatis
+identify a pointer (\fB::whatis\fR equivalent)
+.TP
+.B bufctl
+full audit record (\fB::bufctl_audit\fR equivalent)
+.TP
+.B snapshot
+binary or text dump of allocator state
+.TP
+.B break
+set conditional breakpoints on alloc/free/error events
+.TP
+.B events
+arm or disarm the event hook subsystem
 .RE
-.sp
-.LP
-However, leak detection and allocation stack traces require \fBUMEM_DEBUG=audit\fR.
+.PP
+Each accepts
+.B \-f text
+(default) or
+.B \-f json
+output.  See
+.BR umem (1)
+for full syntax and
+.BR umem_inspect (3)
+for the C API.
+.SH BREAKPOINTS ON MEMORY EVENTS
+The functions
+.BR umem_event_alloc ", " umem_event_free ", and " umem_event_error
+are stable extern symbols the allocator calls at well-defined points.
+With events enabled
+.RB ( "umem events on"
+or
+.BR umem_inspect_enable_events(1) )
+they are reached on every alloc, free, and detected corruption.
+.PP
+Set debugger breakpoints on them with arbitrary conditions:
+.PP
+.in +4
+.nf
+(gdb) umem events on
+(gdb) umem break alloc -s 1048576    \&# break on >= 1 MB allocations
+(gdb) umem break free  -a 0x7fa9b0c00000
+(gdb) umem break error               \&# break on detected corruption
+.fi
+.in -4
+.PP
+This is the missing piece compared to mdb's \fB::stop\fR /
+.B ::cont
+workflow:  it lets you stop the program at the moment of interest
+without recompiling or restarting.
 .SH PERFORMANCE IMPACT
-.sp
-.LP
-Debug features have significant performance overhead:
-.sp
 .TS
-l l l
 l l l .
-Feature	CPU Overhead	Memory Overhead
+Feature	CPU overhead	Memory overhead
 _
-guards	10-20%	~100 bytes/alloc
-audit	30-50%	~500 bytes/alloc
-logging	40-60%	Log buffer size
-default	50-70%	~600 bytes/alloc
+guards	10\(en20%	~100 bytes / alloc
+audit	~30%	~500 bytes / alloc
+logging	~5%	log buffer size
+default	50\(en70%	~600 bytes / alloc
 .TE
-.sp
-.LP
-Important notes:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Setting \fBUMEM_DEBUG\fR disables Per-Thread Caching (PTC), removing the
-lock-free fast path for small allocations.
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Debug features only work for allocations under 16KB.
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Use \fBUMC_NODEBUG\fR flag on \fBumem_cache_create\fR(3MALLOC) to disable
-debugging for specific performance-critical caches.
-.RE
-.SH TROUBLESHOOTING COMMON ISSUES
-.SS "False Positives in Guards Mode"
-.sp
-.LP
-If guards mode reports corruption but your code is correct:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Ensure all allocations are freed to the correct cache
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Check for multi-threaded races in object lifecycle
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Verify destructor properly resets object to constructed state
-.RE
-.SS "Missing Stack Traces"
-.sp
-.LP
-If \fBumem-status\fR shows allocations without stack traces:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Ensure \fBUMEM_DEBUG=audit\fR is set
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Compile with frame pointers: \fB-fno-omit-frame-pointer\fR
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Install debug symbols for all libraries
-.RE
-.SS "Program Too Slow with Debug Mode"
-.sp
-.LP
-To reduce overhead:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Use \fBguards\fR only instead of \fBdefault\fR mode
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Reduce auditing frames: \fBUMEM_DEBUG=audit=5\fR
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Disable logging unless actively investigating
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Use \fBUMC_NODEBUG\fR for hot-path caches
-.RE
-.SH INTEGRATION WITH VALGRIND
-.sp
-.LP
-\fBlibumem\fR can be used alongside Valgrind for additional checking:
-.sp
-.in +2
-.nf
-valgrind --leak-check=full ./myapp
-.fi
-.in -2
-.sp
-.LP
-Valgrind will track allocations from both standard malloc and umem_alloc.
-For best results, compile with \fB-g -O0\fR.
-.SH EXAMPLES
-.LP
-\fBExample 1 \fRComplete leak detection workflow
-.sp
-.in +2
-.nf
-# Terminal 1: Run application with auditing
-UMEM_DEBUG=audit UMEM_LOGGING=transaction=1m ./myapp &
-APP_PID=$!
-
-# Let it run and accumulate leaks
-sleep 60
-
-# Terminal 2: Attach debugger
-gdb -p $APP_PID
-(gdb) source umem_gdb.py
-(gdb) umem-status
-# Review leaked allocations and stack traces
-(gdb) quit
-.fi
-.in -2
-
-.LP
-\fBExample 2 \fRDebugging a crash from buffer overrun
-.sp
-.in +2
-.nf
-# Run with guards
-UMEM_DEBUG=guards ./myapp
-# Program crashes with:
-# umem: buffer overrun detected
-# umem: redzone corrupted at 0x...
-
-# Examine core dump
-gdb ./myapp core
-(gdb) source umem_gdb.py
-(gdb) umem-status
-# Shows which allocation was corrupted
-(gdb) bt
-# Shows where the overrun occurred
-.fi
-.in -2
-
-.LP
-\fBExample 3 \fRSelective debugging for hot paths
-.sp
-.in +2
-.nf
-/* Disable debugging for performance-critical cache */
-umem_cache_t *hot_cache = umem_cache_create("hot_objects",
-    sizeof(hot_obj_t), 0, NULL, NULL, NULL, NULL, NULL,
-    UMC_NODEBUG);
-
-/* Normal debugging for other caches */
-umem_cache_t *normal_cache = umem_cache_create("normal_objects",
-    sizeof(normal_obj_t), 0, NULL, NULL, NULL, NULL, NULL, 0);
-
-/* Run with debugging enabled */
-/* hot_cache avoids debug overhead, normal_cache gets full checking */
-.fi
-.in -2
+.PP
+.B UMEM_DEBUG=audit
+disables PTC (per-thread cache) for affected size classes; allocator
+takes the slow path through the magazine layer for those buffers.
+This is necessary for correct audit-record bookkeeping.
+.PP
+Use the
+.B UMC_NODEBUG
+cache flag on
+.BR umem_cache_create (3)
+to opt specific hot caches out of debug instrumentation.
+.SH TROUBLESHOOTING
+.SS Empty stack traces
+On Linux x86_64,
+.BR getpcstack (3)
+falls back to
+.BR backtrace (3),
+which requires either frame pointers
+.RB ( -fno-omit-frame-pointer )
+or DWARF unwind info.  Distro-shipped binaries normally have one or
+the other; aggressively-stripped builds may not.  Without unwind
+info, recorded stacks are short or empty.
+.SS findleaks reports more buffers than expected
+Check the
+.I cached_skipped
+field: buffers currently parked in per-CPU magazines are reported
+separately.  Their inclusion in the
+.I total_buffers
+count would be wrong; their exclusion is correct.
+.SS findleaks reports allocator-internal caches
+Use the C API
+.B umem_walk_allocated()
+directly to see them; the
+.BR findleaks
+filter skips
+.B UMC_NOHASH
+and
+.B UMC_QCACHE
+caches by default to keep the report focused on user allocations.
+.SS Debugger expression evaluation aborts on fork
+The default stack-trace formatter does not fork.  Source-line
+resolution via
+.BR addr2line (1)
+is opt-in via
+.BR UMEM_STACKTRACE_ADDR2LINE=1
+because the fork interferes with debugger inferior calls.
+.SH COMPARISON TO OTHER LEAK DETECTORS
+.TS
+l l l .
+Tool	Live process	Production friendly
+_
+\fBumem\fR(1)	yes	yes (snapshot mode)
+\fBvalgrind\fR(1) memcheck	full restart only	no (>10x slowdown)
+AddressSanitizer	full restart only	no (>2x slowdown)
+\fBjeprof\fR(1) (jemalloc)	yes	yes
+.TE
+.PP
+.B umem
+is the only of these that lets you attach to a long-running process
+that was not started with special instrumentation
+.RB ( UMEM_DEBUG=audit
+counts as instrumentation, but has lower overhead than the others
+and can be left on indefinitely).
 .SH SEE ALSO
-.sp
-.LP
-\fBgdb\fR(1), \fBlldb\fR(1), \fBumem_alloc\fR(3MALLOC),
-\fBumem_cache_create\fR(3MALLOC), \fBumem_debug\fR(3MALLOC),
-\fBvalgrind\fR(1)
+.BR umem (1),
+.BR umem_alloc (3),
+.BR umem_cache_create (3),
+.BR umem_debug (3),
+.BR umem_inspect (3),
+.BR gdb (1),
+.BR lldb (1),
+.BR mdb (1),
+.BR valgrind (1)
+.PP
+.I tools/DEBUGGING.md
+in the libumem source distribution covers full workflows and worked
+examples.
 .SH NOTES
-.sp
-.LP
-Always disable debug mode in production builds. The performance and memory
-overhead make it unsuitable for production use.
-.sp
-.LP
-Core dumps from processes with \fBUMEM_DEBUG\fR enabled can be very large
-due to logging buffers and audit structures.
-.sp
-.LP
-For production memory leak detection, consider using the debugger extensions
-without \fBUMEM_DEBUG\fR, or use external tools like Valgrind or AddressSanitizer.
+.B UMEM_DEBUG
+is intended for development, staging, and forensic post-mortem.
+Setting it in production is acceptable for
+.B audit
+mode (~30% overhead, no behavioral change), less acceptable for
+.B guards
+or
+.B default
+modes.  The transaction log
+.RB ( UMEM_LOGGING )
+is cheap enough (~5%) to leave on permanently in many workloads.
+.PP
+Core dumps from processes running with
+.B UMEM_DEBUG
+enabled can be larger than usual due to per-buffer audit records and
+log buffers; size on disk after compression is usually modest.

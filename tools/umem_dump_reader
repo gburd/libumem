@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""
+umem_dump_reader -- offline reader for umem_inspect_snapshot v2 binary
+files (.ums / .umsnap / .bin).
+
+Used by umem's --dump mode to run findleaks/log/status against a
+saved snapshot without the original process being alive.
+
+The on-disk format is documented at the top of umem_inspect.c.
+"""
+import argparse
+import json
+import struct
+import sys
+
+
+HEADER_FMT = "<4sIQII QQQ"           # 48 bytes
+HEADER_SIZE = struct.calcsize(HEADER_FMT)
+CACHE_FMT = "<32sQQQQQQQII"          # 32 + 7*8 + 2*4 = 96 bytes
+CACHE_SIZE = struct.calcsize(CACHE_FMT)
+MAX_STACK = 32
+BUFFER_FMT = "<QQQQQII" + ("Q" * MAX_STACK)
+BUFFER_SIZE = struct.calcsize(BUFFER_FMT)
+
+
+class Snapshot:
+    def __init__(self, path):
+        with open(path, "rb") as f:
+            self.path = path
+            self._read(f)
+
+    def _read(self, f):
+        hdr_bytes = f.read(HEADER_SIZE)
+        if len(hdr_bytes) != HEADER_SIZE:
+            raise ValueError("file too small for v2 header")
+        magic, version, ts, ptrsz, depth, ncaches, nbufs, nlogs = struct.unpack(
+            HEADER_FMT, hdr_bytes
+        )
+        if magic != b"UMS2":
+            raise ValueError(
+                "not a umem v2 snapshot (magic={!r})".format(magic)
+            )
+        if version != 2:
+            raise ValueError(
+                "unsupported version {} (expected 2)".format(version)
+            )
+        self.timestamp_ns = ts
+        self.pointer_size = ptrsz
+        self.stack_depth = depth
+        self.caches = []
+        for _ in range(ncaches):
+            cb = f.read(CACHE_SIZE)
+            if len(cb) != CACHE_SIZE:
+                raise ValueError("truncated cache table")
+            (
+                name, bufsize, inuse, total, memory,
+                alloc_ops, alloc_fail, depot_cont, flags, cflags,
+            ) = struct.unpack(CACHE_FMT, cb)
+            self.caches.append({
+                "name": name.rstrip(b"\0").decode("utf-8", "replace"),
+                "bufsize": bufsize,
+                "inuse": inuse,
+                "total": total,
+                "memory": memory,
+                "alloc_ops": alloc_ops,
+                "alloc_fail": alloc_fail,
+                "depot_contention": depot_cont,
+                "flags": flags,
+                "cflags": cflags,
+            })
+        self.buffers = self._read_records(f, nbufs)
+        self.logs = self._read_records(f, nlogs)
+
+    def _read_records(self, f, n):
+        out = []
+        for _ in range(n):
+            rb = f.read(BUFFER_SIZE)
+            if len(rb) != BUFFER_SIZE:
+                raise ValueError("truncated record stream")
+            fields = struct.unpack(BUFFER_FMT, rb)
+            addr, size, cache_idx, ts, thread, depth, state = fields[:7]
+            stack = list(fields[7:7 + depth])
+            out.append({
+                "addr": addr,
+                "size": size,
+                "cache_idx": cache_idx,
+                "timestamp": ts,
+                "thread": thread,
+                "depth": depth,
+                "state": state,
+                "stack": stack,
+            })
+        return out
+
+    def cache_name_for(self, idx):
+        if idx == (1 << 64) - 1 or idx >= len(self.caches):
+            return "?"
+        return self.caches[idx]["name"]
+
+
+# Filter the same way umem_findleaks() does in-process.
+UMC_NOHASH = 0x00080000
+UMC_QCACHE = 0x00100000
+
+
+def cmd_status(snap, fmt, _args):
+    if fmt == "json":
+        print(json.dumps({"caches": snap.caches}, indent=2))
+        return
+    print("{:<24s} {:>8s} {:>8s} {:>8s} {:>12s} {:>10s} {:>6s}".format(
+        "CACHE", "BUFSIZE", "INUSE", "TOTAL", "MEMORY", "ALLOCS", "FAIL"))
+    print("-" * 79)
+    for c in snap.caches:
+        print("{:<24.24s} {:>8d} {:>8d} {:>8d} {:>12d} {:>10d} {:>6d}".format(
+            c["name"], c["bufsize"], c["inuse"], c["total"],
+            c["memory"], c["alloc_ops"], c["alloc_fail"]))
+
+
+def cmd_findleaks(snap, fmt, args):
+    max_classes = args.max_classes if args.max_classes else 50
+    classes = {}
+    total_count = 0
+    total_bytes = 0
+    for b in snap.buffers:
+        c = snap.caches[b["cache_idx"]] if b["cache_idx"] < len(snap.caches) \
+            else None
+        if c is None:
+            continue
+        if (c["cflags"] & (UMC_NOHASH | UMC_QCACHE)):
+            continue
+        if b["state"] == 3:  # UMEM_BUF_CACHED -- in a magazine
+            continue
+        key = (c["name"], tuple(b["stack"]))
+        cl = classes.setdefault(key, {
+            "count": 0, "bytes": 0, "bufsize": b["size"],
+            "cache": c["name"], "stack": b["stack"], "sample": b["addr"],
+        })
+        cl["count"] += 1
+        cl["bytes"] += b["size"]
+        total_count += 1
+        total_bytes += b["size"]
+    sorted_classes = sorted(classes.values(),
+                            key=lambda x: (-x["bytes"], -x["count"]))
+    shown = sorted_classes[:max_classes]
+    if fmt == "json":
+        cached = sum(1 for b in snap.buffers if b["state"] == 3)
+        print(json.dumps({
+            "version": 1,
+            "total_buffers": total_count,
+            "total_bytes": total_bytes,
+            "cached_skipped": cached,
+            "classes": [{
+                "count": c["count"], "bytes": c["bytes"],
+                "bufsize": c["bufsize"], "cache": c["cache"],
+                "stack": ["0x{:x}".format(p) for p in c["stack"]],
+                "sample": "0x{:x}".format(c["sample"]),
+            } for c in shown],
+        }))
+        return
+    print("findleaks (offline): {} buffers ({} bytes) in {} classes\n".format(
+        total_count, total_bytes, len(classes)))
+    print("{:>8s} {:>12s} {:>12s} {:<24s} STACK[0]".format(
+        "COUNT", "BYTES", "SIZE", "CACHE"))
+    print("-" * 78)
+    for c in shown:
+        top = "0x{:x}".format(c["stack"][0]) if c["stack"] else "-"
+        print("{:>8d} {:>12d} {:>12d} {:<24.24s} {}".format(
+            c["count"], c["bytes"], c["bufsize"], c["cache"], top))
+
+
+def cmd_log(snap, fmt, args):
+    n = args.max if args.max else 0
+    recs = sorted(snap.logs, key=lambda r: r["timestamp"])
+    if n and len(recs) > n:
+        recs = recs[-n:]
+    if fmt == "json":
+        out = [{
+            "time": r["timestamp"],
+            "thread": r["thread"],
+            "addr": "0x{:x}".format(r["addr"]),
+            "size": r["size"],
+            "cache": snap.cache_name_for(r["cache_idx"]),
+            "stack": ["0x{:x}".format(p) for p in r["stack"]],
+        } for r in recs]
+        print(json.dumps({"records": out}))
+        return
+    for r in recs:
+        print("t={} thr=0x{:x} 0x{:x} size={} cache={}".format(
+            r["timestamp"], r["thread"], r["addr"], r["size"],
+            snap.cache_name_for(r["cache_idx"])))
+        for i, p in enumerate(r["stack"]):
+            print("    #{}  0x{:x}".format(i, p))
+
+
+COMMANDS = {
+    "findleaks": cmd_findleaks,
+    "log": cmd_log,
+    "status": cmd_status,
+}
+
+
+def main():
+    p = argparse.ArgumentParser(
+        description="Read a umem_inspect snapshot file (v2 binary)."
+    )
+    p.add_argument("--dump", required=True, help="path to .ums file")
+    p.add_argument("-f", "--format", choices=("text", "json"), default="text")
+    p.add_argument("-n", "--max", type=int, default=0,
+                   help="max entries (log)")
+    p.add_argument("--max-classes", type=int, default=0,
+                   help="max classes (findleaks)")
+    p.add_argument("cmd", choices=tuple(COMMANDS), help="subcommand")
+    args = p.parse_args()
+    snap = Snapshot(args.dump)
+    COMMANDS[args.cmd](snap, args.format, args)
+
+
+if __name__ == "__main__":
+    main()

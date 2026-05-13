@@ -1000,6 +1000,13 @@ umem_findslab(umem_cache_t *cp, void *buf)
 	return (NULL);
 }
 
+/*
+ * Debugger breakpoint hook.  See umem_inspect.h.  Deliberately weak and
+ * separate from umem_event_error so the debugger hook stays callable
+ * even when UMEM_INSPECT_EVENTS is off.
+ */
+extern void umem_event_error(int code, void *buf, void *cache);
+
 static void
 umem_error(int error, umem_cache_t *cparg, void *bufarg)
 {
@@ -1009,6 +1016,8 @@ umem_error(int error, umem_cache_t *cparg, void *bufarg)
 	umem_slab_t *sp;
 	uint64_t *off;
 	void *buf = bufarg;
+
+	umem_event_error(error, buf, cparg);
 
 	int old_logging = umem_logging;
 

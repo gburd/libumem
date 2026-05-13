@@ -1,0 +1,160 @@
+# Forgejo Actions: build a release tarball when a tag is pushed.
+#
+# Triggered by `git push origin v*`.  Builds the source distribution
+# tarball, the documentation tarball, and a binary tarball for x86_64
+# Linux.  Attaches them to the corresponding Forgejo release.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  source-tarball:
+    name: source tarball + checksums
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    steps:
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 git ca-certificates xz-utils
+
+      - uses: actions/checkout@v4
+        with:
+          # Need full history so `git describe` works for snapshot
+          # builds and for embedding the version in the tarball.
+          fetch-depth: 0
+
+      - name: Configure & build
+        run: |
+          autoreconf -fvi
+          ./configure
+          make -j"$(nproc)"
+
+      - name: Run smoke tests
+        run: |
+          make check TESTS='umem_test umem_test2 umem_test3 \
+            umem_ptc_fork_test test/test_debug'
+
+      - name: Make distribution tarball
+        run: |
+          make dist
+          # Also produce an .xz copy for size-conscious downloaders.
+          GZIP_NAME=$(ls umem-*.tar.gz | head -1)
+          BASE=${GZIP_NAME%.tar.gz}
+          gunzip -k "$GZIP_NAME"
+          xz -k -9 "${BASE}.tar"
+
+      - name: Generate checksums
+        run: |
+          for f in umem-*.tar.gz umem-*.tar.xz; do
+            [ -f "$f" ] || continue
+            sha256sum "$f" > "$f.sha256"
+            sha512sum "$f" > "$f.sha512"
+          done
+          ls -la umem-*.tar.* umem-*.sha*
+
+      - name: Verify dist tarball builds clean
+        run: |
+          mkdir -p /tmp/distcheck
+          cd /tmp/distcheck
+          tar xzf "$GITHUB_WORKSPACE"/umem-*.tar.gz
+          cd umem-*/
+          ./configure
+          make -j"$(nproc)"
+          make check TESTS='umem_test umem_test2 umem_test3 \
+            umem_ptc_fork_test test/test_debug'
+
+      - name: Upload artifacts
+        uses: forgejo/upload-artifact@v3
+        with:
+          name: source-release
+          path: |
+            umem-*.tar.gz
+            umem-*.tar.xz
+            umem-*.sha256
+            umem-*.sha512
+          retention-days: 90
+
+      - name: Publish release
+        uses: actions/forgejo-release@v2
+        with:
+          direction: upload
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-dir: .
+          release-notes-file: CHANGELOG.md
+          files: |
+            umem-*.tar.gz
+            umem-*.tar.xz
+            umem-*.sha256
+            umem-*.sha512
+          prerelease: ${{ contains(github.ref, '-') }}
+
+  binary-x86_64-linux:
+    name: x86_64-linux binary tarball
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    steps:
+      - name: Install
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 git ca-certificates xz-utils
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build optimized
+        run: |
+          autoreconf -fvi
+          ./configure CFLAGS='-O3 -g -DNDEBUG' --prefix=/opt/libumem
+          make -j"$(nproc)"
+
+      - name: Stage install tree
+        run: |
+          STAGE=$(pwd)/_install
+          make DESTDIR="$STAGE" install
+          # Strip non-debug symbols for size; keep .debug separately.
+          find "$STAGE" -type f \( -name '*.so*' -o -name 'umem_*' \
+            -o -name 'umem' \) -print0 \
+            | xargs -0 -r strip --strip-unneeded || true
+
+      - name: Pack binary tarball
+        run: |
+          VERSION=$(git describe --tags --always --dirty)
+          TARBALL="libumem-${VERSION}-x86_64-linux.tar.xz"
+          cd _install/opt/libumem
+          tar cf - . | xz -9 > "$GITHUB_WORKSPACE/$TARBALL"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum "$TARBALL" > "$TARBALL.sha256"
+
+      - name: Upload artifacts
+        uses: forgejo/upload-artifact@v3
+        with:
+          name: binary-x86_64-linux
+          path: |
+            libumem-*-x86_64-linux.tar.xz
+            libumem-*-x86_64-linux.tar.xz.sha256
+          retention-days: 90
+
+      - name: Attach to release
+        uses: actions/forgejo-release@v2
+        with:
+          direction: upload
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-dir: .
+          files: |
+            libumem-*-x86_64-linux.tar.xz
+            libumem-*-x86_64-linux.tar.xz.sha256
+          prerelease: ${{ contains(github.ref, '-') }}
