@@ -23,6 +23,14 @@
 #include <time.h>
 #include <unistd.h>
 
+/*
+ * Import spans for dynamic (non-PREALLOC) arenas from libumem's heap
+ * arena.  This is an exported libumem symbol (see vmem_base.h); we
+ * declare it here rather than pulling in the internal header so the
+ * example stays self-contained.
+ */
+extern vmem_t *vmem_heap_arena(vmem_alloc_t **, vmem_free_t **);
+
 /* Pressure threshold: 90% of budget */
 #define PRESSURE_PCT 90
 
@@ -127,17 +135,32 @@ create_prealloc_arena(UmemBudgetContext *ctx)
 }
 
 /*
- * Create a vmem arena that grows on demand via the default vmem
- * heap. The budget is enforced by checking vmem_size() before
- * each allocation, not by limiting the arena itself.
+ * Create a vmem arena that grows on demand by importing spans from
+ * libumem's heap arena.  Without a real source arena (and matching
+ * import/release callbacks) an initially-empty, span-less arena has no
+ * backing address space and every vmem_alloc() fails -- so we wire the
+ * arena to vmem_heap_arena(), exactly as libumem's own internal arenas
+ * do (see umem.c: umem_internal_arena et al.).
+ *
+ * The budget itself is still enforced in umem_budget_alloc() by checking
+ * vmem_size(VMEM_ALLOC) before each allocation, not by capping the arena.
  */
 static int
 create_dynamic_arena(UmemBudgetContext *ctx)
 {
+	vmem_alloc_t *heap_alloc;
+	vmem_free_t *heap_free;
+	vmem_t *heap = vmem_heap_arena(&heap_alloc, &heap_free);
+
+	if (heap == NULL)
+		return (-1);
+
 	ctx->arena = vmem_create(ctx->name,
 	    NULL, 0,
-	    8,     /* quantum */
-	    NULL, NULL, NULL,
+	    8,             /* quantum */
+	    heap_alloc,    /* import spans from the heap arena */
+	    heap_free,     /* release spans back to it */
+	    heap,          /* source arena */
 	    0,
 	    VM_NOSLEEP);
 
@@ -448,8 +471,7 @@ umem_budget_reset(UmemBudgetContext *ctx)
 		    ctx->backing, ctx->backing_size,
 		    8, NULL, NULL, NULL, 0, VM_NOSLEEP);
 	} else {
-		ctx->arena = vmem_create(ctx->name,
-		    NULL, 0, 8, NULL, NULL, NULL, 0, VM_NOSLEEP);
+		(void)create_dynamic_arena(ctx);
 	}
 
 	(void)pthread_mutex_lock(&ctx->pressure_lock);
@@ -715,6 +737,7 @@ umem_budget_stats(UmemBudgetContext *ctx, FILE *fp)
 /* ----------------------------------------------------------------
  * Demonstration
  * ---------------------------------------------------------------- */
+#ifndef UMEM_PALLOC_NO_MAIN
 
 /*
  * Thread argument for the backpressure demo. The freeing thread
@@ -1005,3 +1028,4 @@ main(void)
 	(void)fprintf(stderr, "\nDone.\n");
 	return (0);
 }
+#endif /* UMEM_PALLOC_NO_MAIN */

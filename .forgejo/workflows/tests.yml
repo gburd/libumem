@@ -10,6 +10,12 @@
 # require gdb / lldb to be present.  We run them only in the `normal`
 # mode -- sanitizer builds change function-pointer types in ways the
 # debugger expression evaluator does not always handle.
+#
+# aarch64 (Graviton) is NOT covered here: the Codeberg forgejo runner is
+# x86_64 docker only.  Authoritative aarch64 build+test (which would have
+# caught the v2.0.0 rseq SIGSEGV, fixed in v2.1.0) runs on EC2 arm-lo/arm-hi
+# via scripts/ec2/ -- see scripts/ec2/README.md.  Do not assume arm is
+# green from CI alone.
 
 name: tests
 
@@ -66,6 +72,17 @@ jobs:
           # Run the historical fast unit tests in every mode.
           make check TESTS='umem_test umem_test2 umem_test3 \
             umem_ptc_fork_test test/test_debug'
+
+      - name: Verify exec-helper (env-var + detection tests depend on it)
+        if: matrix.mode == 'normal'
+        run: |
+          # test_envvar + the debug-detection tests exec this helper in a
+          # fresh process to reach umem's init-time env-var parsing. If it
+          # is not built (or LD_LIBRARY_PATH is wrong), those tests silently
+          # skip; build it explicitly and smoke-check so breakage is loud.
+          make -j"$(nproc)" test/unit/umem_env_helper
+          LD_LIBRARY_PATH=.libs test/unit/.libs/umem_env_helper flag 0x1
+        timeout-minutes: 5
 
       - name: Comprehensive unit suite (test_main)
         if: matrix.mode == 'normal'

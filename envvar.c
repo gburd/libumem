@@ -45,6 +45,7 @@
 #include "umem_ptc.h"
 #include "umem_own.h"
 #include "umem_profile.h"
+#include "umem_introspect.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
@@ -229,6 +230,13 @@ static umem_env_item_t umem_options_items[] = {
 		NULL, 0, NULL,
 		NULL,				&umem_profile_process
 	},
+#ifdef UMEM_INTROSPECT
+	{ "introspect",		"Evolving",	ITEM_UINT,
+		"Enable the in-process introspection control channel "
+		    "(umemctl). 1=enable, 0=disable (default).",
+		NULL, 0, (uint_t *)&umem_introspect_enabled
+	},
+#endif
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
 };
 

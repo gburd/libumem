@@ -726,8 +726,8 @@ test_gc_scan_roots(const MunitParameter params[], void *data)
     /* Scan data segments */
     umem_gc_scan_data_segments(root_mark_fn);
 
-    /* Full scan */
-    umem_gc_scan_all_roots(root_mark_fn);
+    /* Full scan (no STW here: caller does not hold the threads lock) */
+    umem_gc_scan_all_roots(root_mark_fn, 0);
 
     return MUNIT_OK;
 }

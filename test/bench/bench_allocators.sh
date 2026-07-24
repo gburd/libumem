@@ -17,6 +17,10 @@ THREAD_COUNTS=(1 2 4 8 16)
 SIZE_RANGES=("16:64" "64:256" "256:1024" "1024:4096")
 OUTPUT_DIR="results"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RUNS=5          # measured runs; framework reports median + CoV
+WARMUPS=1       # discarded warm-up runs
+PIN=0           # --pin: require perf governor + bind threads with numactl/taskset
+BENCH_BIN="${BENCH_BIN:-./bench_allocators}"
 
 usage() {
     cat <<EOF
@@ -29,6 +33,9 @@ OPTIONS:
     -t THREADS      Comma-separated thread counts (default: 1,2,4,8,16)
     -s SIZES        Comma-separated size ranges (default: 16:64,64:256,...)
     -o DIR          Output directory (default: $OUTPUT_DIR)
+    -r RUNS         Measured runs per point; median + CoV (default: $RUNS)
+    -W WARMUPS      Warm-up runs to discard (default: $WARMUPS)
+    --pin           Pin threads (numactl/taskset) + require performance governor
     -q              Quick mode: fewer iterations
     -h              Show this help
 
@@ -72,6 +79,18 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        -r)
+            RUNS="$2"
+            shift 2
+            ;;
+        -W)
+            WARMUPS="$2"
+            shift 2
+            ;;
+        --pin)
+            PIN=1
+            shift
+            ;;
         -q)
             QUICK_MODE=1
             OPERATIONS=1000000
@@ -94,6 +113,57 @@ if [[ ${#ALLOCATORS[@]} -eq 0 ]]; then
     ALLOCATORS=("all")
 fi
 
+# --- pinning setup ----------------------------------------------------------
+# When --pin is given: (1) require the performance governor on all CPUs
+# (an untuned box gives invalid numbers -- see the plan's Global Constraints),
+# and (2) build a numactl/taskset prefix that binds the process to a CPU set
+# sized to the run's thread count. Threads are pinned collectively to a
+# contiguous CPU range; this removes migration jitter which is the main source
+# of the ~30% run-to-run swing.
+NCPU=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)
+
+check_governor() {
+    local bad=0 g
+    shopt -s nullglob
+    local govs=(/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor)
+    shopt -u nullglob
+    if [[ ${#govs[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}Warning: no cpufreq governor files; cannot verify governor (virtualized host?).${NC}" >&2
+        echo -e "${YELLOW}         Ensure the host is tuned (bootstrap.sh applies performance).${NC}" >&2
+        return 0
+    fi
+    for f in "${govs[@]}"; do
+        g=$(cat "$f" 2>/dev/null || echo unknown)
+        [[ "$g" != "performance" ]] && bad=1
+    done
+    if [[ $bad -eq 1 ]]; then
+        echo -e "${RED}ERROR: --pin requires ALL CPUs on the 'performance' governor.${NC}" >&2
+        echo -e "${RED}       Current: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null).${NC}" >&2
+        echo -e "${RED}       Fix with: sudo cpupower frequency-set -g performance${NC}" >&2
+        echo -e "${RED}       (or run scripts/ec2/bootstrap.sh on this instance). Aborting.${NC}" >&2
+        exit 1
+    fi
+    echo -e "${GREEN}Governor OK: performance on all $NCPU CPUs${NC}"
+}
+
+# pin_prefix <nthreads> -> echoes a command prefix that binds to a CPU set.
+# Prefers numactl (keeps memory local to the same node); falls back to taskset.
+pin_prefix() {
+    local n="$1"
+    [[ $PIN -eq 0 ]] && return 0
+    local last=$((n - 1))
+    (( last >= NCPU )) && last=$((NCPU - 1))
+    if command -v numactl >/dev/null 2>&1; then
+        printf 'numactl --physcpubind=0-%s --localalloc -- ' "$last"
+    elif command -v taskset >/dev/null 2>&1; then
+        printf 'taskset -c 0-%s ' "$last"
+    fi
+}
+
+if [[ $PIN -eq 1 ]]; then
+    check_governor
+fi
+
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 RESULT_FILE="$OUTPUT_DIR/bench_${TIMESTAMP}.csv"
@@ -110,7 +180,7 @@ echo "Log:           $LOG_FILE"
 echo ""
 
 # Check if benchmark binary exists
-if [[ ! -f ./bench_allocators ]]; then
+if [[ ! -x "$BENCH_BIN" ]]; then
     echo -e "${YELLOW}Building benchmark...${NC}"
     if ! make -j$(nproc) >> "$LOG_FILE" 2>&1; then
         echo -e "${RED}Build failed. Check $LOG_FILE${NC}"
@@ -120,7 +190,7 @@ if [[ ! -f ./bench_allocators ]]; then
 fi
 
 # Write CSV header
-./bench_allocators -H > "$RESULT_FILE"
+"$BENCH_BIN" -H > "$RESULT_FILE"
 
 # Run benchmarks
 # Calculate total: single-threaded + multi-threaded runs
@@ -137,8 +207,9 @@ for allocator in "${ALLOCATORS[@]}"; do
         current_run=$((current_run + 1))
         echo -ne "  [${current_run}/${total_runs}] single-thread ($size_range)... "
 
-        if ./bench_allocators -a "$allocator" -w single -n "$OPERATIONS" \
-                -s "$size_range" -c >> "$RESULT_FILE" 2>> "$LOG_FILE"; then
+        if $(pin_prefix 1)$BENCH_BIN -a "$allocator" -w single -n "$OPERATIONS" \
+                -s "$size_range" -r "$RUNS" -W "$WARMUPS" -c \
+                >> "$RESULT_FILE" 2>> "$LOG_FILE"; then
             echo -e "${GREEN}✓${NC}"
         else
             echo -e "${RED}✗${NC}"
@@ -152,8 +223,9 @@ for allocator in "${ALLOCATORS[@]}"; do
             ops_per_thread=$((OPERATIONS / threads))
             echo -ne "  [${current_run}/${total_runs}] multi-thread (t=$threads, $size_range)... "
 
-            if ./bench_allocators -a "$allocator" -w multi -t "$threads" \
-                    -n "$ops_per_thread" -s "$size_range" -c >> "$RESULT_FILE" 2>> "$LOG_FILE"; then
+            if $(pin_prefix "$threads")$BENCH_BIN -a "$allocator" -w multi -t "$threads" \
+                    -n "$ops_per_thread" -s "$size_range" -r "$RUNS" -W "$WARMUPS" -c \
+                    >> "$RESULT_FILE" 2>> "$LOG_FILE"; then
                 echo -e "${GREEN}✓${NC}"
             else
                 echo -e "${RED}✗${NC}"

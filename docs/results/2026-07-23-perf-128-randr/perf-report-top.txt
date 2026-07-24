@@ -1,0 +1,40 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 482K of event 'cycles'
+# Event count (approx.): 1507474854181
+#
+# Children      Self  Command          Shared Object         Symbol                                        
+# ........  ........  ...............  ....................  ..............................................
+#
+    99.84%     0.29%  bench_contentio  bench_contention      [.] mt_worker_thread
+    99.83%     0.00%  bench_contentio  libc.so.6             [.] __clone3 (inlined)
+    99.82%     0.00%  bench_contentio  libc.so.6             [.] start_thread
+    95.50%     0.02%  bench_contentio  [kernel.kallsyms]     [k] entry_SYSCALL_64_after_hwframe
+    95.48%     0.05%  bench_contentio  [kernel.kallsyms]     [k] do_syscall_64
+    95.35%     0.02%  bench_contentio  [kernel.kallsyms]     [k] __x64_sys_futex
+    95.32%     0.01%  bench_contentio  [kernel.kallsyms]     [k] do_futex
+    80.42%     0.58%  bench_contentio  [kernel.kallsyms]     [k] _raw_spin_lock
+    79.84%    79.81%  bench_contentio  [kernel.kallsyms]     [k] native_queued_spin_lock_slowpath
+    51.97%     0.00%  bench_contentio  libc.so.6             [.] ___pthread_mutex_lock (inlined)
+    50.81%     0.01%  bench_contentio  bench_contention      [.] umem_alloc_wrapper
+    50.81%     0.03%  bench_contentio  libumem.so.0.0.0      [.] _umem_alloc
+    50.79%     0.42%  bench_contentio  libumem.so.0.0.0      [.] _umem_cache_alloc
+    50.72%     0.67%  bench_contentio  libc.so.6             [.] __GI___lll_lock_wait
+    49.86%     0.01%  bench_contentio  [kernel.kallsyms]     [k] futex_wait
+    49.84%     0.04%  bench_contentio  [kernel.kallsyms]     [k] __futex_wait
+    49.11%     0.45%  bench_contentio  [kernel.kallsyms]     [k] futex_wait_setup
+    46.40%     0.81%  bench_contentio  libc.so.6             [.] __GI___pthread_mutex_unlock_usercnt
+    45.61%     0.06%  bench_contentio  libc.so.6             [.] __GI___lll_lock_wake
+    45.45%     0.62%  bench_contentio  [kernel.kallsyms]     [k] futex_wake
+    25.95%     0.19%  bench_contentio  libumem.so.0.0.0      [.] _umem_cache_free
+     6.85%     1.03%  bench_contentio  [kernel.kallsyms]     [k] futex_hash
+     5.70%     5.69%  bench_contentio  [kernel.kallsyms]     [k] futex_ref_get
+     4.26%     4.25%  bench_contentio  [kernel.kallsyms]     [k] futex_hash_put
+     1.26%     1.26%  bench_contentio  libc.so.6             [.] pthread_mutex_lock@@GLIBC_2.2.5
+     0.72%     0.72%  bench_contentio  [kernel.kallsyms]     [k] futex_q_lock
+     0.63%     0.05%  bench_contentio  [kernel.kallsyms]     [k] futex_do_wait
+     0.58%     0.01%  bench_contentio  [kernel.kallsyms]     [k] schedule
+     0.57%     0.04%  bench_contentio  [kernel.kallsyms]     [k] __schedule

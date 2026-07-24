@@ -285,46 +285,71 @@ APIs may change.
 
 ---
 
-## Performance (relative to glibc on Linux x86_64)
+## Performance (relative to glibc on Linux)
 
-| Workload | Single-thread | 8 threads |
+Measured with the stabilized `test/bench/` harness (CPU-pinned, warm-up
+discarded, median of 5, coefficient-of-variation reported) on tuned EC2
+metal instances. Full data + provenance:
+[`docs/results/2026-07-23-baseline.md`](docs/results/2026-07-23-baseline.md)
+and [`docs/results/2026-07-23-d2-fix-validation.md`](docs/results/2026-07-23-d2-fix-validation.md).
+
+**x86_64** (`c7i.metal-48xl`, 192 vCPU, performance governor):
+
+| Workload | umem vs glibc | Notes |
 |---|---|---|
-| Small alloc / free | 85–93% | 85–90% |
-| Object cache | 100–120% | 110–150% |
-| Mixed sizes | 90–95% | 95–105% |
+| Single-thread (16–64 B) | ~1.2× throughput | p50 ~21 ns vs ~16 ns (glibc) |
+| `multi`, 8 threads | 33.8 Mops/s | scales past 4 threads after the 2.1.0 PTC fix; p999 sub-µs |
+| `multi`, 192 threads | 320 Mops/s | p999 ~299 ns (was 1.83 ms pre-fix) |
+| `prodcons`, 4 threads | ~245% of glibc | ~10× lower p99 (cross-thread handoff) |
 
-Measured on AMD Ryzen 9 with `test/bench/bench_main`.  Numbers vary
-substantially with workload; reproduce with your own.
+**aarch64** (`c8g.metal-48xl` Graviton4, 192 vCPU): runs correctly as of
+2.1.0 (2.0.0 SIGSEGV'd). A post-fix authoritative scaling table is not yet
+published — the baseline sweep captured aarch64 before the rseq fix landed.
+
+Numbers vary substantially with workload and hardware; reproduce with the
+harness on your own target rather than trusting a single table.
 
 ---
 
 ## Debugging
 
 libumem ships runtime introspection equivalent to Solaris `mdb`'s
-`::findleaks`, `::umem_log`, and friends.  Three front-ends:
+`::findleaks`, `::umem_log`, and friends, via **two complementary tools**:
+
+- **`umem(1)`** — gdb/ptrace-driven, point-in-time. Works against a live
+  pid, a **core dump**, or an offline `.ums` snapshot; emits text or JSON.
+  Non-invasive (no in-process thread). Best for CI, post-mortem, and
+  scripted leak-finding.
+- **`umemctl`** — an opt-in in-process channel (`--enable-introspect` +
+  `UMEM_OPTIONS=introspect=1`) for the live/interactive things a ptrace
+  snapshot cannot do: **streaming** event logs (`logtail`), a live TUI
+  (`monitor`), and `record` + **break-before-a-leaked-allocation**
+  (stop the allocating thread so a debugger catches the exact stack).
+  Zero hot-path cost when off. See [`docs/UMEMCTL.md`](docs/UMEMCTL.md).
 
 ```bash
-# 1. Standalone CLI
+# umem(1): snapshot / core / CI leak-finding
 umem --pid $(pgrep myapp) findleaks
 umem --pid $(pgrep myapp) findleaks -f json | jq .
 umem --pid $(pgrep myapp) status
-umem --pid $(pgrep myapp) whatis 0x7f4f4a032000
 umem --core core.12345 --exe ./myapp findleaks
-umem --pid $(pgrep myapp) snapshot /tmp/state.ums
 umem --dump /tmp/state.ums findleaks    # offline; no live process
 
-# 2. GDB
+# umemctl: live streaming + interactive break-on-leak
+#   (built with --enable-introspect; target run with UMEM_OPTIONS=introspect=1)
+umemctl $(pgrep myapp) logtail                 # stream alloc/slab/reap events
+umemctl $(pgrep myapp) monitor                 # live TUI
+umemctl $(pgrep myapp) record --learn-leaks leaks.set   # phase 1
+umemctl $(pgrep myapp) break leaked --set leaks.set     # phase 2, then attach gdb
+
+# GDB / LLDB (same umem(1) commands, in-debugger)
 (gdb) source /usr/share/umem/debugger/gdb/umem_gdb.py
 (gdb) umem findleaks
 (gdb) umem break alloc -s 1048576           # break on >=1 MB allocs
-(gdb) umem break error                      # break on detected corruption
-
-# 3. LLDB (same commands)
-(lldb) command script import /usr/share/umem/debugger/lldb/umem_lldb.py
-(lldb) umem findleaks
 ```
 
-Detailed walkthrough: [tools/DEBUGGING.md](tools/DEBUGGING.md).
+Detailed walkthrough: [tools/DEBUGGING.md](tools/DEBUGGING.md) and
+[docs/UMEMCTL.md](docs/UMEMCTL.md).
 Man pages: `umem(1)`, `umem_inspect(3)`, `umem_debugging(7)`.
 
 ---

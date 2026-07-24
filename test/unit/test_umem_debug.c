@@ -10,9 +10,62 @@
 #include "../../umem_impl.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
+#include <spawn.h>
 #include <sys/wait.h>
 #include <signal.h>
+
+extern char **environ;
+
+#ifndef UMEM_ENV_HELPER
+#error "UMEM_ENV_HELPER path must be defined by the build (see Makefile.am)"
+#endif
+
+/*
+ * Spawn the exec helper in a FRESH process with UMEM_DEBUG=<dbg> and
+ * UMEM_ABORT=1 set, running the given detection probe (overflow /
+ * double_free / uaf).  Returns the raw wait status.
+ *
+ * A working detector makes the child abort (SIGABRT) or exit non-zero.
+ * If the child exits 0 the corruption went UNDETECTED (the probe survived).
+ */
+static int run_detection(const char *dbg, const char *probe) {
+    size_t n = 0;
+    for (char **e = environ; *e; e++) n++;
+    char **envp = calloc(n + 3, sizeof(char *));
+    if (envp == NULL) return -1;
+    size_t idx = 0;
+    /* Copy environ, dropping any pre-existing UMEM_DEBUG / UMEM_ABORT. */
+    for (char **e = environ; *e; e++) {
+        if (strncmp(*e, "UMEM_DEBUG=", 11) == 0) continue;
+        if (strncmp(*e, "UMEM_ABORT=", 11) == 0) continue;
+        envp[idx++] = *e;
+    }
+    char dbgbuf[128];
+    snprintf(dbgbuf, sizeof dbgbuf, "UMEM_DEBUG=%s", dbg);
+    envp[idx++] = dbgbuf;
+    envp[idx++] = (char *)"UMEM_ABORT=1";
+    envp[idx] = NULL;
+
+    char *args[] = { (char *)UMEM_ENV_HELPER, (char *)probe, NULL };
+    pid_t pid;
+    int rc = posix_spawn(&pid, UMEM_ENV_HELPER, NULL, NULL, args, envp);
+    free(envp);
+    if (rc != 0) return -1;
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    return status;
+}
+
+/* True if the child aborted (signal) or exited non-zero => detection fired. */
+static int detection_fired(int status) {
+    if (status < 0) return 0;
+    if (WIFSIGNALED(status)) return 1;
+    if (WIFEXITED(status) && WEXITSTATUS(status) != 0) return 1;
+    return 0;  /* exited 0 => corruption survived undetected */
+}
+
 
 /* Test: UMF_AUDIT enables audit tracking */
 static MunitResult test_audit_enabled(const MunitParameter params[], void* data) {
@@ -161,20 +214,30 @@ static MunitResult test_verbose(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
-/* Test: REDZONE detection (subprocess wrapper - will abort)
- * Skipped: fork+setenv after umem_init has no effect; needs exec helper. */
+/* Test: REDZONE detection.  Overflow past a guarded buffer must abort or
+ * exit non-zero when freed under UMEM_DEBUG=guards + UMEM_ABORT=1.
+ *
+ * EXPECTED RED (WS-A A3): the review found overflow is NOT detected in a
+ * fresh process.  This RED is the reproduction handed to Workstream B. */
 static MunitResult test_redzone_detection(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    return MUNIT_SKIP;
+    int status = run_detection("guards", "overflow");
+    munit_assert_true(detection_fired(status));
+    return MUNIT_OK;
 }
 
-/* Test: FIREWALL detection (subprocess wrapper - will segfault)
- * Skipped: fork+setenv after umem_init has no effect; needs exec helper. */
+/* Test: FIREWALL detection.  With UMEM_DEBUG=firewall=<N>, writing past a
+ * buffer >= N lands on an unmapped page and must fault (SIGSEGV).
+ * Firewall requires a byte threshold (=minbytes) and places the buffer flush
+ * against the guard page, so the probe allocates a page-sized buffer and
+ * overruns it. */
 static MunitResult test_firewall_detection(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    return MUNIT_SKIP;
+    int status = run_detection("firewall=4096", "firewall_overflow");
+    munit_assert_true(detection_fired(status));
+    return MUNIT_OK;
 }
 
 /* Test: UMF_LITE mode (lightweight debugging) */
@@ -210,47 +273,40 @@ static MunitResult test_lite_mode(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
-/* Test: Audit with stack traces */
+/* Test: Audit with stack traces.  Runs in a FRESH process via the exec
+ * helper so UMEM_DEBUG=audit (read once at init) actually takes effect --
+ * setenv() in this already-initialized process is too late.  The helper
+ * allocates a spread of sizes under audit and must succeed (exit 0). */
 static MunitResult test_audit_stack_traces(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-
-    setenv("UMEM_DEBUG", "audit", 1);
-
-    /* With audit, allocations should be tracked with stack traces */
-    /* Allocate and free multiple buffers to populate the audit log */
-    void *ptrs[10];
-    for (int i = 0; i < 10; i++) {
-        ptrs[i] = umem_alloc(64 + i * 8, UMEM_DEFAULT);
-        munit_assert_not_null(ptrs[i]);
-    }
-
-    for (int i = 0; i < 10; i++) {
-        umem_free(ptrs[i], 64 + i * 8);
-    }
-
-    /* The audit trail is internal, but we verify no crashes occurred */
-    /* and that the auditing mechanism is active */
-
-    unsetenv("UMEM_DEBUG");
-
+    int status = run_detection("audit", "audit_sizes");
+    munit_assert_true(status >= 0);
+    munit_assert_true(WIFEXITED(status));
+    munit_assert_int(WEXITSTATUS(status), ==, 0);
     return MUNIT_OK;
 }
 
-/* Test: Double free detection (subprocess wrapper - may abort)
- * Skipped: fork+setenv after umem_init has no effect; needs exec helper. */
+/* Test: Double free detection.  Freeing the same buffer twice under
+ * UMEM_DEBUG=guards + UMEM_ABORT=1 must abort / exit non-zero.
+ * EXPECTED RED pending WS-B. */
 static MunitResult test_double_free_detection(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    return MUNIT_SKIP;
+    int status = run_detection("guards", "double_free");
+    munit_assert_true(detection_fired(status));
+    return MUNIT_OK;
 }
 
-/* Test: Buffer corruption detection
- * Skipped: fork+setenv after umem_init has no effect; needs exec helper. */
+/* Test: Buffer corruption / use-after-free detection.  Touching freed
+ * memory (DEADBEEF verify) then churning must abort under default debug.
+ * EXPECTED RED pending WS-B. */
 static MunitResult test_corruption_detection(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    return MUNIT_SKIP;
+    int status = run_detection("default", "uaf");
+    munit_assert_true(detection_fired(status));
+    return MUNIT_OK;
 }
 
 /* Test: Uninitialized pattern verification */

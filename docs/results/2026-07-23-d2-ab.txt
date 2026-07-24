@@ -1,0 +1,45 @@
+# D2 A/B: baseline(HEAD~1) vs fixed(HEAD)  vcpu=192  2026-07-23T19:36:13Z
+
+## multi 160:160 (same-size-class, the D2 target)
+ threads=4
+  base  multi            mops=    1.699  p50=   413 p99=    7766 p999=    14108
+  fixed multi            mops=   18.967  p50=    19 p99=      20 p999=       27
+ threads=8
+  base  multi            mops=    1.171  p50=  2027 p99=   17773 p999=    27331
+  fixed multi            mops=   33.826  p50=    19 p99=      20 p999=       22
+ threads=32
+  base  multi            mops=    1.531  p50=  3733 p99=   51095 p999=    74888
+  fixed multi            mops=  114.920  p50=    20 p99=      22 p999=       32
+ threads=128
+  base  multi            mops=    0.959  p50= 14838 p99=  361941 p999=   537709
+  fixed multi            mops=  224.246  p50=    22 p99=     122 p999=      245
+ threads=192
+  base  multi            mops=    0.887  p50= 31631 p99=  577023 p999=   851307
+  fixed multi            mops=  320.914  p50=    27 p99=      38 p999=      299
+
+## multi 64:256
+ threads=8
+  base  multi            mops=    9.103  p50=   102 p99=    4918 p999=     9238
+  fixed multi            mops=   41.380  p50=    20 p99=      64 p999=      154
+ threads=128
+  base  multi            mops=    6.529  p50=   164 p99=  119300 p999=   221289
+  fixed multi            mops=  218.021  p50=    23 p99=     131 p999=      382
+
+## non-regression: prodcons 64:256
+ threads=4
+  base  prodcons         mops=    8.654  p50=   104 p99=     323 p999=     8021
+  fixed prodcons         mops=    7.060  p50=   160 p99=     623 p999=     8107
+ threads=8
+  base  prodcons         mops=    9.115  p50=   109 p99=     327 p999=     7522
+  fixed prodcons         mops=   10.041  p50=   102 p99=     615 p999=     7539
+ threads=32
+  base  prodcons         mops=    5.409  p50=   118 p99=     392 p999=     7008
+  fixed prodcons         mops=    5.450  p50=    98 p99=     600 p999=     5590
+
+## non-regression: single / frag (1 thread, 64:256)
+  base  single           mops=    6.317  p50=    28 p99=      39 p999=       41
+  fixed single           mops=    5.812  p50=    21 p99=      23 p999=       24
+  base  frag             mops=    7.091  p50=    37 p99=      61 p999=      111
+  fixed frag             mops=    6.693  p50=    22 p99=     188 p999=      200
+
+A/B done -> docs/results/2026-07-23-d2-ab.txt

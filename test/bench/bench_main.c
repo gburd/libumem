@@ -19,6 +19,8 @@ static void print_usage(const char *prog) {
     printf("  -t THREADS    Thread count for multithreaded workloads (default: CPU count)\n");
     printf("  -n COUNT      Operation count (default: 1000000)\n");
     printf("  -s MIN:MAX    Size range in bytes (default: 16:1024)\n");
+    printf("  -r RUNS       Measured runs; report median + CoV (default: 1)\n");
+    printf("  -W WARMUPS    Warm-up runs to discard before measuring (default: 0)\n");
     printf("  -c            Output CSV format\n");
     printf("  -H            Print CSV header only and exit\n");
     printf("  --compare     Compare results against historical data\n");
@@ -35,6 +37,8 @@ int main(int argc, char *argv[]) {
     uint64_t operation_count = 1000000;
     size_t min_size = 16;
     size_t max_size = 1024;
+    int runs = 1;
+    int warmups = 0;
     bool csv_output = false;
     bool header_only = false;
     bool do_compare = false;
@@ -56,7 +60,7 @@ int main(int argc, char *argv[]) {
 
     int opt;
     optind = 1;
-    while ((opt = getopt(argc, argv, "a:w:t:n:s:cHh?")) != -1) {
+    while ((opt = getopt(argc, argv, "a:w:t:n:s:r:W:cHh?")) != -1) {
         switch (opt) {
         case 'a':
             allocator_name = optarg;
@@ -70,6 +74,14 @@ int main(int argc, char *argv[]) {
             break;
         case 'n':
             operation_count = strtoull(optarg, NULL, 10);
+            break;
+        case 'r':
+            runs = atoi(optarg);
+            if (runs < 1) runs = 1;
+            break;
+        case 'W':
+            warmups = atoi(optarg);
+            if (warmups < 0) warmups = 0;
             break;
         case 's': {
             char *colon = strchr(optarg, ':');
@@ -196,7 +208,7 @@ int main(int argc, char *argv[]) {
             }
 
             bench_stats_t stats;
-            if (bench_run(alloc, workload, &stats) == 0) {
+            if (bench_run_n(alloc, workload, &stats, warmups, runs) == 0) {
                 if (csv_output) {
                     bench_print_csv_row(&stats);
                 } else {

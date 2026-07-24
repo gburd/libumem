@@ -212,8 +212,10 @@ test_profile_dump_format(const MunitParameter params[], void *data)
 	rc = umem_profile_load(TEST_PROFILE_PATH);
 	munit_assert_int(rc, ==, 0);
 
-	char dump_path[] = "/tmp/claude-1000/test_profile_dump.txt";
-	FILE *fp = fopen(dump_path, "w");
+	char dump_path[] = "/tmp/umem_profile_dump_XXXXXX";
+	int dfd = mkstemp(dump_path);
+	munit_assert_int(dfd, >=, 0);
+	FILE *fp = fdopen(dfd, "w");
 	munit_assert_not_null(fp);
 	umem_profile_dump_text(fp);
 	fclose(fp);
@@ -272,7 +274,7 @@ test_profile_load_missing(const MunitParameter params[], void *data)
 	(void)params;
 	(void)data;
 
-	int rc = umem_profile_load("/tmp/claude-1000/nonexistent.ump");
+	int rc = umem_profile_load("/tmp/umem_nonexistent_profile.ump");
 	munit_assert_int(rc, ==, -1);
 
 	return MUNIT_OK;

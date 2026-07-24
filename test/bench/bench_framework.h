@@ -62,7 +62,18 @@ typedef struct bench_stats {
 
     /* CPU overhead */
     bench_cpu_usage_t cpu_usage;
+
+    /* Stability across repeated runs (set by bench_run_n).
+     * ops_cov = stddev/mean of ops_per_second over the measured runs.
+     * runs_measured = number of runs kept (warm-up runs excluded).
+     * unstable = 1 if ops_cov > BENCH_UNSTABLE_COV (do not gate on it). */
+    double ops_cov;
+    int runs_measured;
+    int unstable;
 } bench_stats_t;
+
+/* A run set with CoV above this fraction is flagged unstable. */
+#define BENCH_UNSTABLE_COV 0.10
 
 /* Workload function signature */
 typedef void (*workload_fn)(allocator_ops_t *ops, bench_stats_t *stats, void *config);
@@ -94,8 +105,14 @@ size_t bench_get_vmrss_bytes(void);
 /* CPU usage measurement */
 bench_cpu_usage_t bench_get_cpu_usage(void);
 
-/* Run a single benchmark */
+/* Run a single benchmark (one run, no warm-up discard). */
 int bench_run(allocator_ops_t *ops, workload_config_t *workload, bench_stats_t *stats);
+
+/* Run a benchmark warmups+runs times: discard the warm-up runs, keep the
+ * median (by ops_per_second) run's full stats, and fill ops_cov/runs_measured/
+ * unstable across the kept runs. runs<=1 && warmups<=0 behaves like bench_run. */
+int bench_run_n(allocator_ops_t *ops, workload_config_t *workload,
+                bench_stats_t *stats, int warmups, int runs);
 
 /* Print results in human-readable format */
 void bench_print_stats(const bench_stats_t *stats);

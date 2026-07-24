@@ -6,6 +6,15 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  umem_ptc_test umem_ptc_fork_test umem_ptc_bench \
 		  test/test_main test/test_debug \
 		  test/test_inspect test/test_inspect_live \
+		  test/unit/umem_env_helper \
+		  test/unit/repro_cpu_node_oob \
+		  test/property/prop_ownership \
+		  test/property/prop_gc \
+		  test/property/prop_profile \
+		  test/property/prop_palloc \
+		  test/bench/bench_contention \
+		  test/integration/introspect_churn \
+		  tools/umemctl \
 		  test/property/prop_alloc_free2 \
 		  test/property/prop_cache \
 		  test/property/prop_fragmentation \
@@ -119,6 +128,8 @@ libumem_la_SOURCES = init_lib.c \
 			umem_audit.c \
 			umem_inspect.c \
 			umem_inspect.h \
+			umem_introspect.c \
+			umem_introspect.h \
 			umem_hooks.c \
 			umem_hooks.h \
 			umem_ptc.c \
@@ -238,7 +249,57 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_profile.c
 test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread -lm
-test_test_main_CPPFLAGS = -I$(srcdir)/test
+test_test_main_CPPFLAGS = -I$(srcdir)/test \
+	-DUMEM_ENV_HELPER='"$(abs_builddir)/test/unit/.libs/umem_env_helper"'
+
+# --- v2.1.0 additive test/tool targets (exec-helper harness, property
+# --- tests, benchmark contention driver, umemctl live-inspection CLI) ---
+test_unit_umem_env_helper_SOURCES = test/unit/umem_env_helper.c
+test_unit_umem_env_helper_LDADD = libumem.la
+test_unit_umem_env_helper_LDFLAGS = -pthread -lm
+test_unit_umem_env_helper_CPPFLAGS = -I$(srcdir)
+
+test_unit_repro_cpu_node_oob_SOURCES = test/unit/repro_cpu_node_oob.c
+test_unit_repro_cpu_node_oob_LDADD = libumem.la
+test_unit_repro_cpu_node_oob_LDFLAGS = -pthread
+test_unit_repro_cpu_node_oob_CPPFLAGS = -I$(srcdir)
+
+test_property_prop_ownership_SOURCES = test/property/prop_ownership.c test/qc.c
+test_property_prop_ownership_LDADD = libumem.la
+test_property_prop_ownership_LDFLAGS = -pthread -lm
+test_property_prop_ownership_CPPFLAGS = -I$(srcdir)
+
+test_property_prop_gc_SOURCES = test/property/prop_gc.c test/qc.c
+test_property_prop_gc_LDADD = libumem.la
+test_property_prop_gc_LDFLAGS = -pthread -lm
+test_property_prop_gc_CPPFLAGS = -I$(srcdir)
+
+test_property_prop_profile_SOURCES = test/property/prop_profile.c test/qc.c
+test_property_prop_profile_LDADD = libumem.la
+test_property_prop_profile_LDFLAGS = -pthread -lm
+test_property_prop_profile_CPPFLAGS = -I$(srcdir)
+
+test_property_prop_palloc_SOURCES = test/property/prop_palloc.c test/qc.c
+test_property_prop_palloc_LDADD = libumem.la
+test_property_prop_palloc_LDFLAGS = -pthread -lm -lrt
+test_property_prop_palloc_CPPFLAGS = -I$(srcdir)
+
+test_bench_bench_contention_SOURCES = test/bench/bench_contention.c \
+				test/bench/bench_framework.c \
+				test/bench/allocators.c test/tdigest.c
+test_bench_bench_contention_LDADD = libumem.la
+test_bench_bench_contention_LDFLAGS = -pthread -lm
+test_bench_bench_contention_CPPFLAGS = -I$(srcdir)
+
+# introspect_churn: long-running workload to drive umemctl (G1-G4 tests).
+test_integration_introspect_churn_SOURCES = test/integration/introspect_churn.c
+test_integration_introspect_churn_LDADD = libumem.la
+test_integration_introspect_churn_LDFLAGS = -pthread
+test_integration_introspect_churn_CPPFLAGS = -I$(srcdir)
+
+# umemctl: live-process inspection CLI. Pure AF_UNIX socket client, no
+# libumem linkage; connects to a process running introspect=1.
+tools_umemctl_SOURCES = tools/umemctl.c
 
 test_test_debug_SOURCES = test/test_debug.c
 test_test_debug_LDADD = libumem.la

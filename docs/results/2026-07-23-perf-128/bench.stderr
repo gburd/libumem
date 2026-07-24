@@ -1,0 +1,4 @@
+[ perf record: Woken up 43625 times to write data ]
+Warning:
+4 out of order events recorded.
+[ perf record: Captured and wrote 17052.104 MB docs/results/2026-07-23-perf-128/perf.data (2100751 samples) ]

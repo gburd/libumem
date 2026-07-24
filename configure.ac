@@ -1,4 +1,4 @@
-AC_INIT([umem], [2.0.0], [], [umem])
+AC_INIT([umem], [2.1.0], [], [umem])
 AM_INIT_AUTOMAKE([dist-bzip2])
 AC_CONFIG_MACRO_DIRS([m4])
 
@@ -340,6 +340,22 @@ if test "x$recursion_guard" = "xyes"; then
     AC_DEFINE([UMEM_ENABLE_RECURSION_GUARD], [1], [Enable malloc recursion guard])
 else
     AC_MSG_NOTICE([Recursion guard disabled for maximum performance])
+fi
+
+# In-process introspection channel (umemctl server side).
+# Opt-in at both compile time (this flag) and runtime (UMEM_OPTIONS=introspect=1).
+# The break-before-return hook only exists in _umem_alloc when this is enabled,
+# so the default production hot path is provably identical to a build without it.
+AC_ARG_ENABLE([introspect],
+    [AS_HELP_STRING([--enable-introspect],
+        [Enable the umemctl live-process introspection channel (opt-in, off by default; zero hot-path cost unless a break predicate is armed at runtime)])],
+    [introspect=$enableval], [introspect=no])
+
+AM_CONDITIONAL([ENABLE_INTROSPECT], [test "x$introspect" = "xyes"])
+
+if test "x$introspect" = "xyes"; then
+    AC_MSG_NOTICE([Introspection channel enabled (umemctl)])
+    AC_DEFINE([UMEM_INTROSPECT], [1], [Enable umemctl introspection channel])
 fi
 
 # Per-CPU caching support (experimental)

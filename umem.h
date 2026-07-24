@@ -32,6 +32,7 @@
 #include <sys/types.h>
 #include <sys/vmem.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -80,6 +81,14 @@ extern void *umem_cache_alloc(umem_cache_t *, int);
 extern void umem_cache_free(umem_cache_t *, void *);
 
 extern void umem_reap(void);
+
+/*
+ * umem_dump_contention - dump per-cache contention counters (D1 diagnostics).
+ * Read-only observability hook: prints alloc ops, magazine reloads, depot
+ * local/remote/cross-node/contention counts, and aggregated per-CPU rseq
+ * alloc/free/restart counts.  fp==NULL dumps to stderr.
+ */
+extern void umem_dump_contention(FILE *);
 
 /*
  * Small-Buffer Optimization (SBO) — thread-local bump allocator

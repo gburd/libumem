@@ -45,7 +45,65 @@
 
 #include <stdio.h>
 
-#if defined(__aarch64__) || defined(__arm64__)
+#if defined(EC_UMEM_DUMMY_PCSTACK) && (defined(__amd64) || defined(__x86_64__) || defined(__i386))
+/*
+ * Linux x86 (32/64-bit) stack unwinding.
+ *
+ * The Solaris getpcstack() below relies on stack_getbounds()/thr_stksegment(),
+ * which do not exist on Linux, so those platforms otherwise fall back to a
+ * dummy that returns 0 -- leaving UMEM_DEBUG=audit records with empty stacks.
+ * We instead walk the frame-pointer chain directly. This requires the library
+ * to be built with -fno-omit-frame-pointer (audit is a debug build anyway).
+ *
+ * On x86 the frame layout at [fp] is { saved_rbp, return_addr }, identical in
+ * shape to the aarch64 path above.
+ */
+#define UMEM_HAVE_REAL_PCSTACK 1
+
+/*ARGSUSED*/
+int
+getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
+{
+	uintptr_t *fp = (uintptr_t *)__builtin_frame_address(0);
+	uintptr_t *nextfp;
+	uintptr_t fp_ceiling;
+	int depth = 0;
+
+	if (check_sigthread)
+		return (0);		/* not safe from a signal handler */
+
+	/*
+	 * Bound the frame-pointer walk to a plausible span above the
+	 * starting frame.  A frame pointer that has wandered past the top
+	 * of the stack (e.g. at thread teardown, where the outermost saved
+	 * fp can be garbage) would otherwise dereference an unmapped high
+	 * address and SEGV.  Stacks grow down, so every valid caller frame
+	 * is at a higher address than ours, within one stack's worth.
+	 */
+	fp_ceiling = (uintptr_t)fp + (16 * 1024 * 1024);
+
+	while (depth < pcstack_limit && fp != NULL) {
+		/* frame pointers are pointer-aligned */
+		if ((uintptr_t)fp & (sizeof (uintptr_t) - 1))
+			break;
+
+		/* Do not dereference a frame past the plausible stack top */
+		if ((uintptr_t)fp >= fp_ceiling)
+			break;
+
+		nextfp = (uintptr_t *)(fp[0]);	/* saved frame pointer */
+		pcstack[depth++] = fp[1];	/* return address */
+
+		/* stack grows down: a valid caller frame is at a higher address */
+		if (nextfp <= fp)
+			break;
+		fp = nextfp;
+	}
+
+	return (depth);
+}
+
+#elif defined(__aarch64__) || defined(__arm64__)
 /*
  * ARM64 (aarch64) stack unwinding
  *
@@ -59,6 +117,7 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 {
 	uintptr_t *fp;
 	uintptr_t *nextfp;
+	uintptr_t fp_ceiling;
 	int depth = 0;
 
 	if (check_sigthread) {
@@ -72,10 +131,22 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 		: "=r" (fp)
 	);
 
+	/*
+	 * Bound the walk to a plausible span above the starting frame;
+	 * a frame pointer past the top of the stack (garbage at thread
+	 * teardown) would otherwise SEGV on dereference.
+	 */
+	fp_ceiling = (uintptr_t)fp + (16 * 1024 * 1024);
+
 	/* Walk the frame pointer chain */
 	while (depth < pcstack_limit && fp != NULL) {
 		/* Validate frame pointer alignment (16-byte on ARM64) */
 		if ((uintptr_t)fp & 0xf) {
+			break;
+		}
+
+		/* Do not dereference a frame past the plausible stack top */
+		if ((uintptr_t)fp >= fp_ceiling) {
 			break;
 		}
 
@@ -127,7 +198,8 @@ extern void flush_windows(void);
 #error needs update for new architecture
 #endif
 
-#if !(defined(__aarch64__) || defined(__arm64__))
+#if !defined(UMEM_HAVE_REAL_PCSTACK) && \
+    !(defined(__aarch64__) || defined(__arm64__))
 /*
  * Get a pc-only stacktrace.  Used for kmem_alloc() buffer ownership tracking.
  * Returns MIN(current stack depth, pcstack_limit).
@@ -144,25 +216,20 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_signal)
 		return (0);
 #if defined(HAVE_EXECINFO_H) || defined(__linux__) || defined(__FreeBSD__) || \
     defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+	/*
+	 * Fallback for arches without a dedicated frame-pointer walk above
+	 * (x86 and aarch64 have their own UMEM_HAVE_REAL_PCSTACK paths).
+	 * Uses backtrace(3) with dlopen-recursion guards.
+	 */
 	{
 		extern int backtrace(void **, int);
 		/*
-		 * Re-entry guard.  backtrace(3) lazily dlopens libgcc_s
-		 * the first time it is called per process; the dlopen
-		 * path itself calls malloc, which (when libumem is
-		 * intercepting via libumem_malloc.so) re-enters the
-		 * allocator and may call back into getpcstack.  We avoid
-		 * the recursion two ways:
-		 *
-		 *  1. A thread-local guard short-circuits any nested
-		 *     call to getpcstack while we are inside backtrace().
-		 *
-		 *  2. A process-wide "warmed" flag: the first invocation
-		 *     dlopens libgcc_s, which is dangerous when umem is
-		 *     the malloc.  Until backtrace() has been warmed once
-		 *     successfully via a non-allocator code path, we
-		 *     return zero rather than risk the dlopen recursion.
-		 *     umem_stacktrace_init() warms it explicitly.
+		 * backtrace(3) lazily dlopens libgcc_s on first use; the
+		 * dlopen path calls malloc, which (when libumem interposes)
+		 * re-enters the allocator and back into getpcstack.  Guard
+		 * with a TLS re-entry flag, a process-wide "warmed" flag
+		 * (set by umem_stacktrace_init via a non-allocator path),
+		 * and an interposing flag.
 		 */
 		static __thread int in_backtrace = 0;
 		extern int umem_backtrace_warmed;
@@ -194,6 +261,7 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_signal)
 	}
 #else
 	(void) pcstack;
+	(void) pcstack_limit;
 	return (0);
 #endif
 #else

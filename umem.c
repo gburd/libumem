@@ -422,6 +422,7 @@
 #include "umem_simd.h"
 #include "umem_stacktrace.h"
 #include "umem_profile.h"
+#include "umem_introspect.h"
 
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
@@ -564,6 +565,19 @@ uint32_t umem_max_ncpus;        /* # of CPU caches. */
 uint32_t umem_stack_depth = 15; /* # stack frames in a bufctl_audit */
 uint32_t umem_reap_interval = 10; /* max reaping rate (seconds) */
 uint_t umem_depot_contention = 2; /* max failed trylocks per real interval */
+/*
+ * Max nearby per-CPU depot stripes scanned in the NON-BLOCKING (trylock)
+ * refill path before giving up to the blocking depot/slab path. The depot
+ * has one stripe per possible CPU (up to umem_max_ncpus, e.g. 512); scanning
+ * them all on every trylock miss is O(ncpus) churn that cripples
+ * single-thread hold-heavy workloads (frag) whose depot is empty. Bounding
+ * only the trylock scan keeps the blocking umem_depot_alloc cross-CPU steal
+ * intact for cross-thread handoff (prodcons).
+ * ponytail: fixed bound, revisit if a trylock-only workload proves it needs
+ * wider stealing.
+ */
+int umem_depot_steal_max = 8;
+#define UMEM_DEPOT_STEAL_MAX umem_depot_steal_max
 uint_t umem_magazine_tuning = 0; /* magazine size auto-tuning (0=off, 1=on) */
 uint_t umem_abort = 1;          /* whether to abort on error */
 uint_t umem_output = 0;         /* whether to write to standard error */
@@ -653,9 +667,19 @@ __thread int cached_cpu_hint = -1;
  * Maps each depot CPU slot to its NUMA node. On non-NUMA systems
  * or when libnuma is unavailable, all entries are 0 (single node).
  * Populated during umem_init() after umem_max_ncpus is finalized.
+ *
+ * Dynamically sized to umem_max_ncpus (which is rounded up to a power of
+ * two and can exceed UMEM_MAX_DEPOT_CPUS on high-core machines).  The
+ * depot stealing loop indexes this table over [0, cache_depot_ncpus),
+ * and cache_depot_ncpus == umem_max_ncpus, so a fixed-size table would be
+ * read out of bounds on machines with more than UMEM_MAX_DEPOT_CPUS CPUs.
+ * umem_cpu_node_static is the fallback used before init / if allocation
+ * fails (single-node assumption, all zeros).
  */
 #define UMEM_MAX_DEPOT_CPUS 256
-static int umem_cpu_node[UMEM_MAX_DEPOT_CPUS];
+static int umem_cpu_node_static[UMEM_MAX_DEPOT_CPUS];
+static int *umem_cpu_node = umem_cpu_node_static;
+static uint32_t umem_cpu_node_ncpus = UMEM_MAX_DEPOT_CPUS;
 static int umem_num_nodes = 1;
 
 volatile uint32_t umem_reaping;
@@ -866,6 +890,87 @@ umem_cache_applyall(void (*func)(umem_cache_t *))
 	    cp = cp->cache_next)
 		func(cp);
 	(void) mutex_unlock(&umem_cache_lock);
+}
+
+/*
+ * umem_dump_contention - dump already-tracked contention counters (D1).
+ *
+ * Walks the cache list and prints, per active cache: depot reload counts
+ * (cache_full.ml_alloc = full-magazine reloads into a CPU, cache_empty.ml_alloc
+ * = empty-magazine reloads), depot local/remote/cross-node hits, depot
+ * trylock-fail contention count, and (when rseq is active) aggregated per-CPU
+ * rseq alloc/free/restart counts plus the summed per-CPU slab cc_alloc.
+ * These are all counters the allocator already maintains on its normal paths
+ * -- this is a read-only observability hook for benchmarks, not a new
+ * hot-path cost.  Safe to call from a benchmark after a run.
+ */
+void
+umem_dump_contention(FILE *fp)
+{
+	umem_cache_t *cp;
+
+	if (fp == NULL)
+		fp = stderr;
+
+	fprintf(fp, "# umem contention dump\n");
+#ifdef UMEM_RSEQ_AVAILABLE
+	fprintf(fp, "# rseq_enabled=%d asm_safe=%d ncpus=%d\n",
+	    umem_rseq_enabled, umem_rseq_asm_safe,
+	    umem_rseq_enabled ? umem_rseq_get_ncpus() : 0);
+#endif
+	fprintf(fp,
+	    "%-24s %14s %12s %12s %12s %12s %12s %14s %14s %12s\n",
+	    "cache", "cc_alloc", "full_reload", "empty_reld", "dep_local",
+	    "dep_remote", "dep_conten", "rseq_alloc", "rseq_free",
+	    "rseq_rstrt");
+
+	(void) mutex_lock(&umem_cache_lock);
+	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
+	    cp = cp->cache_next) {
+		uint64_t rseq_alloc = 0, rseq_free = 0, rseq_restart = 0;
+		uint64_t cc_alloc = 0;
+		uint32_t ci;
+
+		/* Sum per-CPU slab-magazine allocation counters. */
+		for (ci = 0; ci <= cp->cache_cpu_mask; ci++) {
+			umem_cpu_cache_t *tc =
+			    (umem_cpu_cache_t *)((char *)cp +
+			    umem_cpus[ci].cpu_cache_offset);
+			cc_alloc += tc->cc_alloc;
+		}
+
+#ifdef UMEM_RSEQ_AVAILABLE
+		if (cp->cache_rseq != NULL && umem_rseq_enabled) {
+			int n = umem_rseq_get_ncpus();
+			for (int i = 0; i < n; i++) {
+				umem_rseq_cache_t *rc = &cp->cache_rseq[i];
+				rseq_alloc += rc->alloc_count;
+				rseq_free += rc->free_count;
+				rseq_restart += rc->restart_count;
+			}
+		}
+#endif
+		/* Skip caches with no activity at all. */
+		if (cc_alloc == 0 && rseq_alloc == 0 &&
+		    cp->cache_full.ml_alloc == 0 && cp->cache_slab_alloc == 0)
+			continue;
+
+		fprintf(fp,
+		    "%-24s %14llu %12llu %12llu %12llu %12llu %12llu "
+		    "%14llu %14llu %12llu\n",
+		    cp->cache_name,
+		    (unsigned long long)cc_alloc,
+		    (unsigned long long)cp->cache_full.ml_alloc,
+		    (unsigned long long)cp->cache_empty.ml_alloc,
+		    (unsigned long long)cp->cache_depot_local,
+		    (unsigned long long)cp->cache_depot_remote,
+		    (unsigned long long)cp->cache_depot_contention,
+		    (unsigned long long)rseq_alloc,
+		    (unsigned long long)rseq_free,
+		    (unsigned long long)rseq_restart);
+	}
+	(void) mutex_unlock(&umem_cache_lock);
+	fflush(fp);
 }
 
 static void
@@ -2012,8 +2117,24 @@ umem_depot_alloc_trylock(umem_cache_t *cp, umem_maglist_t *mlp)
 			}
 		}
 
-		/* Scan other CPUs with trylock only */
-		for (int i = 1; i < ncpus; i++) {
+		/*
+		 * Scan a bounded set of nearby CPU stripes with trylock only.
+		 * Scanning all ncpus (up to umem_max_ncpus, e.g. 512) empty
+		 * stripes on every miss is O(ncpus) trylock/unlock churn that
+		 * dominates single-thread hold-heavy workloads whose per-CPU
+		 * depot is legitimately empty (perf showed 82% of frag CPU in
+		 * pthread_mutex_trylock scanning empties). This is only the
+		 * non-blocking PTC-refill fast path: on a miss the caller falls
+		 * through to _umem_cache_alloc -> umem_depot_alloc (blocking),
+		 * which still does the full NUMA-aware cross-CPU steal, so the
+		 * cross-thread-handoff (prodcons) case is unaffected. A freed
+		 * magazine lands on the freeing CPU's stripe, so a nearby scan
+		 * captures the common locality-steal here.
+		 * ponytail: fixed bound; widen if a trylock-only workload needs it.
+		 */
+		int scan = ncpus < UMEM_DEPOT_STEAL_MAX ?
+		    ncpus : UMEM_DEPOT_STEAL_MAX;
+		for (int i = 1; i < scan; i++) {
 			int other = (cpu + i) & (ncpus - 1);
 			mp = umem_depot_pop_trylock(&pcpu_arr[other]);
 			if (mp != NULL) {
@@ -2132,13 +2253,21 @@ static umem_magazine_t *
 umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 {
 	umem_magazine_t *mp;
+
+/*
+ * Bounds-safe CPU->node lookup.  umem_cpu_node is sized to umem_max_ncpus
+ * (== cache_depot_ncpus) at init; this guard protects the rare fallback
+ * where dynamic allocation failed and the table stayed at the static size.
+ */
+#define	UMEM_CPU_NODE(idx) \
+	(((uint32_t)(idx) < umem_cpu_node_ncpus) ? umem_cpu_node[(idx)] : 0)
 	umem_maglist_t *pcpu_arr;
 	int ncpus = cp->cache_depot_ncpus;
 	int is_full = (mlp == &cp->cache_full);
 
 	if (ncpus > 0) {
 		int cpu = get_cached_cpu_hint() & (ncpus - 1);
-		int local_node = umem_cpu_node[cpu];
+		int local_node = UMEM_CPU_NODE(cpu);
 
 		pcpu_arr = is_full ?
 		    cp->cache_depot_full : cp->cache_depot_empty;
@@ -2158,7 +2287,7 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 		/* 2. Steal from same NUMA node first */
 		for (int i = 1; i < ncpus; i++) {
 			int other = (cpu + i) & (ncpus - 1);
-			if (umem_cpu_node[other] != local_node)
+			if (UMEM_CPU_NODE(other) != local_node)
 				continue;
 			mp = umem_depot_pop(cp, &pcpu_arr[other]);
 			if (mp != NULL) {
@@ -2176,7 +2305,7 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 		/* 3. Steal from remote NUMA nodes */
 		for (int i = 1; i < ncpus; i++) {
 			int other = (cpu + i) & (ncpus - 1);
-			if (umem_cpu_node[other] == local_node)
+			if (UMEM_CPU_NODE(other) == local_node)
 				continue;
 			mp = umem_depot_pop(cp, &pcpu_arr[other]);
 			if (mp != NULL) {
@@ -2202,6 +2331,7 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 	}
 	return (mp);
 }
+#undef UMEM_CPU_NODE
 
 /*
  * Free a magazine to the depot.
@@ -3106,7 +3236,8 @@ umem_alloc_retry:
 		 */
 		{
 			int8_t bin = umem_ptc_bin_table[index];
-			if (likely(bin >= 0)) {
+			if (likely(bin >= 0) &&
+			    likely(!umem_introspect_break_armed)) {
 				umem_ptc_t *ptc = thread_ptc;
 				if (unlikely(ptc == NULL) &&
 				    !ptc_initializing) {
@@ -3219,6 +3350,10 @@ umem_alloc_retry:
 		}
 		if (buf == NULL && umem_alloc_retry(cp, umflag))
 			goto umem_alloc_retry;
+#ifdef UMEM_INTROSPECT
+		if (unlikely(umem_introspect_break_armed) && buf != NULL)
+			umem_introspect_break_check(buf, size, cp);
+#endif
 		return (buf);
 	}
 	if (size == 0)
@@ -3689,9 +3824,29 @@ umem_cache_reclaim_pages(umem_cache_t *cp)
 	umem_slab_t *sp, *next;
 	umem_slab_t *nullsp = &cp->cache_nullslab;
 	uint32_t delay = umem_reclaim_delay;
+	umem_slab_t *reclaim_list = NULL;	/* DIRTY: madvise, stay linked */
+	umem_slab_t *destroy_list = NULL;	/* CLEAN: unlinked, to destroy */
 
 	ASSERT(MUTEX_HELD(&cp->cache_lock));
 
+	/*
+	 * Single pass under the lock: decide each slab's fate and collect
+	 * the slow work (madvise / destroy) into local lists.  Previously
+	 * this loop dropped and reacquired cache_lock in the middle of the
+	 * walk, around each madvise/destroy; a concurrent allocation could
+	 * then relink or the just-freed slab could invalidate the cached
+	 * `next`, so the next iteration dereferenced freed slab metadata and
+	 * crashed (SEGV in `next = sp->slab_prev`) under heavy churn.  By
+	 * doing all list surgery under the single held lock and deferring
+	 * only the lock-free madvise/destroy to after the walk, the walk
+	 * never spans a lock drop and `next` is always valid.
+	 *
+	 * CLEAN slabs are unlinked here, so they are private to this thread
+	 * before we ever drop the lock -- safe to destroy.  DIRTY slabs
+	 * being madvised stay linked (madvise only advises their pages);
+	 * they are chained through slab_reclaim_next, a field only the
+	 * update thread touches, so leaving them linked is safe.
+	 */
 	for (sp = nullsp->slab_prev; sp != nullsp; sp = next) {
 		next = sp->slab_prev;
 
@@ -3702,9 +3857,8 @@ umem_cache_reclaim_pages(umem_cache_t *cp)
 			sp->slab_idle_time += umem_reap_interval;
 			if (sp->slab_idle_time >= delay) {
 				sp->slab_state = SLAB_RECLAIMING;
-				(void) mutex_unlock(&cp->cache_lock);
-				umem_slab_reclaim(cp, sp);
-				(void) mutex_lock(&cp->cache_lock);
+				sp->slab_reclaim_next = reclaim_list;
+				reclaim_list = sp;
 			}
 		} else if (sp->slab_state == SLAB_CLEAN) {
 			sp->slab_idle_time += umem_reap_interval;
@@ -3715,12 +3869,33 @@ umem_cache_reclaim_pages(umem_cache_t *cp)
 					cp->cache_freelist = sp->slab_next;
 				cp->cache_slab_destroy++;
 				cp->cache_buftotal -= sp->slab_chunks;
-				(void) mutex_unlock(&cp->cache_lock);
-				umem_slab_destroy(cp, sp);
-				(void) mutex_lock(&cp->cache_lock);
+				sp->slab_reclaim_next = destroy_list;
+				destroy_list = sp;
 			}
 		}
 	}
+
+	/*
+	 * Drop the lock once and do the slow work.  reclaim_list slabs are
+	 * still linked but marked SLAB_RECLAIMING (so a concurrent free
+	 * leaves them alone); destroy_list slabs are fully unlinked and
+	 * private.
+	 */
+	(void) mutex_unlock(&cp->cache_lock);
+
+	while (reclaim_list != NULL) {
+		sp = reclaim_list;
+		reclaim_list = sp->slab_reclaim_next;
+		umem_slab_reclaim(cp, sp);	/* madvise; sets SLAB_CLEAN */
+	}
+
+	while (destroy_list != NULL) {
+		sp = destroy_list;
+		destroy_list = sp->slab_reclaim_next;
+		umem_slab_destroy(cp, sp);
+	}
+
+	(void) mutex_lock(&cp->cache_lock);
 }
 
 /*
@@ -4926,9 +5101,29 @@ umem_init(void)
 	 */
 	{
 		uint32_t ncpus_map = umem_max_ncpus;
-		if (ncpus_map > UMEM_MAX_DEPOT_CPUS)
-			ncpus_map = UMEM_MAX_DEPOT_CPUS;
-		memset(umem_cpu_node, 0, sizeof (umem_cpu_node));
+
+		/*
+		 * Size the CPU->node table to umem_max_ncpus so the depot
+		 * stealing loop (which indexes [0, cache_depot_ncpus) ==
+		 * [0, umem_max_ncpus)) never reads out of bounds.  Fall back
+		 * to the fixed static table (single node) if the machine has
+		 * <= UMEM_MAX_DEPOT_CPUS CPUs or if allocation fails.
+		 */
+		if (ncpus_map > UMEM_MAX_DEPOT_CPUS) {
+			size_t nbytes = (size_t)ncpus_map * sizeof (int);
+			void *tbl = mmap(NULL, nbytes,
+			    PROT_READ | PROT_WRITE,
+			    MAP_PRIVATE | MAP_ANON, -1, 0);
+			if (tbl != MAP_FAILED) {
+				umem_cpu_node = (int *)tbl;
+				umem_cpu_node_ncpus = ncpus_map;
+			} else {
+				/* fall back: cap mapping at the static size */
+				ncpus_map = UMEM_MAX_DEPOT_CPUS;
+			}
+		}
+		memset(umem_cpu_node, 0,
+		    (size_t)umem_cpu_node_ncpus * sizeof (int));
 #ifdef HAVE_LIBNUMA
 		if (numa_available() >= 0) {
 			umem_num_nodes = numa_max_node() + 1;
@@ -5001,6 +5196,12 @@ umem_init(void)
 		else if (profile_env != NULL && profile_env[0] != '\0')
 			(void) umem_profile_init(profile_env);
 	}
+
+	/*
+	 * Start the in-process introspection channel if UMEM_OPTIONS
+	 * requested it (introspect=1). No-op when compiled out or disabled.
+	 */
+	umem_introspect_start();
 
 	/*
 	 * initialization done, ready to go

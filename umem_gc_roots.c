@@ -42,6 +42,27 @@
 #include <dlfcn.h>
 #endif
 
+/*
+ * Conservative scanning deliberately reads every word-aligned slot across
+ * a stack/register/data region, which necessarily reads past the bounds of
+ * individual objects living in that region.  Under AddressSanitizer that
+ * is reported as a stack-buffer-overflow / global-buffer-overflow even
+ * though it is intentional and safe (the region itself is mapped).  Mark
+ * the single function that performs these raw reads as not-instrumented,
+ * exactly as Boehm GC does for its scanners, so the collector is usable
+ * under ASan.  All conservative reads route through umem_gc_scan_stack
+ * (registers and data segments call it, as does the GC core's object
+ * scanner), so one annotation covers every case.
+ */
+#if defined(__has_attribute)
+#if __has_attribute(no_sanitize_address)
+#define	UMEM_GC_NO_ASAN	__attribute__((no_sanitize_address))
+#endif
+#endif
+#ifndef UMEM_GC_NO_ASAN
+#define	UMEM_GC_NO_ASAN
+#endif
+
 #ifdef __linux__
 #include <link.h>
 #include <elf.h>
@@ -271,7 +292,7 @@ umem_gc_get_stack_bounds(void **low, void **high)
 /* Stack scanning                                                      */
 /* ------------------------------------------------------------------ */
 
-void
+UMEM_GC_NO_ASAN void
 umem_gc_scan_stack(void *stack_low, void *stack_high,
     umem_gc_mark_fn mark_fn)
 {
@@ -436,9 +457,35 @@ umem_gc_scan_thread(umem_gc_thread_info_t *ti, umem_gc_mark_fn mark_fn)
 	if (ti->gcti_stack_base == NULL || ti->gcti_stack_size == 0)
 		return;
 
-	stack_low = ti->gcti_stack_base;
 	stack_high = (void *)((uintptr_t)ti->gcti_stack_base +
 	    ti->gcti_stack_size);
+
+	if (ti->gcti_suspended) {
+		/*
+		 * The thread is parked in the STW signal handler and has
+		 * spilled its registers into gcti_regs and recorded its live
+		 * stack pointer in gcti_sp.  Scan the spilled register block
+		 * (a callee-saved register may hold the only pointer to a
+		 * live object) and only the live portion of the stack, from
+		 * the suspended SP up to the stack base -- not the stale
+		 * theoretical extent below SP.
+		 */
+		umem_gc_scan_stack((void *)ti->gcti_regs,
+		    (void *)((uintptr_t)ti->gcti_regs + sizeof (ti->gcti_regs)),
+		    mark_fn);
+
+		stack_low = ti->gcti_sp;
+		if (stack_low == NULL ||
+		    (uintptr_t)stack_low < (uintptr_t)ti->gcti_stack_base ||
+		    (uintptr_t)stack_low >= (uintptr_t)stack_high)
+			stack_low = ti->gcti_stack_base;
+	} else {
+		/*
+		 * Thread was not suspended (STW inactive or timed out):
+		 * best-effort scan of its full stack extent.
+		 */
+		stack_low = ti->gcti_stack_base;
+	}
 
 	umem_gc_scan_stack(stack_low, stack_high, mark_fn);
 }
@@ -448,7 +495,7 @@ umem_gc_scan_thread(umem_gc_thread_info_t *ti, umem_gc_mark_fn mark_fn)
 /* ------------------------------------------------------------------ */
 
 void
-umem_gc_scan_all_roots(umem_gc_mark_fn mark_fn)
+umem_gc_scan_all_roots(umem_gc_mark_fn mark_fn, int threads_locked)
 {
 	int i;
 	pthread_t self;
@@ -488,13 +535,21 @@ umem_gc_scan_all_roots(umem_gc_mark_fn mark_fn)
 
 	/*
 	 * Phase 3: Scan other registered threads' stacks.
-	 * During a real STW pause, these threads would be suspended.
-	 * The caller is responsible for stopping the world before
-	 * calling this function.
+	 * During a real STW pause these threads are suspended in the
+	 * signal handler; each has spilled its registers and recorded its
+	 * live SP (see umem_gc_scan_thread).  The caller is responsible for
+	 * stopping the world before calling this function.
+	 *
+	 * If the caller already holds umem_gc_threads_lock across the STW
+	 * window (threads_locked != 0) we must NOT re-acquire it: the lock
+	 * is non-recursive and re-locking would self-deadlock.  Holding it
+	 * across the whole pause is what keeps the target thread set stable
+	 * so the suspend handshake cannot strand the collector.
 	 */
 	self = pthread_self();
 
-	mutex_lock(&umem_gc_threads_lock);
+	if (!threads_locked)
+		mutex_lock(&umem_gc_threads_lock);
 	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
 		if (!umem_gc_threads[i].gcti_registered)
 			continue;
@@ -502,7 +557,8 @@ umem_gc_scan_all_roots(umem_gc_mark_fn mark_fn)
 			continue;
 		umem_gc_scan_thread(&umem_gc_threads[i], mark_fn);
 	}
-	mutex_unlock(&umem_gc_threads_lock);
+	if (!threads_locked)
+		mutex_unlock(&umem_gc_threads_lock);
 
 	/*
 	 * Phase 4: Scan writable data segments (.data, .bss).

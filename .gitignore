@@ -240,3 +240,14 @@ umem-*.tar.xz
 opencode.json
 config/
 install/
+
+# v2.1.0: EC2/bench/introspect artifacts + perf captures (keep folded text only)
+docs/results/**/perf.data
+docs/results/**/perf.script
+test/debugger/probe.gdb
+test/test_debug
+test/bench/bench_contention
+test/integration/introspect_churn
+tools/umemctl
+tools/umem_profile_dump
+!test/property/prop_*.c

@@ -1,0 +1,60 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2M of event 'cycles'
+# Event count (approx.): 6649268954599
+#
+# Children      Self  Command          Shared Object         Symbol                                        
+# ........  ........  ...............  ....................  ..............................................
+#
+    99.96%     0.08%  bench_contentio  bench_contention      [.] mt_worker_thread
+    99.96%     0.00%  bench_contentio  libc.so.6             [.] __clone3 (inlined)
+    99.96%     0.00%  bench_contentio  libc.so.6             [.] start_thread
+    99.33%     0.36%  bench_contentio  libc.so.6             [.] __random
+    99.33%     0.00%  bench_contentio  libc.so.6             [.] rand
+    98.76%     0.01%  bench_contentio  [kernel.kallsyms]     [k] entry_SYSCALL_64_after_hwframe
+    98.76%     0.01%  bench_contentio  [kernel.kallsyms]     [k] do_syscall_64
+    98.70%     0.01%  bench_contentio  [kernel.kallsyms]     [k] __x64_sys_futex
+    98.69%     0.01%  bench_contentio  [kernel.kallsyms]     [k] do_futex
+    96.53%     0.11%  bench_contentio  [kernel.kallsyms]     [k] _raw_spin_lock
+    96.42%    96.38%  bench_contentio  [kernel.kallsyms]     [k] native_queued_spin_lock_slowpath
+    52.30%     0.00%  bench_contentio  libc.so.6             [.] __GI___lll_lock_wait_private (inlined)
+    52.11%     0.01%  bench_contentio  [kernel.kallsyms]     [k] futex_wait
+    52.11%     0.01%  bench_contentio  [kernel.kallsyms]     [k] __futex_wait
+    51.79%     0.14%  bench_contentio  [kernel.kallsyms]     [k] futex_wait_setup
+    46.57%     0.16%  bench_contentio  [kernel.kallsyms]     [k] futex_wake
+    46.56%     0.00%  bench_contentio  libc.so.6             [.] __GI___lll_lock_wake_private (inlined)
+     0.56%     0.30%  bench_contentio  [kernel.kallsyms]     [k] futex_hash
+     0.33%     0.33%  bench_contentio  [kernel.kallsyms]     [k] futex_hash_put
+     0.27%     0.01%  bench_contentio  [kernel.kallsyms]     [k] futex_do_wait
+     0.26%     0.01%  bench_contentio  [kernel.kallsyms]     [k] schedule
+     0.26%     0.02%  bench_contentio  [kernel.kallsyms]     [k] __schedule
+     0.25%     0.25%  bench_contentio  [kernel.kallsyms]     [k] futex_ref_get
+     0.25%     0.00%  bench_contentio  bench_contention      [.] umem_alloc_wrapper
+     0.25%     0.01%  bench_contentio  libumem.so.0.0.0      [.] _umem_alloc
+     0.24%     0.00%  bench_contentio  libc.so.6             [.] ___pthread_mutex_lock (inlined)
+     0.24%     0.07%  bench_contentio  libumem.so.0.0.0      [.] _umem_cache_alloc
+     0.22%     0.01%  bench_contentio  [kernel.kallsyms]     [k] wake_up_q
+     0.22%     0.22%  bench_contentio  [kernel.kallsyms]     [k] futex_q_lock
+     0.21%     0.02%  bench_contentio  [kernel.kallsyms]     [k] try_to_wake_up
+     0.19%     0.19%  bench_contentio  libc.so.6             [.] pthread_mutex_lock@@GLIBC_2.2.5
+     0.16%     0.16%  bench_contentio  libc.so.6             [.] __lll_lock_wait_private
+     0.15%     0.01%  bench_contentio  libumem.so.0.0.0      [.] _umem_cache_free
+     0.13%     0.00%  bench_contentio  [kernel.kallsyms]     [k] try_to_block_task.constprop.0.isra.0
+     0.13%     0.00%  bench_contentio  [kernel.kallsyms]     [k] dequeue_task_fair
+     0.12%     0.01%  bench_contentio  [kernel.kallsyms]     [k] dequeue_entities
+     0.12%     0.04%  bench_contentio  [kernel.kallsyms]     [k] futex_wake_mark
+     0.11%     0.02%  bench_contentio  [kernel.kallsyms]     [k] dequeue_entity
+     0.11%     0.11%  bench_contentio  libc.so.6             [.] __random_r
+     0.11%     0.10%  bench_contentio  [kernel.kallsyms]     [k] futex_q_unlock
+     0.09%     0.03%  bench_contentio  libc.so.6             [.] __GI___pthread_mutex_unlock_usercnt
+     0.07%     0.01%  bench_contentio  [kernel.kallsyms]     [k] __task_rq_lock
+     0.07%     0.05%  bench_contentio  [kernel.kallsyms]     [k] __futex_unqueue
+     0.07%     0.00%  bench_contentio  [kernel.kallsyms]     [k] raw_spin_rq_lock_nested
+     0.07%     0.01%  bench_contentio  bench_contention      [.] td_add
+     0.07%     0.02%  bench_contentio  [kernel.kallsyms]     [k] ttwu_queue_wakelist
+     0.06%     0.00%  bench_contentio  libc.so.6             [.] __GI___lll_lock_wake
+     0.05%     0.01%  bench_contentio  libc.so.6             [.] __GI___lll_lock_wait
+     0.05%     0.01%  bench_contentio  bench_contention      [.] td_compress

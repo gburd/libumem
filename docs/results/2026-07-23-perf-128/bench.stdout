@@ -1,0 +1,26 @@
+# umem multi t=128 size=64:256 ops=20000000
+throughput_mops = 1.193
+lat_p50_ns = 201
+lat_p99_ns = 2387
+lat_p999_ns = 8007
+lat_max_ns = 31724697
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=192
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_127                     0            0            0            0            0            0              0              0            0
+umem_magazine_255                     0            0            0            0            0           78              0              0            0
+umem_slab_cache                       0            0            0            0            0            2              0              0            0
+umem_bufctl_cache                     0            0            0            0            0           70              0              0            0
+umem_va_4096                          0            0            0            0            0            0              0              0            0
+umem_va_32768                         0            0            0            0            0           21              0              0            0
+umem_alloc_80                         0            0            0            9            0           31              0              0            0
+umem_alloc_96                    833923            0            0           18            0           20              0              0            0
+umem_alloc_112                   831453            0            0           18            0           32              0              0            0
+umem_alloc_128                   834074            0            0           18            0           14              0              0            0
+umem_alloc_160                  2500032            0            0           18            0           38              0              0            0
+umem_alloc_192                  2500874            0            0           18            0            1              0              0            0
+umem_alloc_224                  2500905            0            0           18            0            8              0              0            0
+umem_alloc_256                  2499307            0            0           17            1           15              0              0            0
+umem_alloc_320                  1561104            0            0            9            0            0              0              0            0
+umem_alloc_32768                      0            0            0           49            0            0              0              0            0

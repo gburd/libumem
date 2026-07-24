@@ -63,6 +63,8 @@ Options:
   -t THREADS    Thread count for multithreaded workloads (default: CPU count)
   -n COUNT      Operation count (default: 1000000)
   -s MIN:MAX    Size range in bytes (default: 16:1024)
+  -r RUNS       Measured runs; report median + CoV (default: 1)
+  -W WARMUPS    Warm-up runs to discard before measuring (default: 0)
   -c            Output CSV format
   -h            Show help
 ```
@@ -77,9 +79,29 @@ OPTIONS:
     -t THREADS      Comma-separated thread counts (default: 1,2,4,8,16)
     -s SIZES        Comma-separated size ranges (default: 16:64,64:256,...)
     -o DIR          Output directory (default: results)
+    -r RUNS         Measured runs per point; median + CoV (default: 5)
+    -W WARMUPS      Warm-up runs to discard (default: 1)
+    --pin           Pin threads (numactl/taskset) + require performance governor
     -q              Quick mode: fewer iterations
     -h              Show help
 ```
+
+### Stability (`--pin`, warm-up, median-of-N)
+
+Multi-thread numbers are unstable when threads migrate and caches start cold.
+The harness stabilizes results by:
+
+- **warm-up discard + median-of-N** (`-r N -W W`): the C framework runs each
+  point `W` warm-up times (thrown away) then `N` measured times, reports the
+  **median** run's full latency/memory picture and the **coefficient of
+  variation** (`ops_cov` = stddev/mean of throughput) across the `N` runs. A
+  point with CoV > 10% is flagged `unstable` (last CSV column) — do not gate
+  on it.
+- **`--pin`**: verifies every CPU is on the `performance` governor (aborts
+  with a fix hint otherwise) and binds the process to a contiguous CPU set
+  sized to the thread count via `numactl --physcpubind`/`taskset`.
+
+The CSV gains three trailing columns: `ops_cov,runs,unstable`.
 
 ## Workloads
 

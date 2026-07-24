@@ -1,0 +1,116 @@
+# D1 contention sweep  2026-07-23T16:47:34Z
+# instance vcpu=192 size=64:256 ops=20000000
+
+############ threads=8 ############
+# umem multi t=8 size=64:256 ops=20000000
+throughput_mops = 2.081
+lat_p50_ns = 40
+lat_p99_ns = 356
+lat_p999_ns = 688
+lat_max_ns = 8410130
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=192
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_127                     0            0            0            0            0            0              0              0            0
+umem_magazine_255                     0            0            0            0            0           39              0              0            0
+umem_slab_cache                       0            0            0            0            0            0              0              0            0
+umem_bufctl_cache                     0            0            0            0            0           21              0              0            0
+umem_va_4096                          0            0            0            0            0            0              0              0            0
+umem_va_32768                         0            0            0            0            0            0              0              0            0
+umem_alloc_80                         0            0            0            8            0            0              0              0            0
+umem_alloc_96                    833927            0            0            9            0            0              0              0            0
+umem_alloc_112                   831457            0            0            9            0            0              0              0            0
+umem_alloc_128                   834079            0            0            9            0            8              0              0            0
+umem_alloc_160                  2500043            0            0            9            0            0              0              0            0
+umem_alloc_192                  2500886            0            0            9            0            1              0              0            0
+umem_alloc_224                  2500927            0            0            9            0           10              0              0            0
+umem_alloc_256                  2499314            0            0            9            0            0              0              0            0
+umem_alloc_320                  1561114            0            0            9            0            0              0              0            0
+umem_alloc_32768                      0            0            0            8            0            0              0              0            0
+
+############ threads=32 ############
+# umem multi t=32 size=64:256 ops=20000000
+throughput_mops = 2.144
+lat_p50_ns = 123
+lat_p99_ns = 948
+lat_p999_ns = 2260
+lat_max_ns = 12755775
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=192
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_127                     0            0            0            0            0            0              0              0            0
+umem_magazine_255                     0            0            0            0            0            0              0              0            0
+umem_slab_cache                       0            0            0            0            0            0              0              0            0
+umem_bufctl_cache                     0            0            0            0            0            3              0              0            0
+umem_va_4096                          0            0            0            0            0            0              0              0            0
+umem_va_32768                         0            0            0            0            0            0              0              0            0
+umem_alloc_80                         0            0            0            9            0            0              0              0            0
+umem_alloc_96                    833924            0            0           13            0            0              0              0            0
+umem_alloc_112                   831454            0            0           13            0            0              0              0            0
+umem_alloc_128                   834076            0            0           13            0           22              0              0            0
+umem_alloc_160                  2500037            0            0           13            0            0              0              0            0
+umem_alloc_192                  2500881            0            0           13            0            0              0              0            0
+umem_alloc_224                  2500921            0            0           13            0            0              0              0            0
+umem_alloc_256                  2499309            0            0           13            0            0              0              0            0
+umem_alloc_320                  1561111            0            0            9            0            0              0              0            0
+umem_alloc_32768                      0            0            0           17            0            0              0              0            0
+
+############ threads=128 ############
+# umem multi t=128 size=64:256 ops=20000000
+throughput_mops = 1.187
+lat_p50_ns = 193
+lat_p99_ns = 2235
+lat_p999_ns = 6689
+lat_max_ns = 47428395
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=192
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_127                     0            0            0            0            0            0              0              0            0
+umem_magazine_255                     0            0            0            0            0           54              0              0            0
+umem_slab_cache                       0            0            0            0            0            0              0              0            0
+umem_bufctl_cache                     0            0            0            0            0            6              0              0            0
+umem_va_4096                          0            0            0            0            0            0              0              0            0
+umem_va_32768                         0            0            0            0            0            0              0              0            0
+umem_alloc_80                         0            0            0            9            0            4              0              0            0
+umem_alloc_96                    833924            0            0           15            0           42              0              0            0
+umem_alloc_112                   831453            0            0           15            0           13              0              0            0
+umem_alloc_128                   834075            0            0           15            0           47              0              0            0
+umem_alloc_160                  2500034            0            0           15            0           14              0              0            0
+umem_alloc_192                  2500877            0            0           15            0            0              0              0            1
+umem_alloc_224                  2500920            0            0           15            0            3              0              0            0
+umem_alloc_256                  2499308            0            0           15            0           44              0              0            0
+umem_alloc_320                  1561103            0            0            9            0            0              0              0            0
+umem_alloc_32768                      0            0            0           49            0            0              0              0            0
+
+############ threads=192 ############
+# umem multi t=192 size=64:256 ops=19999872
+throughput_mops = 1.171
+lat_p50_ns = 204
+lat_p99_ns = 2440
+lat_p999_ns = 7726
+lat_max_ns = 70163144
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=192
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_127                     0            0            0            0            0            0              0              0            0
+umem_magazine_255                     0            0            0            0            0           47              0              0            0
+umem_slab_cache                       0            0            0            0            0            0              0              0            0
+umem_bufctl_cache                     0            0            0            0            0            0              0              0            0
+umem_va_4096                          0            0            0            0            0            0              0              0            0
+umem_va_32768                         0            0            0            0            0            0              0              0            0
+umem_alloc_80                         0            0            0            8            0            0              0              0            0
+umem_alloc_96                    833922            0            0           15            0           43              0              0            0
+umem_alloc_112                   831451            0            0           15            0            9              0              0            0
+umem_alloc_128                   834070            0            0           15            0            3              0              0            0
+umem_alloc_160                  2500018            0            0           15            0           38              0              0            0
+umem_alloc_192                  2500864            0            0           15            0           20              0              0            0
+umem_alloc_224                  2500906            0            0           15            0           17              0              0            0
+umem_alloc_256                  2499295            0            0           15            0            6              0              0            0
+umem_alloc_320                  1561090            0            0            8            0            0              0              0            0
+umem_alloc_32768                      0            0            0           70            0            0              0              0            0
+
+sweep done -> docs/results/2026-07-23-contention-sweep.txt

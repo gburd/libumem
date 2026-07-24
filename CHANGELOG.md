@@ -3,6 +3,91 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.1.0] - 2026-07-24
+
+Additive correctness, performance, and live-tooling layer on top of 2.0.0.
+All fixes were reproduced and validated on tuned EC2 hardware across x86_64
+and aarch64, low- and high-core (up to 192-vCPU metal); provenance under
+[`docs/results/`](docs/results/). The unit suite went from 424 OK / 31 FAIL
+to **459 OK / 0 FAIL / 10 SKIP**.
+
+### Headline: 2.1.0 is the first release that runs on aarch64 (Graviton)
+
+2.0.0's rseq fast path SIGSEGV'd on the first restart on aarch64 — the abort
+signature was placed *after* the abort label, but the kernel reads
+`*(abort_ip - 4)`. Moving `.inst RSEQ_SIG` before each abort label (matching
+x86_64) makes umem usable on Graviton. (`docs/results/2026-07-23-aarch64-rseq-crash-repro.md`)
+
+### Bug fixes (core allocator)
+
+- **aarch64 rseq fast-path SIGSEGV** — see headline above.
+- **`umem_cpu_node[]` out-of-bounds read** on machines where
+  `umem_max_ncpus > 256` (a 192-vCPU box rounds to 512): the depot's
+  NUMA-node lookup table was fixed at 256 entries while the depot indexed it
+  up to `umem_max_ncpus`. Now sized dynamically; validated clean under ASan
+  on a 512-detected metal instance.
+  (`docs/results/2026-07-23-cpu_node-oob-finding.md`,
+  `docs/results/2026-07-23-oob-fix-validation-metal.md`)
+- **Multi-thread scaling regression (PTC bin-table gap)**: requests landing
+  between size classes (>128B) mapped to `-1` and skipped the thread cache,
+  serializing on `cc_lock`. Mapping the index through the backing cache's
+  object size closed the gap: 8-thread `multi` 1.17 → 33.83 Mops/s, p999
+  1.83 ms → 299 ns (192 threads). Also bounded the depot trylock steal-scan.
+  (`docs/results/2026-07-23-scaling-diagnosis.md`,
+  `docs/results/2026-07-23-d2-fix-validation.md`)
+- **GC stop-the-world soundness**: a reachable object rooted only on a
+  suspended thread's stack could be swept. The collector now spills
+  suspended threads' registers, scans each parked thread's full stack after
+  a park barrier, and serializes object add/remove against STW (0 canary
+  corruption over 90 stress runs incl. 192-vCPU). A residual failure remains
+  only under heavy CPU oversubscription (~4× threads:cores); the
+  safepoint-based follow-up is designed in
+  [`docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md`](docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md).
+- **`umem_cache_reclaim_pages`** no longer walks the slab list across a lock
+  drop (SEGV under GC stress).
+- **`getpcstack` frame-pointer walk** bounded to a plausible stack span on
+  x86 and aarch64 (avoids a wild-pointer SEGV at thread teardown); the x86
+  path now captures real frames (audit stacks were previously empty on x86).
+  Retains a `backtrace(3)` fallback for other platforms.
+- **palloc dynamic (non-PREALLOC) budget arenas**: were created with no span
+  and no source, so every allocation failed (segfaulted). They now import
+  spans on demand from the heap arena; budget enforcement unchanged.
+  (`docs/results/2026-07-23-palloc-dynamic-arena-finding.md`)
+
+### New: `umemctl` live-process introspection (complements `umem(1)`)
+
+2.0.0's `umem(1)` drives inspection via gdb/ptrace against a live pid, a
+core, or an offline snapshot — point-in-time, non-invasive, ideal for CI and
+post-mortem. **`umemctl`** covers the live/interactive gap that a ptrace
+snapshot cannot: an opt-in in-process channel (`--enable-introspect` +
+`UMEM_OPTIONS=introspect=1`) exposing
+
+- streaming `logtail` (slab/reap/alloc events as they happen),
+- a dependency-free TUI `monitor`,
+- `record`, and `break` with a **break-before-a-leaked-allocation** workflow
+  (learn the leaked-allocation signatures under audit, then stop the
+  allocating thread in a fresh run so a debugger sees the exact stack).
+
+Zero hot-path cost when off (verified byte-identical `_umem_alloc`/`_umem_free`
+disassembly). See [`docs/UMEMCTL.md`](docs/UMEMCTL.md). Use `umem(1)` for
+snapshot/core/CI leak-finding; `umemctl` for live streaming and break-on-leak.
+
+### Testing, benchmarking & infrastructure
+
+- **Exec-helper test harness** (`umem_env_helper`) reaches umem's init-time
+  env-var parsing, resolving 31 phantom `/envvar/*` failures and un-skipping
+  the debug-detection tests (guards/redzone/deadbeef/audit/firewall/
+  double-free/UAF are now proven to fire).
+- **Property/invariant tests** for ownership, GC, profiling round-trip, and
+  budget contexts (`test/property/prop_*.c`).
+- **Stabilized benchmark harness** (pinned, warm-up-discarded, median+CoV)
+  and a cross-arch scaling matrix; a contention driver + instrumentation.
+- **EC2 build/test/bench harness** (`scripts/ec2/`) — all heavy work runs on
+  tuned Intel + Graviton instances (8→192 vCPU).
+- **CI**: forgejo `tests.yml` now builds and smoke-checks the exec-helper so
+  the env-var/detection tests actually run; aarch64 authoritative testing is
+  documented as EC2-only.
+
 ## [2.0.0] - 2025-01
 
 ### Headline: runtime debugging restored on Linux / FreeBSD / macOS

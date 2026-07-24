@@ -341,6 +341,7 @@ typedef struct umem_slab {
 	long			slab_chunks;	/* chunks (bufs) in this slab */
 	uint32_t		slab_state;	/* SLAB_ACTIVE/DIRTY/CLEAN */
 	uint32_t		slab_idle_time;	/* seconds empty (approx) */
+	struct umem_slab	*slab_reclaim_next; /* update-thread reclaim list */
 } umem_slab_t;
 
 #define	UMEM_HASH_INITIAL	64

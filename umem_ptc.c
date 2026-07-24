@@ -174,6 +174,17 @@ umem_ptc_init(void)
 	 * Build umem_ptc_bin_table: for each alloc_table index,
 	 * compute the PTC bin. This allows umem.c to inline the
 	 * PTC lookup without calling umem_ptc_size_to_bin().
+	 *
+	 * A request of (idx+1)<<UMEM_ALIGN_SHIFT bytes is served by the
+	 * cache umem_alloc_table[idx], whose object size is one of the umem
+	 * size classes (which == the PTC size classes for the cached range).
+	 * We must map the index to the PTC bin of the *backing cache's*
+	 * object size, NOT of the raw request rounded to 8: rounding to 8
+	 * lands between size classes (e.g. a 176-byte request rounds to
+	 * bin_idx 22, which is not a PTC class, so it was wrongly marked -1
+	 * even though its backing umem_alloc_192 cache has PTC bin 10). That
+	 * gap forced every 161-176B (and similar) allocation onto the locked
+	 * cc_lock path -- the same-size-class scaling bottleneck.
 	 */
 	{
 		size_t idx;
@@ -181,11 +192,30 @@ umem_ptc_init(void)
 
 		for (idx = 0; idx < table_size; idx++) {
 			size_t alloc_size = (idx + 1) << UMEM_ALIGN_SHIFT;
-			size_t rounded = (alloc_size + 7) & ~(size_t)7;
-			size_t bin_idx = rounded / 8;
+			umem_cache_t *cp;
+			size_t obj_size;
+			size_t bin_idx;
 
-			if (rounded > umem_ptc_maxsize ||
-			    bin_idx >= sizeof(size_to_bin_table)) {
+			if (alloc_size > umem_ptc_maxsize) {
+				umem_ptc_bin_table[idx] = -1;
+				continue;
+			}
+
+			/*
+			 * Map through the backing cache's object size so the
+			 * PTC bin matches the size class actually allocated.
+			 */
+			cp = umem_alloc_table[idx];
+			obj_size = (cp != NULL) ? cp->cache_bufsize :
+			    ((alloc_size + 7) & ~(size_t)7);
+
+			if (obj_size > umem_ptc_maxsize) {
+				umem_ptc_bin_table[idx] = -1;
+				continue;
+			}
+
+			bin_idx = obj_size / 8;
+			if (bin_idx >= sizeof(size_to_bin_table)) {
 				umem_ptc_bin_table[idx] = -1;
 			} else {
 				umem_ptc_bin_table[idx] =

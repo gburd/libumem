@@ -160,10 +160,15 @@ umem_rseq_alloc_fastpath:
 	b	.Lrseq_alloc_post_commit
 
 	/* ABORT HANDLER */
+	/*
+	 * rseq ABI: the 4-byte signature must sit IMMEDIATELY BEFORE
+	 * abort_ip. The kernel reads *(abort_ip-4) on restart and SIGSEGVs
+	 * if it does not match RSEQ_SIG. abort_ip points at the label, so
+	 * the signature goes before it (matches umem_rseq_x86_64.S).
+	 */
 	.align	5
-.Lrseq_alloc_abort:
 	.inst	RSEQ_SIG
-
+.Lrseq_alloc_abort:
 	/* Increment restart counter */
 	ldr	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
 	add	x1, x1, #1
@@ -306,10 +311,10 @@ umem_rseq_free_fastpath:
 	b	.Lrseq_free_post_commit
 
 	/* ABORT HANDLER */
+	/* signature BEFORE label — kernel reads *(abort_ip-4) */
 	.align	5
-.Lrseq_free_abort:
 	.inst	RSEQ_SIG
-
+.Lrseq_free_abort:
 	/* Increment restart counter */
 	ldr	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
 	add	x1, x1, #1

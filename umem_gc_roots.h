@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <signal.h>
+#include <setjmp.h>
 #include <pthread.h>
 
 #ifdef	__cplusplus
@@ -37,6 +38,14 @@ extern "C" {
 /*
  * Per-thread info for GC root scanning.
  * Tracks stack bounds so the collector can scan each thread's stack.
+ *
+ * During stop-the-world the suspend signal handler records the thread's
+ * live stack pointer (gcti_sp) and spills all callee-saved registers into
+ * gcti_regs, then increments the collector's suspended count as its ACK.
+ * The collector waits for every target thread's ACK before marking, then
+ * scans each parked thread from gcti_sp up to (gcti_stack_base +
+ * gcti_stack_size) plus gcti_regs -- so a live pointer held only in a
+ * callee-saved register or on the current stack frame is always a root.
  */
 typedef struct umem_gc_thread_info {
 	pthread_t	gcti_thread;
@@ -44,6 +53,8 @@ typedef struct umem_gc_thread_info {
 	size_t		gcti_stack_size;
 	int		gcti_registered;
 	volatile sig_atomic_t gcti_suspended;	/* set by STW handler */
+	void		*volatile gcti_sp;	/* suspended stack pointer */
+	sigjmp_buf	gcti_regs;		/* spilled registers (STW) */
 } umem_gc_thread_info_t;
 
 /* Maximum threads the GC can track */
@@ -88,9 +99,11 @@ void umem_gc_scan_data_segments(umem_gc_mark_fn mark_fn);
 /*
  * Full root scan.
  * Scans registers, current thread's stack, all registered threads'
- * stacks, and data segments.
+ * stacks, and data segments.  Pass threads_locked != 0 when the caller
+ * already holds the thread-registry lock for the whole stop-the-world
+ * window (the collector does); it then must not be re-acquired here.
  */
-void umem_gc_scan_all_roots(umem_gc_mark_fn mark_fn);
+void umem_gc_scan_all_roots(umem_gc_mark_fn mark_fn, int threads_locked);
 
 /*
  * Thread list management.

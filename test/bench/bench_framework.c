@@ -98,6 +98,11 @@ void bench_print_stats(const bench_stats_t *stats) {
     printf("Throughput: %.2f ops/sec (%.2f s total)\n",
            stats->ops_per_second, stats->elapsed_seconds);
     printf("Operations: %lu\n", (unsigned long)stats->total_operations);
+    if (stats->runs_measured > 1) {
+        printf("Stability:  CoV %.2f%% over %d runs%s\n",
+               stats->ops_cov * 100.0, stats->runs_measured,
+               stats->unstable ? "  [UNSTABLE - do not gate]" : "");
+    }
     printf("\nLatency (ns):\n");
     printf("  min:  %.0f\n", stats->latency_min);
     printf("  p50:  %.0f\n", stats->latency_p50);
@@ -121,7 +126,7 @@ void bench_print_csv_header(void) {
     printf("allocator,workload,threads,ops,elapsed_sec,ops_per_sec,");
     printf("lat_min,lat_p50,lat_p90,lat_p99,lat_p999,lat_max,lat_mean,");
     printf("rss_bytes,allocated_bytes,fragmentation,");
-    printf("cpu_user_ms,cpu_sys_ms\n");
+    printf("cpu_user_ms,cpu_sys_ms,ops_cov,runs,unstable\n");
 }
 
 void bench_print_csv_row(const bench_stats_t *stats) {
@@ -131,10 +136,11 @@ void bench_print_csv_row(const bench_stats_t *stats) {
     printf("%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,",
            stats->latency_min, stats->latency_p50, stats->latency_p90,
            stats->latency_p99, stats->latency_p999, stats->latency_max, stats->latency_mean);
-    printf("%zu,%zu,%.2f,%.1f,%.1f\n",
+    printf("%zu,%zu,%.2f,%.1f,%.1f,%.4f,%d,%d\n",
            stats->peak_rss_bytes, stats->bytes_allocated,
            stats->fragmentation_ratio,
-           stats->cpu_usage.user_ms, stats->cpu_usage.sys_ms);
+           stats->cpu_usage.user_ms, stats->cpu_usage.sys_ms,
+           stats->ops_cov, stats->runs_measured, stats->unstable);
 }
 
 /* Thread context for multithreaded benchmarks */
@@ -229,10 +235,20 @@ static void* mt_worker_thread(void *arg) {
     /* Wait for all threads to be ready */
     pthread_barrier_wait(ctx->start_barrier);
 
+    /*
+     * Per-thread PRNG seed. glibc rand() takes a PROCESS-GLOBAL internal
+     * lock on every call; at high thread counts that lock -- not the
+     * allocator -- dominates the multi workload (perf: 96% in
+     * __lll_lock_*_private via rand()). Use rand_r() with a thread-local
+     * seed so we measure the allocator, not glibc's rand lock.
+     */
+    unsigned int seed = 0x9e3779b9u ^ ((unsigned int)ctx->thread_id * 2654435761u);
+
     for (uint64_t i = 0; i < cfg->operation_count; i++) {
         size_t size = cfg->min_size;
         if (cfg->max_size > cfg->min_size) {
-            size = cfg->min_size + (rand() % (cfg->max_size - cfg->min_size));
+            size = cfg->min_size +
+                   ((size_t)rand_r(&seed) % (cfg->max_size - cfg->min_size));
         }
 
         uint64_t alloc_start = bench_get_ns();
@@ -760,13 +776,14 @@ void workload_fragmentation(allocator_ops_t *ops,
     free(pool_sz);
 }
 
-/* Run a benchmark */
+/* Run a benchmark once (no warm-up discard, no repeats). */
 int bench_run(allocator_ops_t *ops, workload_config_t *workload,
               bench_stats_t *stats) {
     memset(stats, 0, sizeof(*stats));
     stats->allocator_name = ops->name;
     stats->workload_name = workload->name;
     stats->thread_count = workload->thread_count;
+    stats->runs_measured = 1;
 
     if (ops->cleanup) {
         ops->cleanup();
@@ -780,6 +797,67 @@ int bench_run(allocator_ops_t *ops, workload_config_t *workload,
     stats->cpu_usage.user_ms = cpu_after.user_ms - cpu_before.user_ms;
     stats->cpu_usage.sys_ms = cpu_after.sys_ms - cpu_before.sys_ms;
 
+    return 0;
+}
+
+/* qsort comparator on ops_per_second (ascending). */
+static int cmp_ops(const void *a, const void *b) {
+    double x = ((const bench_stats_t *)a)->ops_per_second;
+    double y = ((const bench_stats_t *)b)->ops_per_second;
+    return (x < y) ? -1 : (x > y) ? 1 : 0;
+}
+
+/* Run warmups+runs times, discard warm-ups, report the median run's full
+ * stats plus the coefficient of variation of ops_per_second across the kept
+ * runs. Flags unstable when CoV exceeds BENCH_UNSTABLE_COV so a caller knows
+ * not to gate on that point. */
+int bench_run_n(allocator_ops_t *ops, workload_config_t *workload,
+                bench_stats_t *stats, int warmups, int runs) {
+    if (runs < 1) runs = 1;
+    if (warmups < 0) warmups = 0;
+
+    /* Warm up: run and throw the numbers away (populates caches/magazines,
+     * pages in the arena, lets the CPU reach steady frequency). */
+    for (int w = 0; w < warmups; w++) {
+        bench_stats_t scratch;
+        bench_run(ops, workload, &scratch);
+    }
+
+    if (runs == 1) {
+        bench_run(ops, workload, stats);
+        stats->runs_measured = 1;
+        stats->ops_cov = 0.0;
+        stats->unstable = 0;
+        return 0;
+    }
+
+    bench_stats_t *samples = calloc((size_t)runs, sizeof(*samples));
+    if (!samples) return bench_run(ops, workload, stats);
+
+    double sum = 0.0, sumsq = 0.0;
+    for (int r = 0; r < runs; r++) {
+        bench_run(ops, workload, &samples[r]);
+        double v = samples[r].ops_per_second;
+        sum += v;
+        sumsq += v * v;
+    }
+
+    double mean = sum / runs;
+    /* population stddev of ops/sec */
+    double var = (sumsq / runs) - (mean * mean);
+    if (var < 0) var = 0;
+    double stddev = sqrt(var);
+    double cov = (mean > 0) ? (stddev / mean) : 0.0;
+
+    /* Median run by throughput: report its full latency/memory picture, not a
+     * synthetic average that mixes percentiles from different runs. */
+    qsort(samples, (size_t)runs, sizeof(*samples), cmp_ops);
+    *stats = samples[runs / 2];
+    stats->ops_cov = cov;
+    stats->runs_measured = runs;
+    stats->unstable = (cov > BENCH_UNSTABLE_COV) ? 1 : 0;
+
+    free(samples);
     return 0;
 }
 
