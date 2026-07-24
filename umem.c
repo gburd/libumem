@@ -3795,15 +3795,48 @@ umem_hash_rescale(umem_cache_t *cp)
 static void
 umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
 {
-	size_t reclaim_size = cp->cache_slabsize - sizeof (umem_slab_t);
+	/*
+	 * MADV_DONTNEED / MADV_FREE act on whole pages: the kernel discards
+	 * every page the range touches (empirically it discards the start
+	 * page even for a sub-page length).  The umem_slab_t metadata is
+	 * embedded at the END of the slab for a non-hash cache, sharing its
+	 * page with the tail of the buffer region.  The old code advised
+	 * [slab_base, slab_base + slabsize - sizeof(umem_slab_t)); when the
+	 * slab color was 0 that range started page-aligned and its (sub-page)
+	 * length still caused the kernel to discard the whole page that holds
+	 * the metadata, zero-filling slab_cache/slab_next/slab_prev on next
+	 * touch.  That corrupted the cache freelist and tripped the
+	 * sp->slab_cache == cp assertion (or SEGV'd the reap walk) under heavy
+	 * churn.  (With a non-zero color the start was unaligned and madvise
+	 * returned EINVAL, so no memory was ever reclaimed at all.)
+	 *
+	 * Reclaim only whole pages that lie strictly below the page holding
+	 * the metadata: round the start UP and the end DOWN to page
+	 * boundaries, and for a non-hash cache stop at the start of the
+	 * metadata's page.  If nothing full-page remains, reclaim nothing --
+	 * correctness over reclaiming a partial page that shares metadata.
+	 */
+	uintptr_t start = P2ROUNDUP((uintptr_t)sp->slab_base, PAGESIZE);
+	uintptr_t limit = (unlikely(cp->cache_flags & UMF_HASH)) ?
+	    P2END((uintptr_t)sp->slab_base, cp->cache_slabsize) :
+	    (uintptr_t)sp;
+	uintptr_t end = P2ALIGN(limit, PAGESIZE);
+
+	if (end <= start) {
+		sp->slab_state = SLAB_CLEAN;
+		return;
+	}
+
+	size_t reclaim_size = (size_t)(end - start);
+	void *reclaim_base = (void *)start;
 
 #if defined(_WIN32)
-	(void) VirtualAlloc(sp->slab_base, reclaim_size,
+	(void) VirtualAlloc(reclaim_base, reclaim_size,
 	    MEM_RESET, PAGE_READWRITE);
 #elif defined(__FreeBSD__)
-	(void) madvise(sp->slab_base, reclaim_size, MADV_FREE);
+	(void) madvise(reclaim_base, reclaim_size, MADV_FREE);
 #else
-	(void) madvise(sp->slab_base, reclaim_size, MADV_DONTNEED);
+	(void) madvise(reclaim_base, reclaim_size, MADV_DONTNEED);
 #endif
 	sp->slab_state = SLAB_CLEAN;
 }
