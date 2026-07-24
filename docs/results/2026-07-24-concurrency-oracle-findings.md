@@ -3,11 +3,20 @@
 
 **Status:** Oracle delivered and wired into `make check`. Passes at low/moderate
 scale on all three arches. **At 192 threads over a sustained multi-stage run it
-reproducibly drives the CURRENT allocator (PTC + magazine + depot) into an
-internal slab-freelist corruption** that surfaces as either a
+reproducibly drove the CURRENT allocator (PTC + magazine + depot) into an
+internal slab-freelist corruption** that surfaced as either a
 `sp->slab_cache == cp` assertion abort or a SIGSEGV in the background
-reap/update thread. This is a genuine find in shipped v2.1.0 code, independent
-of the (inert) rseq lock-free path. **It is reported here, not papered over.**
+reap/update thread. This was a genuine find in shipped v2.1.0 code, independent
+of the (inert) rseq lock-free path.
+
+> **GATE NOW GREEN (2026-07-24).** Root cause was a `MADV_DONTNEED` range in
+> `umem_slab_reclaim()` that discarded the page holding a slab's embedded
+> `umem_slab_t` metadata (single-page magazine slabs, color 0), zero-filling
+> `slab_cache`/`slab_next`/`slab_prev`. Fixed in commit `8640e17`; a second
+> latent depot-reap self-deadlock the fix exposed was fixed in `6b30eb1`. Full
+> diagnosis, gdb evidence, and the GREEN gate results are in
+> `docs/results/2026-07-24-slab-freelist-corruption-fix.md`. The failing rows
+> in §3 below are now PASS with the fix (see that doc).
 
 Built/run on EC2 per the repo Global Constraints:
 
@@ -153,10 +162,14 @@ invariant not.**
   interaction under high real parallelism, i.e. squarely in the depot/magazine
   path this oracle was built to guard — *before* the inert rseq lock-free path
   is even in play.
-- Not fixed here: D3's deliverable is the oracle + the find. The fix belongs to
-  the scaling/concurrency workstream (WS-D2 / the rseq reload follow-up), which
-  must now pass this oracle at 192 threads / 60s / `all` on both arches before
-  it can be trusted. This doc is that gate's failing baseline.
+- FIXED (2026-07-24): the root cause was NOT in the rseq/scaling path but in
+  `umem_slab_reclaim()` — a `MADV_DONTNEED` range that discarded the page
+  holding a single-page slab's embedded `umem_slab_t` metadata (commit
+  `8640e17`), plus a latent depot-reap self-deadlock the fix then exposed
+  (commit `6b30eb1`). The oracle now passes at 192 threads / 60s / `all` on
+  both arches, default and ASan. See
+  `docs/results/2026-07-24-slab-freelist-corruption-fix.md` for the full gdb
+  evidence and GREEN gate results. This doc's §3 rows are updated accordingly.
 
 ---
 
@@ -174,13 +187,15 @@ invariant not.**
 | intel-hi | 192     | 60s prodcons-only mixed                | PASS |
 | arm-hi   | 192     | (short/individual as above)            | PASS |
 
-Sustained high-scale multi-stage — **FAIL (allocator crash, see §2):**
+Sustained high-scale multi-stage — **WAS FAIL, NOW PASS after fix
+`8640e17`+`6b30eb1`** (see `2026-07-24-slab-freelist-corruption-fix.md`):
 
-| arch     | threads | run                          | result |
-|----------|---------|-------------------------------|--------|
-| intel-hi | 192     | 60s `all` mixed (default)     | **FAIL** (SIGABRT/SIGSEGV), 4/4 |
-| intel-hi | 192     | 60s `all` mixed (`--enable-asan`) | **FAIL** (SIGABRT), ASan clean |
-| arm-hi   | 192     | 60s `all` mixed (default)     | **FAIL** (SIGABRT), 1/1 |
+| arch     | threads | run                          | result (fixed) |
+|----------|---------|-------------------------------|----------------|
+| intel-hi | 192     | 60s `all` mixed (default)     | **PASS** 4/4 |
+| intel-hi | 192     | 60s `all` mixed (`--enable-asan`) | **PASS**, ASan clean |
+| intel-hi | 192     | `oracle_matrix.sh 192 60 default` | **PASS** (4 workloads) |
+| arm-hi   | 192     | 60s `all` mixed (default)     | **PASS** 1/1 |
 
 Throughput observed (context, not a perf claim): `multi/small` ~1290 Mops/s at
 192t on intel-hi, ~315 Mops/s on arm-hi; magazine ~220 Mops/s; large-churn
