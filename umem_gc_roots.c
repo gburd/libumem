@@ -124,6 +124,8 @@ umem_gc_thread_register(void)
 	umem_gc_threads[slot].gcti_stack_base = NULL;
 	umem_gc_threads[slot].gcti_stack_size = 0;
 	umem_gc_threads[slot].gcti_suspended = 0;
+	umem_gc_threads[slot].gcti_in_gc_critical = 0;
+	umem_gc_threads[slot].gcti_park_pending = 0;
 	umem_gc_threads[slot].gcti_registered = 1;
 
 	umem_gc_get_stack_bounds_for(
@@ -169,6 +171,30 @@ umem_gc_thread_count(void)
 	n = umem_gc_nthreads;
 	mutex_unlock(&umem_gc_threads_lock);
 	return (n);
+}
+
+/*
+ * Return the calling thread's slot index in umem_gc_threads[], or -1 if it
+ * is not registered.  The GC core caches this per-thread so its cooperative
+ * safepoint and suspend handler can locate their slot in O(1).
+ */
+int
+umem_gc_thread_slot(void)
+{
+	int i;
+	pthread_t self = pthread_self();
+	int slot = -1;
+
+	mutex_lock(&umem_gc_threads_lock);
+	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
+		if (umem_gc_threads[i].gcti_registered &&
+		    pthread_equal(umem_gc_threads[i].gcti_thread, self)) {
+			slot = i;
+			break;
+		}
+	}
+	mutex_unlock(&umem_gc_threads_lock);
+	return (slot);
 }
 
 /* ------------------------------------------------------------------ */

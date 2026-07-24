@@ -154,7 +154,20 @@ static __thread int gc_in_finalizer;
  * ---------------------------------------------------------------- */
 
 #define	GC_SUSPEND_SIGNAL	SIGUSR2
-#define	GC_STW_TIMEOUT_SEC	5
+/*
+ * STW park-barrier timeout.  Generous on purpose: under heavy CPU
+ * oversubscription every mutator still parks (cooperatively at the alloc
+ * safepoint or via the suspend signal), but a mutator may first have to
+ * drain a slow allocator critical section -- e.g. finish an O(n) page
+ * sparsemap resize it holds gc_objects_lock for while dozens of peers
+ * queue behind it.  That drain is bounded but can take seconds at 6x
+ * oversubscription.  We wait long enough for it rather than time out and
+ * skip the whole collection (which would stall progress); the timeout
+ * exists only to bound a genuine wedge (an allocator lock cycle a mutator
+ * can never escape), after which we skip the sweep -- never sweep an
+ * incomplete snapshot.
+ */
+#define	GC_STW_TIMEOUT_MS	30000
 
 static pthread_t gc_stw_coordinator;
 static _Atomic int gc_stw_suspended_count;
@@ -182,63 +195,175 @@ extern mutex_t umem_gc_threads_lock;
  */
 static volatile sig_atomic_t gc_stw_active;
 
+/*
+ * Per-thread cache of this thread's slot in umem_gc_threads[], set at
+ * registration.  -1 means "not a registered GC thread".  Lets the
+ * cooperative safepoint and the signal handler find their slot in O(1)
+ * instead of scanning the whole registry on every poll.
+ */
+static __thread int gc_self_slot = -1;
+
+/*
+ * Per-thread re-entrancy guard for parking.  Set while this thread is
+ * spinning inside gc_park_self().  A cooperative park (from gc_safepoint)
+ * does NOT block SIGUSR2 while it spins, so the collector's retry re-signal
+ * can interrupt the spin and re-enter the handler; without this guard the
+ * handler would call gc_park_self() again (nested park), double-count the
+ * suspend ACK and clobber the recorded gcti_sp/gcti_regs with the handler
+ * frame instead of the mutator's live frame -- which deadlocked the barrier
+ * and corrupted the root snapshot.  If already parked, a fresh signal/poll
+ * is a no-op: the existing spin already covers the current pause.
+ */
+static __thread volatile sig_atomic_t gc_parked;
+
+/*
+ * Park the calling thread for the duration of the current stop-the-world.
+ * Spills callee-saved registers into gcti_regs and records the live stack
+ * pointer in gcti_sp so the collector can scan this thread's roots, then
+ * publishes gcti_suspended = 1 (its ACK) and spins until the collector
+ * clears gc_stw_active.  Async-signal-safe: uses only sigsetjmp, plain
+ * stores, and an atomic add, so it is callable both from the SIGUSR2
+ * handler and from the cooperative safepoint poll.
+ *
+ * Re-entrant delivery is guarded by gc_parked: a thread already spinning
+ * here ignores a fresh signal/poll (see the callers).  We do NOT nest.
+ *
+ * stack_anchor must be the address of a local in the CALLER's frame (or
+ * this frame) that sits at/above the live stack top to scan; we take it as
+ * an argument so the recorded SP covers the caller's frame too.
+ */
+static void
+gc_park_self(int slot, void *stack_anchor)
+{
+	gc_parked = 1;
+
+	(void) sigsetjmp(umem_gc_threads[slot].gcti_regs, 0);
+	umem_gc_threads[slot].gcti_sp = stack_anchor;
+
+	umem_gc_threads[slot].gcti_park_pending = 0;
+	umem_gc_threads[slot].gcti_suspended = 1;
+	atomic_fetch_add(&gc_stw_suspended_count, 1);
+
+	/*
+	 * Spin until the collector ends the pause.  sched_yield() (not a
+	 * pure busy-spin) is essential under CPU oversubscription: dozens of
+	 * parked threads busy-spinning on 8 cores would starve the collector
+	 * (and any thread still finishing an allocation before it can park),
+	 * turning the pause into a pathological slowdown that looks like a
+	 * hang.  Yielding hands the cores to the collector so the pause
+	 * completes promptly.  sched_yield is async-signal-safe, so this is
+	 * valid when gc_park_self runs from the SIGUSR2 handler; we avoid
+	 * sem_wait/condvar which are not.
+	 */
+	while (gc_stw_active)
+		(void) sched_yield();
+
+	umem_gc_threads[slot].gcti_suspended = 0;
+	gc_parked = 0;
+}
+
+/*
+ * Cooperative safepoint: a mutator calls this at a known-safe point (GC
+ * allocation entry, before it touches any GC-internal lock or list).  If a
+ * stop-the-world is in progress it parks the thread here -- so suspension
+ * does NOT depend on async signal delivery timing, which is the fragile
+ * part under CPU oversubscription.  Because the poll is outside every GC
+ * critical section, a cooperatively-parked thread is never frozen holding
+ * gc_objects_lock or mid list+sparsemap update, so the collector's sweep
+ * can never deadlock against it and its roots are always cleanly scannable.
+ */
+static void
+gc_safepoint(void)
+{
+	int slot = gc_self_slot;
+	volatile int stack_anchor;
+
+	if (!gc_stw_active || slot < 0 || gc_parked)
+		return;
+	if (pthread_equal(gc_stw_coordinator, pthread_self()))
+		return;
+
+	gc_park_self(slot, (void *)&stack_anchor);
+}
+
+/*
+ * Enter a GC-internal critical section (holding gc_objects_lock across a
+ * list+sparsemap update).  Sets the lightweight gcti_in_gc_critical flag
+ * (a plain store -- no syscall, unlike the old per-allocation
+ * pthread_sigmask) so a suspend signal that lands here defers parking
+ * instead of freezing the thread mid-update.  Returns the thread's slot,
+ * or -1 if this is not a registered GC thread (then the flag machinery is
+ * a no-op and STW simply never targets it).
+ */
+static int
+gc_critical_enter(void)
+{
+	int slot = gc_self_slot;
+
+	if (slot >= 0) {
+		umem_gc_threads[slot].gcti_in_gc_critical = 1;
+		atomic_signal_fence(memory_order_seq_cst);
+	}
+	return (slot);
+}
+
+/*
+ * Leave a GC-internal critical section.  Clears gcti_in_gc_critical; if a
+ * suspend signal arrived while we held the section it set gcti_park_pending,
+ * so park now -- at this safe point, with the lock released and the object
+ * fully linked in both the sweep list and the sparsemap -- to give the
+ * waiting collector our ACK.
+ */
+static void
+gc_critical_exit(int slot)
+{
+	volatile int stack_anchor;
+
+	if (slot < 0)
+		return;
+
+	umem_gc_threads[slot].gcti_in_gc_critical = 0;
+	atomic_signal_fence(memory_order_seq_cst);
+
+	if (gc_stw_active && umem_gc_threads[slot].gcti_park_pending &&
+	    !pthread_equal(gc_stw_coordinator, pthread_self()))
+		gc_park_self(slot, (void *)&stack_anchor);
+}
+
 static void
 gc_suspend_handler(int signo)
 {
-	int i;
-	pthread_t self = pthread_self();
+	int slot = gc_self_slot;
 	volatile int stack_anchor;
 
 	(void)signo;
 
 	/*
 	 * If no stop-the-world is in progress this is a stale/late signal
-	 * from a collection that has already resumed; do nothing.
+	 * from a collection that has already resumed; do nothing.  Likewise
+	 * if we are already parked (spinning in gc_park_self): a retry
+	 * re-signal must not nest a second park.
 	 */
-	if (!gc_stw_active)
+	if (!gc_stw_active || slot < 0 || gc_parked)
 		return;
 
-	/* Find our thread info */
-	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
-		if (umem_gc_threads[i].gcti_registered &&
-		    pthread_equal(umem_gc_threads[i].gcti_thread, self)) {
-			/*
-			 * Spill all callee-saved registers to a scannable
-			 * buffer and record the live stack pointer BEFORE
-			 * acknowledging that we have parked.  A callee-saved
-			 * register may hold the only pointer to a live object;
-			 * the collector scans gcti_regs and [gcti_sp, base) so
-			 * those roots are never lost.  sigsetjmp is
-			 * async-signal-safe.
-			 */
-			(void) sigsetjmp(umem_gc_threads[i].gcti_regs, 0);
-			umem_gc_threads[i].gcti_sp = (void *)&stack_anchor;
-
-			/*
-			 * ACK: publish gcti_suspended=1.  The collector waits
-			 * until every thread it signalled has this set before
-			 * it begins marking, so a live pointer held only in
-			 * this thread's registers/stack is captured.  The
-			 * seq_cst fence in fetch_add publishes gcti_sp and
-			 * gcti_regs to the collector's acquire loads.
-			 */
-			umem_gc_threads[i].gcti_suspended = 1;
-			atomic_fetch_add(&gc_stw_suspended_count, 1);
-
-			/*
-			 * Spin until the collector ends the pause.  We avoid
-			 * sem_wait here because it is not async-signal-safe on
-			 * all platforms (notably FreeBSD).
-			 */
-			while (gc_stw_active)
-				;
-
-			umem_gc_threads[i].gcti_suspended = 0;
-			return;
-		}
+	/*
+	 * If the signal landed while this thread is inside a GC critical
+	 * section (holding gc_objects_lock mid list+sparsemap update), we
+	 * must NOT park here: parking frozen with the lock held would
+	 * deadlock the collector's sweep, and scanning a half-linked object
+	 * (on the sweep list but not yet in the sparsemap, or vice versa)
+	 * could miss a reachable root.  Defer: record that a park is pending
+	 * and return.  The thread parks itself via gc_safepoint()/the
+	 * critical-section exit check the moment it leaves the section, which
+	 * is imminent and lock-free.  The collector keeps waiting for its ACK.
+	 */
+	if (umem_gc_threads[slot].gcti_in_gc_critical) {
+		umem_gc_threads[slot].gcti_park_pending = 1;
+		return;
 	}
 
-	/* Not a registered GC thread: ignore */
+	gc_park_self(slot, (void *)&stack_anchor);
 }
 
 static int
@@ -262,6 +387,36 @@ gc_install_stw_signal(void)
 }
 
 static void gc_resume_the_world(void);
+
+/*
+ * Wait until every thread that parked has left gc_park_self()
+ * (gcti_suspended back to 0).  Called after clearing gc_stw_active, both
+ * on the normal resume path and the barrier-timeout path.  This closes an
+ * ABA on gc_stw_active: without draining, the next collection could flip
+ * gc_stw_active 0->1 and reset the suspended flags before a still-parked
+ * thread's spin observed the 0, wedging that thread in the OLD park with
+ * suspended=0 -- the new collector would then wait forever for an ACK it
+ * never re-posts.  Parked threads sched_yield(), so they unpark within a
+ * scheduling quantum once the collector stops hogging the CPU.
+ */
+static void
+gc_drain_parked(void)
+{
+	int i;
+
+	for (;;) {
+		int busy = 0;
+		for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
+			if (umem_gc_threads[i].gcti_suspended) {
+				busy = 1;
+				break;
+			}
+		}
+		if (!busy)
+			return;
+		(void) sched_yield();
+	}
+}
 
 /*
  * Suspend all registered GC threads except the caller.
@@ -311,18 +466,27 @@ gc_stop_the_world(void)
 	gc_stw_active = 1;
 	atomic_thread_fence(memory_order_seq_cst);
 
-	/* Signal all other registered threads */
+	/*
+	 * Build the target set = every registered thread except the
+	 * collector, and best-effort signal each.  The signal is only a
+	 * fallback to prod a thread that is stuck in a long NON-allocating
+	 * region (it will not reach the cooperative safepoint on its own);
+	 * threads on the alloc path park cooperatively.  We wait for EVERY
+	 * target below regardless of whether pthread_kill succeeded, so a
+	 * thread whose signal could not be delivered is still awaited (it
+	 * parks at its next alloc safepoint) rather than silently excluded
+	 * from the snapshot -- which would let its roots go unscanned.
+	 */
 	for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
 		if (!umem_gc_threads[i].gcti_registered)
 			continue;
 		if (pthread_equal(umem_gc_threads[i].gcti_thread,
 		    gc_stw_coordinator))
 			continue;
-		if (pthread_kill(umem_gc_threads[i].gcti_thread,
-		    GC_SUSPEND_SIGNAL) == 0) {
-			signalled[nsignalled++] = i;
-			target++;
-		}
+		(void) pthread_kill(umem_gc_threads[i].gcti_thread,
+		    GC_SUSPEND_SIGNAL);
+		signalled[nsignalled++] = i;
+		target++;
 	}
 
 	atomic_store(&gc_stw_target_count, target);
@@ -334,15 +498,29 @@ gc_stop_the_world(void)
 	}
 
 	/*
-	 * Wait until every signalled thread has parked (published
-	 * gcti_suspended = 1).  Checking the per-thread flags -- not just a
-	 * shared counter -- is immune to a stale signal from a prior cycle
-	 * inflating the count: only a thread that actually parked in THIS
-	 * pause sets its flag (the flags were cleared above under the lock,
-	 * and no thread can register/unregister while we hold it).
+	 * Wait until every target thread has parked (published
+	 * gcti_suspended = 1), either cooperatively at an alloc safepoint or
+	 * via the suspend signal.  gc_stw_active stays TRUE for the whole
+	 * wait: a thread parks exactly once and keeps spinning, so we never
+	 * tear down and re-clear its ACK (which would race a still-spinning
+	 * thread and livelock).  Checking per-thread flags -- not a shared
+	 * counter -- is immune to a stale signal from a prior cycle.
+	 *
+	 * We periodically re-signal not-yet-parked threads: under heavy
+	 * oversubscription a target may have been descheduled before it could
+	 * run the first signal or reach a safepoint; a nudge plus a yield
+	 * lets it make progress.  If the deadline expires anyway (e.g. two
+	 * mutators are wedged in a genuine allocator lock cycle and can never
+	 * reach a safepoint), we tear the pause down and report failure so
+	 * the caller SKIPS the sweep -- bounded, and never an unsound sweep
+	 * against an incomplete snapshot.
 	 */
 	(void) clock_gettime(CLOCK_REALTIME, &deadline);
-	deadline.tv_sec += GC_STW_TIMEOUT_SEC;
+	deadline.tv_nsec += (long)GC_STW_TIMEOUT_MS * 1000000L;
+	while (deadline.tv_nsec >= 1000000000L) {
+		deadline.tv_nsec -= 1000000000L;
+		deadline.tv_sec += 1;
+	}
 
 	for (;;) {
 		int parked = 0;
@@ -360,15 +538,27 @@ gc_stop_the_world(void)
 		    (now.tv_sec == deadline.tv_sec &&
 		    now.tv_nsec >= deadline.tv_nsec)) {
 			/*
-			 * Not everyone parked in time.  Release the parked
-			 * threads and the lock, and report failure so the
-			 * caller does a best-effort (unsound-but-safe) scan
-			 * rather than hanging.
+			 * Timed out: a mutator could not reach a safepoint or
+			 * run its suspend signal in time (e.g. wedged in a
+			 * genuine allocator lock cycle).  End the pause and
+			 * drain any threads that DID park before returning
+			 * failure, so the next collection cannot ABA-race a
+			 * still-parked thread.  Caller skips the sweep -- never
+			 * an unsound sweep on an incomplete snapshot.
 			 */
 			gc_stw_active = 0;
 			atomic_thread_fence(memory_order_seq_cst);
+			gc_drain_parked();
 			(void) mutex_unlock(&umem_gc_threads_lock);
 			return (-1);
+		}
+
+		/* Nudge any target that has not parked yet. */
+		for (i = 0; i < nsignalled; i++) {
+			if (!umem_gc_threads[signalled[i]].gcti_suspended)
+				(void) pthread_kill(
+				    umem_gc_threads[signalled[i]].gcti_thread,
+				    GC_SUSPEND_SIGNAL);
 		}
 		sched_yield();
 	}
@@ -396,6 +586,7 @@ gc_resume_the_world(void)
 {
 	gc_stw_active = 0;
 	atomic_thread_fence(memory_order_seq_cst);
+	gc_drain_parked();
 }
 
 /* ----------------------------------------------------------------
@@ -436,26 +627,17 @@ gc_alloc_size(size_t total_size)
  * ---------------------------------------------------------------- */
 
 /*
- * Add a GC object to the global list. Caller must NOT hold gc_objects_lock.
- *
- * SIGUSR2 (the stop-the-world suspend signal) is blocked across the whole
- * critical section.  Otherwise a thread could be suspended after the object
- * is linked into gc_objects_list but before umem_sparsemap_add_object()
- * records it (or vice versa).  The collector would then find the object on
- * the global sweep list (unmarked) yet miss it in umem_gc_find_header()'s
- * sparsemap lookup while conservatively scanning the suspended thread's
- * stack/registers -- so a genuinely reachable, just-allocated object would
- * be swept.  Blocking the signal keeps add atomic with respect to STW.
+ * Link a GC object into the global sweep list and the page sparsemap.
+ * The caller MUST already be inside a GC critical section
+ * (gc_critical_enter()) so a suspend signal cannot freeze this thread
+ * mid-update holding gc_objects_lock -- see gc_object_add() for the full
+ * rationale.  This is the raw update, factored out so umem_gc_alloc() can
+ * hold one critical section across the allocation AND the link.
  */
 static void
-gc_object_add(umem_gc_header_t *hdr)
+gc_object_add_locked(umem_gc_header_t *hdr)
 {
 	void *user_ptr = UMEM_GC_USER_PTR(hdr);
-	sigset_t block, prev;
-
-	(void) sigemptyset(&block);
-	(void) sigaddset(&block, GC_SUSPEND_SIGNAL);
-	(void) pthread_sigmask(SIG_BLOCK, &block, &prev);
 
 	(void) pthread_mutex_lock(&gc_objects_lock);
 	hdr->gc_next = gc_objects_sentinel.gc_next;
@@ -465,8 +647,33 @@ gc_object_add(umem_gc_header_t *hdr)
 	if (gc_pagemap != NULL)
 		(void) umem_sparsemap_add_object(gc_pagemap, hdr, user_ptr);
 	(void) pthread_mutex_unlock(&gc_objects_lock);
+}
 
-	(void) pthread_sigmask(SIG_SETMASK, &prev, NULL);
+/*
+ * Add a GC object to the global list. Caller must NOT hold gc_objects_lock
+ * and must NOT already be in a GC critical section.
+ *
+ * The list+sparsemap update must be atomic with respect to stop-the-world:
+ * a thread suspended after the object is linked into the sweep list but
+ * before umem_sparsemap_add_object() records it (or vice versa) would leave
+ * the object on the sweep list yet missing from umem_gc_find_header()'s
+ * lookup, so a conservative scan of this thread's stack/registers would
+ * find the pointer, fail to mark it, and sweep a reachable, just-allocated
+ * object.
+ *
+ * We guarantee atomicity WITHOUT the old per-allocation pthread_sigmask()
+ * (two syscalls per alloc, which made STW pathologically slow under CPU
+ * oversubscription).  Instead we set the lightweight gcti_in_gc_critical
+ * flag (a plain store): a suspend signal that lands inside the section
+ * defers its park (see gc_suspend_handler) and the thread parks at
+ * gc_critical_exit() once the update is complete and the lock released.
+ */
+static void
+gc_object_add(umem_gc_header_t *hdr)
+{
+	int slot = gc_critical_enter();
+	gc_object_add_locked(hdr);
+	gc_critical_exit(slot);
 }
 
 /*
@@ -611,7 +818,6 @@ typedef struct gc_mark_queue {
 } gc_mark_queue_t;
 
 static gc_mark_queue_t gc_mark_queue;
-
 static int
 gc_mark_queue_init(gc_mark_queue_t *q)
 {
@@ -752,22 +958,24 @@ gc_run_finalizer(umem_gc_header_t *hdr)
 }
 
 /*
- * Sweep phase: walk all objects, free those not marked in the current cycle.
- * Objects with finalizers are finalized first, then freed.
+ * Dead-set collection (STW phase).  Walk the global object list while the
+ * world is still stopped and unlink every unmarked, unpinned object into
+ * two caller-provided lists (finalizable and plain).  Because the world is
+ * stopped, the list is quiescent: no mutator can add an object during this
+ * walk, so an object allocated later (after resume) is simply not in the
+ * snapshot and can never be swept this cycle.  This is what makes the
+ * concurrent free phase sound WITHOUT allocate-black (which would have
+ * broken child traversal in gc_mark_callback).
  *
- * Returns the number of bytes freed.
+ * Returns the number of objects collected.  The actual finalize+free is
+ * done by gc_reclaim_dead() AFTER the world resumes, so finalizers and the
+ * allocator free path never run under stop-the-world.
  */
-static size_t
-gc_sweep(void)
+static uint64_t
+gc_collect_dead(umem_gc_header_t **finalize_out, umem_gc_header_t **free_out)
 {
 	uint32_t mark_val = atomic_load(&gc_mark_value);
-	size_t bytes_freed = 0;
-	uint64_t objects_freed = 0;
-
-	/*
-	 * Collect objects to finalize and objects to free into separate
-	 * lists to avoid calling finalizers under the object lock.
-	 */
+	uint64_t collected = 0;
 	umem_gc_header_t *finalize_list = NULL;
 	umem_gc_header_t *free_list = NULL;
 
@@ -792,6 +1000,7 @@ gc_sweep(void)
 				hdr->gc_next = free_list;
 				free_list = hdr;
 			}
+			collected++;
 		}
 
 		hdr = next;
@@ -799,8 +1008,29 @@ gc_sweep(void)
 
 	(void) pthread_mutex_unlock(&gc_objects_lock);
 
-	/* Finalize phase */
-	atomic_store_explicit(&gc_phase, GC_PHASE_FINALIZE, memory_order_release);
+	*finalize_out = finalize_list;
+	*free_out = free_list;
+	return (collected);
+}
+
+/*
+ * Reclaim the dead set collected by gc_collect_dead().  Runs AFTER the
+ * world has resumed: finalizers (user code) and gc_free_object() (which
+ * takes allocator locks) must not run under stop-the-world.  The objects
+ * are already unlinked from the global list and sparsemap, so they are
+ * unreachable to both mutators and any concurrent find_header.
+ *
+ * Returns the number of bytes freed.
+ */
+static size_t
+gc_reclaim_dead(umem_gc_header_t *finalize_list, umem_gc_header_t *free_list)
+{
+	size_t bytes_freed = 0;
+	uint64_t objects_freed = 0;
+	umem_gc_header_t *hdr;
+
+	atomic_store_explicit(&gc_phase, GC_PHASE_FINALIZE,
+	    memory_order_release);
 
 	while (finalize_list != NULL) {
 		hdr = finalize_list;
@@ -812,7 +1042,6 @@ gc_sweep(void)
 		gc_free_object(hdr);
 	}
 
-	/* Free unmarked non-finalizable objects */
 	while (free_list != NULL) {
 		hdr = free_list;
 		free_list = hdr->gc_next;
@@ -941,6 +1170,9 @@ umem_gc_register_thread(void)
 	 */
 	(void) umem_gc_thread_register();
 
+	/* Cache our slot for O(1) safepoint / suspend-handler lookup. */
+	gc_self_slot = umem_gc_thread_slot();
+
 	return (0);
 }
 
@@ -952,6 +1184,7 @@ umem_gc_unregister_thread(void)
 		return;
 
 	(void) umem_gc_thread_unregister();
+	gc_self_slot = -1;
 	gc_thread_key_destructor(gct);
 	(void) pthread_setspecific(gc_thread_key, NULL);
 }
@@ -989,12 +1222,38 @@ umem_gc_alloc(size_t size, int flags)
 			return (NULL);
 	}
 
+	/*
+	 * Cooperative safepoint.  If a stop-the-world is in progress, park
+	 * here -- before touching any allocator or GC-internal lock -- so
+	 * this thread's roots are scannable and the collector need not rely
+	 * on async signal delivery to suspend us.  This is the mechanism that
+	 * makes STW sound under heavy CPU oversubscription: a mutator that
+	 * cannot be scheduled to run a signal handler in time still parks the
+	 * moment it next allocates, and the collector never sweeps until every
+	 * thread is confirmed parked.
+	 */
+	gc_safepoint();
+
 	if (size == 0)
 		size = 1;
 
+	/*
+	 * Everything from here until the object is fully linked runs inside a
+	 * GC critical section (gcti_in_gc_critical set).  This spans the
+	 * underlying umem allocation -- which acquires cache/depot/vmem locks
+	 * -- and gc_object_add.  A suspend signal that lands anywhere in this
+	 * span therefore DEFERS its park (see gc_suspend_handler) instead of
+	 * freezing the thread while it holds an allocator lock.  Parking mid
+	 * allocator-lock is exactly what deadlocked the collector under
+	 * oversubscription: the parked thread held e.g. the vmem arena lock,
+	 * other workers blocked acquiring it could never reach a safepoint to
+	 * park, and the collector waited forever for them.  Deferring to the
+	 * critical-section exit (all locks released) breaks that cycle.
+	 */
 	size_t total_size = sizeof (umem_gc_header_t) + size;
 	umem_gc_header_t *hdr;
 	umem_cache_t *cp = gc_cache_for_size(total_size);
+	int slot = gc_critical_enter();
 
 	if (cp != NULL) {
 		hdr = umem_cache_alloc(cp, UMEM_DEFAULT);
@@ -1004,8 +1263,14 @@ umem_gc_alloc(size_t size, int flags)
 	}
 
 	if (hdr == NULL) {
-		/* Try collecting and retry once */
+		/*
+		 * Out of memory: leave the critical section (so the retry
+		 * collection can stop the world without waiting on us), try
+		 * collecting, then re-enter and retry once.
+		 */
+		gc_critical_exit(slot);
 		umem_gc_collect();
+		slot = gc_critical_enter();
 
 		if (cp != NULL) {
 			hdr = umem_cache_alloc(cp, UMEM_DEFAULT);
@@ -1014,11 +1279,24 @@ umem_gc_alloc(size_t size, int flags)
 			hdr = umem_alloc(alloc_sz, UMEM_DEFAULT);
 		}
 
-		if (hdr == NULL)
+		if (hdr == NULL) {
+			gc_critical_exit(slot);
 			return (NULL);
+		}
 	}
 
-	/* Initialize the GC header */
+	/*
+	 * Initialize the GC header.  gc_mark starts at 0 (unmarked); a live
+	 * mark value is only ever written by the collector's mark phase.  We
+	 * deliberately do NOT allocate-black (stamp the current mark value):
+	 * doing so would make gc_mark_callback treat a freshly reachable
+	 * object as "already scanned" and skip traversing its children,
+	 * stranding a deep chain unmarked.  Soundness of objects born during
+	 * the resume->sweep window is instead guaranteed by snapshotting the
+	 * dead set under stop-the-world before resuming (see umem_gc_collect):
+	 * an object added after that snapshot is simply not a sweep candidate
+	 * this cycle.
+	 */
 	atomic_store(&hdr->gc_mark, 0);
 	hdr->gc_flags = (flags & UMEM_GC_ATOMIC) ? UMEM_GC_ATOMIC : 0;
 	hdr->gc_size = size;
@@ -1029,8 +1307,16 @@ umem_gc_alloc(size_t size, int flags)
 	void *user_ptr = UMEM_GC_USER_PTR(hdr);
 	memset(user_ptr, 0, size);
 
-	/* Add to global object list */
-	gc_object_add(hdr);
+	/* Add to global object list (list + sparsemap). */
+	gc_object_add_locked(hdr);
+
+	/*
+	 * End of the critical section: all allocator/GC locks are released
+	 * and the object is fully linked (on the sweep list AND in the
+	 * sparsemap).  If a suspend signal deferred a park while we were in
+	 * here, park now at this safe boundary.
+	 */
+	gc_critical_exit(slot);
 
 	/* Update statistics */
 	atomic_fetch_add(&gc_bytes_allocated, size);
@@ -1116,23 +1402,25 @@ umem_gc_free(void *ptr)
 		return;
 
 	umem_gc_header_t *hdr = UMEM_GC_HEADER(ptr);
-	sigset_t block, prev_mask;
+	int slot;
 
 	/*
-	 * Remove from global object list with SIGUSR2 blocked, so a
-	 * concurrent stop-the-world can never observe this object
-	 * half-removed (off the sparsemap but still on the sweep list, or
-	 * vice versa).  Same reasoning as gc_object_add().
+	 * The whole free -- list+sparsemap removal, finalizer, and
+	 * gc_free_object (which returns memory to the allocator and takes
+	 * cache/depot/vmem locks) -- runs inside one GC critical section.
+	 * A suspend signal landing anywhere here DEFERS its park to the
+	 * critical-section exit (all locks released) instead of freezing the
+	 * thread mid allocator-lock, which would deadlock the collector's
+	 * sweep.  It also keeps the removal atomic w.r.t. stop-the-world so a
+	 * collector never sees the object half-removed (off the sparsemap but
+	 * still on the sweep list, or vice versa).  This replaces the old
+	 * per-free pthread_sigmask() -- same reasoning, no syscall.
 	 */
-	(void) sigemptyset(&block);
-	(void) sigaddset(&block, GC_SUSPEND_SIGNAL);
-	(void) pthread_sigmask(SIG_BLOCK, &block, &prev_mask);
+	slot = gc_critical_enter();
 
 	(void) pthread_mutex_lock(&gc_objects_lock);
 	gc_object_remove_locked(hdr);
 	(void) pthread_mutex_unlock(&gc_objects_lock);
-
-	(void) pthread_sigmask(SIG_SETMASK, &prev_mask, NULL);
 
 	/* Run finalizer if registered */
 	gc_run_finalizer(hdr);
@@ -1142,6 +1430,8 @@ umem_gc_free(void *ptr)
 
 	/* Free backing memory */
 	gc_free_object(hdr);
+
+	gc_critical_exit(slot);
 
 	/* Reduce allocated count */
 	size_t prev = atomic_load(&gc_bytes_allocated);
@@ -1182,45 +1472,102 @@ umem_gc_collect(void)
 	}
 
 	/*
-	 * Stop the world: suspend all other threads so root scanning
-	 * sees a consistent snapshot of stacks and registers.
-	 * If STW fails (timeout), fall back to best-effort scanning.
+	 * Stop the world.  Parking is cooperative at the alloc safepoint, so
+	 * every mutator parks either at its next allocation or when the
+	 * suspend signal reaches it; the barrier waits (bounded) for ALL of
+	 * them.  If it cannot stop the world within the timeout -- only
+	 * possible if a mutator is wedged in a genuine allocator lock cycle
+	 * and can never reach a safepoint -- gc_stop_the_world() fails and we
+	 * SKIP marking and sweeping this cycle rather than proceed against an
+	 * incomplete snapshot (unsound).  Bounded and always sound.  On a
+	 * build without the STW signal (non-Linux) or with no other threads,
+	 * gc_stop_the_world() returns success and the collector scans its own
+	 * stack as the sole root source.
 	 */
-	int stw_active = 0;
+	int stw_ok = 0;
 	if (gc_stw_installed)
-		stw_active = (gc_stop_the_world() == 0);
+		stw_ok = (gc_stop_the_world() == 0);
+	else
+		stw_ok = 1;	/* single-rooted best-effort */
 
-	/* Scan all roots (stacks, registers, data segments) */
-	/*
-	 * The registry lock is NOT held during marking (gc_stop_the_world
-	 * drops it once the park barrier completes), so the Phase-3 root
-	 * scan re-acquires it itself: pass threads_locked = 0.
-	 *
-	 * ponytail: a worker can park while holding an allocator lock (it
-	 * was signalled mid umem_cache_alloc).  Marking here must not itself
-	 * take that lock or it would block until resume.  Today the mark
-	 * path does not allocate, so this holds; if mark ever needs to
-	 * allocate while stopped, pre-reserve its memory before STW.
-	 */
-	umem_gc_scan_all_roots(gc_mark_callback, 0);
+	/* Scan all roots and sweep ONLY under a complete stop-the-world. */
+	size_t bytes_freed = 0;
+	if (stw_ok) {
+		/*
+		 * The registry lock is NOT held during marking
+		 * (gc_stop_the_world drops it once the park barrier
+		 * completes), so the Phase-3 root scan re-acquires it itself:
+		 * pass threads_locked = 0.
+		 *
+		 * Marking reads the page sparsemap locklessly via
+		 * umem_gc_find_header().  That is only safe because EVERY
+		 * mutator is confirmed parked here: a running mutator's
+		 * gc_object_add/remove can resize/free the sparsemap buckets
+		 * out from under a concurrent lookup (observed as a SEGV in
+		 * sm_lookup).  We therefore never mark unless the world is
+		 * fully stopped -- marking a live heap is both unsound and
+		 * crash-prone.
+		 *
+		 * A cooperatively-parked thread never parks while holding an
+		 * allocator or GC-internal lock (it polls the safepoint at
+		 * alloc entry, before any lock), and a signal-parked thread
+		 * defers parking out of the gc_object_add/free critical
+		 * section, so marking here cannot block on a lock a parked
+		 * thread holds.  The mark path itself does not call
+		 * umem_gc_alloc; its work-queue growth uses raw umem_alloc.
+		 */
+		umem_gc_scan_all_roots(gc_mark_callback, 0);
+		gc_drain_mark_queue();
 
-	/* Drain work queue: recursively scan non-atomic marked objects */
-	gc_drain_mark_queue();
+		/* Phase 2: Remark -- rescan for missed references */
+		atomic_store_explicit(&gc_phase, GC_PHASE_REMARK,
+		    memory_order_release);
+		umem_gc_scan_all_roots(gc_mark_callback, 0);
+		gc_drain_mark_queue();
 
-	/* Phase 2: Remark — rescan for missed references */
-	atomic_store_explicit(&gc_phase, GC_PHASE_REMARK, memory_order_release);
-	umem_gc_scan_all_roots(gc_mark_callback, 0);
-	gc_drain_mark_queue();
+		/*
+		 * Phase 3a: collect the dead set WHILE STILL STOPPED.  Walking
+		 * the object list under stop-the-world guarantees the snapshot
+		 * is complete and quiescent: every unmarked object here is
+		 * genuinely unreachable (all roots were just scanned), and no
+		 * mutator can add an object mid-walk.  An object allocated
+		 * after we resume is simply not in this snapshot, so it can
+		 * never be swept this cycle -- which is what lets us reclaim
+		 * concurrently below without allocate-black.
+		 */
+		atomic_store_explicit(&gc_phase, GC_PHASE_SWEEP,
+		    memory_order_release);
+		umem_gc_header_t *finalize_list = NULL;
+		umem_gc_header_t *free_list = NULL;
+		(void) gc_collect_dead(&finalize_list, &free_list);
 
-	/* Resume the world after marking is complete */
-	if (stw_active)
-		gc_resume_the_world();
+		/* Resume the world; marking and the dead snapshot are done. */
+		if (gc_stw_installed)
+			gc_resume_the_world();
 
-	gc_mark_queue_destroy(&gc_mark_queue);
+		gc_mark_queue_destroy(&gc_mark_queue);
 
-	/* Phase 3: Sweep */
-	atomic_store_explicit(&gc_phase, GC_PHASE_SWEEP, memory_order_release);
-	size_t bytes_freed = gc_sweep();
+		/*
+		 * Phase 3b: finalize + free the dead set AFTER resume.  The
+		 * objects are already unlinked from the list and sparsemap, so
+		 * running finalizers (user code) and gc_free_object() (which
+		 * takes allocator locks) here -- with the world running -- is
+		 * both safe and keeps the stop-the-world pause short.
+		 */
+		bytes_freed = gc_reclaim_dead(finalize_list, free_list);
+	} else {
+		/*
+		 * Could not stop the world after GC_STW_MAX_RETRIES.  We did
+		 * NOT confirm every thread parked, so we must NOT mark (the
+		 * lockless sparsemap read would race live mutators) and MUST
+		 * NOT sweep (a reachable object rooted only on an unscanned
+		 * running stack could be freed).  Skip this cycle entirely:
+		 * unreachable garbage simply waits for the next collection.
+		 * Bounded and always sound; the cooperative safepoint makes a
+		 * sustained run of skips effectively impossible in practice.
+		 */
+		gc_mark_queue_destroy(&gc_mark_queue);
+	}
 
 	/* Update threshold based on survival rate */
 	size_t survived = 0;

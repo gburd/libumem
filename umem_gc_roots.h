@@ -52,9 +52,22 @@ typedef struct umem_gc_thread_info {
 	void		*gcti_stack_base;
 	size_t		gcti_stack_size;
 	int		gcti_registered;
-	volatile sig_atomic_t gcti_suspended;	/* set by STW handler */
+	volatile sig_atomic_t gcti_suspended;	/* set when parked (STW) */
 	void		*volatile gcti_sp;	/* suspended stack pointer */
 	sigjmp_buf	gcti_regs;		/* spilled registers (STW) */
+	/*
+	 * Cooperative-safepoint coordination (see umem_gc.c).
+	 * gcti_in_gc_critical is set (plain store, no syscall) while the
+	 * thread holds gc_objects_lock mid list+sparsemap update; a suspend
+	 * signal that lands then must NOT park (it would deadlock the
+	 * collector's sweep and could strand a half-linked object), so it
+	 * sets gcti_park_pending instead and the thread parks itself when it
+	 * leaves the critical section.  These replace the per-allocation
+	 * pthread_sigmask() storm that made STW pathologically slow under
+	 * CPU oversubscription.
+	 */
+	volatile sig_atomic_t gcti_in_gc_critical;
+	volatile sig_atomic_t gcti_park_pending;
 } umem_gc_thread_info_t;
 
 /* Maximum threads the GC can track */
@@ -117,6 +130,13 @@ int umem_gc_thread_unregister(void);
  * Get the current number of registered threads.
  */
 int umem_gc_thread_count(void);
+
+/*
+ * Return the calling thread's slot index in umem_gc_threads[], or -1 if
+ * it is not registered.  Used by the GC core to cache each thread's slot
+ * for O(1) cooperative-safepoint / suspend-handler lookup.
+ */
+int umem_gc_thread_slot(void);
 
 #ifdef	__cplusplus
 }

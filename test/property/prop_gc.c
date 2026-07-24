@@ -46,11 +46,13 @@
  *
  * TWO REAL BUGS were found running this suite; see the report and
  * docs/results/:
- *   - GC STW soundness: at high thread counts (~32-48 on 8 cores) a
- *     reachable object is occasionally swept while its owning thread is
- *     suspended during stop-the-world (canary corruption).  Intermittent
- *     (~1/3-1/8).  This suite REPRODUCES it and flags it prominently; use
- *     --strict-stw to gate a fix.
+ *   - GC STW soundness (FIXED): at high thread counts (~32-48 on 8 cores)
+ *     a reachable object was occasionally swept while its owning thread
+ *     was suspended during stop-the-world (canary corruption).  The
+ *     cooperative-safepoint STW collector fixed it -- see
+ *     docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md.  STW
+ *     soundness is now a DEFAULT hard assertion (a reproduced corruption
+ *     fails the suite); --no-strict-stw downgrades it to a warning.
  *   - Core allocator: on machines with umem_max_ncpus > 256 (e.g. 192-vCPU
  *     metal), umem_depot_alloc reads umem_cpu_node[] out of bounds, which
  *     under ASan aborts every allocation and without ASan corrupts the
@@ -435,7 +437,16 @@ main(int argc, char *argv[])
 	int nthreads = 8;
 	int collect_rounds = 200;
 	int stw_iters = 1;
-	int strict_stw = 0;	/* fail the suite on the known STW bug */
+	/*
+	 * STW soundness is a HARD assertion by default now that the
+	 * cooperative-safepoint collector holds it (see
+	 * docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md): a
+	 * reproduced canary corruption fails the suite.  --no-strict-stw
+	 * downgrades it to a warning, kept only for exploring the bounded
+	 * throughput tail under extreme (>=6x) CPU oversubscription, which is
+	 * a scalability limit of the global object lock, not a soundness bug.
+	 */
+	int strict_stw = 1;
 	for (int i = 1; i < argc; i++) {
 		if (strncmp(argv[i], "--threads=", 10) == 0)
 			nthreads = atoi(argv[i] + 10);
@@ -445,6 +456,8 @@ main(int argc, char *argv[])
 			stw_iters = atoi(argv[i] + 12);
 		else if (strcmp(argv[i], "--strict-stw") == 0)
 			strict_stw = 1;
+		else if (strcmp(argv[i], "--no-strict-stw") == 0)
+			strict_stw = 0;
 	}
 	if (nthreads < 1) nthreads = 1;
 	if (collect_rounds < 1) collect_rounds = 1;
@@ -478,16 +491,18 @@ main(int argc, char *argv[])
 		fails++;
 
 	/*
-	 * STW soundness stress.  This has REPRODUCED a real, intermittent GC
-	 * bug: at high thread counts a reachable object is occasionally swept
-	 * while its owning worker thread is suspended during stop-the-world
-	 * (~1 in 3-8 runs at 32-48 threads on 8 cores).  See the report /
-	 * docs/results.  By default a reproduced corruption is flagged
-	 * PROMINENTLY but does NOT fail the suite (the bug is in the library's
-	 * STW root scan, not in these tests, and the other four invariants are
-	 * genuinely proven).  Pass --strict-stw to treat it as a hard failure
-	 * (e.g. as the gate for a fix), and --stw-iters=N to run the stress N
-	 * times to raise the reproduction probability.
+	 * STW soundness stress.  This once reproduced a real, intermittent GC
+	 * bug: at high thread counts a reachable object was occasionally swept
+	 * while its owning worker thread was suspended during stop-the-world
+	 * (~1 in 3-8 runs at 32-48 threads on 8 cores).  The cooperative-
+	 * safepoint STW collector fixed it (see
+	 * docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md): the
+	 * collector never sweeps against an incomplete snapshot and every
+	 * mutator parks at an alloc safepoint or via the suspend signal.  STW
+	 * soundness is therefore a HARD assertion by DEFAULT now -- a
+	 * reproduced corruption fails the suite.  --no-strict-stw downgrades
+	 * it to a warning (kept only for exploring the bounded throughput tail
+	 * under >=6x oversubscription).  --stw-iters=N repeats the stress.
 	 */
 	int stw_bug_seen = 0;
 	for (int it = 0; it < stw_iters; it++) {
@@ -506,15 +521,17 @@ main(int argc, char *argv[])
 		}
 	}
 	if (stw_bug_seen && !strict_stw) {
-		printf("  NOTE: known STW soundness bug reproduced; not "
-		    "failing suite (use --strict-stw to gate a fix).\n");
+		printf("  NOTE: STW soundness corruption reproduced under "
+		    "--no-strict-stw; NOT failing suite.  This should not "
+		    "happen with the cooperative-safepoint collector -- "
+		    "re-run with default (strict) mode to gate it.\n");
 	}
 
 	printf("\n=====================================\n");
 	if (fails == 0) {
 		if (stw_bug_seen)
-			printf("GC invariants proven; KNOWN STW bug reproduced "
-			    "(see report).\n");
+			printf("GC invariants proven; STW corruption seen but "
+			    "not gated (--no-strict-stw).\n");
 		else
 			printf("All GC property tests passed!\n");
 		return (0);
