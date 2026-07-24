@@ -2563,23 +2563,42 @@ umem_maglist_ws_reap(umem_cache_t *cp, umem_maglist_t *mlp,
 {
 	long reap;
 	umem_magazine_t *mp;
+	umem_magazine_t *destroy_list = NULL;
 
+	/*
+	 * Pop the working-set-excess magazines under ml_lock into a private
+	 * chain, then release the lock BEFORE destroying them.
+	 *
+	 * umem_magazine_destroy() frees the magazine's rounds and then frees
+	 * the magazine struct itself back to cp via _umem_cache_free(), which
+	 * re-enters the depot (umem_depot_alloc -> umem_depot_pop) and can try
+	 * to lock a depot maglist -- including THIS mlp, since the striped
+	 * depot_alloc scan may land on the same stripe.  Holding ml_lock
+	 * across the destroy therefore self-deadlocks on the non-recursive
+	 * mutex (observed as all threads wedged in umem_depot_pop under high
+	 * concurrency).  Collect under the lock, destroy unlocked -- the same
+	 * pattern umem_cache_reclaim_pages() uses for its slab surgery.
+	 */
 	(void) mutex_lock(&mlp->ml_lock);
 	reap = MIN(mlp->ml_reaplimit, mlp->ml_min);
 	while (reap-- > 0) {
 		mp = umem_depot_reap_pop(mlp);
 		if (mp == NULL)
 			break;
+		mp->mag_next = destroy_list;
+		destroy_list = mp;
+	}
+	(void) mutex_unlock(&mlp->ml_lock);
+
+	while (destroy_list != NULL) {
+		mp = destroy_list;
+		destroy_list = mp->mag_next;
 		if (unlikely(!UMEM_MAGAZINE_VALID(cp, mp))) {
-			int is_full = (full_rounds > 0);
-			(void) mutex_unlock(&mlp->ml_lock);
-			umem_depot_destroy_stale(cp, is_full, mp);
-			(void) mutex_lock(&mlp->ml_lock);
+			umem_depot_destroy_stale(cp, (full_rounds > 0), mp);
 			continue;
 		}
 		umem_magazine_destroy(cp, mp, full_rounds);
 	}
-	(void) mutex_unlock(&mlp->ml_lock);
 }
 
 /*
