@@ -31,6 +31,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_debug_features \
 		  test/integration/test_threading_stress \
 		  test/stress/stress_main \
+		  test/stress/stress_concurrency_oracle \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
 		  tools/umem_profile_dump
@@ -381,6 +382,10 @@ test_stress_stress_main_SOURCES = test/stress/stress_main.c
 test_stress_stress_main_LDADD = libumem.la
 test_stress_stress_main_LDFLAGS = -pthread
 
+test_stress_stress_concurrency_oracle_SOURCES = test/stress/stress_concurrency_oracle.c
+test_stress_stress_concurrency_oracle_LDADD = libumem.la
+test_stress_stress_concurrency_oracle_LDFLAGS = -pthread
+
 # Debug overhead benchmark
 test_bench_bench_debug_overhead_SOURCES = test/bench/bench_debug_overhead.c
 test_bench_bench_debug_overhead_LDADD = libumem.la
@@ -448,7 +453,8 @@ endif
 # creating circular dependency: pthread_create -> malloc -> pthread_getspecific.
 # See PTHREAD_LIMITATION.md for details.
 TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
-	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh
+	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh \
+	test/stress/oracle_fast.sh
 
 TEST_EXTENSIONS = .sh
 SH_LOG_COMPILER = $(SHELL)
@@ -460,7 +466,8 @@ test_test_inspect_live_SOURCES = test/test_inspect_live.c
 test_test_inspect_live_LDADD = libumem.la
 
 dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
-	test/debugger/test_lldb_e2e.sh
+	test/debugger/test_lldb_e2e.sh \
+	test/stress/oracle_fast.sh
 
 html-local:
 	mkdir -p docs
