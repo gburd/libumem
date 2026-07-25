@@ -3,6 +3,63 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.2.0] - 2026-07-24
+
+Concurrency-hardening release. Adds an adversarial concurrency oracle that
+found — and this release fixes — two real high-concurrency corruption bugs in
+the core allocator, and completes the GC stop-the-world work so it is sound
+even under CPU oversubscription. Validated on EC2 across x86_64 and aarch64 at
+up to 192 vCPU; provenance under [`docs/results/`](docs/results/).
+
+### Bug fixes (core allocator, found by the new concurrency oracle)
+
+- **Slab-freelist self-corruption via `MADV_DONTNEED`**: `umem_slab_reclaim`
+  advised a byte length that, for single-page slabs (all magazine-type
+  caches), spanned the whole page — including the `umem_slab_t` metadata
+  embedded at the page end. The kernel zero-filled it on next touch, wiping
+  `slab_cache`/`slab_next`/`slab_prev` and corrupting the cache freelist
+  (surfacing as the `sp->slab_cache == cp` abort at umem.c:1588 or a SEGV in
+  the reap thread). Reclaim now advises only whole pages strictly below the
+  metadata page; single-page slabs reclaim nothing rather than corrupt
+  themselves. Reproduced at 192 threads on x86_64 + aarch64; fix verified
+  clean on both. (`docs/results/2026-07-24-slab-freelist-corruption-fix.md`)
+- **Depot-reap self-deadlock** (latent, exposed once the above was fixed):
+  `umem_maglist_ws_reap` held `ml_lock` across `umem_magazine_destroy`, which
+  frees back through the depot and re-locks the same stripe. Now pops
+  candidates under the lock and destroys them unlocked.
+- Both fixes are in cold reap/reclaim paths only — the alloc/free fast path
+  and its locking are unchanged; 192-thread throughput is unregressed
+  (~1290–1490 Mops/s `multi` small).
+
+### GC stop-the-world: sound under oversubscription
+
+The v2.1.0 GC STW fix was sound for the common case but could hang/abort under
+~4× CPU oversubscription (signal-based suspend timing). Replaced with
+**cooperative safepoints**: mutators park at `umem_gc_alloc` entry before
+taking any lock; a lightweight critical-section flag replaces the per-alloc
+`pthread_sigmask` storm and defers signal-triggered parking until all locks
+are released (no more park-while-holding-a-lock deadlock); the collector's
+park barrier is bounded and, on timeout, **skips collection entirely rather
+than ever sweeping an incomplete snapshot**; the dead set is snapshotted under
+STW and reclaimed after resume (removes the allocate-black residual sweep).
+Validated 0 corruption / 0 hang / 0 abort: 50/50 at 32t on 8 cores
+(oversubscription), 100/100 at 48t+96t and 30/30 at 192t on 192 cores
+(v2.1.0 hung 3/25 there). `prop_gc` now asserts STW soundness by default.
+Remaining bounded tail at ≥6× oversubscription (global object-list lock)
+is documented; sound and bounded, never unsound.
+(`docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md`)
+
+### Testing
+
+- **Adversarial concurrency oracle** (`test/stress/stress_concurrency_oracle.c`):
+  stamps every allocation with a unique owner token and verifies it at
+  alloc/hold/free across `multi`/`prodcons`/`churn` patterns and size classes,
+  deterministically catching cross-thread aliasing or corruption. A fast
+  variant runs in `make check`; the heavy 192-thread matrix
+  (`scripts/ec2/oracle_matrix.sh`) is the EC2 gate that found the slab bug and
+  now passes on both arches.
+  (`docs/results/2026-07-24-concurrency-oracle-findings.md`)
+
 ## [2.1.0] - 2026-07-24
 
 Additive correctness, performance, and live-tooling layer on top of 2.0.0.

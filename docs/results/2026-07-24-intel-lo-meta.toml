@@ -1,6 +1,6 @@
 # libumem EC2 instance provenance
-captured = "2026-07-24T17:59:33Z"
-uname = "Linux ip-172-31-24-82.us-east-2.compute.internal 6.18.38-73.137.amzn2023.x86_64 #2 SMP PREEMPT_DYNAMIC Mon Jul 13 22:27:08 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux"
+captured = "2026-07-25T00:26:26Z"
+uname = "Linux ip-172-31-22-128.us-east-2.compute.internal 6.12.94-123.190.amzn2023.x86_64 #1 SMP PREEMPT_DYNAMIC Tue Jul 14 14:13:08 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux"
 gcc = "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)"
 clang = "clang version 15.0.7 (AWS 15.0.7-3.amzn2023.0.4)"
 glibc = "ldd (GNU libc) 2.34"
@@ -34,14 +34,12 @@ numa_balancing = "0"
 # NUMA node(s):                            1
 # NUMA node0 CPU(s):                       0-7
 # Vulnerability Gather data sampling:      Not affected
-# Vulnerability Ghostwrite:                Not affected
 # Vulnerability Indirect target selection: Not affected
 # Vulnerability Itlb multihit:             Not affected
 # Vulnerability L1tf:                      Not affected
 # Vulnerability Mds:                       Not affected
 # Vulnerability Meltdown:                  Not affected
 # Vulnerability Mmio stale data:           Not affected
-# Vulnerability Old microcode:             Not affected
 # Vulnerability Reg file data sampling:    Not affected
 # Vulnerability Retbleed:                  Not affected
 # Vulnerability Spec rstack overflow:      Not affected
@@ -56,8 +54,8 @@ numa_balancing = "0"
 [numa]
 # available: 1 nodes (0)
 # node 0 cpus: 0 1 2 3 4 5 6 7
-# node 0 size: 15704 MB
-# node 0 free: 13198 MB
+# node 0 size: 15702 MB
+# node 0 free: 13373 MB
 # node distances:
 # node   0 
 #   0:  10 
