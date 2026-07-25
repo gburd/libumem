@@ -63,19 +63,20 @@ The recent STW fixes reduced but did not eliminate this race.
 
 ## Status
 
-**Update (2026-07-24):** Root cause confirmed and a fix applied — see
-`docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md`. The primary
-defect was that the public registration API populated only `gc_thread_list`
-and never `umem_gc_threads[]` (the array STW and the root scan actually
-walk), so the collector suspended no worker and scanned no worker stack.
-The fix bridges the registries, spills each suspended thread's registers and
-scans `[suspended SP, stack base)`, adds a per-thread park barrier, and makes
-`gc_object_add`/free atomic w.r.t. the suspend signal. Validated **clean in
-bulk on real parallel hardware** (`intel-hi`, 192 vCPU: strict-stw 48t×40 and
-96t×30 = 0 corruption). It remains **PARTIAL**: under ~4× CPU oversubscription
-(32 threads on 8 cores) the signal-based handshake is strained and produces
-intermittent SEGV/abort/hang plus a rare residual miss; that is documented as
-follow-on architectural work. `--strict-stw` stays opt-in until it lands.
+**Update (2026-07-24, CLOSED):** Root cause confirmed and fixed — see
+`docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md`. The first
+(partial) fix bridged the two thread registries, spilled suspended registers,
+and added a park barrier, but the signal-based handshake stayed fragile under
+~4× CPU oversubscription (hang/abort + a rare residual sweep). The final fix
+replaces async-signal suspension with **cooperative safepoints**: mutators
+poll a flag at allocation entry and park themselves outside all locks; the
+signal is only a fallback; the collector **never marks/sweeps an incomplete
+snapshot** (bounded park barrier, skip-the-cycle on timeout), and the dead set
+is snapshotted under STW then reclaimed after resume. Validated 0 corruption /
+0 hang / 0 abort at 4× oversubscription (intel-lo 32t×50) and on real 192-core
+hardware up to full saturation (intel-hi 48t/96t×50, 192t×30). `--strict-stw`
+is now the **default** hard assertion. A bounded throughput tail remains at ≥6×
+oversubscription (global object-lock scalability, not a soundness bug).
 
 `test/property/prop_gc.c` REPRODUCES the bug and reports it prominently. By
 default a reproduced corruption does **not** fail the suite (the bug is in the

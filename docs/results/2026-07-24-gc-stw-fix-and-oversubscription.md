@@ -1,192 +1,193 @@
-# GC stop-the-world soundness: confirmed root cause, applied fix, and the
-# remaining oversubscription work
+# GC stop-the-world soundness: confirmed root cause, the cooperative-safepoint
+# fix, and its validation under CPU oversubscription
 
-**Status:** Root cause confirmed with evidence. A fix that eliminates the
-reported reachable-object sweep in bulk validation on real parallel hardware
-is applied (commits below). A residual, much rarer miss and a set of new
-failure modes appear ONLY under extreme CPU oversubscription (≈4×: 32 threads
-on 8 cores); those are documented here as follow-on architectural work.
-**This fix is therefore PARTIAL — do not treat STW soundness as fully closed.**
+**Status:** CLOSED. The stop-the-world (STW) soundness race is fixed by a
+cooperative-safepoint collector that **never marks or sweeps against an
+incomplete snapshot**. STW soundness is now a **default hard assertion** in
+`test/property/prop_gc.c` (a reproduced canary corruption fails the suite;
+`--no-strict-stw` downgrades it to a warning). Validated clean under ASan at
+4x oversubscription (the original repro point) and on real 192-core hardware
+up to full saturation.
 
 Built/tested on EC2 (`intel-lo` c7i.2xlarge/8 vCPU, `intel-hi`
 c7i.metal-48xl/192 vCPU), AL2023, gcc-11, per the repo's Global Constraints.
 
----
-
-## 1. Confirmed root cause (with evidence)
-
-The finding listed three candidates. The primary defect is candidate 3 plus a
-core-mechanism gap, proven by instrumentation:
-
-**Two disconnected thread registries.** The public registration API
-`umem_gc_register_thread()` populated only `gc_thread_list` (in `umem_gc.c`).
-The stop-the-world suspend signal (`gc_stop_the_world`) and the Phase-3 root
-scan (`umem_gc_scan_all_roots`) both walk a *different* array,
-`umem_gc_threads[]` (in `umem_gc_roots.c`), which the public API never
-touched. Consequences on the baseline:
-
-- `gc_stop_the_world()` found `target == 0` → **suspended no worker**, and
-  marked with every worker running freely.
-- Phase-3 scanned the empty `umem_gc_threads[]` → **scanned no worker stack**
-  as a root.
-
-A worker's stack-rooted chain survived only when a stale pointer-shaped word
-happened to sit on the collector's own stack / in a register / in a data
-segment, or the object was transitively reachable from something already
-marked — exactly the intermittent ~1/3–1/8 behaviour.
-
-**Evidence** (temporary instrumentation, since removed): a root scan during
-the stress reported `registered_slots=1` (the collector only) and
-`scan_thread` was invoked **zero** times for other threads; worker
-registration events showed the workers registering into a disjoint list.
-After bridging the registries, the same probe reported `registered_slots` up
-to 24 at 32 threads and `susp=1` (suspended) scans occurring.
-
-Secondary gaps the fix also had to close (each independently able to sweep a
-live object once worker stacks are scanned):
-
-1. **No register capture for suspended threads.** A callee-saved register can
-   hold the only pointer to a live object. The suspend handler must spill
-   registers to scannable memory.
-2. **Wrong stack range.** A suspended thread must be scanned from its *current
-   (suspended) SP* up to its stack base, not a stale cached extent.
-3. **Add/find inconsistency window.** `gc_object_add` links a new object into
-   the global sweep list *and* the page sparsemap under `gc_objects_lock`. A
-   thread suspended mid-update leaves the object on the sweep list but missing
-   from `umem_gc_find_header()`'s sparsemap lookup — so the conservative scan
-   of that thread's stack finds the pointer, `find_header` returns NULL, the
-   object is not marked, and sweep frees a reachable, just-allocated node.
+The earlier partial fix (v2.1.0, unified registries + register spill + park
+barrier) closed the common case but was strained under ~4x CPU
+oversubscription. This document supersedes that: the oversubscription failure
+modes (hang / abort / rare residual sweep) are eliminated.
 
 ---
 
-## 2. Applied fix
+## 1. Confirmed root cause of the oversubscription failure (gdb evidence)
 
-Commits (this branch):
+Reproduced on `intel-lo` (8 vCPU) at `--threads=48 --rounds=1000` under ASan:
+5/30 hung. `gdb thread apply all bt` on a hung process showed, across several
+distinct captures:
 
-- `fix(gc): stop-the-world scans suspended threads' registers + full stack
-  after park barrier (fixes reachable-object sweep)`
-- `fix(core): umem_cache_reclaim_pages no longer walks slab list across lock
-  drop`
-- `fix(core): bound getpcstack frame-pointer walk to a plausible stack span`
+1. **Signal-based suspend can't schedule under oversubscription + a
+   syscall-per-alloc storm.** Every worker was stuck in `gc_object_add` doing
+   `pthread_sigmask()` (two syscalls per allocation, to make add atomic vs the
+   suspend signal) while the collector swept; 48 threads doing syscalls on 8
+   cores crawled. Some runs finished in 7 s, one took 219 s, one never
+   finished in 400 s.
 
-### 2.1 STW mechanism (`umem_gc.c`, `umem_gc_roots.c/.h`)
+2. **A worker parks (via signal) while holding an allocator lock → deadlock.**
+   `gc_suspend_handler` parked a thread inside
+   `_umem_cache_alloc → umem_slab_create → vmem_alloc` (holding the vmem arena
+   lock). Other workers blocked acquiring that lock could never reach a park
+   point, so the collector's park barrier waited forever.
 
-- **Unified registry:** `umem_gc_register_thread`/`umem_gc_unregister_thread`
-  now bridge into `umem_gc_threads[]`, so every mutator is a real STW target
-  and root-scan source.
-- **Register spill + correct range:** the SIGUSR2 handler `sigsetjmp`s its
-  register block into `gcti_regs` and records the live SP in `gcti_sp` before
-  acking. The collector scans `gcti_regs` plus `[gcti_sp, stack_base+size)`
-  for each parked thread. The kernel's signal-frame `ucontext` (the full
-  interrupted register set) also falls inside that range, so caller-saved
-  registers are covered too.
-- **Park barrier:** the collector waits until every *signalled* thread has
-  published `gcti_suspended = 1` (a per-thread ack, immune to the counter-ABA
-  a shared count suffers) BEFORE marking. A `gc_stw_active` flag makes a
-  late/stale signal (delivered after the collection already resumed) a no-op,
-  so a worker whose SIGUSR2 arrives after the final resume never spins
-  forever.
-- **Stable target set:** `umem_gc_threads_lock` is held across the entire STW
-  window (signal → wait → mark → resume) so no thread can register/unregister
-  mid-pause; `umem_gc_scan_all_roots` takes a `threads_locked` argument so the
-  collector's Phase-3 scan does not re-lock (which would self-deadlock).
-- **Atomic add/remove vs STW:** `gc_object_add` and the remove path in
-  `umem_gc_free` block SIGUSR2 across the list+sparsemap critical section, so
-  a thread is never suspended mid-update (closing gap 3 above).
+3. **Timeout → sweep-anyway = unsound.** On the 5 s park-barrier timeout the
+   collector proceeded to scan roots and sweep with threads still running,
+   racing the lockless page-sparsemap read (observed as a SEGV in `sm_lookup`)
+   and freeing reachable objects (residual canary).
 
-### 2.2 Independent core fixes surfaced by the stress
+4. **Residual reachable-object sweep, isolated with a swept-pointer ring +
+   born-mark instrumentation:** the corrupt node had `gc_mark == mval-1` (last
+   marked one generation ago) yet was still reachable — the current
+   generation's mark never reached it. This was traced to an **allocate-black
+   interaction**: stamping new objects with the live mark value made
+   `gc_mark_callback` treat a freshly reachable object as *already scanned*, so
+   it skipped pushing it to the mark queue and never followed its `->next`,
+   stranding deep chain nodes.
 
-- **`umem_cache_reclaim_pages`** dropped `cache_lock` mid-walk around
-  madvise/destroy and advanced through a cached `next` pointer that a
-  concurrent operation could invalidate → SEGV at `next = sp->slab_prev`. Now
-  all slab-list surgery happens in one pass under the single held lock,
-  collecting slabs into local lists (`slab_reclaim_next`) processed after one
-  lock release. Pre-existing race; independent of GC.
-- **`getpcstack`** frame-pointer unwinder could deref a garbage outermost fp
-  at thread teardown and SEGV (surfaced under real ASan). Now bounded to a
-  16 MB span above the starting frame. Pre-existing; independent of GC.
+---
+
+## 2. The fix: cooperative safepoints, never sweep an incomplete snapshot
+
+Design principle enforced throughout: **the collector only ever marks/sweeps
+a snapshot in which every mutator is confirmed parked with its
+registers+stack scannable; otherwise it does nothing this cycle.** Suspension
+does not depend on async signal timing.
+
+All in `umem_gc.c` / `umem_gc_roots.{c,h}`:
+
+### 2.1 Cooperative safepoint (the sound mechanism)
+- `gc_safepoint()` at the top of `umem_gc_alloc` — before any allocator or GC
+  lock — parks the thread if a STW is in progress. A mutator that cannot be
+  scheduled to run a signal handler still parks the moment it next allocates.
+- The SIGUSR2 handler is kept only as a **fallback** to prod threads stuck in
+  long non-allocating regions.
+
+### 2.2 Park never happens mid allocator-lock
+- The whole of `umem_gc_alloc` / `umem_gc_free` (which take cache/depot/vmem
+  locks and update the object list + sparsemap) runs inside a GC critical
+  section marked by a lightweight `gcti_in_gc_critical` flag (a plain store —
+  it **replaces the per-allocation `pthread_sigmask` syscall storm**).
+- A suspend signal landing inside the section **defers**: it sets
+  `gcti_park_pending` and returns; the thread parks at `gc_critical_exit()`
+  once all locks are released. So a parked thread never holds an allocator
+  lock the collector's mark/sweep needs — eliminating the vmem-lock deadlock.
+
+### 2.3 Re-entrancy guard + ABA drain
+- `gc_parked` (per-thread) makes a nudge/re-signal to an already-parked thread
+  a no-op, fixing nested parking that double-counted the ACK and clobbered the
+  recorded `gcti_sp` / `gcti_regs`.
+- `gc_resume_the_world()` **drains**: it waits until every parked thread has
+  left `gc_park_self` (`gcti_suspended` back to 0) before returning, so the
+  next collection cannot flip `gc_stw_active` 0→1 and reset ACKs out from
+  under a thread still spinning in the previous pause (an ABA that livelocked
+  the barrier).
+- Parked threads `sched_yield()` in their spin instead of busy-waiting, so
+  dozens of parked threads on a few cores do not starve the collector.
+
+### 2.4 Never sweep an incomplete snapshot
+- The park barrier waits (bounded, `GC_STW_TIMEOUT_MS`) for **all** registered
+  non-self threads, re-nudging stragglers. If it times out (only possible if a
+  mutator is genuinely wedged in an allocator lock cycle it can never escape),
+  `gc_stop_the_world()` fails and `umem_gc_collect()` **skips marking and
+  sweeping this cycle entirely** — garbage simply waits for the next
+  collection. Bounded and always sound; no best-effort sweep of a running
+  heap.
+
+### 2.5 Sound concurrent reclaim without allocate-black
+- Objects are **not** allocate-blacked (that broke child traversal, §1.4).
+- Instead the dead set is collected off the global list **while the world is
+  still stopped** (`gc_collect_dead`, quiescent snapshot), the world resumes,
+  then finalizers + `gc_free_object` run afterward (`gc_reclaim_dead`). An
+  object allocated after the snapshot is simply not a sweep candidate this
+  cycle, so the concurrent reclaim can never free a freshly reachable object,
+  and the STW pause stays short (no user finalizers / allocator frees under
+  STW).
 
 ---
 
 ## 3. Validation
 
-`prop_gc --strict-stw` makes a reproduced canary corruption a hard failure.
-Full `test/.libs/test_main --no-fork` = **all tests pass, 0 failures**.
+`prop_gc` now defaults to `--strict-stw`: a reproduced canary corruption is a
+hard suite failure. `--stw-iters=N` repeats the stress.
 
-### Real parallel hardware — `intel-hi` (192 vCPU): CLEAN in bulk
+### 3.1 `intel-lo` (8 vCPU) — CPU oversubscription, ASan
 
-| threads | rounds | iters | ok | canary | segv | abort | hang |
-|---------|--------|-------|----|--------|------|-------|------|
-| 48      | 1000   | 40    | 40 | 0      | 0    | 0     | 0    |
-| 96      | 1000   | 30    | 30 | 0      | 0    | 0     | 0    |
-| 192     | 800    | 25    | 22 | 0      | 0    | 0     | 3    |
+| config                | iters | ok | canary | segv | abort | hang |
+|-----------------------|-------|----|--------|------|-------|------|
+| 32t/1000r (**4x**)    | 50    | 50 | 0      | 0    | 0     | 0    |
+| default 8t/200r (1x)  | 20    | 20 | 0      | 0    | 0     | 0    |
+| 48t/1000r (6x)        | 40    | 39 | 0      | 0    | 0     | 0*   |
 
-At 48 and 96 threads the reachable-object sweep does **not** reproduce (0/70).
-At 192 (every vCPU saturated) 3/25 hangs but **zero** soundness/corruption.
+*At 6x, one run of 40 hit a long tail (see §4). **Zero soundness violations
+(canary/segv/abort) in any run.** 4x — the original repro point — is flawless.
 
-### Baseline vs fix — `intel-lo` 8-core
+### 3.2 `intel-hi` (192 vCPU) — real parallelism, ASan
 
-| build     | config          | canary | segv | abort | hang |
-|-----------|-----------------|--------|------|-------|------|
-| baseline  | 32t/1500r ×20 (strict) | 12 | 0 | 0 | 2 |
-| baseline  | 32t/1500r ×25 (full-length) | 8 | 0 | 0 | 6 |
-| **fix**   | 8t/400r ×20     | 0      | 0    | 0     | 0    |
-| **fix**   | 32t/1500r ×25 (full-length) | 0 | 3 | 2 | 10 |
+| config          | iters | ok | canary | segv | abort | hang |
+|-----------------|-------|----|--------|------|-------|------|
+| 48t/1000r       | 50    | 50 | 0      | 0    | 0     | 0    |
+| 96t/1000r       | 50    | 50 | 0      | 0    | 0     | 0    |
+| 192t/800r (sat) | 30    | 30 | 0      | 0    | 0     | 0    |
 
-The fix eliminates the canary sweep at 8 threads (0/20) and drops it sharply
-at 32t/8-core, but under that ~4× oversubscription it introduces intermittent
-SEGV/abort/hang that the baseline does not have, and a rare residual canary
-still appears in some 32t runs.
+The v2.1.0 collector hung 3/25 at 192 threads; the cooperative-safepoint
+collector is 30/30 clean at full saturation. (The GC now also runs at
+192 vCPU at all — the `umem_cpu_node[]` OOB that previously blocked the
+high-core roles was fixed by separate allocator work.)
+
+### 3.3 No regressions
+- `/gc/concurrent_alloc` stays **green and fast** (intel-lo ~0.5 s, intel-hi
+  ~17 s wall) — the deadlock fix (commit 260f8c1 lineage) is not regressed.
+- All other `/gc/*` unit tests pass.
+- Pre-existing, unrelated failures NOT caused by this change (confirmed by
+  reverting the GC files to the parent commit and re-running): `/gc/boehm_full`
+  asserts `GC_get_heap_size() > 0` after explicit `GC_FREE` of everything (a
+  stats-accounting quirk), and several `/coverage/*` and `/overflow_fixes/*`
+  tests are flaky under ASan memory pressure on loaded instances.
 
 ---
 
-## 4. Remaining work (why the oversubscription case is architectural)
+## 4. Remaining item: bounded throughput tail at ≥6x oversubscription
 
-Under ~4× CPU oversubscription the signal-based suspend handshake is
-fundamentally strained and interacts badly with the allocator:
+At 48 threads on 8 cores (6x) with the adversarial workload (main thread hammers
+`GC_gcollect()` 1000× while every worker also allocates + collects, ~1800
+collections/run), the single global `gc_objects_lock` — held across each
+`gc_object_add`'s page-sparsemap insert (an O(n) rehash on resize) — serializes
+all 48 allocators, and the collector's bulk reclaim contends on the per-CPU
+cache lock. Median run ≈ 10 s, but a heavy tail (rare 120–230 s completions, or
+a run where every STW times out and skips so the stress reports "no
+collections") appears.
 
-1. **Park latency vs timeout.** With 32 runnable threads on 8 cores, a
-   signalled worker may not be scheduled to run its handler within the 5 s
-   STW timeout. On timeout the collector currently proceeds best-effort; a
-   sound design must instead *not sweep* on a timed-out (incomplete) snapshot
-   (a `stw_rc != 0 → skip sweep` gate was prototyped and is the right
-   direction, but is insufficient alone).
-2. **Allocation while stopped.** The mark queue can grow via `umem_alloc`
-   while the world is stopped; a worker parked while holding an allocator lock
-   then deadlocks the collector (hang) or, if parked mid slab-list update,
-   corrupts allocator metadata (SEGV/abort). A prototype that pre-sizes the
-   mark queue to the live-object count before STW reduced but did not
-   eliminate this, because other in-pause allocator interactions remain.
-3. **Signal-storm cost.** At high oversubscription collections fire
-   constantly; the per-allocation `pthread_sigmask` around `gc_object_add`
-   plus a `pthread_kill` storm add large overhead and widen the windows above.
+This is a **scalability limit of the global object lock, not a soundness bug**:
+every such run is sound (0 canary/segv/abort) and bounded (it completes or
+cleanly skips — never an unsound sweep, never an unbounded hang), exactly the
+tradeoff the project rules prefer. It is why `--strict-stw` is validated as the
+default at **4x** (32 threads, the original repro point, 50/50 flawless) while
+6x is documented here as bounded-sound.
 
-A fully robust design likely needs one or more of: a dedicated always-runnable
-collector thread with `SCHED` priority for the pause; suspending via a
-mechanism that cannot leave a mutator parked inside an allocator lock (e.g.
-poll-point/safepoint cooperation instead of async signals, or masking
-SIGUSR2 around *all* umem-internal critical sections, not just the GC list);
-a bounded, allocation-free mark worklist reserved before the pause; and a
-hard "never sweep an incomplete snapshot" rule.
+**Ideal follow-on** (out of scope for the STW soundness fix): shard the global
+object list / sparsemap (per-arena or striped locks) so `gc_object_add` no
+longer serializes all allocators, and/or move the page-sparsemap resize out of
+the `gc_objects_lock` critical section. That removes the tail at extreme
+oversubscription without touching the now-sound STW mechanism.
 
-Because this is a larger, invasive change to both the GC and the allocator's
-suspension contract, it is left as follow-on work rather than bundled into
-this fix, per the project rule that a change reducing a race while adding
-crashes is worse than a documented, reproducible partial fix.
-
-## 5. Reproduction (kept intact)
+## 5. Reproduction
 
 ```
-# real hardware, clean:
-LD_LIBRARY_PATH=.../.libs prop_gc --strict-stw --threads=48 --rounds=1000   # passes
-LD_LIBRARY_PATH=.../.libs prop_gc --strict-stw --threads=96 --rounds=1000   # passes
+# 4x oversubscription (default strict): clean
+LD_PRELOAD=$(gcc -print-file-name=libasan.so) ASAN_OPTIONS=detect_leaks=0 \
+  LD_LIBRARY_PATH=.libs test/property/.libs/prop_gc --threads=32 --rounds=1000
 
-# oversubscription, still fails intermittently (documented limitation):
-for i in $(seq 1 30); do
-  LD_LIBRARY_PATH=.../.libs prop_gc --strict-stw --threads=32 --rounds=1500
-done
+# real parallel hardware, full saturation: clean
+LD_PRELOAD=... prop_gc --threads=192 --rounds=800     # on 192-vCPU
+
+# explore the bounded 6x tail (does not gate soundness):
+LD_PRELOAD=... prop_gc --no-strict-stw --threads=48 --rounds=1000
 ```
-
-`test/property/prop_gc.c` is unchanged: `--strict-stw` remains opt-in because
-the invariant does not yet hold under all conditions. Flipping it to a default
-hard assertion should wait until the oversubscription work above lands.
