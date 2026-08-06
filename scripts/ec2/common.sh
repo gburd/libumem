@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # --- account / region -------------------------------------------------------
-export AWS_PROFILE="${AWS_PROFILE:-numa}"
+export AWS_PROFILE="${AWS_PROFILE:-beef}"
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-2}"
 export AWS_PAGER=""
 

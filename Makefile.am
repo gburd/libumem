@@ -36,7 +36,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/bench_cache_rseq \
 		  tools/umem_profile_dump
 
-libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS)
+libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS) $(SOLARIS_SOCKET_LIBS) -version-info 1:0:0
 
 # Conditionally include stub_stand.c for Solaris/Illumos
 if SOLARIS_BUILD
@@ -85,11 +85,18 @@ HTM_SOURCES =
 if SOLARIS_BUILD
 if ARCH_SPARC
 SPARC_ASM_SOURCES = sparc_subr_sol.S
+X86_ASM_SOURCES =
 else
 SPARC_ASM_SOURCES =
+# x86 illumos/Solaris: provide getfp()/_breakpoint() via a portable C compat
+# unit (header-independent; see x86_subr_compat.c).  Without these the
+# LD_PRELOAD malloc interposer aborts on its first stack walk with an
+# undefined 'getfp' symbol.
+X86_ASM_SOURCES = x86_subr_compat.c
 endif
 else
 SPARC_ASM_SOURCES =
+X86_ASM_SOURCES =
 endif
 
 # Assembly files need minimal preprocessing flags - avoid C-specific
@@ -153,10 +160,11 @@ libumem_la_SOURCES = init_lib.c \
 			$(RSEQ_SOURCES) \
 			$(NUMA_SOURCES) \
 			$(HTM_SOURCES) \
-			$(SPARC_ASM_SOURCES)
+			$(SPARC_ASM_SOURCES) \
+			$(X86_ASM_SOURCES)
 
 libumem_malloc_la_SOURCES = malloc_interpose.c malloc_guard.h
-libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir)
+libumem_malloc_la_LDFLAGS = -lpthread -ldl -R$(libdir) -version-info 1:0:0
 libumem_malloc_la_LIBADD = libumem.la
 
 # Initialize flags unconditionally to avoid += errors
@@ -301,6 +309,9 @@ test_integration_introspect_churn_CPPFLAGS = -I$(srcdir)
 # umemctl: live-process inspection CLI. Pure AF_UNIX socket client, no
 # libumem linkage; connects to a process running introspect=1.
 tools_umemctl_SOURCES = tools/umemctl.c
+# illumos: the AF_UNIX control-channel client needs libsocket/libnsl
+# (empty on Linux/glibc, where socket() is in libc).
+tools_umemctl_LDADD = $(SOLARIS_SOCKET_LIBS)
 
 test_test_debug_SOURCES = test/test_debug.c
 test_test_debug_LDADD = libumem.la
@@ -400,8 +411,11 @@ tools_umem_profile_dump_SOURCES = tools/umem_profile_dump.c
 tools_umem_profile_dump_LDADD =
 tools_umem_profile_dump_LDFLAGS = -lm
 
-# Install the runtime introspection CLI on PATH.
-bin_SCRIPTS = tools/umem tools/umem_dump_reader
+# Install the runtime introspection CLI on PATH.  tools/umem is a compiled
+# C program (was a bash wrapper); umem_dump_reader remains a python script.
+bin_PROGRAMS = tools/umem
+tools_umem_SOURCES = tools/umem.c
+bin_SCRIPTS = tools/umem_dump_reader
 
 # Pull the gdb / lldb scripts and the umem(1) entry point into the dist
 # tarball.
@@ -418,7 +432,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	$(man1_MANS) $(man3_MANS) $(man7_MANS) \
 	scripts/run-coverage.sh scripts/run-sanitizers.sh \
 	tools/gdb/umem_gdb.py tools/lldb/umem_lldb.py \
-	tools/umem tools/umem_dump_reader \
+	tools/umem_dump_reader \
 	tools/DEBUGGING.md \
 	examples/palloc_integration.c examples/README.md \
 	test/qc.c test/qc.h test/munit.c test/munit.h \

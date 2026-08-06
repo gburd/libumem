@@ -211,12 +211,25 @@ resolve_libc_functions(void)
  * because __umem_init may call pthread functions which call malloc. We use
  * priority 101 to ensure this runs first (lower priority numbers run first).
  *
+ * Cross-.so note: numbered constructor priorities only order constructors
+ * WITHIN a single shared object; they do not order across the .so boundary.
+ * malloc_interpose lives in libumem_malloc.so and __umem_init in libumem.so,
+ * so ordering is actually governed by load order (the LD_PRELOAD'd
+ * libumem_malloc.so loads before libumem.so is pulled in as its NEEDED
+ * dependency).  The numeric priority is therefore a no-op across the
+ * boundary -- and the Solaris/illumos ld has no numbered .init_array, so we
+ * use the plain constructor form there.
+ *
  * NOTE: We do NOT call umem_init() here because that would trigger
  * pthread_create which calls malloc, creating a deadlock. Instead,
  * we let malloc calls during the bootstrap phase use the bootstrap
  * allocator, and umem will be initialized lazily on first use.
  */
+#if defined(__sun) || defined(__SVR4)
+__attribute__((constructor))
+#else
 __attribute__((constructor(101)))
+#endif
 static void
 umem_interpose_init(void)
 {

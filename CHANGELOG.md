@@ -3,6 +3,57 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.3.0] - 2026-08-06
+
+illumos/x86 build-portability release, from the solnix (Nix distribution of
+illumos) packaging effort: every item below was a downstream patch solnix
+carried against 2.2.0 and is now fixed upstream, so illumos/x86 (and other
+distros) build cleanly with no out-of-tree patches. Verified building +
+testing on EC2 (459 OK / 0 FAIL).
+
+### Build / portability fixes (illumos x86_64)
+
+- **x86 `getfp`/`_breakpoint` wired into the SOLARIS build (was UNDEF at
+  runtime).** On x86 illumos `libumem.so` linked with an undefined `getfp`
+  (used by `getpcstack.c`) / `_breakpoint` (`umem_agent_support.c`), so the
+  first stack walk — i.e. the moment an `LD_PRELOAD`'d malloc interposer ran
+  — aborted with `symbol getfp: referenced symbol not found`. The bundled
+  x86 helper was never added to SOURCES on the SOLARIS x86 branch. Added a
+  portable, header-independent C compat unit (`x86_subr_compat.c`,
+  `getfp` = `__builtin_frame_address(0)`, `_breakpoint` = `int3`) wired via a
+  new `X86_ASM_SOURCES` arm of the SOLARIS/`ARCH_SPARC` conditional — no
+  dependency on `<sys/asm_linkage.h>`.
+- **`MAP_POPULATE` (Linux-only) guarded** in `examples/umem_palloc.c`
+  (`#ifndef MAP_POPULATE #define MAP_POPULATE 0`) so it compiles on illumos.
+- **Socket/name-service split**: the introspection control channel (server
+  in `umem_introspect.c`, client `tools/umemctl`) now links `-lsocket`
+  `-lnsl` on illumos (via a configure `AC_SEARCH_LIBS` → `SOLARIS_SOCKET_LIBS`
+  substitution; a no-op on Linux/glibc where `socket()` is in libc).
+- **SONAME** now `libumem.so.1` / `libumem_malloc.so.1` (was `.so.0`): set an
+  explicit libtool `-version-info 1:0:0`, matching the historic
+  illumos/Solaris SONAME so `LD_PRELOAD=…/libumem_malloc.so.1` resolves. This
+  is an ABI-visible SONAME change on all platforms (intended; a stable
+  documented SONAME helps every consumer).
+- **Interposer constructor**: `malloc_interpose.c` uses the plain
+  `__attribute__((constructor))` form on Solaris/illumos (whose ld has no
+  numbered `.init_array`); the numbered priority was a cross-`.so` no-op
+  anyway (load order governs `libumem_malloc.so` vs `libumem.so`).
+- **Library-only builds are clean on x86 illumos** after the `getfp` fix
+  (the bundled `noinst` test/bench/example programs link).
+- **Dual-ABI (32+64) illumos install recipe** documented in the README
+  (two-pass `-m32`/`-m64` build into `lib/` + `lib/64/`) so one `LD_PRELOAD`
+  path covers both ELF classes; added illumos x86_64 to the platform table.
+
+### Tooling
+
+- **`umem(1)` reimplemented in C** (`tools/umem.c`, was a bash wrapper) —
+  identical interface and behavior (`--pid`/`--core`/`--exe`/`--dump`;
+  `findleaks`/`log`/`status`/`whatis`/`bufctl`/`snapshot`/`walk` with
+  `-f`/`-n`), builds/drives gdb the same way, execs `umem_dump_reader` for
+  offline snapshots. Verified against a live process (status table,
+  JSON findleaks, snapshot + offline `--dump`). Now a `bin_PROGRAMS` entry;
+  `umem_dump_reader` remains a script.
+
 ## [2.2.0] - 2026-07-24
 
 Concurrency-hardening release. Adds an adversarial concurrency oracle that

@@ -21,6 +21,15 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>
+
+/*
+ * MAP_POPULATE is a Linux-specific eager-prefault flag; illumos and some
+ * BSDs have no equivalent (pages fault in on demand).  Fall back to 0 (a
+ * no-op in the mmap flags) so this example builds everywhere.
+ */
+#ifndef MAP_POPULATE
+#define	MAP_POPULATE	0
+#endif
 #include <unistd.h>
 
 /*

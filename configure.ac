@@ -1,4 +1,4 @@
-AC_INIT([umem], [2.2.0], [], [umem])
+AC_INIT([umem], [2.3.0], [], [umem])
 AM_INIT_AUTOMAKE([dist-bzip2])
 AC_CONFIG_MACRO_DIRS([m4])
 
@@ -60,10 +60,23 @@ case "$host_os" in
     AC_MSG_RESULT(yes)
     AM_CONDITIONAL(SOLARIS_BUILD, true)
     AC_DEFINE(SOLARIS_BUILD, [1], [Building on Solaris/Illumos])
+    # illumos/Solaris split the sockets + name-service APIs out of libc into
+    # libsocket / libnsl; components using socket()/connect() (the umemctl
+    # introspection control channel, both server and client) must link them.
+    # AC_SEARCH_LIBS is a no-op where the symbol is already in libc (Linux).
+    saved_LIBS=$LIBS
+    LIBS=
+    AC_SEARCH_LIBS([socket], [socket], [], [], [])
+    AC_SEARCH_LIBS([gethostbyname], [nsl], [], [], [])
+    SOLARIS_SOCKET_LIBS=$LIBS
+    LIBS=$saved_LIBS
+    AC_SUBST(SOLARIS_SOCKET_LIBS)
     ;;
   *)
     AC_MSG_RESULT(no)
     AM_CONDITIONAL(SOLARIS_BUILD, false)
+    SOLARIS_SOCKET_LIBS=
+    AC_SUBST(SOLARIS_SOCKET_LIBS)
     ;;
 esac
 

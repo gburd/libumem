@@ -251,3 +251,6 @@ test/integration/introspect_churn
 tools/umemctl
 tools/umem_profile_dump
 !test/property/prop_*.c
+
+# compiled umem(1) introspection CLI (was tools/umem bash script)
+tools/umem

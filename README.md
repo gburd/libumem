@@ -204,12 +204,44 @@ jemalloc or mimalloc.  If it's the other way around, pick libumem.
 | Linux | riscv64 | Production |
 | FreeBSD | amd64 | Production |
 | illumos | SPARCv9 | Production |
+| illumos | x86_64 | Production |
 | macOS | x86_64, arm64 | Tested |
 | Windows | x64 (MSVC, MinGW) | Experimental |
 
 CI (Forgejo Actions, see `.forgejo/workflows/`) covers Linux x86_64
 in normal, AddressSanitizer, UndefinedBehaviorSanitizer, and gcov
 modes.  RISC-V and aarch64 are validated via Nix + QEMU.
+
+### illumos / Solaris x86 notes
+
+The build wires the x86 `getfp`/`_breakpoint` helpers (via a portable C
+compat unit) into the SOLARIS x86 branch, links the introspection control
+channel against `libsocket`/`libnsl`, and emits the historic `.so.1`
+SONAME — so a stock `./configure && make && make install` produces a
+working allocator and `LD_PRELOAD=<prefix>/lib/libumem_malloc.so.1` resolves
+as expected, with no out-of-tree patches.
+
+**Dual-ABI (32-bit + 64-bit) install for `LD_PRELOAD` into 32-bit base-OS
+binaries.** The build produces a single ABI (whatever the compiler
+defaults to). To interpose on both 32- and 64-bit processes (illumos base
+tools like `/usr/bin/true` are often 32-bit), build both ABIs in separate
+trees and merge them so the runtime linker's `$ISALIST`/`/64` token
+expansion picks the matching ELF class per process:
+
+```sh
+# 64-bit -> lib/64 (amd64)
+./configure --libdir=/usr/lib/64 CC="gcc -m64"
+make && make install
+make distclean
+
+# 32-bit -> lib
+./configure --libdir=/usr/lib CC="gcc -m32"
+make && make install
+```
+
+A single `LD_PRELOAD=/usr/lib/libumem_malloc.so.1` then resolves to the
+32-bit lib for 32-bit targets and, via the `/64` path token, to
+`/usr/lib/64/libumem_malloc.so.1` for 64-bit targets.
 
 ---
 
