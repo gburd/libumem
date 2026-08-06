@@ -644,8 +644,18 @@ gc_object_add_locked(umem_gc_header_t *hdr)
 	hdr->gc_prev = &gc_objects_sentinel;
 	gc_objects_sentinel.gc_next->gc_prev = hdr;
 	gc_objects_sentinel.gc_next = hdr;
-	if (gc_pagemap != NULL)
-		(void) umem_sparsemap_add_object(gc_pagemap, hdr, user_ptr);
+	if (gc_pagemap != NULL) {
+		/*
+		 * Pass gc_objects_lock so the sparsemap can drop it for the
+		 * O(n) rehash on a grow and re-take it for an O(1) swap -- the
+		 * grow no longer serializes every allocator behind one long
+		 * critical section (the >=6x-oversubscription tail fix).  The
+		 * lock is held on return either way; the doubly-linked list
+		 * splice above is already published under it.
+		 */
+		(void) umem_sparsemap_add_object(gc_pagemap, hdr, user_ptr,
+		    &gc_objects_lock);
+	}
 	(void) pthread_mutex_unlock(&gc_objects_lock);
 }
 

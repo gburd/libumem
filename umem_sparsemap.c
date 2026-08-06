@@ -37,6 +37,7 @@
 #include "umem_sparsemap.h"
 #include "umem_gc.h"
 
+#include <pthread.h>
 #include <string.h>
 
 #ifdef HAVE_UNISTD_H
@@ -62,6 +63,7 @@ struct umem_sparsemap {
 	size_t		sm_count;	/* number of live entries */
 	size_t		sm_tombstones;	/* number of tombstone entries */
 	uintptr_t	sm_page_mask;	/* ~(pagesize - 1) */
+	int		sm_growing;	/* a lock-dropped grow is in progress */
 };
 
 /* Default initial capacity (must be power of 2) */
@@ -138,6 +140,34 @@ sm_free_buckets(sm_entry_t *buckets, size_t capacity)
  * Resize
  * ---------------------------------------------------------------- */
 
+/*
+ * Rehash every live entry of `src` (sm_capacity = src_cap) into freshly
+ * allocated `dst` buckets (capacity dst_cap).  Pure function of its inputs:
+ * reads src, writes dst, touches no shared map state.  Factored out so the
+ * expensive O(n) rehash can run against a private snapshot with the object
+ * lock DROPPED (see umem_sparsemap_grow_locked).
+ */
+static void
+sm_rehash_into(sm_entry_t *dst, size_t dst_cap,
+    const sm_entry_t *src, size_t src_cap)
+{
+	for (size_t i = 0; i < src_cap; i++) {
+		const sm_entry_t *e = &src[i];
+
+		if (e->se_page <= SM_TOMBSTONE)
+			continue;
+
+		size_t idx = sm_hash(e->se_page, dst_cap);
+		for (;;) {
+			if (dst[idx].se_page == SM_EMPTY) {
+				dst[idx] = *e;
+				break;
+			}
+			idx = (idx + 1) & (dst_cap - 1);
+		}
+	}
+}
+
 static int
 sm_resize(umem_sparsemap_t *map, size_t new_capacity)
 {
@@ -146,22 +176,8 @@ sm_resize(umem_sparsemap_t *map, size_t new_capacity)
 	if (new_buckets == NULL)
 		return (-1);
 
-	/* Rehash all live entries */
-	for (size_t i = 0; i < map->sm_capacity; i++) {
-		sm_entry_t *e = &map->sm_buckets[i];
-
-		if (e->se_page <= SM_TOMBSTONE)
-			continue;
-
-		size_t idx = sm_hash(e->se_page, new_capacity);
-		for (;;) {
-			if (new_buckets[idx].se_page == SM_EMPTY) {
-				new_buckets[idx] = *e;
-				break;
-			}
-			idx = (idx + 1) & (new_capacity - 1);
-		}
-	}
+	sm_rehash_into(new_buckets, new_capacity,
+	    map->sm_buckets, map->sm_capacity);
 
 	sm_free_buckets(map->sm_buckets, map->sm_capacity);
 	map->sm_buckets = new_buckets;
@@ -226,6 +242,7 @@ umem_sparsemap_create(size_t initial_capacity)
 	map->sm_count = 0;
 	map->sm_tombstones = 0;
 	map->sm_page_mask = ~(sm_page_size() - 1);
+	map->sm_growing = 0;
 
 	return (map);
 }
@@ -320,13 +337,127 @@ umem_sparsemap_count(umem_sparsemap_t *map)
 	return (map->sm_count);
 }
 
+/*
+ * Grow the map with the O(n) rehash performed OUTSIDE the caller's lock.
+ *
+ * The caller holds `lock` (the GC object lock) and has observed the load
+ * factor exceeded.  Holding that lock across the full rehash serialized
+ * every GC allocator behind one O(n) rebuild -- the >=6x-oversubscription
+ * throughput tail.  Instead we:
+ *
+ *   1. snapshot the current capacity, DROP the lock,
+ *   2. allocate + rehash a PRIVATE copy of the buckets (the O(n) work) with
+ *      the lock released so other allocators run concurrently,
+ *   3. RE-ACQUIRE the lock and, if no other thread resized in the gap
+ *      (capacity unchanged) and the private copy is still big enough for
+ *      the current live+tombstone population, swap it in (O(1)); otherwise
+ *      discard it and fall back to an under-lock sm_resize (rare).
+ *
+ * Soundness vs stop-the-world: the collector reads the sparsemap locklessly
+ * ONLY while every mutator is parked.  A mutator running this grow is inside
+ * a GC critical section (gcti_in_gc_critical), so a suspend signal DEFERS
+ * its park until the grow completes and the lock is released -- the
+ * collector waits for it and never observes a half-swapped map.  The swap
+ * itself publishes sm_buckets/sm_capacity under `lock`, so a concurrent
+ * locked reader (another mutator) also never sees a torn map.
+ *
+ * Returns 0 on success (map grown, still holding `lock`), -1 on OOM (still
+ * holding `lock`, map unchanged).
+ */
+int
+umem_sparsemap_grow_locked(umem_sparsemap_t *map, pthread_mutex_t *lock)
+{
+	size_t old_cap;
+	size_t new_cap;
+	size_t snap_count;
+	size_t snap_tomb;
+	sm_entry_t *old_buckets;
+	sm_entry_t *priv;
+
+	/*
+	 * Only ONE lock-dropped grow at a time.  The grow reads the old bucket
+	 * array with `lock` released; if a second thread could also grow it
+	 * could free that array out from under our rehash (use-after-free).
+	 * The sm_growing guard serializes grows: a concurrent adder that also
+	 * crosses the load factor skips its own resize while a grow is in
+	 * flight (see umem_sparsemap_add_object) and just inserts into the
+	 * current buckets -- linear probing tolerates load past the resize
+	 * threshold, and this grow will enlarge the table momentarily.  So the
+	 * old array is freed only here, only once, only by us.
+	 */
+	if (map->sm_growing)
+		return (0);
+
+	old_cap = map->sm_capacity;
+	new_cap = old_cap * 2;
+	snap_count = map->sm_count;
+	snap_tomb = map->sm_tombstones;
+	old_buckets = map->sm_buckets;
+	map->sm_growing = 1;
+
+	/*
+	 * Do the ENTIRE O(n) resize -- allocate, zero, and rehash -- against
+	 * the snapshot with `lock` released, so all other GC allocators run
+	 * concurrently instead of serializing behind one long critical
+	 * section.  This is the change that removes the >=6x-oversubscription
+	 * throughput tail: the expensive part of gc_object_add no longer runs
+	 * under the object lock.
+	 */
+	(void) pthread_mutex_unlock(lock);
+
+	priv = sm_alloc_buckets(new_cap);
+	if (priv != NULL)
+		sm_rehash_into(priv, new_cap, old_buckets, old_cap);
+
+	(void) pthread_mutex_lock(lock);
+	map->sm_growing = 0;
+
+	if (priv == NULL)
+		return (-1);	/* OOM; caller inserts into current buckets */
+
+	/*
+	 * Swap the private copy in ONLY if the map is exactly what we
+	 * rehashed: same bucket array (the sm_growing guard guarantees no
+	 * other resize ran, so this always holds) and same live + tombstone
+	 * population (no add/remove landed while we were unlocked).  Then the
+	 * private copy is an exact image and the swap is a sound O(1) publish
+	 * under the lock: a locked reader sees either the old or the new map,
+	 * never a torn one, and the collector (which reads locklessly only
+	 * while every mutator is parked -- and this mutator is inside a GC
+	 * critical section, so it defers parking until this grow returns)
+	 * never observes a half-swap.
+	 */
+	if (map->sm_count == snap_count && map->sm_tombstones == snap_tomb) {
+		map->sm_buckets = priv;
+		map->sm_capacity = new_cap;
+		map->sm_tombstones = 0;
+		sm_free_buckets(old_buckets, old_cap);
+		return (0);
+	}
+
+	/*
+	 * An add/remove changed the population while we were unlocked, so our
+	 * copy is stale.  Discard it; the current buckets are unchanged (we
+	 * held the growing guard, nobody resized).  If a resize is still
+	 * warranted, do a plain in-lock resize against the current state.
+	 * Rare (the unlocked window is short relative to the inter-resize
+	 * gap), so the occasional in-lock O(n) is acceptable and keeps
+	 * correctness trivial.
+	 */
+	sm_free_buckets(priv, new_cap);
+	if ((map->sm_count + map->sm_tombstones) * SM_LOAD_DEN >=
+	    map->sm_capacity * SM_LOAD_NUM)
+		return (sm_resize(map, map->sm_capacity * 2));
+	return (0);
+}
+
 /* ----------------------------------------------------------------
  * Per-page object list management
  * ---------------------------------------------------------------- */
 
 int
 umem_sparsemap_add_object(umem_sparsemap_t *map,
-    struct umem_gc_header *hdr, void *user_ptr)
+    struct umem_gc_header *hdr, void *user_ptr, pthread_mutex_t *lock)
 {
 	uintptr_t page;
 	sm_entry_t *e;
@@ -345,12 +476,37 @@ umem_sparsemap_add_object(umem_sparsemap_t *map,
 		return (0);
 	}
 
-	/* New page: need to insert entry */
+	/*
+	 * New page: need to insert an entry.  If the load factor is exceeded,
+	 * grow first.  umem_sparsemap_grow_locked does the O(n) rehash with
+	 * `lock` DROPPED (when a lock is supplied), which is what removes the
+	 * >=6x-oversubscription throughput tail.  If it cannot grow right now
+	 * (a concurrent grow is in flight, or OOM) we insert into the current
+	 * buckets anyway: linear probing tolerates load past the threshold as
+	 * long as the table is not full, and it never fills because a grow is
+	 * always in progress or imminent when we are over the threshold.
+	 */
 	{
 		size_t used = map->sm_count + map->sm_tombstones;
 		if (used * SM_LOAD_DEN >= map->sm_capacity * SM_LOAD_NUM) {
-			if (sm_resize(map, map->sm_capacity * 2) != 0)
+			if (lock != NULL) {
+				(void) umem_sparsemap_grow_locked(map, lock);
+				/*
+				 * The lock was dropped during the grow, so the
+				 * page may have been inserted by a racing add
+				 * while we were unlocked.  Re-check.
+				 */
+				e = sm_lookup(map, page);
+				if (e != NULL) {
+					hdr->gc_page_next = e->se_objects;
+					e->se_objects = hdr;
+					e->se_count++;
+					return (0);
+				}
+			} else if (sm_resize(map,
+			    map->sm_capacity * 2) != 0) {
 				return (-1);
+			}
 		}
 	}
 

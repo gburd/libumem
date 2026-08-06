@@ -35,6 +35,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -89,10 +90,24 @@ size_t umem_sparsemap_count(umem_sparsemap_t *map);
 
 /*
  * Add a GC object header to the per-page list for its page.
+ * `lock` is the mutex the caller holds while calling (the GC object lock);
+ * when non-NULL, a table grow is performed with that lock DROPPED for the
+ * O(n) rehash and re-acquired for an O(1) swap, so the grow does not
+ * serialize concurrent allocators.  Pass NULL to grow in-place under the
+ * caller's own locking.
  * Returns 0 on success, -1 on failure.
  */
 int umem_sparsemap_add_object(umem_sparsemap_t *map,
-    struct umem_gc_header *hdr, void *user_ptr);
+    struct umem_gc_header *hdr, void *user_ptr, pthread_mutex_t *lock);
+
+/*
+ * Grow the table (double capacity) performing the O(n) rehash with `lock`
+ * released, then swapping the new table in under a brief re-acquisition of
+ * `lock`.  Caller must hold `lock` on entry and holds it again on return.
+ * Returns 0 on success (or if a concurrent grow made it unnecessary), -1 on
+ * allocation failure (map unchanged).
+ */
+int umem_sparsemap_grow_locked(umem_sparsemap_t *map, pthread_mutex_t *lock);
 
 /*
  * Remove a GC object header from the per-page list.
