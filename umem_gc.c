@@ -938,7 +938,21 @@ gc_free_object(umem_gc_header_t *hdr)
 		umem_free(hdr, alloc_sz);
 	}
 
-	atomic_fetch_sub(&gc_heap_size, hdr->gc_size);
+	/*
+	 * Saturating subtract: gc_heap_size is an unsigned advisory counter
+	 * (GC_get_heap_size()).  Never let it wrap to ~2^64 if a free is ever
+	 * double-counted -- that surfaced as an intermittent bogus heap_before
+	 * in /gc/large_heap.  Mirrors the guard umem_gc_free() applies to
+	 * gc_bytes_allocated.
+	 */
+	{
+		size_t sz = hdr->gc_size;
+		size_t prev = atomic_load(&gc_heap_size);
+		if (prev >= sz)
+			atomic_fetch_sub(&gc_heap_size, sz);
+		else
+			atomic_store(&gc_heap_size, 0);
+	}
 }
 
 /*
@@ -1354,6 +1368,20 @@ umem_gc_realloc(void *ptr, size_t new_size)
 		size_t old_total = sizeof (umem_gc_header_t) + old_size;
 		size_t new_total = sizeof (umem_gc_header_t) + new_size;
 		if (gc_alloc_size(old_total) == gc_alloc_size(new_total)) {
+			/*
+			 * gc_heap_size was charged old_size at alloc and the
+			 * eventual free subtracts hdr->gc_size, so an in-place
+			 * shrink must drop the freed bytes now or the counter
+			 * drifts (old_size - new_size) high per shrink.
+			 */
+			size_t drop = old_size - new_size;
+			if (drop != 0) {
+				size_t prev = atomic_load(&gc_heap_size);
+				if (prev >= drop)
+					atomic_fetch_sub(&gc_heap_size, drop);
+				else
+					atomic_store(&gc_heap_size, 0);
+			}
 			old_hdr->gc_size = new_size;
 			return (ptr);
 		}

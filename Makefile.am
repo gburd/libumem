@@ -105,7 +105,8 @@ AM_CCASFLAGS =
 
 libumem_la_SOURCES = init_lib.c \
 			atomic.h \
-			sparsemap.h \
+			sm.c \
+			sm.h \
 			umem_agent_support.c \
 			umem_fail.c \
 			umem_stacktrace.c \
@@ -169,6 +170,10 @@ libumem_malloc_la_LIBADD = libumem.la
 
 # Initialize flags unconditionally to avoid += errors
 AM_CFLAGS = -fno-builtin-calloc $(SIMD_CFLAGS) -D_UMEM_INTERNAL
+# Namespace the vendored sparsemap (sm.c/sm.h, upstream v5.4.0) so its public
+# symbols become umem_sm_* and cannot collide with an application that also
+# links its own copy of sparsemap.  Only sm.c/sm.h consult this macro.
+AM_CPPFLAGS = -DSPARSEMAP_PREFIX=umem_
 AM_LDFLAGS =
 
 # Add coverage flags if enabled

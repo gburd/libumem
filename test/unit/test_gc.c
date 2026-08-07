@@ -1178,9 +1178,18 @@ test_gc_boehm_full(const MunitParameter params[], void *data)
 	GC_FREE(pa);
 	GC_FREE(NULL);
 
-	/* GC_get_heap_size: returns positive value */
+	/*
+	 * GC_get_heap_size: returns a positive value while an object is live.
+	 * Read it with a fresh live allocation held, not after freeing
+	 * everything -- the heap-size counter is advisory and legitimately
+	 * returns to ~0 once this test's own objects are freed (it must not
+	 * depend on residual leakage from earlier tests in a --no-fork run).
+	 */
+	volatile void *live = GC_MALLOC(1024);
+	munit_assert_not_null((void *)live);
 	size_t hs = GC_get_heap_size();
 	munit_assert_size(hs, >, 0);
+	GC_FREE((void *)live);
 
 	/* GC_get_free_bytes: does not crash */
 	size_t fb = GC_get_free_bytes();
