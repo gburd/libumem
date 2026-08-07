@@ -3,6 +3,69 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.4.0] - 2026-08-07
+
+sparsemap refresh + GC scalability. Verified building + testing on EC2
+(x86_64 + aarch64); full unit suite 459 OK / 0 FAIL, now deterministic
+(previously ~10%-flaky GC heap-stat tests fixed).
+
+### sparsemap: latest upstream, namespaced (no symbol collision)
+
+- Replaced the stale, uncompiled vendored `sparsemap.{c,h}` with upstream
+  **sparsemap v5.4.0** (`sm.c`/`sm.h`), compiled into libumem with
+  `-DSPARSEMAP_PREFIX=umem_` so every public symbol is `umem_sm_*`. An
+  application that links its own copy of sparsemap can no longer collide
+  with libumem's (84 `umem_sm_*` symbols exported; zero bare
+  `sm_*`/`sparsemap_*`). The GC's internal page map (`umem_sparsemap.c`) is a
+  separate table and was already `umem_`-namespaced.
+
+### GC: object lock + page map sharded (removes alloc-path contention)
+
+- The single global `gc_objects_lock` (guarding the object list *and* the
+  page sparsemap, held across an O(n) sparsemap rehash) serialized every
+  `GC_MALLOC` under concurrency. It is now **64 shards keyed by page**: each
+  shard has its own lock, object list, and `umem_sparsemap`;
+  `gc_object_add`/remove contend only the object's shard; stop-the-world
+  walks all shards (still a complete, quiescent snapshot); `find_header`
+  routes a conservative/interior pointer to one shard by page. Removes the
+  mutator-vs-mutator serialization on the alloc/free path.
+- Sound: strict-stw 32t/1000r ×30 = 0 corruption; 192t/800r ×20 at real 1:1
+  parallelism = 0 corruption / 0 timeout.
+- Superseded the earlier 4x-sparsemap-growth partial mitigation.
+- **Known residual (STW under CPU oversubscription):** GC is sound on both
+  arches at ≤1x thread:core (the normal regime; x86 clean to 192t/1:1, arm
+  clean through 8t/8-core). Under CPU *oversubscription* the STW
+  suspend-barrier has a pre-existing soundness edge: on x86 it manifests as a
+  rare bounded stall/skip; on **aarch64** (weaker memory model) it can rarely
+  **sweep a reachable object** (16t/8-core: ~2/10 under ASan). This predates
+  this release — pre-sharding v2.3.0 is far worse on arm (~14/15) — and the
+  sharding here substantially *reduces* it, but does not eliminate it. Root
+  cause is the suspend-ack barrier ordering, fixed by a separate
+  barrier/safepoint follow-on. **Do not run the conservative GC oversubscribed
+  on aarch64 until that lands.**
+  (`docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md` §4.2–4.3)
+
+### GC heap-size accounting fixes (deterministic tests)
+
+- `umem_gc_realloc` in-place shrink now drops the freed bytes from
+  `gc_heap_size` (was drifting the counter high).
+- `gc_free_object` uses a saturating subtract so the unsigned advisory
+  counter (`GC_get_heap_size()`) can never wrap to ~2^64 on a double-counted
+  free — the root of the intermittent `/gc/large_heap` failure (pre-existing
+  since v2.0, ~10% flake).
+- `test_gc` `boehm_full` reads `GC_get_heap_size()` with a live allocation
+  held rather than relying on cross-test residual leakage.
+
+### rseq lock-free reload: analyzed, kept inert (documented)
+
+- Arming the per-CPU rseq reload with the existing plain-C slowpath is
+  unfixably racy against the lock-free asm fastpath (migration mid-reload
+  tears the per-CPU magazine). A correct arming needs a second rseq critical
+  section (hand-written per-CPU-commit asm) on both x86_64 and aarch64. Since
+  the rseq path is a pure optimization (PTC serves the steady state soundly),
+  it stays inert; the exact constraint + oracle gate for a future attempt are
+  documented. (`docs/results/2026-08-06-rseq-reload-analysis.md`)
+
 ## [2.3.0] - 2026-08-06
 
 illumos/x86 build-portability release, from the solnix (Nix distribution of

@@ -232,6 +232,38 @@ scheduler-aware barrier), tracked as a separate item. Every such run remains
 **bounded-sound** (completes or cleanly skips; never an unsound sweep, never
 corruption). `--strict-stw` remains validated as the default at 4x.
 
+### 4.3 aarch64: the STW oversubscription edge is worse (pre-existing)
+
+Cross-arch validation (2026-08, arm-lo `c7g.2xlarge`, 8 vCPU, ASan strict-stw)
+found the STW oversubscription soundness edge appears at a **lower
+oversubscription ratio on aarch64** than on x86_64 — arm's weaker memory model
+exposes it sooner:
+
+| threads (8 vCPU) | ratio | x86_64 | aarch64 (sharded) | aarch64 (pre-shard / v2.3.0) |
+|---|---|---|---|---|
+| 2 / 4 / 8 | ≤1x | clean | **0/10 clean** | clean |
+| 16 | 2x | (clean to 192t/1:1) | 2/10 corrupt | **14/15 corrupt** |
+
+Two findings:
+
+1. **Pre-existing, not introduced by sharding.** The pre-sharding v2.3.0 GC
+   reproduces the arm STW sweep-of-reachable at **14/15** at 16t/8-core.
+   Sharding (this release) *reduces* it to **2/10** — a large improvement —
+   but does not eliminate it. So arm GC was never sound under
+   oversubscription in any shipped version; this release improves it.
+2. **Same root cause as the x86 tail:** the suspend-barrier under
+   oversubscription. On arm the collector can proceed before a suspended
+   mutator's stack stores are visible (missing acquire/release pairing on the
+   suspend acknowledgement), so a reachable object rooted on that stack is
+   swept. The fix is the same barrier/safepoint rework (a proper
+   acquire/release or seq-cst handshake on suspend-ack, plus safepoint
+   polling), tracked as the barrier follow-on.
+
+**Operating guidance:** GC is sound on both arches at ≤1x thread:core
+(the normal regime). Under CPU oversubscription the STW path is bounded but
+can rarely sweep a reachable object on aarch64 — do not run the conservative
+GC oversubscribed on aarch64 until the barrier follow-on lands.
+
 ## 5. Reproduction
 
 ```
