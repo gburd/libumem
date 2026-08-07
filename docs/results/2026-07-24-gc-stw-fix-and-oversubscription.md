@@ -202,6 +202,36 @@ documented out-of-scope follow-on. Every such stall is still **bounded-sound**
 the tradeoff the project rules prefer. `--strict-stw` remains validated as the
 default at 4x.
 
+### 4.2 Follow-up (2026-08): object lock + pagemap sharded (add-path contention removed)
+
+`perf(gc): shard the global object lock + pagemap` (5bd2113) landed the
+"ideal follow-on": the single `gc_objects_lock` + global pagemap are replaced
+by **64 shards keyed by page** (every object on a page lands in one shard, so
+`umem_gc_find_header()` still routes a conservative/interior pointer to a
+single shard by page and resolves it via that shard's per-page object list).
+Each shard has its own lock, object list, and `umem_sparsemap`;
+`gc_object_add`/remove contend only the object's shard; stop-the-world walks
+all shards (a complete, quiescent snapshot — every mutator is parked);
+`find_header` reads one shard's pagemap locklessly. This removes the
+mutator-vs-mutator serialization on the alloc/free path.
+
+**Validation:** strict-stw 32t/1000r ×30 = 0 corruption; **192t/800r ×20 at
+real 1:1 parallelism = 0 corruption / 0 timeout**; full `test_main --no-fork`
+= 459 OK / 0 FAIL. Sharding is sound and the barrier is clean whenever threads
+can actually be scheduled.
+
+**Residual, honestly scoped.** At **≥6x CPU oversubscription** (48 threads on
+8 cores) a rare stall (~1 in 20–30 runs) persists *even with sharding*, which
+pins the root cause precisely: it is **not** lock contention (sharding removed
+that, and it is clean at real parallelism) — it is the **STW suspend-barrier
+vs. the scheduler**: 48 runnable threads cannot all be scheduled onto 8 cores
+to reach a safepoint within the barrier timeout, so the collector bounded-waits
+then skips the cycle. Eliminating it requires a different mechanism than a
+lock (cooperative safepoint polling inside tight mutator loops, or a
+scheduler-aware barrier), tracked as a separate item. Every such run remains
+**bounded-sound** (completes or cleanly skips; never an unsound sweep, never
+corruption). `--strict-stw` remains validated as the default at 4x.
+
 ## 5. Reproduction
 
 ```
