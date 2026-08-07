@@ -65,11 +65,24 @@ struct umem_sparsemap {
 };
 
 /* Default initial capacity (must be power of 2) */
-#define	SM_DEFAULT_CAPACITY	256
+#define	SM_DEFAULT_CAPACITY	4096
 
 /* Maximum load factor before resize (70%) */
 #define	SM_LOAD_NUM		7
 #define	SM_LOAD_DEN		10
+
+/*
+ * Growth factor on resize.  The rehash in sm_resize() is O(capacity) and
+ * runs while the caller holds gc_objects_lock, so under high allocator
+ * concurrency (the GC's >=6x-oversubscription tail) it serializes peers.
+ * Growing 4x per resize (rather than 2x) reaches steady-state capacity in
+ * half as many resizes and halves the number of O(n) lock holds, cutting
+ * the tail, at the cost of a modestly larger table.  Sound and risk-free:
+ * resize never runs concurrently with the collector (STW marks only while
+ * every mutator is parked; a resizing mutator is in a GC critical section
+ * that defers parking), so this only affects mutator-vs-mutator contention.
+ */
+#define	SM_GROWTH_SHIFT		2	/* new_cap = cap << 2  (4x) */
 
 /* ----------------------------------------------------------------
  * Helpers
@@ -256,7 +269,7 @@ umem_sparsemap_set(umem_sparsemap_t *map, void *ptr)
 	/* Check load factor and resize if needed */
 	size_t used = map->sm_count + map->sm_tombstones;
 	if (used * SM_LOAD_DEN >= map->sm_capacity * SM_LOAD_NUM) {
-		if (sm_resize(map, map->sm_capacity * 2) != 0)
+		if (sm_resize(map, map->sm_capacity << SM_GROWTH_SHIFT) != 0)
 			return (-1);
 	}
 
@@ -349,7 +362,7 @@ umem_sparsemap_add_object(umem_sparsemap_t *map,
 	{
 		size_t used = map->sm_count + map->sm_tombstones;
 		if (used * SM_LOAD_DEN >= map->sm_capacity * SM_LOAD_NUM) {
-			if (sm_resize(map, map->sm_capacity * 2) != 0)
+			if (sm_resize(map, map->sm_capacity << SM_GROWTH_SHIFT) != 0)
 				return (-1);
 		}
 	}
