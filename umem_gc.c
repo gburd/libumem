@@ -101,9 +101,61 @@ static _Atomic umem_gc_phase_t gc_phase = GC_PHASE_IDLE;
 /* Mark value: incremented each GC cycle */
 static _Atomic uint32_t gc_mark_value = 1;
 
-/* Global object list (doubly-linked, protected by gc_objects_lock) */
-static pthread_mutex_t gc_objects_lock = PTHREAD_MUTEX_INITIALIZER;
-static umem_gc_header_t gc_objects_sentinel;
+/*
+ * Global object set, sharded to cut allocator-vs-allocator contention on
+ * gc_object_add() under high concurrency / CPU oversubscription (the
+ * documented >=6x throughput tail).  Each shard owns an independent object
+ * list AND its own page sparsemap, so a GC_MALLOC only ever contends the one
+ * shard its object hashes to.  Stop-the-world walks every shard (all mutators
+ * are parked, so the snapshot is still complete + quiescent); find_header
+ * routes to a shard by the same hash and reads that shard's pagemap
+ * locklessly (safe only under STW, as before).
+ *
+ * GC_NSHARDS must be a power of two.
+ */
+#define	GC_NSHARDS	64
+typedef struct gc_shard {
+	pthread_mutex_t		lock;
+	umem_gc_header_t	sentinel;
+	umem_sparsemap_t	*pagemap;
+	char			pad[64];	/* keep shards on separate lines */
+} gc_shard_t;
+static gc_shard_t gc_shards[GC_NSHARDS];
+
+/*
+ * Hash a PAGE address to a shard.  Sharding is by page (not by object
+ * address) so that every object residing on a given page lands in the same
+ * shard's pagemap -- this is what lets umem_gc_find_header() route a
+ * conservative (possibly interior) pointer to a single shard by page and
+ * still find the object via that shard's per-page object list.  A
+ * multiplicative hash spreads adjacent pages across shards so a burst of
+ * same-size allocations does not pile onto one shard.
+ *
+ * GC_NSHARDS must be a power of two.
+ */
+static inline unsigned
+gc_shard_of_page(uintptr_t page)
+{
+	uintptr_t k = page >> 12;		/* drop page-offset bits */
+	k *= (uintptr_t)0x9E3779B97F4A7C15ULL;
+	return ((unsigned)(k >> (64 - 6)) & (GC_NSHARDS - 1));
+}
+
+/* Shard for a user pointer (or interior pointer): by its containing page. */
+static inline unsigned
+gc_shard_of_ptr(const void *ptr)
+{
+	static uintptr_t pgmask;
+	if (pgmask == 0) {
+#ifdef _SC_PAGESIZE
+		long sz = sysconf(_SC_PAGESIZE);
+		pgmask = ~((uintptr_t)((sz > 0) ? sz : 4096) - 1);
+#else
+		pgmask = ~((uintptr_t)4096 - 1);
+#endif
+	}
+	return (gc_shard_of_page((uintptr_t)ptr & pgmask));
+}
 
 /* Thread list (protected by gc_threads_lock) */
 static pthread_mutex_t gc_threads_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -136,8 +188,8 @@ static pthread_mutex_t gc_collect_lock = PTHREAD_MUTEX_INITIALIZER;
  */
 static pthread_rwlock_t gc_phase_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
-/* Page-level sparsemap for O(1) GC pointer lookup */
-static umem_sparsemap_t *gc_pagemap;
+/* Page-level sparsemap for O(1) GC pointer lookup: now per-shard (see
+ * gc_shards[]); this global is retired. */
 
 /* Finalizer recursion guard: prevents GC_MALLOC during finalization */
 static __thread int gc_in_finalizer;
@@ -638,15 +690,16 @@ static void
 gc_object_add_locked(umem_gc_header_t *hdr)
 {
 	void *user_ptr = UMEM_GC_USER_PTR(hdr);
+	gc_shard_t *sh = &gc_shards[gc_shard_of_ptr(user_ptr)];
 
-	(void) pthread_mutex_lock(&gc_objects_lock);
-	hdr->gc_next = gc_objects_sentinel.gc_next;
-	hdr->gc_prev = &gc_objects_sentinel;
-	gc_objects_sentinel.gc_next->gc_prev = hdr;
-	gc_objects_sentinel.gc_next = hdr;
-	if (gc_pagemap != NULL)
-		(void) umem_sparsemap_add_object(gc_pagemap, hdr, user_ptr);
-	(void) pthread_mutex_unlock(&gc_objects_lock);
+	(void) pthread_mutex_lock(&sh->lock);
+	hdr->gc_next = sh->sentinel.gc_next;
+	hdr->gc_prev = &sh->sentinel;
+	sh->sentinel.gc_next->gc_prev = hdr;
+	sh->sentinel.gc_next = hdr;
+	if (sh->pagemap != NULL)
+		(void) umem_sparsemap_add_object(sh->pagemap, hdr, user_ptr);
+	(void) pthread_mutex_unlock(&sh->lock);
 }
 
 /*
@@ -679,17 +732,22 @@ gc_object_add(umem_gc_header_t *hdr)
 /*
  * Remove a GC object from the global list. Caller must hold gc_objects_lock.
  */
+/*
+ * Remove a GC object from its shard list + pagemap.  Caller MUST hold the
+ * object's shard lock (gc_shards[gc_shard_of_ptr(UMEM_GC_USER_PTR(hdr))].lock).
+ */
 static void
 gc_object_remove_locked(umem_gc_header_t *hdr)
 {
 	void *user_ptr = UMEM_GC_USER_PTR(hdr);
+	gc_shard_t *sh = &gc_shards[gc_shard_of_ptr(user_ptr)];
 
 	hdr->gc_prev->gc_next = hdr->gc_next;
 	hdr->gc_next->gc_prev = hdr->gc_prev;
 	hdr->gc_next = NULL;
 	hdr->gc_prev = NULL;
-	if (gc_pagemap != NULL)
-		umem_sparsemap_remove_object(gc_pagemap, hdr, user_ptr);
+	if (sh->pagemap != NULL)
+		umem_sparsemap_remove_object(sh->pagemap, hdr, user_ptr);
 }
 
 /* ----------------------------------------------------------------
@@ -993,34 +1051,38 @@ gc_collect_dead(umem_gc_header_t **finalize_out, umem_gc_header_t **free_out)
 	umem_gc_header_t *finalize_list = NULL;
 	umem_gc_header_t *free_list = NULL;
 
-	(void) pthread_mutex_lock(&gc_objects_lock);
+	(void) mark_val;
+	for (unsigned s = 0; s < GC_NSHARDS; s++) {
+		gc_shard_t *sh = &gc_shards[s];
+		(void) pthread_mutex_lock(&sh->lock);
 
-	umem_gc_header_t *hdr = gc_objects_sentinel.gc_next;
-	while (hdr != &gc_objects_sentinel) {
-		umem_gc_header_t *next = hdr->gc_next;
+		umem_gc_header_t *hdr = sh->sentinel.gc_next;
+		while (hdr != &sh->sentinel) {
+			umem_gc_header_t *next = hdr->gc_next;
 
-		if (hdr->gc_flags & UMEM_GC_PINNED) {
-			hdr = next;
-			continue;
-		}
-
-		if (atomic_load(&hdr->gc_mark) != mark_val) {
-			gc_object_remove_locked(hdr);
-
-			if (hdr->gc_flags & UMEM_GC_FINALIZE) {
-				hdr->gc_next = finalize_list;
-				finalize_list = hdr;
-			} else {
-				hdr->gc_next = free_list;
-				free_list = hdr;
+			if (hdr->gc_flags & UMEM_GC_PINNED) {
+				hdr = next;
+				continue;
 			}
-			collected++;
+
+			if (atomic_load(&hdr->gc_mark) != mark_val) {
+				gc_object_remove_locked(hdr);
+
+				if (hdr->gc_flags & UMEM_GC_FINALIZE) {
+					hdr->gc_next = finalize_list;
+					finalize_list = hdr;
+				} else {
+					hdr->gc_next = free_list;
+					free_list = hdr;
+				}
+				collected++;
+			}
+
+			hdr = next;
 		}
 
-		hdr = next;
+		(void) pthread_mutex_unlock(&sh->lock);
 	}
-
-	(void) pthread_mutex_unlock(&gc_objects_lock);
 
 	*finalize_out = finalize_list;
 	*free_out = free_list;
@@ -1097,9 +1159,13 @@ umem_gc_init(void)
 		return (0);
 	}
 
-	/* Initialize the sentinel for the doubly-linked object list */
-	gc_objects_sentinel.gc_next = &gc_objects_sentinel;
-	gc_objects_sentinel.gc_prev = &gc_objects_sentinel;
+	/* Initialize per-shard object lists + locks */
+	for (unsigned s = 0; s < GC_NSHARDS; s++) {
+		(void) pthread_mutex_init(&gc_shards[s].lock, NULL);
+		gc_shards[s].sentinel.gc_next = &gc_shards[s].sentinel;
+		gc_shards[s].sentinel.gc_prev = &gc_shards[s].sentinel;
+		gc_shards[s].pagemap = NULL;
+	}
 
 	/* Create pthread key for automatic thread unregistration */
 	if (pthread_key_create(&gc_thread_key,
@@ -1108,18 +1174,26 @@ umem_gc_init(void)
 		return (-1);
 	}
 
-	/* Create page-level sparsemap for O(1) pointer lookup */
-	gc_pagemap = umem_sparsemap_create(0);
-	if (gc_pagemap == NULL) {
-		(void) pthread_key_delete(gc_thread_key);
-		(void) pthread_mutex_unlock(&gc_init_lock);
-		return (-1);
+	/* Create a per-shard page-level sparsemap for O(1) pointer lookup */
+	for (unsigned s = 0; s < GC_NSHARDS; s++) {
+		gc_shards[s].pagemap = umem_sparsemap_create(0);
+		if (gc_shards[s].pagemap == NULL) {
+			for (unsigned t = 0; t < s; t++) {
+				umem_sparsemap_destroy(gc_shards[t].pagemap);
+				gc_shards[t].pagemap = NULL;
+			}
+			(void) pthread_key_delete(gc_thread_key);
+			(void) pthread_mutex_unlock(&gc_init_lock);
+			return (-1);
+		}
 	}
 
 	/* Create size-classed GC caches */
 	if (gc_create_caches() != 0) {
-		umem_sparsemap_destroy(gc_pagemap);
-		gc_pagemap = NULL;
+		for (unsigned s = 0; s < GC_NSHARDS; s++) {
+			umem_sparsemap_destroy(gc_shards[s].pagemap);
+			gc_shards[s].pagemap = NULL;
+		}
 		(void) pthread_key_delete(gc_thread_key);
 		(void) pthread_mutex_unlock(&gc_init_lock);
 		return (-1);
@@ -1446,9 +1520,12 @@ umem_gc_free(void *ptr)
 	 */
 	slot = gc_critical_enter();
 
-	(void) pthread_mutex_lock(&gc_objects_lock);
-	gc_object_remove_locked(hdr);
-	(void) pthread_mutex_unlock(&gc_objects_lock);
+	{
+		gc_shard_t *sh = &gc_shards[gc_shard_of_ptr(UMEM_GC_USER_PTR(hdr))];
+		(void) pthread_mutex_lock(&sh->lock);
+		gc_object_remove_locked(hdr);
+		(void) pthread_mutex_unlock(&sh->lock);
+	}
 
 	/* Run finalizer if registered */
 	gc_run_finalizer(hdr);
@@ -1747,26 +1824,30 @@ umem_gc_find_header(void *ptr)
 	if (ptr == NULL)
 		return (NULL);
 
-	/* O(1) lookup via per-page object lists in sparsemap */
-	if (gc_pagemap != NULL)
-		return (umem_sparsemap_find_object(gc_pagemap, ptr));
+	/* O(1) lookup via the per-page object lists in the ptr's shard pagemap */
+	{
+		gc_shard_t *sh = &gc_shards[gc_shard_of_ptr(ptr)];
+		if (sh->pagemap != NULL)
+			return (umem_sparsemap_find_object(sh->pagemap, ptr));
+	}
 
-	/* Fallback: O(n) scan if sparsemap not available */
+	/* Fallback: O(n) scan across all shards if sparsemaps unavailable */
 	{
 		umem_gc_header_t *candidate = UMEM_GC_HEADER(ptr);
 
-		(void) pthread_mutex_lock(&gc_objects_lock);
-
-		umem_gc_header_t *hdr = gc_objects_sentinel.gc_next;
-		while (hdr != &gc_objects_sentinel) {
-			if (hdr == candidate) {
-				(void) pthread_mutex_unlock(&gc_objects_lock);
-				return (hdr);
+		for (unsigned s = 0; s < GC_NSHARDS; s++) {
+			gc_shard_t *sh = &gc_shards[s];
+			(void) pthread_mutex_lock(&sh->lock);
+			umem_gc_header_t *hdr = sh->sentinel.gc_next;
+			while (hdr != &sh->sentinel) {
+				if (hdr == candidate) {
+					(void) pthread_mutex_unlock(&sh->lock);
+					return (hdr);
+				}
+				hdr = hdr->gc_next;
 			}
-			hdr = hdr->gc_next;
+			(void) pthread_mutex_unlock(&sh->lock);
 		}
-
-		(void) pthread_mutex_unlock(&gc_objects_lock);
 	}
 	return (NULL);
 }
@@ -1787,16 +1868,17 @@ umem_gc_mark_object(umem_gc_header_t *hdr)
 void
 umem_gc_walk_objects(void (*fn)(umem_gc_header_t *hdr, void *arg), void *arg)
 {
-	(void) pthread_mutex_lock(&gc_objects_lock);
-
-	umem_gc_header_t *hdr = gc_objects_sentinel.gc_next;
-	while (hdr != &gc_objects_sentinel) {
-		umem_gc_header_t *next = hdr->gc_next;
-		fn(hdr, arg);
-		hdr = next;
+	for (unsigned s = 0; s < GC_NSHARDS; s++) {
+		gc_shard_t *sh = &gc_shards[s];
+		(void) pthread_mutex_lock(&sh->lock);
+		umem_gc_header_t *hdr = sh->sentinel.gc_next;
+		while (hdr != &sh->sentinel) {
+			umem_gc_header_t *next = hdr->gc_next;
+			fn(hdr, arg);
+			hdr = next;
+		}
+		(void) pthread_mutex_unlock(&sh->lock);
 	}
-
-	(void) pthread_mutex_unlock(&gc_objects_lock);
 }
 
 /* ----------------------------------------------------------------
@@ -1828,11 +1910,13 @@ umem_gc_unlock_threads(void)
 void
 umem_gc_lock_objects(void)
 {
-	(void) pthread_mutex_lock(&gc_objects_lock);
+	for (unsigned s = 0; s < GC_NSHARDS; s++)
+		(void) pthread_mutex_lock(&gc_shards[s].lock);
 }
 
 void
 umem_gc_unlock_objects(void)
 {
-	(void) pthread_mutex_unlock(&gc_objects_lock);
+	for (unsigned s = GC_NSHARDS; s-- > 0; )
+		(void) pthread_mutex_unlock(&gc_shards[s].lock);
 }
