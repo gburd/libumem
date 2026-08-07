@@ -178,6 +178,30 @@ longer serializes all allocators, and/or move the page-sparsemap resize out of
 the `gc_objects_lock` critical section. That removes the tail at extreme
 oversubscription without touching the now-sound STW mechanism.
 
+### 4.1 Follow-up (2026-08): partial mitigation landed
+
+`perf(gc): grow page-sparsemap 4x + larger initial capacity` (a814fa1) took
+the smaller, provably-sound half of the ideal follow-on: the O(capacity)
+rehash in `sm_resize()` still runs under `gc_objects_lock`, but growing 4x
+per resize (was 2x) from an initial 4096 buckets (was 256) reaches
+steady-state capacity in far fewer resizes, roughly halving the number of
+O(n) lock holds. Verified sound (48t→resize path unchanged in semantics;
+resize never races the collector, which only reads while all mutators are
+parked): 32t/1000r ×30 = 0 corruption, full `test_main --no-fork` = 459 OK /
+0 FAIL across 5 runs. Common-case 6x latency improved (48t/1000r median
+~11.2s → ~10.1s on 8 cores).
+
+**The rare 6x tail is NOT eliminated.** A 300s stall still reproduced ~1 in
+12 runs at 48t/8-core even with 4x growth — the residual cause is the STW
+park-barrier interacting with `gc_objects_lock` contention under extreme
+oversubscription, not resize frequency. The full fix (striped object-lock
+shards, or moving the rehash to a private-copy-then-publish protocol that the
+lockless STW reader can tolerate, or reworking the barrier) remains the
+documented out-of-scope follow-on. Every such stall is still **bounded-sound**
+(completes or cleanly skips; never an unsound sweep, never data corruption) —
+the tradeoff the project rules prefer. `--strict-stw` remains validated as the
+default at 4x.
+
 ## 5. Reproduction
 
 ```
