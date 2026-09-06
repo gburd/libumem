@@ -2452,6 +2452,14 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 }
 
 #ifdef UMEM_RSEQ_AVAILABLE
+/*
+ * UNUSED: see docs/results/2026-08-06-rseq-reload-analysis.md for why
+ * arming this needs new asm, not a C wrapper. A plain-C reload here
+ * races the lock-free rseq asm fastpath across a CPU migration, and a
+ * lock does not help because the fastpath never takes one. Kept for
+ * reference / as a starting point for a future migration-safe
+ * per-CPU-commit assembly implementation; not called anywhere.
+ */
 static void *
 umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 {
@@ -2479,6 +2487,11 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 	return (buf);
 }
 
+/*
+ * UNUSED: see docs/results/2026-08-06-rseq-reload-analysis.md for why
+ * arming this needs new asm, not a C wrapper. Same migration-race
+ * hazard as umem_rseq_alloc_slowpath() above; not called anywhere.
+ */
 static int
 umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
 {

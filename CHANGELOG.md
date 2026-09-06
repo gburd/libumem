@@ -56,7 +56,7 @@ sparsemap refresh + GC scalability. Verified building + testing on EC2
 - `test_gc` `boehm_full` reads `GC_get_heap_size()` with a live allocation
   held rather than relying on cross-test residual leakage.
 
-### rseq lock-free reload: analyzed, kept inert (documented)
+### rseq lock-free reload: analyzed, formally shelved (not "in progress")
 
 - Arming the per-CPU rseq reload with the existing plain-C slowpath is
   unfixably racy against the lock-free asm fastpath (migration mid-reload
@@ -65,6 +65,17 @@ sparsemap refresh + GC scalability. Verified building + testing on EC2
   the rseq path is a pure optimization (PTC serves the steady state soundly),
   it stays inert; the exact constraint + oracle gate for a future attempt are
   documented. (`docs/results/2026-08-06-rseq-reload-analysis.md`)
+- **Status: formally shelved, permanent until someone does the asm work.**
+  The reload slowpath functions (`umem_rseq_alloc_slowpath` /
+  `umem_rseq_free_slowpath` in `umem.c`) are dead code, marked `UNUSED` at
+  their definition site, and are not on any roadmap or milestone — there is
+  no "next release" expectation for this. It becomes live again only if
+  someone writes the migration-safe per-CPU-commit assembly on both
+  architectures and clears the concurrency-oracle gate in the analysis doc.
+  The lock-free fastpath (hit path) is unaffected and stays active; only
+  the reload-on-miss falls back to the locked depot path. `README.md`
+  corrected to state this explicitly (it previously implied RSEQ was fully
+  lock-free end to end).
 
 ## [2.3.0] - 2026-08-06
 
