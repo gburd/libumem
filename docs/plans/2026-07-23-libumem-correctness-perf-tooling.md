@@ -242,10 +242,10 @@ static int test_with_env(const char *var, const char *value,
 - Modify: `.github/workflows/test.yml` (add a `bench-gate` job that runs the *stabilized single-thread + 8-thread* subset on a GitHub Linux runner and compares to a committed baseline via `bench_compare_history`, **annotate-only, non-blocking** — variance on shared CI runners is too high to hard-fail).
 - Create: `test/bench/baseline/*.toml` (committed reference points, generated on EC2 intel-lo/arm-lo).
 
-- [ ] **Step 1:** Generate reference baselines on EC2 (intel-lo, arm-lo), commit them.
-- [ ] **Step 2:** Add the `bench-gate` CI job that runs a short sweep and posts a PR comment with deltas ≥5%; never fails the build. (Authoritative gating stays on EC2 via C2.)
-- [ ] **Step 3:** Open a draft PR to confirm the annotation renders. 
-- [ ] **Step 4: Commit** — `ci: soft benchmark regression annotation against committed baselines`
+- [x] **Step 1:** Generate reference baselines on EC2 (intel-lo, arm-lo), commit them. (x86_64 only: `test/bench/baseline/x86_64-ci.toml`, single-thread + 2-thread; arm-lo baseline not generated -- Forgejo has no arm64 runner to diff against, so an aarch64 CI bench-gate has nothing to run on. See WS-I2/aarch64-nightly.yml for the aarch64 correctness answer instead.)
+- [x] **Step 2:** Add the `bench-gate` CI job that runs a short sweep and posts a PR comment with deltas ≥5%; never fails the build. (Authoritative gating stays on EC2 via C2.) Implemented as `.forgejo/workflows/tests.yml`'s `bench-gate` job (Forgejo, not GitHub Actions -- repo migrated) + `test/bench/bench_gate.sh`, `continue-on-error: true`, posts `::notice::`/`::warning::`.
+- [ ] **Step 3:** Open a draft PR to confirm the annotation renders. (Not done: this sandbox has no Forgejo Actions API/web access to this repo -- `has_actions=false` via the reachable API, no way to open a PR and observe a rendered annotation. Validated instead by running `bench_gate.sh` directly against the built bench_main on EC2 intel-lo and confirming both the no-regression and an induced-regression case produce the expected `::notice::`/`::warning::` lines.)
+- [x] **Step 4: Commit** — `ci: soft benchmark regression annotation (WS-C3)` (landed as `fc417ae`; also fixed a real allocator/workload cross-match bug in `bench_compare_history()` found while validating this job).
 
 ---
 
@@ -469,7 +469,7 @@ Property/invariant tests for the experimental features, so "works correctly" is 
 
 ### Task I2: Expand CI matrix
 **Files:** `.github/workflows/test.yml`.
-- [ ] Add `arch: [amd64, arm64]` (GitHub arm runners) for the correctness matrix; keep the heavy high-core perf/stress on EC2 (documented in `scripts/ec2/README.md`, not CI). Add the WS-A/B detection tests and WS-D3 oracle (short run) to `make check`. Commit.
+- [x] Add `arch: [amd64, arm64]` (GitHub arm runners) for the correctness matrix; keep the heavy high-core perf/stress on EC2 (documented in `scripts/ec2/README.md`, not CI). Add the WS-A/B detection tests and WS-D3 oracle (short run) to `make check`. **Superseded by the repo's move to Forgejo Actions** (`.forgejo/workflows/`, x86_64 docker only, no arm64 runner available there -- see `tests.yml`'s header). The amd64 correctness matrix landed in `.forgejo/workflows/tests.yml` (`build` job: normal/asan/ubsan/coverage). The arm64 half of this task is closed in spirit, not literally: `.forgejo/workflows/aarch64-nightly.yml` (scheduled EC2 job, not a CI-matrix row) drives real aarch64 correctness on `arm-lo` daily, since no arm64 CI runner exists to add a matrix row to. See `scripts/ec2/README.md`'s "Scheduled aarch64 correctness gate" section.
 
 ### Task I3: Tooling docs
 **Files:** `tools/DEBUGGER_QUICKREF.md`, new `docs/UMEMCTL.md`.
