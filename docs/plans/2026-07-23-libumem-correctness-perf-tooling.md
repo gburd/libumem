@@ -318,6 +318,30 @@ static int test_with_env(const char *var, const char *value,
 
 ## Workstream F — Real GDB/LLDB extensions (replace the stubs)
 
+> **Status (2026-08-06): superseded by upstream merge, not skipped.** F1/F2
+> below were implemented as written (`tools/umem_inspect.py` debugger-agnostic
+> core + GDB/LLDB wired to it; see commits `d5eabab` "tools: real umem
+> inspection core (slab walk, audit decode, leak scan)" and `b2d8c8e`
+> "tools: GDB/LLDB umem commands now do real slab/audit inspection"). When
+> this line was reconciled with a parallel upstream release
+> (`50830de` "release: v2.1.0 — layer correctness/perf/tooling work onto
+> v2.0.0"), upstream's own, more mature tooling shipped in the same area: an
+> in-library C introspection API (`umem_inspect.c`/`umem_inspect.h`) plus
+> rewritten `tools/gdb/umem_gdb.py` / `tools/lldb/umem_lldb.py` that call into
+> it directly (e.g. `gdb.execute("call umem_findleaks(...)")`) rather than
+> shelling out to a Python-side reimplementation of the slab/audit walk. The
+> upstream implementation was kept as canonical for its live-process reach
+> (works against a running pid via `call`, not just a static memory-reader
+> adapter) and its C-in-library placement avoids duplicating slab arithmetic
+> in two languages. `tools/umem_inspect.py` was dropped as redundant — see
+> `CHANGELOG.md` `[2.1.0]` ("layer correctness/perf/tooling work onto
+> v2.0.0") and the `v2.3.0` entry ("`umem(1)` reimplemented in C", commit
+> `2345d23`), which cemented the C-based tool as the long-term home for this
+> functionality. **The literal deliverable (a standalone Python inspection
+> core) was not shipped; the goal (real GDB/LLDB slab/audit inspection
+> replacing the old stubs) was fully achieved**, just via the other line's
+> code. No further action needed on F; do not re-add `umem_inspect.py`.
+
 **Findings from review:** `tools/gdb/umem_gdb.py` and `tools/lldb/umem_lldb.py` are largely stubs. `find_cache_for_address()` always returns `None` ("For now, return None"); `umem-whatis`, `umem-bufinfo`, `umem-leak-detect` print "simplified implementation" / "would appear here". They only read cache-list summary counters. The library *does* expose everything needed: circular `cache_next` list, `umem_slab_t` with `slab_head`, full `umem_bufctl_audit_t` (`bc_addr`, `bc_thread`, `bc_timestamp`, `bc_depth`, `bc_stack[]`), and `umem_log_header_t`. This is a real mdb-parity opportunity, not a rewrite.
 
 ### Task F1: Shared inspection core (Python, debugger-agnostic)
@@ -490,6 +514,12 @@ Task 0 (EC2 infra) ────────────────────�
 - Intel + aarch64, low + very-high core → matrix in Global Constraints; WS-C2/D exercise all four roles. ✅
 - empirically isolate perf/overhead → WS-D1 (counters + perf/flamegraph), WS-E1 (per-feature overhead). ✅
 - review + improve GDB/LLDB → WS-F (stubs → real slab/audit inspection). ✅
+  Goal achieved, literal deliverable superseded: F shipped `tools/umem_inspect.py`
+  + wired GDB/LLDB, then a parallel upstream line (CHANGELOG `[2.1.0]`, commit
+  `50830de`) reconciled in a more mature `umem_inspect.c`/`umem_inspect.h` +
+  rewritten `umem_gdb.py`/`umem_lldb.py` calling into it live via `gdb.execute("call
+  umem_findleaks(...)")`; the upstream version is canonical, `umem_inspect.py`
+  was dropped as redundant. Real inspection (not stubs) is shipped either way.
 - CLI runtime inspection (mdb replacement) → WS-G. ✅
   - stream log-like messages → G2 `logtail`. ✅
   - TUI for live process → G4 `monitor`. ✅
