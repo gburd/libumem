@@ -30,6 +30,7 @@ jobs:
             tools/umem \
             test/debugger/test_inspect_e2e.sh \
             test/debugger/test_lldb_e2e.sh \
+            test/bench/bench_gate.sh \
             scripts/*.sh
 
   python-syntax:

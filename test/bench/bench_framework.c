@@ -950,7 +950,18 @@ int bench_append_history(const bench_stats_t *stats,
     return 0;
 }
 
-/* Simple TOML parser: find last matching result for comparison */
+/* Simple TOML parser: find last matching result for comparison.
+ *
+ * Bug fixed: previously prev_ops/prev_p99 were overwritten by every block
+ * in the file (matching or not) and never reset between blocks, so the
+ * comparison silently used whichever block happened to be LAST in the file
+ * rather than the last block whose allocator+workload actually matched
+ * (e.g. a single-thread baseline entry got diffed against a multi-thread
+ * result if multi-thread came later in the file). Now prev_ops/prev_p99 are
+ * only recorded once the current block's allocator+workload match, and are
+ * reset to 0 at the start of every block. allocator/workload keys are
+ * always written before ops_per_sec/p99_ns in bench_append_history(), so
+ * this ordering assumption holds for files this module writes itself. */
 int bench_compare_history(const bench_stats_t *stats,
                           const char *history_path) {
     FILE *f = fopen(history_path, "r");
@@ -960,15 +971,13 @@ int bench_compare_history(const bench_stats_t *stats,
     double prev_ops = 0;
     double prev_p99 = 0;
     int found = 0;
-    int in_matching = 0;
+    int cur_matches = 0;
     char cur_alloc[128] = "";
     char cur_workload[128] = "";
 
     while (fgets(line, sizeof(line), f)) {
         if (strncmp(line, "[[result]]", 10) == 0) {
-            /* Save previous matching block */
-            if (in_matching && prev_ops > 0) found = 1;
-            in_matching = 0;
+            cur_matches = 0;
             cur_alloc[0] = '\0';
             cur_workload[0] = '\0';
             continue;
@@ -992,22 +1001,23 @@ int bench_compare_history(const bench_stats_t *stats,
         while (end > val && (*end == '\n' || *end == '"' || *end == ' '))
             *end-- = '\0';
 
-        if (strcmp(key, "allocator") == 0)
+        if (strcmp(key, "allocator") == 0) {
             snprintf(cur_alloc, sizeof(cur_alloc), "%s", val);
-        else if (strcmp(key, "workload") == 0)
+            cur_matches = cur_alloc[0] && cur_workload[0] &&
+                strcmp(cur_alloc, stats->allocator_name) == 0 &&
+                strcmp(cur_workload, stats->workload_name) == 0;
+        } else if (strcmp(key, "workload") == 0) {
             snprintf(cur_workload, sizeof(cur_workload), "%s", val);
-        else if (strcmp(key, "ops_per_sec") == 0)
+            cur_matches = cur_alloc[0] && cur_workload[0] &&
+                strcmp(cur_alloc, stats->allocator_name) == 0 &&
+                strcmp(cur_workload, stats->workload_name) == 0;
+        } else if (cur_matches && strcmp(key, "ops_per_sec") == 0) {
             prev_ops = atof(val);
-        else if (strcmp(key, "p99_ns") == 0)
+            found = 1;
+        } else if (cur_matches && strcmp(key, "p99_ns") == 0) {
             prev_p99 = atof(val);
-
-        if (cur_alloc[0] && cur_workload[0] &&
-            strcmp(cur_alloc, stats->allocator_name) == 0 &&
-            strcmp(cur_workload, stats->workload_name) == 0) {
-            in_matching = 1;
         }
     }
-    if (in_matching && prev_ops > 0) found = 1;
     fclose(f);
 
     if (!found) return 0;

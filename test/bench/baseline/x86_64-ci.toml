@@ -1,0 +1,54 @@
+# CI bench-gate reference baseline (x86_64, shared Forgejo docker runner).
+#
+# Generated on EC2 intel-lo (c7i.2xlarge, 8 vCPU, tuned: governor=performance,
+# THP=never, numa_balancing=0) with the SAME short config the bench-gate CI
+# job runs (see .forgejo/workflows/bench.yml): single-thread + a 2-thread
+# point, 2000000 ops, 7 measured runs + 1 warm-up discard, 16:256B sizes.
+#
+# This is a DIRECTIONAL baseline, not authoritative. It exists to give the
+# soft CI gate (WS-C3) something to diff against on every push; it is NOT
+# the cross-arch scaling matrix (that lives under docs/results/, produced by
+# test/bench/matrix.sh on tuned EC2 metal per scripts/ec2/README.md).
+#
+# Regenerate with:
+#   ./scripts/ec2/launch.sh intel-lo && ./scripts/ec2/bootstrap.sh intel-lo
+#   ./scripts/ec2/run-remote.sh intel-lo '
+#     bash scripts/ec2/clean-regen.sh && make -j$(nproc) test/bench/bench_main &&
+#     rm -f test/bench/results/history.toml &&
+#     LD_LIBRARY_PATH=.libs test/bench/.libs/bench_main -a umem -w single \
+#       -n 2000000 -s 16:256 -r7 -W1 --save &&
+#     LD_LIBRARY_PATH=.libs test/bench/.libs/bench_main -a umem -w multi -t 2 \
+#       -n 2000000 -s 16:256 -r7 -W1 --save'
+#   cp <instance>/test/bench/results/history.toml test/bench/baseline/x86_64-ci.toml
+#   ./scripts/ec2/terminate.sh intel-lo
+#
+# CoV at capture time: single-thread 0.41%, 2-thread 4.28% (both well under
+# the 10% BENCH_UNSTABLE_COV threshold in bench_framework.c).
+
+[[result]]
+commit = "bbc1b8f"
+date = "2026-09-06"
+os = "Linux 6.1.182-227.379.amzn2023.x86_64"
+arch = "x86_64"
+compiler = "gcc-11.5.0"
+allocator = "umem"
+workload = "single-thread"
+ops_per_sec = 4477197
+p99_ns = 40
+peak_rss_mb = 5.3
+cpu_user_ms = 447
+cpu_sys_ms = 0
+
+[[result]]
+commit = "bbc1b8f"
+date = "2026-09-06"
+os = "Linux 6.1.182-227.379.amzn2023.x86_64"
+arch = "x86_64"
+compiler = "gcc-11.5.0"
+allocator = "umem"
+workload = "multi-thread"
+ops_per_sec = 8693331
+p99_ns = 47
+peak_rss_mb = 4.7
+cpu_user_ms = 455
+cpu_sys_ms = 0

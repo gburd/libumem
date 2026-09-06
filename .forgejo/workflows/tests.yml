@@ -133,3 +133,39 @@ jobs:
             test/**/*.log
             **/config.log
           retention-days: 14
+
+  bench-gate:
+    name: bench-gate (soft, non-blocking)
+    # WS-C3: directional perf-regression signal on every push, since until
+    # now every regression (e.g. the 1.83ms tail found in earlier review
+    # work) was only ever caught by a human manually running the EC2 bench
+    # matrix. This job is NOT that authoritative gate -- it runs on a shared
+    # x86_64 docker runner with no governor/NUMA control, so it diffs a
+    # short single-thread + 2-thread config against a committed baseline
+    # (test/bench/baseline/x86_64-ci.toml, captured on tuned EC2 intel-lo)
+    # and only ever annotates. Authoritative gating stays on EC2
+    # (test/bench/matrix.sh, see scripts/ec2/README.md).
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    continue-on-error: true
+    steps:
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Configure + build (normal mode)
+        run: |
+          autoreconf -fvi
+          ./configure
+          make -j"$(nproc)" test/bench/bench_main
+
+      - name: Run bench-gate (annotate-only; never fails the build)
+        continue-on-error: true
+        run: bash test/bench/bench_gate.sh
