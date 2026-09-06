@@ -132,7 +132,18 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 
 ### Quality
 
-- Test coverage from \~33% to >80% line coverage.
+- Test coverage: 71.2% line coverage (core sources, excluding the
+  vendored third-party `sm.c`/`sm.h` sparsemap dependency) as of
+  2026-09-06 at commit `ecd5fa0`; 50.3% across the whole repo
+  including `sm.c`. Re-measured against current code — see
+  `docs/results/2026-09-06-coverage-verification.md` for the full
+  breakdown and how to reproduce (`scripts/generate-coverage.sh` or
+  `scripts/ec2/run-remote.sh <role> '... lcov ...'`). This replaces
+  the historical "~33% to >80%" v2.0.0 claim, which described a
+  2025 point-in-time delta and is no longer accurate for the current
+  codebase (six releases of new code — sparsemap vendoring, GC
+  sharding, `umem_introspect.c`, `tools/umem.c`, `umem_inspect.c` —
+  have shifted the aggregate since then).
 - Property-based tests, integration tests, stress tests.
 - Cross-platform benchmark suite (TOML output with OS / arch /
   compiler metadata).

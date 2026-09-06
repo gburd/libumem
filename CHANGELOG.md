@@ -9,6 +9,16 @@ sparsemap refresh + GC scalability. Verified building + testing on EC2
 (x86_64 + aarch64); full unit suite 459 OK / 0 FAIL, now deterministic
 (previously ~10%-flaky GC heap-stat tests fixed).
 
+> **Coverage re-verified 2026-09-06** (commit `ecd5fa0`): the v2.0.0 "33%
+> to 80%+" claim below was measured in early 2025 and predates six
+> releases of substantial new code (this release's sparsemap vendoring
+> included). Current measured line coverage is **71.2%** of core sources
+> (excluding the vendored third-party `sm.c`/`sm.h`, which is 0%-covered
+> and accounts for 29% of the repo's instrumented lines) or **50.3%**
+> across the whole repo including `sm.c`. Neither matches "80%+" — the
+> README/CHANGELOG claim was stale and has been corrected. Full breakdown,
+> methodology, and per-file numbers: `docs/results/2026-09-06-coverage-verification.md`.
+
 ### sparsemap: latest upstream, namespaced (no symbol collision)
 
 - Replaced the stale, uncompiled vendored `sparsemap.{c,h}` with upstream
@@ -395,6 +405,9 @@ the codebase.  Files are now `umem_ptc.c` / `umem_ptc.h`.
 - Removed dead genasm/tmem code (-2,514 lines, 7 stale .md files).
 - Removed 48 stale documentation files and tracked artifacts.
 - Test coverage boosted from 33% to 80%+ line coverage (32 new tests).
+  *(historical, as measured at this release; see the 2026-09-06 note
+  at the top of this file — the aggregate has since drifted with new
+  code and is no longer 80%+.)*
 - Property-based tests for allocation patterns, caches, fragmentation.
 - Integration tests for signals, OOM, multithreading, debug features.
 - Benchmark suite with comparison to libc/jemalloc, cross-platform
