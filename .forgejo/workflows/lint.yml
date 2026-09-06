@@ -31,6 +31,7 @@ jobs:
             test/debugger/test_inspect_e2e.sh \
             test/debugger/test_lldb_e2e.sh \
             test/bench/bench_gate.sh \
+            scripts/ec2/aarch64_nightly.sh \
             scripts/*.sh
 
   python-syntax:

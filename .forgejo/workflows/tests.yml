@@ -14,8 +14,18 @@
 # aarch64 (Graviton) is NOT covered here: the Codeberg forgejo runner is
 # x86_64 docker only.  Authoritative aarch64 build+test (which would have
 # caught the v2.0.0 rseq SIGSEGV, fixed in v2.1.0) runs on EC2 arm-lo/arm-hi
-# via scripts/ec2/ -- see scripts/ec2/README.md.  Do not assume arm is
-# green from CI alone.
+# via scripts/ec2/ -- see scripts/ec2/README.md.  A scheduled job now closes
+# the automated-gate part of that: .forgejo/workflows/aarch64-nightly.yml
+# drives launch->bootstrap->build+test->terminate on EC2 arm-lo on a daily
+# cron (+ workflow_dispatch), so a v2.0.0-class aarch64-only crash gets
+# caught automatically instead of only when a human remembers to run
+# scripts/ec2/launch.sh arm-lo by hand. That job needs AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY / EC2_SSH_PRIVATE_KEY secrets configured in this
+# repo's Forgejo settings before it actually runs on schedule -- see its
+# header comment and scripts/ec2/README.md. Until those secrets are added,
+# treat it as validated-but-not-armed. It also only covers arm-lo (8 vCPU);
+# arm-hi (metal, very-high-core) is still human-run only. Do not assume arm
+# is fully green from CI alone.
 
 name: tests
 

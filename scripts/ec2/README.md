@@ -90,3 +90,51 @@ result under `docs/results/` produced by a `run-remote.sh <hi-role>` run.
 `run-remote.sh` pulls `docs/results/` and the instance `meta.toml` back into
 `docs/results/<date>-<role>/`. A result without its `meta.toml` (instance type,
 kernel, glibc, compiler, tuning state) does not count.
+
+## Scheduled aarch64 correctness gate (closes the WS-I2 automated-gate gap)
+
+Forgejo's runner here is x86_64 docker only -- there is no arm64 runner, and
+no way to run real aarch64 hardware from inside a CI container. Until now
+aarch64 correctness was tested only when a human remembered to run
+`launch.sh arm-lo` by hand. That is exactly how the **v2.0.0 rseq fast-path
+SIGSEGV** shipped: `umem_rseq_aarch64.S:168` crashed on real Graviton
+hardware (see `docs/results/2026-07-23-aarch64-rseq-crash-repro.md`), and
+nothing automated would have caught it because x86_64-only CI stayed green.
+
+`.forgejo/workflows/aarch64-nightly.yml` closes that gap with a **scheduled**
+(not CI-matrix) job: on a daily cron (+ manual `workflow_dispatch`), the
+x86_64 Forgejo runner drives this harness over SSH to launch a real `arm-lo`
+instance, build + run the fast correctness suite there, and terminate it --
+success or failure (`scripts/ec2/aarch64_nightly.sh`, trap-guarded so a
+build/test failure or a killed job still terminates the box).
+
+### Secrets required (Forgejo repo Settings -> Actions -> Secrets)
+
+| Secret | What it is |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | Burner-account IAM access key, scoped to EC2 in `us-east-2` (RunInstances/TerminateInstances/DescribeInstances/DescribeImages/security-group + key-pair management). Not root, not broadly-scoped. |
+| `AWS_SECRET_ACCESS_KEY` | The matching secret key. |
+| `EC2_SSH_PRIVATE_KEY` | Private key material for the `libumem-bench` key pair `common.sh` expects at `~/.ssh/libumem-bench.pem`. Create the key pair once via `launch.sh` from an operator machine (idempotent, see Workflow above), then paste its private key into this secret. |
+
+Without these three secrets the workflow fails loudly at the credential/key
+setup step -- it does not silently no-op, so a missing secret shows up as a
+failed scheduled run, not a false sense of security.
+
+### What this does and does not cover
+
+- Covers: `arm-lo` (`c7g.2xlarge`, 8 vCPU) correctness only -- the fast unit
+  suite (`umem_test*`, `umem_ptc_fork_test`, `test/test_debug`,
+  `test_main --no-fork`). This is deliberately the same class of bug the
+  v2.0.0 SIGSEGV was: something that only reproduces on real aarch64.
+- Does NOT cover: `arm-hi` (metal, very-high-core) -- cost, and that role's
+  authoritative use is perf, not a nightly correctness smoke check. Does
+  NOT cover sanitizer builds on aarch64 (still human-run). Does NOT replace
+  the full C2 authoritative scaling matrix.
+- Validation status: `scripts/ec2/aarch64_nightly.sh` was run end-to-end
+  against real EC2 hardware (success path and induced-failure path, both
+  confirmed to terminate the instance and propagate the correct exit code).
+  The **workflow file itself** (`aarch64-nightly.yml`) is YAML-syntax
+  validated but could not be live-triggered in the environment that wrote
+  it -- that environment has no Forgejo Actions API access to this repo and
+  no secrets configured. Confirm a real scheduled/manual run succeeds after
+  adding the secrets above.

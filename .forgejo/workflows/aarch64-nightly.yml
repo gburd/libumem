@@ -1,0 +1,107 @@
+# Forgejo Actions: scheduled EC2 aarch64 correctness gate.
+#
+# Forgejo's runner here is x86_64 docker only -- there is no arm64 runner and
+# no way to run real aarch64 hardware from a CI container (see tests.yml's
+# header comment). This job closes that gap the only way available: it runs
+# ON A SCHEDULE, drives the EC2 harness (scripts/ec2/) from the x86_64
+# runner over SSH to launch a real arm-lo (Graviton, c7g.2xlarge) instance,
+# builds + runs the fast correctness suite THERE, and always terminates the
+# instance (trap in aarch64_nightly.sh), success or failure.
+#
+# This is the fix for a real gap: the v2.0.0 rseq fast-path SIGSEGV
+# (umem_rseq_aarch64.S:168, see docs/results/2026-07-23-aarch64-rseq-crash-repro.md)
+# shipped because nothing ran on aarch64 automatically -- only a human
+# remembering to run `scripts/ec2/launch.sh arm-lo` would have caught it.
+# A push/PR to x86_64-only CI would still be green with that bug present.
+#
+# Required Forgejo repo secrets (Settings -> Actions -> Secrets):
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY - burner-account IAM credentials
+#     scoped to EC2 (RunInstances/TerminateInstances/DescribeInstances/
+#     DescribeImages/security-group + key-pair management) in us-east-2 only.
+#     Do NOT use root or a broadly-scoped account credential here.
+#   EC2_SSH_PRIVATE_KEY - the private key matching the `libumem-bench` key
+#     pair scripts/ec2/common.sh expects at ~/.ssh/libumem-bench.pem (create
+#     the key pair once via scripts/ec2/launch.sh from an operator machine,
+#     then paste its private key material into this secret).
+#
+# Without these secrets configured, this workflow will fail at the "launch"
+# step (no AWS credentials) -- it will NOT silently no-op, so a missing
+# secret is loud, not a false sense of security.
+#
+# This workflow could not be live-triggered from the environment that wrote
+# it (no Actions API / secrets access from that sandbox -- see
+# scripts/ec2/README.md's "Scheduled aarch64 job" section for what was and
+# wasn't verified). It IS syntax-validated (YAML parses; the driver script
+# it calls, scripts/ec2/aarch64_nightly.sh, was run end-to-end by hand
+# against real EC2 arm-lo).
+
+name: aarch64-nightly
+
+on:
+  schedule:
+    # 06:00 UTC daily. Adjust cron / add workflow_dispatch once activated;
+    # workflow_dispatch is deliberately included so a human can also fire
+    # this on demand without waiting for the schedule.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  aarch64-correctness:
+    name: aarch64 correctness (EC2 arm-lo, scheduled)
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    steps:
+      - name: Install AWS CLI + SSH + rsync
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            awscli openssh-client rsync ca-certificates curl
+
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY secrets" \
+                 "are not configured -- see this workflow's header comment" \
+                 "and scripts/ec2/README.md for what to add."
+            exit 1
+          fi
+          mkdir -p ~/.aws
+          {
+            echo "[bene]"
+            echo "aws_access_key_id = $AWS_ACCESS_KEY_ID"
+            echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY"
+          } > ~/.aws/credentials
+
+      - name: Install EC2 SSH key
+        env:
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$EC2_SSH_PRIVATE_KEY" ]; then
+            echo "::error::EC2_SSH_PRIVATE_KEY secret is not configured --" \
+                 "see this workflow's header comment."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > ~/.ssh/libumem-bench.pem
+          chmod 600 ~/.ssh/libumem-bench.pem
+
+      - name: Launch + bootstrap + build + test + terminate (arm-lo)
+        env:
+          AWS_PROFILE: bene
+          AWS_DEFAULT_REGION: us-east-2
+          KEY_FILE: /root/.ssh/libumem-bench.pem
+        run: ./scripts/ec2/aarch64_nightly.sh
+
+      - name: Ensure arm-lo is terminated (belt-and-suspenders)
+        if: always()
+        env:
+          AWS_PROFILE: bene
+          AWS_DEFAULT_REGION: us-east-2
+        run: ./scripts/ec2/terminate.sh arm-lo || true
