@@ -123,7 +123,8 @@ umem_gc_thread_register(void)
 	umem_gc_threads[slot].gcti_thread = self;
 	umem_gc_threads[slot].gcti_stack_base = NULL;
 	umem_gc_threads[slot].gcti_stack_size = 0;
-	umem_gc_threads[slot].gcti_suspended = 0;
+	atomic_store_explicit(&umem_gc_threads[slot].gcti_suspended, 0,
+	    memory_order_relaxed);
 	umem_gc_threads[slot].gcti_in_gc_critical = 0;
 	umem_gc_threads[slot].gcti_park_pending = 0;
 	umem_gc_threads[slot].gcti_registered = 1;
@@ -486,14 +487,19 @@ umem_gc_scan_thread(umem_gc_thread_info_t *ti, umem_gc_mark_fn mark_fn)
 	stack_high = (void *)((uintptr_t)ti->gcti_stack_base +
 	    ti->gcti_stack_size);
 
-	if (ti->gcti_suspended) {
+	if (atomic_load_explicit(&ti->gcti_suspended, memory_order_acquire)) {
 		/*
-		 * The thread is parked in the STW signal handler and has
-		 * spilled its registers into gcti_regs and recorded its live
-		 * stack pointer in gcti_sp.  Scan the spilled register block
-		 * (a callee-saved register may hold the only pointer to a
-		 * live object) and only the live portion of the stack, from
-		 * the suspended SP up to the stack base -- not the stale
+		 * The thread is parked (STW) and has spilled its registers
+		 * into gcti_regs and recorded its live stack pointer in
+		 * gcti_sp.  The acquire-load above pairs with the parking
+		 * thread's release-store of gcti_suspended in gc_park_self(),
+		 * which happens-after its plain stores of gcti_sp/gcti_regs --
+		 * that happens-before edge is what makes it safe to read them
+		 * here (the standard "flag guards data" pattern; see
+		 * umem_gc_roots.h).  Scan the spilled register block (a
+		 * callee-saved register may hold the only pointer to a live
+		 * object) and only the live portion of the stack, from the
+		 * suspended SP up to the stack base -- not the stale
 		 * theoretical extent below SP.
 		 */
 		umem_gc_scan_stack((void *)ti->gcti_regs,

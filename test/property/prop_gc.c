@@ -304,6 +304,12 @@ struct stw_ctx {
 	_Atomic int	 stop;
 	_Atomic long	 alloc_ops;
 	_Atomic int	 corruption;	/* set if a live canary is wrong */
+	_Atomic uintptr_t bad_addr;	/* diag: address of the corrupted node */
+	_Atomic uint64_t bad_canary;	/* diag: actual (wrong) canary read */
+	_Atomic uint64_t bad_expected;	/* diag: expected canary value */
+	_Atomic int	 bad_chain_pos;	/* diag: position in chain (0=head) */
+	_Atomic long	 bad_alloc_ops;	/* diag: alloc_ops at time of detection */
+	_Atomic uintptr_t bad_next;	/* diag: cur->next snapshot at detection */
 };
 
 /*
@@ -342,8 +348,42 @@ stw_worker(void *arg)
 		volatile struct chain_node *cur = head;
 		int i = 0;
 		while (cur != NULL) {
-			if (cur->canary != (0xD1CEFULL ^ cur->idx)) {
-				atomic_store(&ctx->corruption, 1);
+			uint64_t canary_snapshot = cur->canary;
+			uint64_t idx_snapshot = cur->idx;
+			uintptr_t next_snapshot = (uintptr_t)cur->next;
+			if (canary_snapshot != (0xD1CEFULL ^ idx_snapshot) ||
+			    i > 4096) {
+				/* Capture diagnostics on the FIRST detection only
+				 * (best-effort CAS so concurrent workers don't
+				 * clobber each other's evidence).  Snapshot
+				 * everything into locals FIRST (above) so a
+				 * concurrent mutation of *cur between the failing
+				 * read and the diagnostic store can't make the
+				 * printed values look consistent (that gap was
+				 * itself misleading in an earlier version of this
+				 * probe -- always print what was ACTUALLY read at
+				 * detection time, never re-read *cur). i > 4096 is
+				 * a runaway-chain / cycle detector: a chain this
+				 * long is never legitimate (the worker only ever
+				 * builds <=79 nodes), so hitting the cap means
+				 * `next` is walking garbage/a cycle, which is a
+				 * DIFFERENT failure mode than a canary mismatch and
+				 * is flagged distinctly below. */
+				int expected_flag = 0;
+				if (atomic_compare_exchange_strong(&ctx->corruption,
+				    &expected_flag, (i > 4096) ? 2 : 1)) {
+					atomic_store(&ctx->bad_addr,
+					    (uintptr_t)cur);
+					atomic_store(&ctx->bad_canary,
+					    canary_snapshot);
+					atomic_store(&ctx->bad_expected,
+					    0xD1CEFULL ^ idx_snapshot);
+					atomic_store(&ctx->bad_chain_pos, i);
+					atomic_store(&ctx->bad_alloc_ops,
+					    atomic_load(&ctx->alloc_ops));
+					atomic_store(&ctx->bad_next,
+					    next_snapshot);
+				}
 				break;
 			}
 			cur = cur->next;
@@ -367,6 +407,12 @@ run_stw_stress(int nthreads, int collect_rounds)
 	atomic_store(&ctx.stop, 0);
 	atomic_store(&ctx.alloc_ops, 0);
 	atomic_store(&ctx.corruption, 0);
+	atomic_store(&ctx.bad_addr, 0);
+	atomic_store(&ctx.bad_canary, 0);
+	atomic_store(&ctx.bad_expected, 0);
+	atomic_store(&ctx.bad_chain_pos, 0);
+	atomic_store(&ctx.bad_alloc_ops, 0);
+	atomic_store(&ctx.bad_next, 0);
 
 	pthread_t *threads = calloc((size_t)nthreads, sizeof (pthread_t));
 	if (threads == NULL)
@@ -400,12 +446,28 @@ run_stw_stress(int nthreads, int collect_rounds)
 	umem_gc_get_stats(&after);
 
 	if (atomic_load(&ctx.corruption)) {
-		printf("  *** STW SOUNDNESS BUG REPRODUCED: a reachable "
-		    "object was swept while its owning thread was "
-		    "suspended during stop-the-world. ***\n");
-		printf("  (Real, intermittent GC bug -- see report. The STW "
-		    "root scan does not reliably capture every worker "
-		    "thread's stack.)\n");
+		int kind = atomic_load(&ctx.corruption);
+		if (kind == 2) {
+			printf("  *** RUNAWAY CHAIN: cur->next walked >4096 "
+			    "nodes without reaching NULL -- this is a cycle "
+			    "or a wild pointer in the chain, NOT a simple "
+			    "canary mismatch. ***\n");
+		} else {
+			printf("  *** STW SOUNDNESS BUG REPRODUCED: a reachable "
+			    "object was swept while its owning thread was "
+			    "suspended during stop-the-world. ***\n");
+			printf("  (Real, intermittent GC bug -- see report. The "
+			    "STW root scan does not reliably capture every "
+			    "worker thread's stack.)\n");
+		}
+		printf("  diag: node=%p next=%p actual_canary=0x%llx "
+		    "expected=0x%llx chain_pos=%d alloc_ops_at_detection=%ld\n",
+		    (void *)atomic_load(&ctx.bad_addr),
+		    (void *)atomic_load(&ctx.bad_next),
+		    (unsigned long long)atomic_load(&ctx.bad_canary),
+		    (unsigned long long)atomic_load(&ctx.bad_expected),
+		    atomic_load(&ctx.bad_chain_pos),
+		    atomic_load(&ctx.bad_alloc_ops));
 		free(threads);
 		return (2);		/* 2 = soundness corruption */
 	}

@@ -271,11 +271,25 @@ static __thread volatile sig_atomic_t gc_parked;
 /*
  * Park the calling thread for the duration of the current stop-the-world.
  * Spills callee-saved registers into gcti_regs and records the live stack
- * pointer in gcti_sp so the collector can scan this thread's roots, then
- * publishes gcti_suspended = 1 (its ACK) and spins until the collector
- * clears gc_stw_active.  Async-signal-safe: uses only sigsetjmp, plain
- * stores, and an atomic add, so it is callable both from the SIGUSR2
- * handler and from the cooperative safepoint poll.
+ * pointer in gcti_sp -- both PLAIN stores, ordered only within this
+ * thread -- then publishes the ACK with
+ * atomic_store_explicit(&gcti_suspended, 1, memory_order_release) and spins
+ * until the collector clears gc_stw_active.  The release store is what
+ * gives the collector's acquire-load of gcti_suspended a happens-before
+ * edge back to the gcti_sp/gcti_regs stores above it; without that pairing
+ * (e.g. a plain/volatile gcti_suspended) the collector could observe the
+ * ACK before those stores are visible on its core -- exactly the aarch64
+ * soundness gap fixed here (see umem_gc_roots.h and
+ * docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md section 4.4).
+ * Async-signal-safe: uses only sigsetjmp, plain stores, and C11 atomics
+ * (all async-signal-safe on every platform this project targets), so it is
+ * callable both from the SIGUSR2 handler and from the cooperative
+ * safepoint poll.
+ *
+ * The gc_stw_suspended_count atomic_fetch_add is a separate progress
+ * counter for the collector's diagnostics/target bookkeeping -- it must
+ * NOT be relied upon for gcti_sp/gcti_regs ordering; that job belongs
+ * entirely to the acquire/release pair on gcti_suspended itself.
  *
  * Re-entrant delivery is guarded by gc_parked: a thread already spinning
  * here ignores a fresh signal/poll (see the callers).  We do NOT nest.
@@ -293,7 +307,8 @@ gc_park_self(int slot, void *stack_anchor)
 	umem_gc_threads[slot].gcti_sp = stack_anchor;
 
 	umem_gc_threads[slot].gcti_park_pending = 0;
-	umem_gc_threads[slot].gcti_suspended = 1;
+	atomic_store_explicit(&umem_gc_threads[slot].gcti_suspended, 1,
+	    memory_order_release);
 	atomic_fetch_add(&gc_stw_suspended_count, 1);
 
 	/*
@@ -310,7 +325,8 @@ gc_park_self(int slot, void *stack_anchor)
 	while (gc_stw_active)
 		(void) sched_yield();
 
-	umem_gc_threads[slot].gcti_suspended = 0;
+	atomic_store_explicit(&umem_gc_threads[slot].gcti_suspended, 0,
+	    memory_order_release);
 	gc_parked = 0;
 }
 
@@ -459,7 +475,8 @@ gc_drain_parked(void)
 	for (;;) {
 		int busy = 0;
 		for (i = 0; i < UMEM_GC_MAX_THREADS; i++) {
-			if (umem_gc_threads[i].gcti_suspended) {
+			if (atomic_load_explicit(&umem_gc_threads[i].gcti_suspended,
+			    memory_order_acquire)) {
 				busy = 1;
 				break;
 			}
@@ -514,7 +531,8 @@ gc_stop_the_world(void)
 	 */
 	atomic_store(&gc_stw_suspended_count, 0);
 	for (i = 0; i < UMEM_GC_MAX_THREADS; i++)
-		umem_gc_threads[i].gcti_suspended = 0;
+		atomic_store_explicit(&umem_gc_threads[i].gcti_suspended, 0,
+		    memory_order_relaxed);
 	gc_stw_active = 1;
 	atomic_thread_fence(memory_order_seq_cst);
 
@@ -579,7 +597,9 @@ gc_stop_the_world(void)
 		struct timespec now;
 
 		for (i = 0; i < nsignalled; i++) {
-			if (umem_gc_threads[signalled[i]].gcti_suspended)
+			if (atomic_load_explicit(
+			    &umem_gc_threads[signalled[i]].gcti_suspended,
+			    memory_order_acquire))
 				parked++;
 		}
 		if (parked >= target)
@@ -607,7 +627,9 @@ gc_stop_the_world(void)
 
 		/* Nudge any target that has not parked yet. */
 		for (i = 0; i < nsignalled; i++) {
-			if (!umem_gc_threads[signalled[i]].gcti_suspended)
+			if (!atomic_load_explicit(
+			    &umem_gc_threads[signalled[i]].gcti_suspended,
+			    memory_order_acquire))
 				(void) pthread_kill(
 				    umem_gc_threads[signalled[i]].gcti_thread,
 				    GC_SUSPEND_SIGNAL);

@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -39,22 +40,38 @@ extern "C" {
  * Per-thread info for GC root scanning.
  * Tracks stack bounds so the collector can scan each thread's stack.
  *
- * During stop-the-world the suspend signal handler records the thread's
- * live stack pointer (gcti_sp) and spills all callee-saved registers into
- * gcti_regs, then increments the collector's suspended count as its ACK.
- * The collector waits for every target thread's ACK before marking, then
- * scans each parked thread from gcti_sp up to (gcti_stack_base +
- * gcti_stack_size) plus gcti_regs -- so a live pointer held only in a
- * callee-saved register or on the current stack frame is always a root.
+ * During stop-the-world the suspend signal handler (or the cooperative
+ * safepoint) records the thread's live stack pointer (gcti_sp) and spills
+ * all callee-saved registers into gcti_regs, THEN publishes the ACK via
+ * atomic_store_explicit(&gcti_suspended, 1, memory_order_release).  The
+ * collector's park barrier and root scanner read the ACK with
+ * atomic_load_explicit(&gcti_suspended, memory_order_acquire); observing 1
+ * happens-after the writer's release store, which happens-after the plain
+ * stores of gcti_sp/gcti_regs -- so the acquire/release pair on
+ * gcti_suspended is what makes gcti_sp/gcti_regs visible to the collector
+ * (the standard "flag guards data" pattern).  gcti_suspended must be
+ * `_Atomic int` with explicit acquire/release on every cross-thread
+ * read/write.  A plain/volatile type here provides NO cross-thread memory
+ * ordering in C11 -- it only prevents compiler reordering within one
+ * thread.  On x86's strong TSO that was almost always masked; aarch64's
+ * weaker memory model let the collector occasionally observe
+ * gcti_suspended==1 before gcti_sp/gcti_regs were actually visible on that
+ * core, so it scanned a stale/garbage stack pointer and could sweep a
+ * still-reachable object (see
+ * docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md section 4.3 /
+ * 4.4).  Do not "fix" this by reverting to a plain/volatile type.
  */
 typedef struct umem_gc_thread_info {
 	pthread_t	gcti_thread;
 	void		*gcti_stack_base;
 	size_t		gcti_stack_size;
 	int		gcti_registered;
-	volatile sig_atomic_t gcti_suspended;	/* set when parked (STW) */
-	void		*volatile gcti_sp;	/* suspended stack pointer */
-	sigjmp_buf	gcti_regs;		/* spilled registers (STW) */
+	_Atomic int	gcti_suspended;	/* ACK: set (release)/cleared when
+					   parked; read with acquire (STW) */
+	void		*volatile gcti_sp;	/* suspended stack pointer; guarded by
+					   gcti_suspended acquire/release */
+	sigjmp_buf	gcti_regs;		/* spilled registers (STW); also
+					   guarded by gcti_suspended acq/rel */
 	/*
 	 * Cooperative-safepoint coordination (see umem_gc.c).
 	 * gcti_in_gc_critical is set (plain store, no syscall) while the
@@ -64,7 +81,11 @@ typedef struct umem_gc_thread_info {
 	 * sets gcti_park_pending instead and the thread parks itself when it
 	 * leaves the critical section.  These replace the per-allocation
 	 * pthread_sigmask() storm that made STW pathologically slow under
-	 * CPU oversubscription.
+	 * CPU oversubscription.  Unlike gcti_suspended, both of these are
+	 * read/written ONLY by the thread that owns the slot (its own signal
+	 * handler or its own mainline code) -- never cross-thread -- so there
+	 * is no happens-before edge to establish and plain volatile
+	 * sig_atomic_t remains correct here.
 	 */
 	volatile sig_atomic_t gcti_in_gc_critical;
 	volatile sig_atomic_t gcti_park_pending;

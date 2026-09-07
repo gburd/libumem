@@ -264,6 +264,81 @@ Two findings:
 can rarely sweep a reachable object on aarch64 — do not run the conservative
 GC oversubscribed on aarch64 until the barrier follow-on lands.
 
+## 4.4 Follow-up (2026-09): acquire/release fix landed, but did NOT close the
+## gap -- the dominant failure mode is a corrupted/cyclic chain, not a sweep
+
+**Real bug fixed, but it was not the (sole) cause of the 4.3 corruption.**
+Audited `umem_gc_roots.h`/`umem_gc.c`/`umem_gc_roots.c` and found `gcti_suspended`
+was `volatile sig_atomic_t` with plain stores/loads on both the parking
+mutator and the collector's park-barrier/root-scanner. **`volatile` provides
+no cross-thread memory ordering in C11** -- it only blocks compiler reordering
+within one thread. The writer's `atomic_fetch_add(&gc_stw_suspended_count)`
+did not help because the reader never performed a matching atomic acquire on
+anything. This is a real, textbook missing-acquire/release bug: `gcti_suspended`
+is now `_Atomic int`, set with `memory_order_release` after `gcti_sp`/
+`gcti_regs` are written (in `gc_park_self`), and read with
+`memory_order_acquire` everywhere the barrier/scanner gates trust of
+`gcti_sp`/`gcti_regs` on it (the park-barrier wait loop, the drain loop, and
+`umem_gc_scan_thread`'s parked-check). Committed, and correct on its own
+terms -- x86 and arm both stay clean where they were already clean, and it
+closed a real (if apparently minor-contribution) latent hazard.
+
+**Validation after the fix: arm-lo 16t/8-core, 30 iterations under ASan =
+10/30 fail** (previously 2/10 ≈ 6/30-equivalent -- i.e. the fix did NOT
+reduce the failure rate; if anything this sample ran slightly worse, which
+given n=30 is within noise of "unchanged"). **The acquire/release fix was
+necessary but not sufficient.**
+
+### What the improved diagnostics show
+
+The original probe only recorded a boolean ("a canary mismatched"). Added
+per-run diagnostics (`test/property/prop_gc.c`, `stw_worker`/`run_stw_stress`):
+on the FIRST detected anomaly, snapshot the node address, the actual and
+expected canary, the chain position, and `cur->next`, plus a **runaway-chain
+cap** (chain position > 4096, since a legitimate chain is at most ~79 nodes) --
+the original probe would silently loop forever or eventually null-fault on a
+cycle without ever reporting *why*.
+
+Over a 30-run arm-lo ASan sample (this session), of **10 failures**:
+
+| failure kind | count | signature |
+|---|---|---|
+| **Runaway/cyclic chain** (>4096 nodes, canary AT the cap position often *correct*) | **7** | `chain_pos=4097` every time; `next` looks like a plausible nearby heap address, not garbage |
+| Simple canary mismatch (small chain_pos, actual != expected) | 3 | e.g. `chain_pos=28, actual=0x0, expected=0xd1cef` (zeroed -- looks like a freed/cleared buffer); `chain_pos=50/62`, small canary deltas (looks like content from a DIFFERENT live node with a nearby `idx`) |
+
+**The dominant failure mode (7/10) is a cyclic or runaway `next` chain, not a
+swept-and-zeroed object.** This is a materially different bug than "the STW
+root scan misses a stack" (4.1-4.3's framing) -- a missed root scan would
+manifest as the swept memory being reused/zeroed (the 3/10 pattern), not as
+`chain_node->next` pointing into a cycle within the thread's OWN live chain.
+A cycle in a singly-linked list that the worker itself only ever appends to
+(never mutates `next` after construction, per `stw_worker`'s code) points at
+either: (a) a `chain_node`'s `next` field being overwritten post-construction
+by something else writing to that memory region, or (b) two `GC_MALLOC`
+calls aliasing the same backing memory while one is still logically live
+(a double-hand-out), or (c) a bug in the CONSERVATIVE SCANNER/mark path
+itself corrupting live object memory it mistakes for something else. This is
+NOT yet root-caused -- it needs the same rigor as 4.1-4.3 (gdb on a live
+repro, core inspection of the cyclic node's actual memory layout, and
+checking whether the aliasing pattern correlates with the GC's per-shard
+pagemap or with PTC/depot activity) before a fix is attempted. Do not "fix"
+this by further barrier tuning -- the evidence points away from the STW
+suspend/scan path and toward object lifecycle/memory-reuse.
+
+**Repro** (with the new diagnostics): `scripts/ec2/gc_arm_repro_diag.sh 30`
+on `arm-lo` (or any 8-vCPU aarch64 box), `--enable-asan` build. Recommend
+follow-up: build a MINIMAL repro (no ASan, no 16-thread stress -- try to
+shrink to 2-4 threads with the same allocation pattern) and step through the
+first cyclic detection under gdb with hardware watchpoints on the corrupted
+`next` field to catch the write that creates the cycle.
+
+**Status: OPEN.** The acquire/release fix stays (it's correct and
+necessary), but the aarch64 STW oversubscription warning in the CHANGELOG
+must NOT be narrowed or removed based on this session's work -- if anything
+it should note the failure mode is now understood to be broader than
+previously documented (likely an object-lifecycle bug, not purely a
+barrier-timing one).
+
 ## 5. Reproduction
 
 ```
@@ -276,4 +351,7 @@ LD_PRELOAD=... prop_gc --threads=192 --rounds=800     # on 192-vCPU
 
 # explore the bounded 6x tail (does not gate soundness):
 LD_PRELOAD=... prop_gc --no-strict-stw --threads=48 --rounds=1000
+
+# aarch64 2x oversubscription with diagnostics (2026-09 investigation):
+./scripts/ec2/gc_arm_repro_diag.sh 30      # on arm-lo, --enable-asan build
 ```
