@@ -34,8 +34,6 @@ extern MunitSuite suite_depot_consistency;
 extern MunitSuite suite_sbo;
 extern MunitSuite suite_arena;
 extern MunitSuite suite_umem_own;
-extern MunitSuite suite_gc;
-extern MunitSuite suite_sparsemap;
 extern MunitSuite suite_coverage;
 extern MunitSuite suite_stacktrace;
 extern MunitSuite suite_profile;
@@ -61,10 +59,8 @@ static MunitSuite* test_suites[] = {
     &suite_depot_consistency,
     &suite_sbo,
     &suite_arena,
-    &suite_gc,
     &suite_coverage,
     &suite_stacktrace,
-    &suite_sparsemap,
     &suite_profile,
     &suite_vmem,
     /* vmem_sbrk: excluded — calls vmem_sbrk_arena() which conflicts

@@ -3,6 +3,40 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.5.0] - 2026-09-07
+
+### Removed: the experimental garbage collector
+
+**`umem_gc.h`/`umem_gc.c`, `umem_gc_roots.h`/`umem_gc_roots.c`, `gc.h`
+(the Boehm-GC-compatible API), and the GC-only `umem_sparsemap.h`/
+`umem_sparsemap.c` page map are removed from the library, tests, and docs.**
+
+Rationale: the collector's stop-the-world root-scan handshake had a
+long-running soundness investigation (see
+`docs/results/2026-07-23-gc-stw-soundness-finding.md` through
+`2026-07-24-gc-stw-fix-and-oversubscription.md` §4.1–4.4). Each fix closed
+a real, specific bug (a missing park barrier, a resize-under-lock
+contention tail, sharding the object lock, a missing acquire/release on the
+STW park ACK) and was verified against its own repro — but a further
+investigation (2026-09) found the aarch64 oversubscription corruption
+persisted after the acquire/release fix, and that the DOMINANT failure mode
+(7 of 10 failures in a 30-run sample) was a corrupted/cyclic object chain,
+not the sweep-of-a-reachable-object pattern every prior fix targeted —
+evidence of a deeper, not-yet-root-caused bug in object lifecycle or
+conservative-scan correctness under concurrency.
+
+Rather than continue shipping a conservative garbage collector with an
+open, intermittent, unresolved memory-corruption bug under concurrent load
+(the GC's core use case), it is removed. libumem's core allocator (slab +
+magazine + vmem), debug modes, ownership tracking, profiling, and budget
+contexts are unaffected — none of them depend on or share code with the GC.
+
+The historical CHANGELOG entries below that describe GC features, fixes,
+and benchmarks are kept as an accurate record of work done at the time;
+they no longer describe present-day libumem. `umem_own.h` (ownership
+tracking) is unrelated and unaffected — do not confuse the two experimental
+features.
+
 ## [2.4.0] - 2026-08-07
 
 sparsemap refresh + GC scalability. Verified building + testing on EC2

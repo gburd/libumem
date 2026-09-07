@@ -10,7 +10,6 @@
 #include "../../umem.h"
 #include "../../sys/vmem.h"
 #include "../../umem_base.h"
-#include "../../umem_gc_roots.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -678,76 +677,6 @@ test_cache_large_objects(const MunitParameter params[], void *data)
     return MUNIT_OK;
 }
 
-/* ---- GC roots scanning ---- */
-
-static int root_mark_count;
-
-static void root_mark_fn(void *ptr)
-{
-    (void)ptr;
-    root_mark_count++;
-}
-
-static MunitResult
-test_gc_thread_register(const MunitParameter params[], void *data)
-{
-    (void)params; (void)data;
-
-    /* Thread registration and unregistration */
-    int ret = umem_gc_thread_register();
-    munit_assert_int(ret, ==, 0);
-
-    int count = umem_gc_thread_count();
-    munit_assert_int(count, >=, 1);
-
-    ret = umem_gc_thread_unregister();
-    munit_assert_int(ret, ==, 0);
-
-    return MUNIT_OK;
-}
-
-static MunitResult
-test_gc_scan_roots(const MunitParameter params[], void *data)
-{
-    (void)params; (void)data;
-    root_mark_count = 0;
-
-    /* Scan registers */
-    umem_gc_scan_registers(root_mark_fn);
-
-    /* Scan stack */
-    void *low = NULL;
-    void *high = NULL;
-    int ret = umem_gc_get_stack_bounds(&low, &high);
-    if (ret == 0 && low != NULL && high != NULL) {
-        umem_gc_scan_stack(low, high, root_mark_fn);
-    }
-
-    /* Scan data segments */
-    umem_gc_scan_data_segments(root_mark_fn);
-
-    /* Full scan (no STW here: caller does not hold the threads lock) */
-    umem_gc_scan_all_roots(root_mark_fn, 0);
-
-    return MUNIT_OK;
-}
-
-static MunitResult
-test_gc_stack_bounds(const MunitParameter params[], void *data)
-{
-    (void)params; (void)data;
-
-    void *low = NULL;
-    void *high = NULL;
-    int ret = umem_gc_get_stack_bounds(&low, &high);
-    munit_assert_int(ret, ==, 0);
-    munit_assert_not_null(low);
-    munit_assert_not_null(high);
-    munit_assert_ptr_not_equal(low, high);
-
-    return MUNIT_OK;
-}
-
 /* ---- umem_malloc large (second_magic path) ---- */
 
 extern void *umem_malloc(size_t);
@@ -967,12 +896,6 @@ static MunitTest coverage_tests[] = {
     { "/sbo_operations", test_sbo_operations, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
     { "/cache_large_objects", test_cache_large_objects, NULL, NULL,
-      MUNIT_TEST_OPTION_NONE, NULL },
-    { "/gc_thread_register", test_gc_thread_register, NULL, NULL,
-      MUNIT_TEST_OPTION_NONE, NULL },
-    { "/gc_scan_roots", test_gc_scan_roots, NULL, NULL,
-      MUNIT_TEST_OPTION_NONE, NULL },
-    { "/gc_stack_bounds", test_gc_stack_bounds, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
     { "/malloc_second_align", test_malloc_second_align, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },

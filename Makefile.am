@@ -9,7 +9,6 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/unit/umem_env_helper \
 		  test/unit/repro_cpu_node_oob \
 		  test/property/prop_ownership \
-		  test/property/prop_gc \
 		  test/property/prop_profile \
 		  test/property/prop_palloc \
 		  test/bench/bench_contention \
@@ -149,12 +148,6 @@ libumem_la_SOURCES = init_lib.c \
 			umem_arena.h \
 			umem_own.c \
 			umem_own.h \
-			umem_gc.c \
-			umem_gc.h \
-			umem_gc_roots.c \
-			umem_gc_roots.h \
-			umem_sparsemap.c \
-			umem_sparsemap.h \
 			$(STUB_SOURCES) \
 			$(FREEBSD_SOURCES) \
 			$(PERCPU_SOURCES) \
@@ -256,8 +249,6 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_sbo.c \
 			 test/unit/test_arena.c \
 			 test/unit/test_umem_own.c \
-			 test/unit/test_gc.c \
-			 test/unit/test_sparsemap.c \
 			 test/unit/test_coverage.c \
 			 test/unit/test_stacktrace.c \
 			 test/unit/test_profile.c
@@ -283,10 +274,6 @@ test_property_prop_ownership_LDADD = libumem.la
 test_property_prop_ownership_LDFLAGS = -pthread -lm
 test_property_prop_ownership_CPPFLAGS = -I$(srcdir)
 
-test_property_prop_gc_SOURCES = test/property/prop_gc.c test/qc.c
-test_property_prop_gc_LDADD = libumem.la
-test_property_prop_gc_LDFLAGS = -pthread -lm
-test_property_prop_gc_CPPFLAGS = -I$(srcdir)
 
 test_property_prop_profile_SOURCES = test/property/prop_profile.c test/qc.c
 test_property_prop_profile_LDADD = libumem.la
@@ -448,7 +435,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	test/property/prop_alloc_free.c
 
 nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h \
-	umem_arena.h umem_own.h umem_gc.h gc.h \
+	umem_arena.h umem_own.h \
 	umem_profile.h umem_stacktrace.h umem_inspect.h
 
 if ENABLE_PERCPU_CACHING

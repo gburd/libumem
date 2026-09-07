@@ -23,7 +23,6 @@ Key properties:
   - Environment-variable-driven debug modes (no recompilation needed)
   - Scoped arena allocator for temporary allocations
   - Ownership/borrowing system inspired by Rust
-  - Conservative garbage collector with Boehm-compatible API
   - Allocation profiling with phase detection
 
 The primary advantage over malloc/free is that umem detects memory
@@ -31,11 +30,10 @@ corruption at the point it happens rather than letting it silently
 corrupt unrelated data.  The debug modes add overhead, but the release
 mode is competitive with system malloc.
 
-NOTE: Ownership (umem_own.h), garbage collection (umem_gc.h, gc.h),
-allocation profiling (umem_profile.h), and budget contexts
-(umem_palloc.h) are EXPERIMENTAL APIs.  They may change without
-notice.  External code must #define UMEM_ENABLE_EXPERIMENTAL before
-including these headers.
+NOTE: Ownership (umem_own.h), allocation profiling (umem_profile.h), and
+budget contexts (umem_palloc.h) are EXPERIMENTAL APIs.  They may change
+without notice.  External code must #define UMEM_ENABLE_EXPERIMENTAL
+before including these headers.
 
 
 2. Building
@@ -502,63 +500,7 @@ Register a custom error handler:
     umem_own_set_error_handler(my_handler);
 
 
-10. Garbage Collection
------------------------
-
-libumem includes a conservative garbage collector with a Boehm GC
-compatible API.  It uses umem's slab allocator as the backing store,
-so you get umem's debugging features on GC-managed memory too.
-
-Basic usage:
-
-    #include <umem_gc.h>
-
-    /* Initialize once */
-    GC_INIT();
-
-    /* Allocate (may contain pointers -- will be scanned) */
-    void *p = GC_MALLOC(256);
-
-    /* Allocate atomic (no pointers -- skip scanning) */
-    char *s = GC_MALLOC_ATOMIC(128);
-
-    /* Explicit free (optional -- GC will collect it) */
-    GC_FREE(p);
-
-    /* Force a collection cycle */
-    GC_gcollect();
-
-For multi-threaded applications, each thread must register:
-
-    /* In each thread's entry function */
-    GC_register_my_thread();
-    /* ... do work ... */
-    GC_unregister_my_thread();
-
-Finalizers (called before the object is collected):
-
-    void my_finalizer(void *obj, void *client_data) {
-        close(*(int *)obj);  /* close a file descriptor */
-    }
-    GC_REGISTER_FINALIZER(p, my_finalizer, NULL, NULL, NULL);
-
-Hybrid usage -- mix manual and collected allocations:
-
-    /* Manual (fast, deterministic lifetime) */
-    widget_t *w = umem_cache_alloc(widget_cache, UMEM_DEFAULT);
-    /* ... */
-    umem_cache_free(widget_cache, w);
-
-    /* Collected (convenient, no explicit free needed) */
-    node_t *n = GC_MALLOC(sizeof(node_t));
-    n->left = GC_MALLOC(sizeof(node_t));
-    /* n and n->left will be collected when unreachable */
-
-The GC uses a mark-sweep algorithm with concurrent marking and
-stop-the-world remark and finalize phases.
-
-
-11. Arena Allocator
+10. Arena Allocator
 --------------------
 
 libumem provides a scoped arena allocator for temporary allocation
@@ -595,8 +537,8 @@ an arena per request, allocate freely during processing, then reset
 or destroy the arena when the request is complete.
 
 
-12. Environment Variables Reference
--------------------------------------
+11. Environment Variables Reference
+------------------------------------
 
 UMEM_DEBUG
 

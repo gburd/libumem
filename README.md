@@ -59,7 +59,7 @@ post-mortem heap forensics, libumem is built for you.
 | **~2007** | Wez Furlong (Message Systems) ports libumem to Linux and Windows for the Ecelerity MTA.  Released as `portableumem`. |
 | **~2010** | OmniTI takes over the portable fork.  Steady but minimal maintenance follows. |
 | **2014–2023** | Long fallow period.  The original Solaris source is preserved in illumos-gate; the portable fork accumulates rot. |
-| **2024–2025** | This revival.  Substantial rework of the allocator hot paths, modernization to C11 / C17, fixes for Linux, FreeBSD, and Windows portability, addition of new features (per-thread cache, scoped arenas, ownership tracking, GC, profiling), and — the headline change — the runtime introspection tools that bring `mdb`-class debugging back. |
+| **2024–2025** | This revival.  Substantial rework of the allocator hot paths, modernization to C11 / C17, fixes for Linux, FreeBSD, and Windows portability, addition of new features (per-thread cache, scoped arenas, ownership tracking, profiling), and — the headline change — the runtime introspection tools that bring `mdb`-class debugging back. |
 
 ---
 
@@ -124,8 +124,6 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
   for short-lived allocations.
 - **Ownership tracking (`umem_own.h`)** — Rust-inspired
   ownership / borrowing with runtime checks.
-- **Garbage collector (`umem_gc.h`)** — conservative mark-sweep, GC
-  with Boehm-compatible API, using umem slabs as backing store.
 - **Allocation profiling (`umem_profile.h`)** — record / replay to
   pre-warm caches.
 - **Budget contexts** — PostgreSQL-style per-context memory budgets.
@@ -141,9 +139,9 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
   `scripts/ec2/run-remote.sh <role> '... lcov ...'`). This replaces
   the historical "~33% to >80%" v2.0.0 claim, which described a
   2025 point-in-time delta and is no longer accurate for the current
-  codebase (six releases of new code — sparsemap vendoring, GC
-  sharding, `umem_introspect.c`, `tools/umem.c`, `umem_inspect.c` —
-  have shifted the aggregate since then).
+  codebase (multiple releases of new code — sparsemap vendoring,
+  `umem_introspect.c`, `tools/umem.c`, `umem_inspect.c` — have
+  shifted the aggregate since then).
 - Property-based tests, integration tests, stress tests.
 - Cross-platform benchmark suite (TOML output with OS / arch /
   compiler metadata).
@@ -170,7 +168,6 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 | Live attach for inspection | ✅ (`umem --pid`) | runtime stats only | runtime stats only | runtime stats only | ❌ |
 | Per-buffer stack capture | ✅ (`UMEM_DEBUG=audit`) | profile mode | sampling profile | ❌ | mtrace |
 | Buffer overrun / UAF detect | ✅ (`UMEM_DEBUG=guards`) | partial | ❌ | ✅ (secure) | ❌ |
-| Conservative GC | ✅ (`umem_gc.h`) | ❌ | ❌ | ❌ | ❌ |
 | Snapshot / offline analysis | ✅ (`.ums` format) | ❌ | profile heap dump | ❌ | ❌ |
 | Cross-platform | Linux/BSD/Solaris/macOS | wide | Linux primary | wide | Linux only |
 | Drop-in `LD_PRELOAD` | ✅ | ✅ | ✅ | ✅ | (default) |
@@ -334,9 +331,6 @@ APIs may change.
 - **Ownership tracking (`umem_own.h`)** — Rust-inspired ownership /
   borrowing with runtime checks.  Two modes: lightweight (~2%) and
   full (~15%).
-- **Garbage collection (`umem_gc.h`, `gc.h`)** — conservative
-  mark-sweep with Boehm-compatible API.  Concurrent marking,
-  finalizers, sparsemap for O(1) pointer lookup.
 - **Allocation profiling (`umem_profile.h`)** — record / replay,
   phase detection.
 - **Budget contexts (`examples/umem_palloc.h`)** — PostgreSQL-style
