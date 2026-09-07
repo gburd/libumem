@@ -96,7 +96,6 @@ jobs:
         env:
           AWS_PROFILE: bene
           AWS_DEFAULT_REGION: us-east-2
-          KEY_FILE: /root/.ssh/libumem-bench.pem
         run: ./scripts/ec2/aarch64_nightly.sh
 
       - name: Ensure arm-lo is terminated (belt-and-suspenders)

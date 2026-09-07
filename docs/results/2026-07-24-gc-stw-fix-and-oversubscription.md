@@ -332,12 +332,16 @@ shrink to 2-4 threads with the same allocation pattern) and step through the
 first cyclic detection under gdb with hardware watchpoints on the corrupted
 `next` field to catch the write that creates the cycle.
 
-**Status: OPEN.** The acquire/release fix stays (it's correct and
-necessary), but the aarch64 STW oversubscription warning in the CHANGELOG
-must NOT be narrowed or removed based on this session's work -- if anything
-it should note the failure mode is now understood to be broader than
-previously documented (likely an object-lifecycle bug, not purely a
-barrier-timing one).
+**Status: RESOLVED BY REMOVAL (v2.5.0, commit `52a2c02`).** The
+acquire/release fix (commit `617f221`) was correct and necessary on its own
+terms but did not close this gap. Rather than continue investigating an
+open, intermittent memory-corruption bug in the collector's core
+concurrent-load use case, the entire garbage collector
+(`umem_gc.{c,h}`, `umem_gc_roots.{c,h}`, `gc.h`, and the GC-only
+`umem_sparsemap.{c,h}` page map) was removed from libumem. See
+`CHANGELOG.md` [2.5.0]. This document is retained as the historical record
+of the investigation; none of the code paths it describes exist in current
+libumem.
 
 ## 5. Reproduction
 

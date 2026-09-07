@@ -72,9 +72,19 @@ log "waiting for $IID to run..."
 aws ec2 wait instance-running --instance-ids "$IID"
 DNS="$(public_dns_for_id "$IID")"
 log "waiting for SSH on $DNS..."
+ssh_ok=0
 for _ in $(seq 1 40); do
-	if ssh $SSH_OPTS -i "$KEY_FILE" "${SSH_USER}@${DNS}" true 2>/dev/null; then break; fi
+	if ssh $SSH_OPTS -i "$KEY_FILE" "${SSH_USER}@${DNS}" true 2>/dev/null; then
+		ssh_ok=1
+		break
+	fi
 	sleep 5
 done
+if [ "$ssh_ok" -ne 1 ]; then
+	echo "launch.sh: SSH to $DNS never succeeded after 200s (wrong key" \
+		"($KEY_FILE) for key pair '$KEY_NAME', or the instance never" \
+		"finished booting). NOT declaring ready." >&2
+	exit 1
+fi
 log "ready: $IID $DNS  (next: bootstrap.sh $ROLE)"
 echo "$IID"

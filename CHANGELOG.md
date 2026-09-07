@@ -3,6 +3,47 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.5.1] - 2026-09-07
+
+Bug-fix release: two real bugs found while auditing the CI/EC2 harness added
+alongside v2.4.0-2.5.0 (never live-tested at the time — the agent that
+added them explicitly flagged this; see below), plus a stale doc status.
+
+### Fixed
+
+- **`scripts/ec2/launch.sh`: false-positive "ready" on SSH failure.** The
+  post-launch SSH wait loop (40 retries × 5s) never checked whether any
+  attempt actually succeeded — it always printed `ready: ...` and handed off
+  to `bootstrap.sh` after the loop, even if every SSH attempt failed (e.g. a
+  key-pair/secret mismatch in the new `aarch64-nightly.yml` scheduled job,
+  or a slow-booting instance). Now the loop tracks success explicitly and
+  `launch.sh` exits 1 with a clear diagnostic if SSH never came up, instead
+  of silently declaring readiness and letting the failure surface later as
+  a confusing SSH error in `bootstrap.sh`. Benefits every workstream that
+  uses the EC2 harness, not just CI.
+- **`.forgejo/workflows/aarch64-nightly.yml`: wrong hardcoded `KEY_FILE`.**
+  The job wrote the SSH private key secret to `~/.ssh/libumem-bench.pem`
+  (real `$HOME`) but then overrode `KEY_FILE=/root/.ssh/libumem-bench.pem`
+  for the launch step — wrong if the forgejo-runner-debian container's user
+  isn't root, silently pointing `launch.sh` at a key file that doesn't
+  exist. Removed the override; `scripts/ec2/common.sh` already defaults
+  `KEY_FILE` to `$HOME/.ssh/${KEY_NAME}.pem`, consistent with every other
+  step in the same job.
+- **Stale "Status: OPEN" in the GC-STW investigation doc.**
+  `docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md` §4.4 still
+  said the aarch64 corruption investigation was open after v2.5.0 removed
+  the garbage collector entirely — the code it was investigating no longer
+  exists. Updated to "RESOLVED BY REMOVAL", pointing at the v2.5.0 entry.
+
+### Verified
+
+EC2 x86_64 (intel-lo): clean build, `make check` 8/8 PASS, `test_main
+--no-fork` 417 OK / 0 FAIL / 10 SKIP (unchanged from v2.5.0), the new
+`bench_gate.sh` runs and correctly stays non-blocking on a directional
+variance, concurrency oracle clean. `launch.sh`'s fixed ready-check verified
+against a real launch (SSH succeeds, `ready:` prints only after confirming
+it).
+
 ## [2.5.0] - 2026-09-07
 
 ### Removed: the experimental garbage collector
