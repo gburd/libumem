@@ -3,6 +3,29 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased] - 2026-09-08
+
+### Documented
+
+- **aarch64 post-fix scaling baseline (closes the Task I1 aarch64 perf-table
+  gap).** The x86_64 allocator-scaling story (`2026-07-23-baseline.md`,
+  `2026-07-23-d2-fix-validation.md`) never had an aarch64 counterpart after
+  the 2.1.0 rseq/PTC fixes landed — the README's aarch64 row just said "not
+  yet published". Ran the full stabilized matrix (Task C1/C2 harness) on
+  `arm-lo` (c7g.2xlarge, 8 vCPU) and `arm-hi` (c8g.metal-48xl Graviton4, 192
+  vCPU): `docs/results/2026-09-08-aarch64-baseline.md`, with raw data under
+  `docs/results/2026-09-08-{c7g.2xlarge,c8g.metal-48xl}-aarch64/`.
+  **Finding: aarch64 matches (and on the exact same-size-class contention
+  case the PTC fix targeted, slightly exceeds) x86_64's post-fix scaling
+  story — `multi 160:160` scales near-linearly to 192 threads with a flat
+  ~40 ns p999 tail, beating x86_64's 320.9 Mops/s / 299 ns p999 at the same
+  thread count with 457.5 Mops/s / 43 ns. It does NOT reproduce x86_64's
+  decisive `prodcons` win (~245% of glibc there vs. a mixed 49–120% here),
+  and above the 2 KB PTC ceiling (`1024:4096` size range) its high-thread-count
+  falloff under contention is steeper than x86_64's.** README's Performance
+  section now carries a real aarch64 table instead of the placeholder
+  sentence.
+
 ## [2.5.1] - 2026-09-07
 
 Bug-fix release: two real bugs found while auditing the CI/EC2 harness added

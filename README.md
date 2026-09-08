@@ -355,9 +355,24 @@ and [`docs/results/2026-07-23-d2-fix-validation.md`](docs/results/2026-07-23-d2-
 | `multi`, 192 threads | 320 Mops/s | p999 ~299 ns (was 1.83 ms pre-fix) |
 | `prodcons`, 4 threads | ~245% of glibc | ~10× lower p99 (cross-thread handoff) |
 
-**aarch64** (`c8g.metal-48xl` Graviton4, 192 vCPU): runs correctly as of
-2.1.0 (2.0.0 SIGSEGV'd). A post-fix authoritative scaling table is not yet
-published — the baseline sweep captured aarch64 before the rseq fix landed.
+**aarch64** (`c8g.metal-48xl` Graviton4, 192 vCPU, same harness). Full data +
+provenance:
+[`docs/results/2026-09-08-aarch64-baseline.md`](docs/results/2026-09-08-aarch64-baseline.md).
+
+| Workload | umem vs glibc | Notes |
+|---|---|---|
+| Single-thread (64–256 B) | ~1.03–1.06× throughput | p50 ~36 ns vs ~35 ns (glibc) — smaller latency gap than x86_64's ~1.3× |
+| `multi` (same-size-class 160 B), 8 threads | 49.5 Mops/s | ~99% of glibc; p999 39 ns |
+| `multi` (same-size-class 160 B), 192 threads | 457.5 Mops/s | ~99% of glibc; p999 43 ns (flat — no cliff at any thread count measured) |
+| `prodcons`, 4 threads | ~120% of glibc | mixed across thread counts (49–120%); does **not** reproduce x86_64's decisive ~245%/10×-lower-p99 win |
+
+aarch64 runs correctly (no SIGSEGV, unlike 2.0.0) and matches or slightly
+exceeds x86_64 on the exact same-size-class contention case the 2.1.0 PTC fix
+targeted (higher absolute throughput, flatter tail at 192 threads). It does
+**not** reproduce x86_64's `prodcons` win, and above the 2 KB PTC ceiling
+(`1024:4096` size range) its multi-thread falloff under contention is
+steeper than x86_64's. See the results doc for the full table and the honest
+side-by-side.
 
 Numbers vary substantially with workload and hardware; reproduce with the
 harness on your own target rather than trusting a single table.

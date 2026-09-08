@@ -461,7 +461,7 @@ Property/invariant tests for the experimental features, so "works correctly" is 
 
 ### Task I1: README/CHANGELOG match measured reality
 **Files:** `README.md`, `CHANGELOG.md`.
-- [ ] Replace the aspirational perf table with the C2 measured matrix (per arch, per core count). State the honest multi-thread story post-D2. Remove any claim not backed by a committed result. Commit.
+- [x] Replace the aspirational perf table with the C2 measured matrix (per arch, per core count). State the honest multi-thread story post-D2. Remove any claim not backed by a committed result. Commit. x86_64 table landed earlier (see `docs/results/2026-07-23-baseline.md` / `-d2-fix-validation.md`); the aarch64 half (the gap this checkbox was tracking) closed 2026-09-08 with `docs/results/2026-09-08-aarch64-baseline.md` + a real README aarch64 table + a `CHANGELOG.md` `[Unreleased]` entry.
 
 ### Task I2: Expand CI matrix
 **Files:** `.github/workflows/test.yml`.
