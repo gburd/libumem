@@ -5039,12 +5039,6 @@ umem_init(void)
 		    sizeof (umem_cpu_cache_t), UMEM_CPU_CACHE_SIZE);
 	}
 
-	if (umem_tagged_ptr_check() != 0) {
-		umem_panic("umem: virtual address space exceeds 48 bits;"
-		    " tagged pointers will fail.  Rebuild with"
-		    " 48-bit VA or disable lock-free depot.\n");
-	}
-
 	umem_max_ncpus = umem_get_max_ncpus();
 
 	/*
