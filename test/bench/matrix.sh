@@ -79,7 +79,7 @@ export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}
 # resolves IE TLS at process-startup instead, which works on both arches.
 # allocators.c detects the preload (via __scudo_print_stats) and uses it
 # instead of dlopen.
-SCUDO_SO=$(ldconfig -p 2>/dev/null | grep -m1 -oE '/[^ ]*scudo_standalone[^ ]*\.so[^ ]*' | head -1)
+SCUDO_SO=$( (ldconfig -p 2>/dev/null || true) | grep -oE '/[^ ]*scudo_standalone[^ ]*\.so[^ ]*' | head -1 || true)
 [[ -n "$SCUDO_SO" ]] && export LD_PRELOAD="${LD_PRELOAD:-}${LD_PRELOAD:+:}$SCUDO_SO"
 # Third-party allocators are dlopen(RTLD_LOCAL)'d by allocators.c, not
 # statically linked (see the comment at the top of allocators.c for why:
