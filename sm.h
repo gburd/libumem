@@ -300,6 +300,7 @@ typedef SSIZE_T ssize_t;
 #define sm_wrap                     SM__P(sm_wrap)
 #define sm_xor                      SM__P(sm_xor)
 #define sm_xor_cardinality          SM__P(sm_xor_cardinality)
+#define sm_xor_inplace              SM__P(sm_xor_inplace)
 #endif /* SPARSEMAP_PREFIX */
 
 #if defined(__cplusplus)
@@ -307,9 +308,9 @@ extern "C" {
 #endif
 
 /** Library version (kept in sync with meson.build's project(version: ...)). */
-#define SM_VERSION_STRING "5.4.0"
+#define SM_VERSION_STRING "5.5.0"
 #define SM_VERSION_MAJOR  5
-#define SM_VERSION_MINOR  4
+#define SM_VERSION_MINOR  5
 #define SM_VERSION_PATCH  0
 
 /** Handle to a sparsemap instance.
@@ -1526,6 +1527,22 @@ sm_t *sm_intersection_inplace(sm_t *dst, const sm_t *src);
  * Result always shrinks or stays same; never reallocates.
  */
 sm_t *sm_difference_inplace(sm_t *dst, const sm_t *src);
+
+/** @brief In-place symmetric difference: `dst := dst XOR src`.
+ *
+ * Keeps the bits set in exactly one of @a dst and @a src.  Unlike the
+ * other in-place set operations this one can *grow* @a dst (src may
+ * carry bits dst lacks), so it follows the same reallocating contract
+ * as sm_union_inplace: it may return a different pointer than the one
+ * passed in, and returns NULL on allocation failure with @a dst left
+ * untouched.  Always assign the result:
+ *
+ * @code
+ *     dst = sm_xor_inplace(dst, src);
+ *     if (dst == NULL) { ... }
+ * @endcode
+ */
+sm_t *sm_xor_inplace(sm_t *dst, const sm_t *src);
 
 /* -------------------------------------------------------------------
  * Range complement
