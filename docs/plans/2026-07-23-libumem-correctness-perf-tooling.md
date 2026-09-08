@@ -447,28 +447,6 @@ Property/invariant tests for the experimental features, so "works correctly" is 
 **Files:** `test/property/prop_ownership.c` (new), wired into build.
 - [ ] Every UAF / double-free / borrow-conflict / cross-thread violation the API is documented to catch is caught (positive tests); no false positives on valid ownership transfers (negative tests). Run lightweight + full-debug modes. Commit.
 
-### Task H2: GC invariants
-**Files:** `test/property/prop_gc.c` (new).
-- [ ] No live (reachable) object is ever swept; all unreachable objects are eventually collected; finalizers run exactly once; concurrent-mark + stop-the-world under multithread stress on `intel-hi`/`arm-hi` (the STW signal path had recent fixes per git log — stress it). Commit.
-
-> **Status update (2026-09-07): the GC was REMOVED from libumem (v2.5.0).**
-> H2's own stress work (and follow-ups through v2.4.0) kept finding and fixing
-> real STW soundness bugs one at a time (missing park barrier, resize-under-lock
-> contention, unsharded object lock, missing acquire/release on the park ACK) —
-> but a further investigation after v2.4.0 shipped found the aarch64
-> oversubscription corruption persisted past the acquire/release fix, and that
-> the dominant failure mode was a corrupted/cyclic object chain, not a
-> sweep-of-reachable-object race — evidence of a deeper, un-root-caused bug.
-> Rather than keep shipping a collector with an open, intermittent
-> memory-corruption bug under its core use case (concurrent load), it was
-> removed entirely: `umem_gc.{c,h}`, `umem_gc_roots.{c,h}`, `gc.h`, and the
-> GC-only `umem_sparsemap.{c,h}` page map are gone, along with their tests and
-> docs. See `CHANGELOG.md` [2.5.0] and
-> `docs/results/2026-07-24-gc-stw-fix-and-oversubscription.md` §4.4 for the
-> full history. This task's checkbox is intentionally left unchecked — it was
-> worked, repeatedly, and ultimately superseded by a decision to remove the
-> feature rather than complete it.
-
 ### Task H3: Profiling round-trip
 **Files:** `test/property/prop_profile.c` (new).
 - [ ] Record → dump (`umem_profile_dump`) → replay is correctness-neutral (replay never changes program-visible allocation behavior, only pre-warms). Verify `.ump` parse matches recorded stats. Commit.
