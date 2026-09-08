@@ -68,25 +68,62 @@ done
 
 cd "$(dirname "${BASH_SOURCE[0]}")"   # test/bench
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}../../.libs"
-# Third-party allocators are dlopen(RTLD_LOCAL)'d by allocators.c, not
-# statically linked (see the comment at the top of allocators.c for why:
+# Third-party allocators are loaded at runtime by allocators.c (dlopen or
+# LD_PRELOAD detection -- see the comment at the top of that file for why:
 # statically linking them collides with the process-wide malloc symbol).
-# jemalloc's static-TLS usage needs glibc's static-TLS surplus bumped;
+# glibc's static-TLS surplus needs bumping for some of them under dlopen;
 # this must be set before the process starts.
 export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
-# scudo's initial-exec TLS relocations don't dlopen cleanly on aarch64 at
-# any tunable size (see allocators.c's scudo_try_load comment); LD_PRELOAD
-# resolves IE TLS at process-startup instead, which works on both arches.
-# allocators.c detects the preload (via __scudo_print_stats) and uses it
-# instead of dlopen.
-SCUDO_SO=$( (ldconfig -p 2>/dev/null || true) | grep -oE '/[^ ]*scudo_standalone[^ ]*\.so[^ ]*' | head -1 || true)
-[[ -n "$SCUDO_SO" ]] && export LD_PRELOAD="${LD_PRELOAD:-}${LD_PRELOAD:+:}$SCUDO_SO"
-# Third-party allocators are dlopen(RTLD_LOCAL)'d by allocators.c, not
-# statically linked (see the comment at the top of allocators.c for why:
-# statically linking them collides with the process-wide malloc symbol).
-# jemalloc's static-TLS usage needs glibc's static-TLS surplus bumped;
-# this must be set before the process starts.
-export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
+
+# Some allocators (scudo always; on musl, every third-party allocator) only
+# work via LD_PRELOAD, not dlopen (see allocators.c's file-header comment).
+# LD_PRELOAD is a process-wide, no-undo setting: stacking multiple
+# allocators' LD_PRELOAD in one invocation lets the LAST one silently win
+# the global malloc symbol, contaminating libc's *own* baseline numbers
+# (verified empirically on musl: allocator_libc's throughput/latency
+# changed completely when 4 unrelated LD_PRELOADs were stacked). So
+# LD_PRELOAD is resolved and applied per-allocator, per-invocation --
+# never globally -- and is empty for libc/umem.
+preload_for() {
+    case "$1" in
+        scudo)
+            ldconfig -p 2>/dev/null | grep -oE '/[^ ]*scudo[_a-z]*[^ ]*\.so[^ ]*' | head -1 ;;
+        jemalloc)
+            ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libjemalloc\.so[^ ]*' | head -1 ;;
+        tcmalloc)
+            ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libtcmalloc(_minimal)?\.so[^ ]*' | head -1 ;;
+        mimalloc)
+            ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libmimalloc\.so[^ ]*' | head -1 ;;
+        snmalloc)
+            ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libsnmallocshim\.so[^ ]*' | head -1 ;;
+        rpmalloc)
+            ldconfig -p 2>/dev/null | grep -oE '/[^ ]*librpmalloc\.so[^ ]*' | head -1 ;;
+        *) : ;;
+    esac
+}
+# musl (no ldconfig): fall back to a fixed install path per allocator.
+preload_for_musl() {
+    case "$1" in
+        scudo) echo /usr/local/lib/libscudo_standalone.so ;;
+        jemalloc) echo /usr/lib/libjemalloc.so.2 ;;
+        mimalloc) echo /usr/lib/libmimalloc.so ;;
+        rpmalloc) echo /usr/local/lib/librpmalloc.so ;;
+        *) : ;;
+    esac
+}
+# On glibc, dlopen already works for everything except scudo (see
+# allocators.c); LD_PRELOAD is opt-in per allocator there. On musl,
+# nothing dlopens cleanly, so every non-libc/umem allocator needs it.
+IS_MUSL=0
+{ ldd --version 2>&1 || true; } | grep -qi musl && IS_MUSL=1
+allocator_preload() {
+    if [[ "$1" == libc || "$1" == umem ]]; then return 0; fi
+    if [[ $IS_MUSL -eq 1 ]]; then
+        preload_for_musl "$1"
+    elif [[ "$1" == scudo ]]; then
+        preload_for scudo
+    fi
+}
 
 if [[ ! -x "$BENCH_BIN" ]]; then
     echo "$BENCH_BIN missing; building test/bench/bench_main ..." >&2
@@ -130,9 +167,12 @@ fi
 
 # --- allocator auto-detection -----------------------------------------------
 # A row is produced only for available allocators (main skips alloc==NULL).
+# Probes with the SAME per-allocator LD_PRELOAD run_point will use, so
+# detection matches reality on musl (nothing dlopens) and for scudo.
 probe_alloc() {
-    "$BENCH_BIN" -a "$1" -w single -n 1000 -s 16:16 -c 2>/dev/null \
-        | grep -q "^$1," 
+    local pre; pre="$(allocator_preload "$1")"
+    LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$1" -w single -n 1000 -s 16:16 -c 2>/dev/null \
+        | grep -q "^$1,"
 }
 if [[ ${#ALLOCATORS[@]} -eq 0 ]]; then
     ALLOCATORS=(libc umem)
@@ -245,10 +285,11 @@ run_point() {
     # A crashing/failing allocator at one point must NOT abort the sweep
     # (e.g. umem currently SIGSEGVs on aarch64) -- capture the row, log a
     # crash, and continue so the rest of the matrix still lands.
-    local w="$1" t="$2" lbl="$3" ops="$OPERATIONS" out rc
+    local w="$1" t="$2" lbl="$3" ops="$OPERATIONS" out rc pre
     if [[ "$w" == "multi" ]]; then ops=$(( OPERATIONS / t )); fi
+    pre="$(allocator_preload "$ALLOC")"
     set +e
-    out=$($(pin_prefix "$t") "$BENCH_BIN" -a "$ALLOC" -w "$w" -t "$t" \
+    out=$(LD_PRELOAD="${pre:-}" $(pin_prefix "$t") "$BENCH_BIN" -a "$ALLOC" -w "$w" -t "$t" \
         -n "$ops" -s "$SIZE" -r "$RUNS" -W "$WARMUPS" -c 2>>"$LOG")
     rc=$?
     set -e

@@ -2,29 +2,46 @@
  * Allocator implementations for benchmarking.
  *
  * umem is linked directly (it's the library under test). Every other
- * allocator is loaded with dlopen(RTLD_LOCAL) instead of being linked
- * with -l<name>.  This matters for correctness, not just convenience:
- * jemalloc/tcmalloc/mimalloc/snmalloc/scudo/rpmalloc all define plain
- * `malloc`/`free`/`calloc`/`realloc` as *strong, global* symbols (most of
- * them optionally through a private-prefixed alias like je_malloc/
- * tc_malloc/mi_malloc, but the plain names are what actually gets
- * exported and, if statically linked, override the process-wide malloc
- * symbol other code -- including this file's own libc_alloc() -- resolves
- * to).  Verified empirically on EC2 (see docs/results/2026-09-*-allocator-
- * shootout.md provenance notes): linking -ljemalloc into this binary made
- * plain malloc()/je_malloc() the *same* function, silently contaminating
- * the "libc" baseline with jemalloc's allocator.  dlopen(RTLD_LOCAL) loads
- * each competitor into its own symbol scope so its malloc/free never
- * leaks into the process-wide symbol table; only our own dlsym'd function
- * pointers call into it. This is the only allocator that stays reliably
- * isolated across all six third-party allocators, so we use it uniformly
- * instead of a different technique per allocator.
+ * allocator is loaded at runtime instead of being linked with -l<name>.
+ * This matters for correctness, not just convenience: jemalloc/tcmalloc/
+ * mimalloc/snmalloc/scudo/rpmalloc all define plain `malloc`/`free`/
+ * `calloc`/`realloc` as *strong, global* symbols (most of them optionally
+ * through a private-prefixed alias like je_malloc/tc_malloc/mi_malloc,
+ * but the plain names are what actually gets exported and, if statically
+ * linked, override the process-wide malloc symbol other code -- including
+ * this file's own libc_alloc() -- resolves to). Verified empirically on
+ * EC2 (see docs/results/2026-09-*-allocator-shootout.md provenance
+ * notes): linking -ljemalloc into this binary made plain malloc()/
+ * je_malloc() the *same* function, silently contaminating the "libc"
+ * baseline with jemalloc's allocator.
  *
- * dlopen()ing some of these (jemalloc's static-TLS use in particular)
- * requires glibc's static-TLS surplus bumped via GLIBC_TUNABLES, which
- * must be set in the environment *before* this process starts (glibc
- * reads it at exec, not at runtime) -- see test/bench/matrix.sh and
- * test/bench/bench_allocators.sh, which export it.
+ * Two loading techniques are used, chosen per-allocator by what actually
+ * works on the platforms this was verified against (x86_64 + aarch64,
+ * glibc + musl):
+ *
+ *   1. dlopen(RTLD_LOCAL): loads the library into its own symbol scope so
+ *      its malloc/free never leak into the process-wide symbol table;
+ *      only our own dlsym'd function pointers call into it. Works for
+ *      most allocators on glibc.
+ *
+ *   2. LD_PRELOAD + dlsym(RTLD_DEFAULT, ...): some allocators' TLS
+ *      relocations (initial-exec model) fail dlopen(RTLD_LOCAL) outright
+ *      with "cannot allocate memory in static TLS block", regardless of
+ *      how large glibc's static-TLS surplus (GLIBC_TUNABLES=glibc.rtld.
+ *      optional_static_tls) is set -- observed for scudo and full
+ *      libtcmalloc.so on AL2023 aarch64/glibc, and for *every* non-libc
+ *      allocator on musl/Alpine (which has no static-TLS-surplus tunable
+ *      at all). IE-model TLS for the *initial* set of objects a process
+ *      loads is resolved once at exec, before main() -- so LD_PRELOADing
+ *      the library instead of dlopen()ing it after the fact sidesteps
+ *      the problem entirely (verified on glibc/aarch64 and musl/x86_64).
+ *      matrix.sh / install_extra_allocators.sh arrange the LD_PRELOAD;
+ *      each allocator's *_try_load() here checks RTLD_DEFAULT for a
+ *      symbol unique to it first and only falls back to dlopen if that
+ *      symbol isn't already present in the process.
+ *
+ * A missing library or missing symbol leaves an allocator's ops all-NULL,
+ * which bench_main already treats as "not available" and skips.
  */
 
 #define _GNU_SOURCE
@@ -172,14 +189,13 @@ allocator_ops_t allocator_umem = {
     .cleanup = NULL
 };
 
-/* ========== dlopen(RTLD_LOCAL) helper shared by every third-party =======
- * allocator below.  Each one just needs a path to try (first match wins,
- * so packaged and from-source locations both work) and the four symbol
- * names to dlsym.  A missing library / missing symbol leaves alloc==NULL,
- * which bench_main already treats as "not available" and skips.
+/* ========== shared loader for every third-party allocator below =========
+ * Each one just needs a path list to try with dlopen (first match wins,
+ * so packaged and from-source locations both work), a marker symbol
+ * unique to it (to detect an LD_PRELOAD), and the four symbol names.
  */
 typedef struct dlopen_malloc_syms {
-    void *handle;
+    void *handle;               /* dlopen() handle, or RTLD_DEFAULT if preloaded */
     void *(*alloc)(size_t);
     void *(*calloc)(size_t, size_t);
     void *(*realloc)(void *, size_t);
@@ -225,7 +241,32 @@ static int dlopen_malloc_load(dlopen_malloc_syms_t *out, const char * const *pat
     return 0;
 }
 
-/* ========== jemalloc (dlopen) ========== */
+/* Preloaded-or-dlopen: see the file header comment for why this exists.
+ * marker_sym must be exported by the target allocator and by nothing
+ * else we might load. */
+static int preloaded_or_dlopen_malloc_load(dlopen_malloc_syms_t *out,
+                               const char *marker_sym,
+                               const char * const *paths,
+                               const char *env_override, const char *alloc_sym,
+                               const char *calloc_sym, const char *realloc_sym,
+                               const char *free_sym) {
+    memset(out, 0, sizeof(*out));
+    if (dlsym(RTLD_DEFAULT, marker_sym) != NULL) {
+        out->alloc = (void *(*)(size_t))dlsym(RTLD_DEFAULT, alloc_sym);
+        out->calloc = (void *(*)(size_t, size_t))dlsym(RTLD_DEFAULT, calloc_sym);
+        out->realloc = (void *(*)(void *, size_t))dlsym(RTLD_DEFAULT, realloc_sym);
+        out->free = (void (*)(void *))dlsym(RTLD_DEFAULT, free_sym);
+        if (out->alloc && out->calloc && out->realloc && out->free) {
+            out->handle = RTLD_DEFAULT;
+            return 0;
+        }
+        memset(out, 0, sizeof(*out));
+    }
+    return dlopen_malloc_load(out, paths, env_override, alloc_sym, calloc_sym,
+                               realloc_sym, free_sym);
+}
+
+/* ========== jemalloc ========== */
 static dlopen_malloc_syms_t je_syms;
 
 static void* jemalloc_alloc(size_t size) { return je_syms.alloc(size); }
@@ -245,24 +286,20 @@ static void jemalloc_try_load(void) {
         "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2",
         "/usr/lib/aarch64-linux-gnu/libjemalloc.so.2", NULL
     };
-    if (dlopen_malloc_load(&je_syms, paths, "UMEM_BENCH_JEMALLOC_PATH",
+    /* mallctl is jemalloc-specific and reliably present regardless of
+     * --with-jemalloc-prefix / --with-mangling, unlike je_malloc. */
+    if (preloaded_or_dlopen_malloc_load(&je_syms, "mallctl", paths,
+                            "UMEM_BENCH_JEMALLOC_PATH",
                             "malloc", "calloc", "realloc", "free") == 0) {
         allocator_jemalloc.name = "jemalloc";
         allocator_jemalloc.alloc = jemalloc_alloc;
         allocator_jemalloc.calloc = jemalloc_calloc;
         allocator_jemalloc.realloc = jemalloc_realloc;
         allocator_jemalloc.free = jemalloc_free;
-        /* Force epoch advancement between runs so mallctl-based stats
-         * (unused by this harness today, kept for parity with the old
-         * static-link cleanup hook) would reflect the current run. */
-        void (*mallctl)(const char *, void *, size_t *, void *, size_t) =
-            (void (*)(const char *, void *, size_t *, void *, size_t))
-            dlsym(je_syms.handle, "mallctl");
-        (void)mallctl;
     }
 }
 
-/* ========== tcmalloc / gperftools (dlopen) ========== */
+/* ========== tcmalloc / gperftools ========== */
 static dlopen_malloc_syms_t tc_syms;
 
 static void* tcmalloc_alloc(size_t size) { return tc_syms.alloc(size); }
@@ -291,8 +328,10 @@ static void tcmalloc_try_load(void) {
     };
     /* tc_malloc/tc_free/... are always exported alongside plain
      * malloc/free, and are unambiguous even if some other loaded library
-     * also happens to export plain names, so prefer them. */
-    if (dlopen_malloc_load(&tc_syms, paths, "UMEM_BENCH_TCMALLOC_PATH",
+     * also happens to export plain names, so prefer them (as both the
+     * marker and the symbols themselves). */
+    if (preloaded_or_dlopen_malloc_load(&tc_syms, "tc_malloc", paths,
+                            "UMEM_BENCH_TCMALLOC_PATH",
                             "tc_malloc", "tc_calloc", "tc_realloc", "tc_free") == 0) {
         allocator_tcmalloc.name = "tcmalloc";
         allocator_tcmalloc.alloc = tcmalloc_alloc;
@@ -302,7 +341,7 @@ static void tcmalloc_try_load(void) {
     }
 }
 
-/* ========== mimalloc (dlopen) ========== */
+/* ========== mimalloc ========== */
 static dlopen_malloc_syms_t mi_syms;
 
 static void* mimalloc_alloc(size_t size) { return mi_syms.alloc(size); }
@@ -322,7 +361,8 @@ static void mimalloc_try_load(void) {
         "/usr/lib64/libmimalloc.so", "/usr/lib/x86_64-linux-gnu/libmimalloc.so",
         "/usr/lib/aarch64-linux-gnu/libmimalloc.so", NULL
     };
-    if (dlopen_malloc_load(&mi_syms, paths, "UMEM_BENCH_MIMALLOC_PATH",
+    if (preloaded_or_dlopen_malloc_load(&mi_syms, "mi_malloc", paths,
+                            "UMEM_BENCH_MIMALLOC_PATH",
                             "mi_malloc", "mi_calloc", "mi_realloc", "mi_free") == 0) {
         allocator_mimalloc.name = "mimalloc";
         allocator_mimalloc.alloc = mimalloc_alloc;
@@ -332,11 +372,13 @@ static void mimalloc_try_load(void) {
     }
 }
 
-/* ========== snmalloc (dlopen) ==========
+/* ========== snmalloc ==========
  * snmalloc's override shim (libsnmallocshim.so) only exports plain
- * malloc/free/calloc/realloc -- there's no sn_malloc-style private prefix
- * to dlsym instead. RTLD_LOCAL keeps those plain names out of the global
- * scope, so they never shadow our own libc_alloc()'s malloc() call. */
+ * malloc/free/calloc/realloc -- there's no sn_malloc-style private
+ * prefix to dlsym instead. __malloc_end_pointer is snmalloc's own
+ * (non-standard) extension and a reliable preloaded-marker/dlopen
+ * target; RTLD_LOCAL on the dlopen fallback keeps the plain names out
+ * of the global scope so they never shadow libc_alloc()'s malloc(). */
 static dlopen_malloc_syms_t sn_syms;
 
 static void* snmalloc_alloc(size_t size) { return sn_syms.alloc(size); }
@@ -354,7 +396,8 @@ static void snmalloc_try_load(void) {
     static const char * const paths[] = {
         "libsnmallocshim.so", "/usr/local/lib/libsnmallocshim.so", NULL
     };
-    if (dlopen_malloc_load(&sn_syms, paths, "UMEM_BENCH_SNMALLOC_PATH",
+    if (preloaded_or_dlopen_malloc_load(&sn_syms, "__malloc_end_pointer", paths,
+                            "UMEM_BENCH_SNMALLOC_PATH",
                             "malloc", "calloc", "realloc", "free") == 0) {
         allocator_snmalloc.name = "snmalloc";
         allocator_snmalloc.alloc = snmalloc_alloc;
@@ -366,21 +409,10 @@ static void snmalloc_try_load(void) {
 
 /* ========== scudo ==========
  * LLVM/compiler-rt's hardened allocator. Ships as
- * libclang_rt.scudo_standalone-<arch>.so; exports only plain names.
- *
- * dlopen(RTLD_LOCAL) works for it on x86_64, but on aarch64 its
- * initial-exec TLS relocations (R_AARCH64_TLS_TPREL) hit "cannot
- * allocate memory in static TLS block" from dlopen() regardless of how
- * large GLIBC_TUNABLES=glibc.rtld.optional_static_tls is set (verified:
- * jemalloc/snmalloc have the same class of TLS relocation and dlopen
- * fine with the tunable; scudo and full libtcmalloc.so do not, on this
- * glibc/aarch64 combination). IE-model TLS is resolved once at process
- * startup for the *initial* set of loaded objects, so the fix is to
- * LD_PRELOAD scudo (see scripts/ec2/install_extra_allocators.sh /
- * matrix.sh) instead of dlopen()ing it after the fact -- then this
- * constructor just dlsym(RTLD_DEFAULT, ...)s the symbols scudo already
- * installed process-wide, detected via the scudo-specific export
- * __scudo_print_stats (present only when scudo is actually loaded). */
+ * libclang_rt.scudo_standalone-<arch>.so (or plain libscudo.so on
+ * Alpine/musl); exports only plain names. See the file header comment
+ * on preloaded_or_dlopen_malloc_load() -- scudo is the allocator that
+ * surfaced the IE-TLS/dlopen problem in the first place (on aarch64). */
 static dlopen_malloc_syms_t scudo_syms;
 
 static void* scudo_alloc(size_t size) { return scudo_syms.alloc(size); }
@@ -395,30 +427,14 @@ allocator_ops_t allocator_scudo = {
 
 __attribute__((constructor))
 static void scudo_try_load(void) {
-    /* Already LD_PRELOADed into this process? Use its symbols directly
-     * -- no dlopen, so no static-TLS surplus issue. */
-    if (dlsym(RTLD_DEFAULT, "__scudo_print_stats") != NULL) {
-        scudo_syms.alloc = (void *(*)(size_t))dlsym(RTLD_DEFAULT, "malloc");
-        scudo_syms.calloc = (void *(*)(size_t, size_t))dlsym(RTLD_DEFAULT, "calloc");
-        scudo_syms.realloc = (void *(*)(void *, size_t))dlsym(RTLD_DEFAULT, "realloc");
-        scudo_syms.free = (void (*)(void *))dlsym(RTLD_DEFAULT, "free");
-        if (scudo_syms.alloc && scudo_syms.calloc && scudo_syms.realloc && scudo_syms.free) {
-            allocator_scudo.name = "scudo";
-            allocator_scudo.alloc = scudo_alloc;
-            allocator_scudo.calloc = scudo_calloc;
-            allocator_scudo.realloc = scudo_realloc;
-            allocator_scudo.free = scudo_free;
-            return;
-        }
-    }
-    /* Not preloaded: try dlopen (works on x86_64). */
     static const char * const paths[] = {
-        "libscudo_standalone.so",
+        "libscudo_standalone.so", "libscudo.so",
         "libclang_rt.scudo_standalone-x86_64.so",
         "libclang_rt.scudo_standalone-aarch64.so",
         NULL
     };
-    if (dlopen_malloc_load(&scudo_syms, paths, "UMEM_BENCH_SCUDO_PATH",
+    if (preloaded_or_dlopen_malloc_load(&scudo_syms, "__scudo_print_stats", paths,
+                            "UMEM_BENCH_SCUDO_PATH",
                             "malloc", "calloc", "realloc", "free") == 0) {
         allocator_scudo.name = "scudo";
         allocator_scudo.alloc = scudo_alloc;
@@ -428,7 +444,7 @@ static void scudo_try_load(void) {
     }
 }
 
-/* ========== rpmalloc (dlopen) ==========
+/* ========== rpmalloc ==========
  * rpmalloc's own API (rpmalloc/rpfree/rpcalloc/rprealloc) needs a
  * one-time rpmalloc_initialize() and a per-thread rpmalloc_thread_
  * initialize() before first use (see rpmalloc.h). Since this benchmark's
@@ -438,7 +454,6 @@ static void scudo_try_load(void) {
  * correct regardless of how many threads the workload spins up. */
 static dlopen_malloc_syms_t rp_syms;
 static void (*rp_thread_init)(void);
-static void (*rp_global_init)(void *);
 static __thread int rp_thread_ready = 0;
 
 static inline void rpmalloc_ensure_thread(void) {
@@ -463,7 +478,8 @@ static void rpmalloc_try_load(void) {
     static const char * const paths[] = {
         "librpmalloc.so", "/usr/local/lib/librpmalloc.so", NULL
     };
-    if (dlopen_malloc_load(&rp_syms, paths, "UMEM_BENCH_RPMALLOC_PATH",
+    if (preloaded_or_dlopen_malloc_load(&rp_syms, "rpmalloc", paths,
+                            "UMEM_BENCH_RPMALLOC_PATH",
                             "rpmalloc", "rpcalloc", "rprealloc", "rpfree") == 0) {
         int (*rp_init)(void *) = (int (*)(void *))dlsym(rp_syms.handle, "rpmalloc_initialize");
         rp_thread_init = (void (*)(void))dlsym(rp_syms.handle, "rpmalloc_thread_initialize");
@@ -476,5 +492,4 @@ static void rpmalloc_try_load(void) {
             allocator_rpmalloc.free = rpmalloc_free_op;
         }
     }
-    (void)rp_global_init;
 }
