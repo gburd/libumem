@@ -9,7 +9,7 @@ with a `meta.toml` provenance sidecar per instance.
 **Scope actually achieved: 8 allocators** (libc, umem, jemalloc, tcmalloc,
 mimalloc, snmalloc, scudo, rpmalloc) on glibc/x86_64 and glibc/aarch64;
 **6 allocators** on musl (Alpine; no tcmalloc/gperftools or snmalloc port
-in reasonable time — see §6); **2 allocators** on illumos (libc, umem;
+in reasonable time — see §11); **2 allocators** on illumos (libc, umem;
 no third-party allocator ships a package there, and this task's from-source
 builds are not illumos-portable in the time available). No allocator's
 result is fabricated: unavailable means the row is absent, not invented.
