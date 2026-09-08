@@ -2,7 +2,7 @@
 
 `umemctl` is libumem's live-process observability tool — the mdb-style
 inspection surface for a *running* process, complementing the post-mortem
-GDB/LLDB extensions (`tools/DEBUGGER_QUICKREF.md`). It attaches to a process's
+GDB/LLDB extensions (`tools/DEBUGGING.md`). It attaches to a process's
 introspection socket and drives a line protocol to read stats, walk caches,
 identify a pointer, list leaks, stream a live event log, monitor in a TUI,
 record the stream, and stop a thread just before an allocation of interest —
@@ -162,6 +162,6 @@ matches by size and allocation PC.
 
 ## See also
 
-- `tools/DEBUGGER_QUICKREF.md` — post-mortem GDB/LLDB inspection.
+- `tools/DEBUGGING.md` — post-mortem GDB/LLDB inspection.
 - `umem_introspect.h` / `umem_introspect.c` — the server-side protocol.
 - `tools/umemctl.c` — the client.
