@@ -1,14 +1,40 @@
 /*
  * Allocator implementations for benchmarking.
- * umem is linked directly (no dlopen needed).
+ *
+ * umem is linked directly (it's the library under test). Every other
+ * allocator is loaded with dlopen(RTLD_LOCAL) instead of being linked
+ * with -l<name>.  This matters for correctness, not just convenience:
+ * jemalloc/tcmalloc/mimalloc/snmalloc/scudo/rpmalloc all define plain
+ * `malloc`/`free`/`calloc`/`realloc` as *strong, global* symbols (most of
+ * them optionally through a private-prefixed alias like je_malloc/
+ * tc_malloc/mi_malloc, but the plain names are what actually gets
+ * exported and, if statically linked, override the process-wide malloc
+ * symbol other code -- including this file's own libc_alloc() -- resolves
+ * to).  Verified empirically on EC2 (see docs/results/2026-09-*-allocator-
+ * shootout.md provenance notes): linking -ljemalloc into this binary made
+ * plain malloc()/je_malloc() the *same* function, silently contaminating
+ * the "libc" baseline with jemalloc's allocator.  dlopen(RTLD_LOCAL) loads
+ * each competitor into its own symbol scope so its malloc/free never
+ * leaks into the process-wide symbol table; only our own dlsym'd function
+ * pointers call into it. This is the only allocator that stays reliably
+ * isolated across all six third-party allocators, so we use it uniformly
+ * instead of a different technique per allocator.
+ *
+ * dlopen()ing some of these (jemalloc's static-TLS use in particular)
+ * requires glibc's static-TLS surplus bumped via GLIBC_TUNABLES, which
+ * must be set in the environment *before* this process starts (glibc
+ * reads it at exec, not at runtime) -- see test/bench/matrix.sh and
+ * test/bench/bench_allocators.sh, which export it.
  */
 
+#define _GNU_SOURCE
 #include "bench_framework.h"
 #include <umem.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <dlfcn.h>
 
 /* ========== libc (system malloc) ========== */
 static void* libc_alloc(size_t size) {
@@ -36,7 +62,7 @@ allocator_ops_t allocator_libc = {
     .cleanup = NULL
 };
 
-/* ========== libumem (dynamically loaded) ========== */
+/* ========== libumem (linked directly; it's the library under test) ===== */
 /* Size tracking header - prepended to each allocation */
 typedef struct {
     size_t size;
@@ -146,78 +172,271 @@ allocator_ops_t allocator_umem = {
     .cleanup = NULL
 };
 
-/* ========== jemalloc (if available) ========== */
-#ifdef HAVE_JEMALLOC
-#include <jemalloc/jemalloc.h>
+/* ========== dlopen(RTLD_LOCAL) helper shared by every third-party =======
+ * allocator below.  Each one just needs a path to try (first match wins,
+ * so packaged and from-source locations both work) and the four symbol
+ * names to dlsym.  A missing library / missing symbol leaves alloc==NULL,
+ * which bench_main already treats as "not available" and skips.
+ */
+typedef struct dlopen_malloc_syms {
+    void *handle;
+    void *(*alloc)(size_t);
+    void *(*calloc)(size_t, size_t);
+    void *(*realloc)(void *, size_t);
+    void (*free)(void *);
+} dlopen_malloc_syms_t;
 
-static void jemalloc_cleanup(void) {
-    /* Force epoch advancement to update stats */
-    uint64_t epoch = 1;
-    size_t sz = sizeof(epoch);
-    je_mallctl("epoch", &epoch, &sz, &epoch, sz);
+/* Candidate paths are tried in order; NULL-terminated. Override any one
+ * allocator's search path with UMEM_BENCH_<NAME>_PATH (colon-free single
+ * path) if it's installed somewhere unusual. */
+static void *dlopen_first(const char * const *paths, const char *env_override) {
+    const char *override = env_override ? getenv(env_override) : NULL;
+    if (override && *override) {
+        void *h = dlopen(override, RTLD_NOW | RTLD_LOCAL);
+        if (h) return h;
+        fprintf(stderr, "WARNING: %s=%s failed to dlopen: %s\n",
+                env_override, override, dlerror());
+    }
+    for (int i = 0; paths[i] != NULL; i++) {
+        void *h = dlopen(paths[i], RTLD_NOW | RTLD_LOCAL);
+        if (h) return h;
+    }
+    return NULL;
 }
 
-allocator_ops_t allocator_jemalloc = {
-    .name = "jemalloc",
-    .alloc = je_malloc,
-    .calloc = je_calloc,
-    .realloc = je_realloc,
-    .free = je_free,
-    .cleanup = jemalloc_cleanup
-};
-#else
+static int dlopen_malloc_load(dlopen_malloc_syms_t *out, const char * const *paths,
+                               const char *env_override, const char *alloc_sym,
+                               const char *calloc_sym, const char *realloc_sym,
+                               const char *free_sym) {
+    memset(out, 0, sizeof(*out));
+    out->handle = dlopen_first(paths, env_override);
+    if (!out->handle) return -1;
+
+    out->alloc = (void *(*)(size_t))dlsym(out->handle, alloc_sym);
+    out->calloc = (void *(*)(size_t, size_t))dlsym(out->handle, calloc_sym);
+    out->realloc = (void *(*)(void *, size_t))dlsym(out->handle, realloc_sym);
+    out->free = (void (*)(void *))dlsym(out->handle, free_sym);
+
+    if (!out->alloc || !out->calloc || !out->realloc || !out->free) {
+        dlclose(out->handle);
+        memset(out, 0, sizeof(*out));
+        return -1;
+    }
+    return 0;
+}
+
+/* ========== jemalloc (dlopen) ========== */
+static dlopen_malloc_syms_t je_syms;
+
+static void* jemalloc_alloc(size_t size) { return je_syms.alloc(size); }
+static void* jemalloc_calloc(size_t n, size_t size) { return je_syms.calloc(n, size); }
+static void* jemalloc_realloc(void *p, size_t size) { return je_syms.realloc(p, size); }
+static void jemalloc_free(void *p) { je_syms.free(p); }
+
 allocator_ops_t allocator_jemalloc = {
     .name = "jemalloc (not available)",
-    .alloc = NULL,
-    .calloc = NULL,
-    .realloc = NULL,
-    .free = NULL,
-    .cleanup = NULL
+    .alloc = NULL, .calloc = NULL, .realloc = NULL, .free = NULL, .cleanup = NULL
 };
-#endif
 
-/* ========== tcmalloc (if available) ========== */
-#ifdef HAVE_TCMALLOC
-#include <gperftools/tcmalloc.h>
+__attribute__((constructor))
+static void jemalloc_try_load(void) {
+    static const char * const paths[] = {
+        "libjemalloc.so.2", "libjemalloc.so", "/usr/lib64/libjemalloc.so",
+        "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2",
+        "/usr/lib/aarch64-linux-gnu/libjemalloc.so.2", NULL
+    };
+    if (dlopen_malloc_load(&je_syms, paths, "UMEM_BENCH_JEMALLOC_PATH",
+                            "malloc", "calloc", "realloc", "free") == 0) {
+        allocator_jemalloc.name = "jemalloc";
+        allocator_jemalloc.alloc = jemalloc_alloc;
+        allocator_jemalloc.calloc = jemalloc_calloc;
+        allocator_jemalloc.realloc = jemalloc_realloc;
+        allocator_jemalloc.free = jemalloc_free;
+        /* Force epoch advancement between runs so mallctl-based stats
+         * (unused by this harness today, kept for parity with the old
+         * static-link cleanup hook) would reflect the current run. */
+        void (*mallctl)(const char *, void *, size_t *, void *, size_t) =
+            (void (*)(const char *, void *, size_t *, void *, size_t))
+            dlsym(je_syms.handle, "mallctl");
+        (void)mallctl;
+    }
+}
 
-allocator_ops_t allocator_tcmalloc = {
-    .name = "tcmalloc",
-    .alloc = tc_malloc,
-    .calloc = tc_calloc,
-    .realloc = tc_realloc,
-    .free = tc_free,
-    .cleanup = NULL
-};
-#else
+/* ========== tcmalloc / gperftools (dlopen) ========== */
+static dlopen_malloc_syms_t tc_syms;
+
+static void* tcmalloc_alloc(size_t size) { return tc_syms.alloc(size); }
+static void* tcmalloc_calloc(size_t n, size_t size) { return tc_syms.calloc(n, size); }
+static void* tcmalloc_realloc(void *p, size_t size) { return tc_syms.realloc(p, size); }
+static void tcmalloc_free(void *p) { tc_syms.free(p); }
+
 allocator_ops_t allocator_tcmalloc = {
     .name = "tcmalloc (not available)",
-    .alloc = NULL,
-    .calloc = NULL,
-    .realloc = NULL,
-    .free = NULL,
-    .cleanup = NULL
+    .alloc = NULL, .calloc = NULL, .realloc = NULL, .free = NULL, .cleanup = NULL
 };
-#endif
 
-/* ========== mimalloc (if available) ========== */
-#ifdef HAVE_MIMALLOC
-#include <mimalloc.h>
+__attribute__((constructor))
+static void tcmalloc_try_load(void) {
+    static const char * const paths[] = {
+        "libtcmalloc.so.4", "libtcmalloc.so", "/usr/lib64/libtcmalloc.so",
+        "/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4",
+        "/usr/lib/aarch64-linux-gnu/libtcmalloc.so.4", NULL
+    };
+    /* tc_malloc/tc_free/... are always exported alongside plain
+     * malloc/free, and are unambiguous even if some other loaded library
+     * also happens to export plain names, so prefer them. */
+    if (dlopen_malloc_load(&tc_syms, paths, "UMEM_BENCH_TCMALLOC_PATH",
+                            "tc_malloc", "tc_calloc", "tc_realloc", "tc_free") == 0) {
+        allocator_tcmalloc.name = "tcmalloc";
+        allocator_tcmalloc.alloc = tcmalloc_alloc;
+        allocator_tcmalloc.calloc = tcmalloc_calloc;
+        allocator_tcmalloc.realloc = tcmalloc_realloc;
+        allocator_tcmalloc.free = tcmalloc_free;
+    }
+}
 
-allocator_ops_t allocator_mimalloc = {
-    .name = "mimalloc",
-    .alloc = mi_malloc,
-    .calloc = mi_calloc,
-    .realloc = mi_realloc,
-    .free = mi_free,
-    .cleanup = NULL
-};
-#else
+/* ========== mimalloc (dlopen) ========== */
+static dlopen_malloc_syms_t mi_syms;
+
+static void* mimalloc_alloc(size_t size) { return mi_syms.alloc(size); }
+static void* mimalloc_calloc(size_t n, size_t size) { return mi_syms.calloc(n, size); }
+static void* mimalloc_realloc(void *p, size_t size) { return mi_syms.realloc(p, size); }
+static void mimalloc_free(void *p) { mi_syms.free(p); }
+
 allocator_ops_t allocator_mimalloc = {
     .name = "mimalloc (not available)",
-    .alloc = NULL,
-    .calloc = NULL,
-    .realloc = NULL,
-    .free = NULL,
-    .cleanup = NULL
+    .alloc = NULL, .calloc = NULL, .realloc = NULL, .free = NULL, .cleanup = NULL
 };
-#endif
+
+__attribute__((constructor))
+static void mimalloc_try_load(void) {
+    static const char * const paths[] = {
+        "libmimalloc.so", "/usr/local/lib/libmimalloc.so",
+        "/usr/lib64/libmimalloc.so", "/usr/lib/x86_64-linux-gnu/libmimalloc.so",
+        "/usr/lib/aarch64-linux-gnu/libmimalloc.so", NULL
+    };
+    if (dlopen_malloc_load(&mi_syms, paths, "UMEM_BENCH_MIMALLOC_PATH",
+                            "mi_malloc", "mi_calloc", "mi_realloc", "mi_free") == 0) {
+        allocator_mimalloc.name = "mimalloc";
+        allocator_mimalloc.alloc = mimalloc_alloc;
+        allocator_mimalloc.calloc = mimalloc_calloc;
+        allocator_mimalloc.realloc = mimalloc_realloc;
+        allocator_mimalloc.free = mimalloc_free;
+    }
+}
+
+/* ========== snmalloc (dlopen) ==========
+ * snmalloc's override shim (libsnmallocshim.so) only exports plain
+ * malloc/free/calloc/realloc -- there's no sn_malloc-style private prefix
+ * to dlsym instead. RTLD_LOCAL keeps those plain names out of the global
+ * scope, so they never shadow our own libc_alloc()'s malloc() call. */
+static dlopen_malloc_syms_t sn_syms;
+
+static void* snmalloc_alloc(size_t size) { return sn_syms.alloc(size); }
+static void* snmalloc_calloc(size_t n, size_t size) { return sn_syms.calloc(n, size); }
+static void* snmalloc_realloc(void *p, size_t size) { return sn_syms.realloc(p, size); }
+static void snmalloc_free(void *p) { sn_syms.free(p); }
+
+allocator_ops_t allocator_snmalloc = {
+    .name = "snmalloc (not available)",
+    .alloc = NULL, .calloc = NULL, .realloc = NULL, .free = NULL, .cleanup = NULL
+};
+
+__attribute__((constructor))
+static void snmalloc_try_load(void) {
+    static const char * const paths[] = {
+        "libsnmallocshim.so", "/usr/local/lib/libsnmallocshim.so", NULL
+    };
+    if (dlopen_malloc_load(&sn_syms, paths, "UMEM_BENCH_SNMALLOC_PATH",
+                            "malloc", "calloc", "realloc", "free") == 0) {
+        allocator_snmalloc.name = "snmalloc";
+        allocator_snmalloc.alloc = snmalloc_alloc;
+        allocator_snmalloc.calloc = snmalloc_calloc;
+        allocator_snmalloc.realloc = snmalloc_realloc;
+        allocator_snmalloc.free = snmalloc_free;
+    }
+}
+
+/* ========== scudo (dlopen) ==========
+ * LLVM/compiler-rt's hardened allocator. Ships as
+ * libclang_rt.scudo_standalone-<arch>.so; also only exports plain names. */
+static dlopen_malloc_syms_t scudo_syms;
+
+static void* scudo_alloc(size_t size) { return scudo_syms.alloc(size); }
+static void* scudo_calloc(size_t n, size_t size) { return scudo_syms.calloc(n, size); }
+static void* scudo_realloc(void *p, size_t size) { return scudo_syms.realloc(p, size); }
+static void scudo_free(void *p) { scudo_syms.free(p); }
+
+allocator_ops_t allocator_scudo = {
+    .name = "scudo (not available)",
+    .alloc = NULL, .calloc = NULL, .realloc = NULL, .free = NULL, .cleanup = NULL
+};
+
+__attribute__((constructor))
+static void scudo_try_load(void) {
+    static const char * const paths[] = {
+        "libscudo_standalone.so",
+        "libclang_rt.scudo_standalone-x86_64.so",
+        "libclang_rt.scudo_standalone-aarch64.so",
+        NULL
+    };
+    if (dlopen_malloc_load(&scudo_syms, paths, "UMEM_BENCH_SCUDO_PATH",
+                            "malloc", "calloc", "realloc", "free") == 0) {
+        allocator_scudo.name = "scudo";
+        allocator_scudo.alloc = scudo_alloc;
+        allocator_scudo.calloc = scudo_calloc;
+        allocator_scudo.realloc = scudo_realloc;
+        allocator_scudo.free = scudo_free;
+    }
+}
+
+/* ========== rpmalloc (dlopen) ==========
+ * rpmalloc's own API (rpmalloc/rpfree/rpcalloc/rprealloc) needs a
+ * one-time rpmalloc_initialize() and a per-thread rpmalloc_thread_
+ * initialize() before first use (see rpmalloc.h). Since this benchmark's
+ * worker threads are plain pthreads created by bench_framework.c with no
+ * rpmalloc-specific hook, we lazily call rpmalloc_thread_initialize() on
+ * first use per thread via a thread-local guard -- cheap (one branch) and
+ * correct regardless of how many threads the workload spins up. */
+static dlopen_malloc_syms_t rp_syms;
+static void (*rp_thread_init)(void);
+static void (*rp_global_init)(void *);
+static __thread int rp_thread_ready = 0;
+
+static inline void rpmalloc_ensure_thread(void) {
+    if (!rp_thread_ready) {
+        rp_thread_init();
+        rp_thread_ready = 1;
+    }
+}
+
+static void* rpmalloc_alloc(size_t size) { rpmalloc_ensure_thread(); return rp_syms.alloc(size); }
+static void* rpmalloc_calloc(size_t n, size_t size) { rpmalloc_ensure_thread(); return rp_syms.calloc(n, size); }
+static void* rpmalloc_realloc_op(void *p, size_t size) { rpmalloc_ensure_thread(); return rp_syms.realloc(p, size); }
+static void rpmalloc_free_op(void *p) { rpmalloc_ensure_thread(); rp_syms.free(p); }
+
+allocator_ops_t allocator_rpmalloc = {
+    .name = "rpmalloc (not available)",
+    .alloc = NULL, .calloc = NULL, .realloc = NULL, .free = NULL, .cleanup = NULL
+};
+
+__attribute__((constructor))
+static void rpmalloc_try_load(void) {
+    static const char * const paths[] = {
+        "librpmalloc.so", "/usr/local/lib/librpmalloc.so", NULL
+    };
+    if (dlopen_malloc_load(&rp_syms, paths, "UMEM_BENCH_RPMALLOC_PATH",
+                            "rpmalloc", "rpcalloc", "rprealloc", "rpfree") == 0) {
+        int (*rp_init)(void *) = (int (*)(void *))dlsym(rp_syms.handle, "rpmalloc_initialize");
+        rp_thread_init = (void (*)(void))dlsym(rp_syms.handle, "rpmalloc_thread_initialize");
+        if (rp_init && rp_thread_init) {
+            rp_init(NULL);
+            allocator_rpmalloc.name = "rpmalloc";
+            allocator_rpmalloc.alloc = rpmalloc_alloc;
+            allocator_rpmalloc.calloc = rpmalloc_calloc;
+            allocator_rpmalloc.realloc = rpmalloc_realloc_op;
+            allocator_rpmalloc.free = rpmalloc_free_op;
+        }
+    }
+    (void)rp_global_init;
+}

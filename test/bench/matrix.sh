@@ -68,6 +68,12 @@ done
 
 cd "$(dirname "${BASH_SOURCE[0]}")"   # test/bench
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}../../.libs"
+# Third-party allocators are dlopen(RTLD_LOCAL)'d by allocators.c, not
+# statically linked (see the comment at the top of allocators.c for why:
+# statically linking them collides with the process-wide malloc symbol).
+# jemalloc's static-TLS usage needs glibc's static-TLS surplus bumped;
+# this must be set before the process starts.
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
 
 if [[ ! -x "$BENCH_BIN" ]]; then
     echo "$BENCH_BIN missing; building test/bench/bench_main ..." >&2
@@ -117,7 +123,7 @@ probe_alloc() {
 }
 if [[ ${#ALLOCATORS[@]} -eq 0 ]]; then
     ALLOCATORS=(libc umem)
-    for extra in jemalloc tcmalloc; do
+    for extra in jemalloc tcmalloc mimalloc snmalloc scudo rpmalloc; do
         if probe_alloc "$extra"; then ALLOCATORS+=("$extra"); fi
     done
 fi

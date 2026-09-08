@@ -134,11 +134,17 @@ void workload_multi_thread(allocator_ops_t *ops, bench_stats_t *stats, void *con
 void workload_producer_consumer(allocator_ops_t *ops, bench_stats_t *stats, void *config);
 void workload_fragmentation(allocator_ops_t *ops, bench_stats_t *stats, void *config);
 
-/* Allocator implementations */
+/* Allocator implementations.  Every one but libc/umem is loaded via
+ * dlopen(RTLD_LOCAL) in allocators.c's constructors; .alloc == NULL means
+ * the library wasn't found at runtime (bench_main skips it, matrix.sh's
+ * probe_alloc() detects it) -- there is no compile-time HAVE_* gate. */
 extern allocator_ops_t allocator_libc;
 extern allocator_ops_t allocator_umem;
 extern allocator_ops_t allocator_jemalloc;
 extern allocator_ops_t allocator_tcmalloc;
 extern allocator_ops_t allocator_mimalloc;
+extern allocator_ops_t allocator_snmalloc;
+extern allocator_ops_t allocator_scudo;
+extern allocator_ops_t allocator_rpmalloc;
 
 #endif /* BENCH_FRAMEWORK_H */

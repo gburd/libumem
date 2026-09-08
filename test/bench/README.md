@@ -9,7 +9,7 @@ This benchmark framework provides:
 - **Accurate latency measurement** using t-digest for percentile tracking
 - **Multiple workloads**: Single-threaded, multi-threaded, producer-consumer, fragmentation
 - **Comprehensive metrics**: Throughput, latency (p50/p90/p99/p99.9), memory overhead, fragmentation
-- **Comparison support**: Test against libc, jemalloc, tcmalloc, mimalloc
+- **Comparison support**: Test against libc, jemalloc, tcmalloc, mimalloc, snmalloc, scudo, rpmalloc (all dlopen'd at runtime by `test/bench/allocators.c`; use `scripts/ec2/install_extra_allocators.sh` to build/install the ones without a distro package)
 
 ## Building
 
@@ -58,7 +58,7 @@ make
 Usage: ./bench_allocators [OPTIONS]
 
 Options:
-  -a ALLOCATOR  Test specific allocator (libc,umem,jemalloc,tcmalloc,mimalloc,all)
+  -a ALLOCATOR  Test specific allocator (libc,umem,jemalloc,tcmalloc,mimalloc,snmalloc,scudo,rpmalloc,all)
   -w WORKLOAD   Run specific workload (single,multi,prodcons,frag,all)
   -t THREADS    Thread count for multithreaded workloads (default: CPU count)
   -n COUNT      Operation count (default: 1000000)

@@ -14,7 +14,7 @@
 static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("\nOptions:\n");
-    printf("  -a ALLOCATOR  Test specific allocator (libc,umem,jemalloc,tcmalloc,mimalloc,all)\n");
+    printf("  -a ALLOCATOR  Test specific allocator (libc,umem,jemalloc,tcmalloc,mimalloc,snmalloc,scudo,rpmalloc,all)\n");
     printf("  -w WORKLOAD   Run specific workload (single,multi,prodcons,frag,all)\n");
     printf("  -t THREADS    Thread count for multithreaded workloads (default: CPU count)\n");
     printf("  -n COUNT      Operation count (default: 1000000)\n");
@@ -123,6 +123,9 @@ int main(int argc, char *argv[]) {
         &allocator_jemalloc,
         &allocator_tcmalloc,
         &allocator_mimalloc,
+        &allocator_snmalloc,
+        &allocator_scudo,
+        &allocator_rpmalloc,
         NULL
     };
 
