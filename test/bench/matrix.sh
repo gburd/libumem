@@ -39,6 +39,8 @@ OPTIONS:
     -r RUNS      Measured runs per point; median + CoV (default: $RUNS)
     -W WARMUPS   Warm-up runs discarded per point (default: $WARMUPS)
     -o DIR       Output dir (default: docs/results/<date>-<instance>-<arch>)
+    -t LIST      Comma-separated thread ladder override (default: $(IFS=,; echo "${THREAD_LADDER[*]}"))
+    -s LIST      Comma-separated size-range override (default: $(IFS=,; echo "${SIZE_RANGES[*]}"))
     --no-pin     Do not pin threads / skip governor check (NOT authoritative)
     --quick      Small smoke sweep (few threads/sizes, 2 runs)
     -h           Help
@@ -55,6 +57,8 @@ while [[ $# -gt 0 ]]; do
         -r) RUNS="$2"; shift 2 ;;
         -W) WARMUPS="$2"; shift 2 ;;
         -o) OUTDIR="$2"; shift 2 ;;
+        -t) IFS=',' read -ra THREAD_LADDER <<< "$2"; shift 2 ;;
+        -s) IFS=',' read -ra SIZE_RANGES <<< "$2"; shift 2 ;;
         --no-pin) PIN=0; shift ;;
         --quick)
             OPERATIONS=1000000; RUNS=2; WARMUPS=1
