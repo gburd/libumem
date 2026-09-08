@@ -277,7 +277,14 @@ allocator_ops_t allocator_tcmalloc = {
 
 __attribute__((constructor))
 static void tcmalloc_try_load(void) {
+    /* Prefer *_minimal: the full libtcmalloc.so links libunwind for
+     * CPU-profiler symbolization, which exhausted glibc's static-TLS
+     * surplus under dlopen(RTLD_LOCAL) on AL2023 aarch64 even with
+     * GLIBC_TUNABLES bumped. *_minimal is the same allocator, no
+     * profiler, no libunwind, and dlopens cleanly on x86_64 + aarch64. */
     static const char * const paths[] = {
+        "libtcmalloc_minimal.so.4", "libtcmalloc_minimal.so",
+        "/usr/lib64/libtcmalloc_minimal.so", "/lib64/libtcmalloc_minimal.so.4",
         "libtcmalloc.so.4", "libtcmalloc.so", "/usr/lib64/libtcmalloc.so",
         "/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4",
         "/usr/lib/aarch64-linux-gnu/libtcmalloc.so.4", NULL
@@ -357,9 +364,23 @@ static void snmalloc_try_load(void) {
     }
 }
 
-/* ========== scudo (dlopen) ==========
+/* ========== scudo ==========
  * LLVM/compiler-rt's hardened allocator. Ships as
- * libclang_rt.scudo_standalone-<arch>.so; also only exports plain names. */
+ * libclang_rt.scudo_standalone-<arch>.so; exports only plain names.
+ *
+ * dlopen(RTLD_LOCAL) works for it on x86_64, but on aarch64 its
+ * initial-exec TLS relocations (R_AARCH64_TLS_TPREL) hit "cannot
+ * allocate memory in static TLS block" from dlopen() regardless of how
+ * large GLIBC_TUNABLES=glibc.rtld.optional_static_tls is set (verified:
+ * jemalloc/snmalloc have the same class of TLS relocation and dlopen
+ * fine with the tunable; scudo and full libtcmalloc.so do not, on this
+ * glibc/aarch64 combination). IE-model TLS is resolved once at process
+ * startup for the *initial* set of loaded objects, so the fix is to
+ * LD_PRELOAD scudo (see scripts/ec2/install_extra_allocators.sh /
+ * matrix.sh) instead of dlopen()ing it after the fact -- then this
+ * constructor just dlsym(RTLD_DEFAULT, ...)s the symbols scudo already
+ * installed process-wide, detected via the scudo-specific export
+ * __scudo_print_stats (present only when scudo is actually loaded). */
 static dlopen_malloc_syms_t scudo_syms;
 
 static void* scudo_alloc(size_t size) { return scudo_syms.alloc(size); }
@@ -374,6 +395,23 @@ allocator_ops_t allocator_scudo = {
 
 __attribute__((constructor))
 static void scudo_try_load(void) {
+    /* Already LD_PRELOADed into this process? Use its symbols directly
+     * -- no dlopen, so no static-TLS surplus issue. */
+    if (dlsym(RTLD_DEFAULT, "__scudo_print_stats") != NULL) {
+        scudo_syms.alloc = (void *(*)(size_t))dlsym(RTLD_DEFAULT, "malloc");
+        scudo_syms.calloc = (void *(*)(size_t, size_t))dlsym(RTLD_DEFAULT, "calloc");
+        scudo_syms.realloc = (void *(*)(void *, size_t))dlsym(RTLD_DEFAULT, "realloc");
+        scudo_syms.free = (void (*)(void *))dlsym(RTLD_DEFAULT, "free");
+        if (scudo_syms.alloc && scudo_syms.calloc && scudo_syms.realloc && scudo_syms.free) {
+            allocator_scudo.name = "scudo";
+            allocator_scudo.alloc = scudo_alloc;
+            allocator_scudo.calloc = scudo_calloc;
+            allocator_scudo.realloc = scudo_realloc;
+            allocator_scudo.free = scudo_free;
+            return;
+        }
+    }
+    /* Not preloaded: try dlopen (works on x86_64). */
     static const char * const paths[] = {
         "libscudo_standalone.so",
         "libclang_rt.scudo_standalone-x86_64.so",

@@ -74,6 +74,19 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}../../.libs"
 # jemalloc's static-TLS usage needs glibc's static-TLS surplus bumped;
 # this must be set before the process starts.
 export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
+# scudo's initial-exec TLS relocations don't dlopen cleanly on aarch64 at
+# any tunable size (see allocators.c's scudo_try_load comment); LD_PRELOAD
+# resolves IE TLS at process-startup instead, which works on both arches.
+# allocators.c detects the preload (via __scudo_print_stats) and uses it
+# instead of dlopen.
+SCUDO_SO=$(ldconfig -p 2>/dev/null | grep -m1 -oE '/[^ ]*scudo_standalone[^ ]*\.so[^ ]*' | head -1)
+[[ -n "$SCUDO_SO" ]] && export LD_PRELOAD="${LD_PRELOAD:-}${LD_PRELOAD:+:}$SCUDO_SO"
+# Third-party allocators are dlopen(RTLD_LOCAL)'d by allocators.c, not
+# statically linked (see the comment at the top of allocators.c for why:
+# statically linking them collides with the process-wide malloc symbol).
+# jemalloc's static-TLS usage needs glibc's static-TLS surplus bumped;
+# this must be set before the process starts.
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
 
 if [[ ! -x "$BENCH_BIN" ]]; then
     echo "$BENCH_BIN missing; building test/bench/bench_main ..." >&2
