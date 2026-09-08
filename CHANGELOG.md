@@ -5,6 +5,81 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased] - 2026-09-08
 
+### Fixed
+
+- **illumos: `umem_init()` unconditionally panicked** via a dead 48-bit-VA
+  tagged-pointer check (`umem_tagged_ptr_check()`) left over from a
+  lock-free-depot design removed months ago. illumos places thread stacks
+  in the high canonical half of the address space, which the dead code
+  wrongly still treated as a violation, so **every umem process aborted at
+  startup on illumos** until this was found (while getting the allocator
+  shootout below running) and removed. (`a777151`)
+- **musl: `backtrace(3)` was assumed present on all Linux, but it is a
+  glibc extension musl does not implement**, and `ucontext.h` was never
+  probed either — both silently broke stack-trace capture (`getpcstack.c`,
+  `umem_stacktrace.c`) on musl/Alpine. Now detected via `AC_CHECK_FUNCS`/
+  `AC_CHECK_HEADERS` instead of assumed. (`eb3e15e`)
+- **Vendored sparsemap updated v5.4.0 → v5.5.0** (`sm.c`/`sm.h`): upstream
+  fixed a big-endian chunk-descriptor corruption, a silent data-loss bug in
+  `sm_difference` when both operand chunks were RLE-encoded, and
+  structurally invalid maps from `sm_offset`/`sm_select`/`sm_split` on
+  negative shifts / word boundaries / undersized destinations. None of
+  these were reachable through libumem's own code (the vendored copy is
+  namespaced `-DSPARSEMAP_PREFIX=umem_` and shipped for embedders, not
+  called by libumem itself), but shipping known-broken third-party code
+  under a libumem badge is not acceptable regardless. Re-verified zero
+  symbol collision (85 `umem_sm_*` symbols) and full test-suite parity on
+  both x86_64 and aarch64. (`0d7b5c4`)
+
+### Benchmarked: an 8-allocator, cross-arch, cross-OS shootout
+
+**[`docs/results/2026-09-08-allocator-shootout.md`](docs/results/2026-09-08-allocator-shootout.md)**
+— libc, umem, jemalloc, tcmalloc, mimalloc, snmalloc, scudo, and rpmalloc
+(6 on musl/Alpine, 2 on illumos — no third-party allocator ships a package
+there), on x86_64 and aarch64, at 8 and 192 vCPU, ~9,600 individual
+benchmark runs, plus 3-minute sustained-load runs at full 192-thread
+saturation. **This report is now the authoritative performance reference;
+the README's Performance section was rewritten around it.** Before any of
+this could be trusted, a real pre-existing bug was found and fixed:
+`test/bench/allocators.c` **statically linked** competing allocators into
+the same binary as the "libc" baseline, so whichever allocator's `malloc`
+symbol won the link silently overrode `libc`'s — every prior "libc"
+benchmark number captured with a competing allocator also linked in was
+measuring the wrong allocator. Fixed via runtime `dlopen`/`LD_PRELOAD`
+loading instead of static linking. (`b6d955c`, `2150d81`, `d866a3e`,
+`8fba066`)
+
+**Headline findings (full detail in the report):**
+- **illumos (the lineage comparison, the most meaningful pairing in the
+  whole exercise): umem beats illumos's own libc malloc by up to 4x under
+  concurrency** (16.4M vs 4.1M ops/s at 4 threads) and has dramatically
+  tighter tail latency — the clearest, most unambiguous win in the report.
+- **192-thread `multi` workload: every allocator falls off 70–90% from
+  peak to full saturation** — a hardware/workload property, not
+  umem-specific. umem's own falloff (83–84%) is mid-to-bad, not best;
+  mimalloc and snmalloc are the standouts here.
+- **Under 3 minutes of sustained 192-thread cross-thread load, umem has
+  the worst or tied-worst p999 tail latency in the field** on both
+  architectures — this contradicts a more flattering short-burst
+  `prodcons` result and is the more trustworthy number for any real
+  workload running longer than a few seconds.
+- **umem is worst-in-field on fragmentation on every glibc environment**,
+  ~2.3x the next-worst allocator on the two metal boxes — umem's clearest,
+  most reproducible weakness in this benchmark.
+- One non-reproducible musl SIGSEGV was investigated (two clean full
+  re-runs, gdb-attached monitoring) but not pinned down — reported as
+  open, not swept under the rug.
+
+**Honest one-line verdict (from the report):** umem is a real, working,
+generally competitive allocator that clearly outperforms the traditional
+coarse-locked malloc it descends from under concurrency, and holds its own
+against modern allocators on 8-vCPU boxes — but at 192-vCPU sustained load
+it has the worst tail latency in the field, and its memory overhead under
+fragmentation-heavy workloads is roughly double every competitor tested, on
+both x86_64 and aarch64. These two findings are open work, not settled.
+(`0a4ae09`, `d337147`, `42844b2`, `8e58cdd`, `75f0b14`, `1133870`,
+`a8c9013`, `f910d14`, `0d2bcf5`, `bcb9ab9`)
+
 ### Documented
 
 - **aarch64 post-fix scaling baseline (closes the Task I1 aarch64 perf-table
@@ -24,7 +99,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and above the 2 KB PTC ceiling (`1024:4096` size range) its high-thread-count
   falloff under contention is steeper than x86_64's.** README's Performance
   section now carries a real aarch64 table instead of the placeholder
-  sentence.
+  sentence. Superseded as the primary performance reference by the
+  allocator shootout above, which subsumes and cross-checks this data.
 
 ## [2.5.1] - 2026-09-07
 

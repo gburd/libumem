@@ -178,10 +178,20 @@ Where libumem **does not win**:
   mimalloc are faster on `malloc(8)` / `free` micro-benchmarks,
   primarily because their fast paths are smaller and they don't pay
   for object-cache machinery you may not be using.
-- **Memory footprint at idle.** glibc ptmalloc holds less metadata
-  per process for small workloads.  libumem's slab + magazine
-  metadata is amortized across allocations, so it's competitive once
-  the working set is non-trivial.
+- **Fragmentation / memory overhead under sustained load.** The
+  [8-allocator shootout](docs/results/2026-09-08-allocator-shootout.md)
+  found libumem is worst-in-field on every glibc environment tested —
+  roughly **2.3×** the next-worst allocator's RSS/allocated ratio on
+  192-vCPU metal boxes under 3 minutes of sustained fragmentation
+  pressure. This is not a claim we can soften: it is libumem's clearest,
+  most reproducible weakness in that benchmark, on both x86_64 and
+  aarch64. Do not choose libumem for a memory-overhead-sensitive service
+  without accounting for this.
+- **Tail latency at very high core counts under sustained load.** Same
+  report: at 192 threads sustained for 3 minutes, libumem has the worst
+  or tied-worst p999 latency in the field on both architectures — a
+  short-burst benchmark can look favorable (see the `prodcons` result in
+  the Performance section) but does not predict this.
 - **Sandboxed / security-hardened allocations.**  mimalloc-secure
   and `scudo` add explicit hardening (segregated metadata, randomized
   freelists, double-free detection by design).  libumem's defenses
@@ -338,15 +348,53 @@ APIs may change.
 
 ---
 
-## Performance (relative to glibc on Linux)
+## Performance
 
 Measured with the stabilized `test/bench/` harness (CPU-pinned, warm-up
-discarded, median of 5, coefficient-of-variation reported) on tuned EC2
-metal instances. Full data + provenance:
-[`docs/results/2026-07-23-baseline.md`](docs/results/2026-07-23-baseline.md)
-and [`docs/results/2026-07-23-d2-fix-validation.md`](docs/results/2026-07-23-d2-fix-validation.md).
+discarded, median of 5, coefficient-of-variation reported) on real AWS EC2
+hardware — never local, never a single quick run. Two complementary result
+sets exist:
 
-**x86_64** (`c7i.metal-48xl`, 192 vCPU, performance governor):
+### The 8-allocator shootout (authoritative)
+
+[`docs/results/2026-09-08-allocator-shootout.md`](docs/results/2026-09-08-allocator-shootout.md)
+compares umem against **libc, jemalloc, tcmalloc, mimalloc, snmalloc,
+scudo, and rpmalloc** on x86_64 and aarch64 at 8 and 192 vCPU, plus musl
+(Alpine) and illumos (umem's own lineage) — ~9,600 benchmark runs including
+3-minute *sustained* 192-thread loads, not just quick bursts. This is a
+fair, unflattering-where-warranted comparison; the summary below states
+both where umem wins and where it clearly does not.
+
+**Where umem wins:**
+
+| Finding | Detail |
+|---|---|
+| illumos (its own lineage) | Up to **4×** faster than illumos's own libc malloc under concurrency (16.4M vs 4.1M ops/s at 4 threads); dramatically tighter tail latency. The clearest, most unambiguous win in the report — and the most meaningful comparison, since illumos ships the allocator umem re-implements. |
+| 8-vCPU multi-thread scaling | Beats glibc by 25–30% on x86_64 through 8 threads; roughly ties glibc on aarch64. No allocator falls over at this scale. |
+| Short-burst `prodcons` (x86_64) | Lowest peak-to-saturation falloff of any allocator except scudo under cross-thread alloc/free at high thread counts — the one clean "magazine/depot design wins" result. Not reproduced on aarch64. |
+
+**Where umem loses — stated plainly, not spun:**
+
+| Finding | Detail |
+|---|---|
+| 192-thread `multi` scaling | Peak throughput 10–25% below the top allocators (mimalloc, snmalloc) at the same thread count, and its falloff to full saturation (83–84%) is mid-to-bad, not best. Every allocator falls off 70–90% at this scale — a hardware/workload property — but umem does not "win" this case against purpose-built high-concurrency allocators. |
+| **Sustained 192-thread load (3 minutes, not a burst)** | umem has the **worst or tied-worst p999 tail latency in the field** on both architectures under sustained cross-thread pressure — this directly contradicts the short-burst `prodcons` result above and is the more trustworthy number for any real workload. Root cause: the depot handoff for cross-thread frees is still the long pole under sustained duress (independent confirmation of the [scaling diagnosis](docs/results/2026-07-23-scaling-diagnosis.md) from earlier work). |
+| **Fragmentation / memory overhead** | **Worst-in-field on every glibc environment tested**, ~2.3× the next-worst allocator on 192-vCPU metal boxes. umem's single clearest, most reproducible weakness in the whole benchmark. |
+| Single-thread latency | Competitive but not a winner anywhere against x86_64/aarch64 glibc; mimalloc is fastest almost everywhere. |
+
+**Honest one-line verdict:** umem clearly outperforms the traditional
+coarse-locked malloc it descends from under concurrency, and holds its own
+against modern allocators on 8-vCPU boxes — but at 192-vCPU sustained load
+it has the worst tail latency in the field, and its fragmentation overhead
+is roughly double every competitor tested. Anyone choosing umem for a
+very-high-core-count, long-running, memory-overhead-sensitive service
+should treat those two findings as open work, not settled.
+
+### Prior umem-vs-glibc-only baselines (superseded, kept for provenance)
+
+**x86_64** (`c7i.metal-48xl`, 192 vCPU, performance governor). Full data:
+[`docs/results/2026-07-23-baseline.md`](docs/results/2026-07-23-baseline.md),
+[`docs/results/2026-07-23-d2-fix-validation.md`](docs/results/2026-07-23-d2-fix-validation.md).
 
 | Workload | umem vs glibc | Notes |
 |---|---|---|
@@ -355,8 +403,7 @@ and [`docs/results/2026-07-23-d2-fix-validation.md`](docs/results/2026-07-23-d2-
 | `multi`, 192 threads | 320 Mops/s | p999 ~299 ns (was 1.83 ms pre-fix) |
 | `prodcons`, 4 threads | ~245% of glibc | ~10× lower p99 (cross-thread handoff) |
 
-**aarch64** (`c8g.metal-48xl` Graviton4, 192 vCPU, same harness). Full data +
-provenance:
+**aarch64** (`c8g.metal-48xl` Graviton4, 192 vCPU, same harness). Full data:
 [`docs/results/2026-09-08-aarch64-baseline.md`](docs/results/2026-09-08-aarch64-baseline.md).
 
 | Workload | umem vs glibc | Notes |
@@ -366,13 +413,13 @@ provenance:
 | `multi` (same-size-class 160 B), 192 threads | 457.5 Mops/s | ~99% of glibc; p999 43 ns (flat — no cliff at any thread count measured) |
 | `prodcons`, 4 threads | ~120% of glibc | mixed across thread counts (49–120%); does **not** reproduce x86_64's decisive ~245%/10×-lower-p99 win |
 
-aarch64 runs correctly (no SIGSEGV, unlike 2.0.0) and matches or slightly
-exceeds x86_64 on the exact same-size-class contention case the 2.1.0 PTC fix
-targeted (higher absolute throughput, flatter tail at 192 threads). It does
-**not** reproduce x86_64's `prodcons` win, and above the 2 KB PTC ceiling
-(`1024:4096` size range) its multi-thread falloff under contention is
-steeper than x86_64's. See the results doc for the full table and the honest
-side-by-side.
+These isolated umem-vs-glibc baselines are consistent with (and were used
+to sanity-check) the 8-allocator shootout above, which is now the primary
+reference — it uses the same harness and adds the sustained-load and
+cross-allocator context that a two-way comparison can't show (e.g. that
+umem's `multi`-at-192-threads falloff, while real, matches or beats
+glibc's own falloff — the shootout's point is that neither umem nor glibc
+is the *best* allocator at that scale, mimalloc/snmalloc are).
 
 Numbers vary substantially with workload and hardware; reproduce with the
 harness on your own target rather than trusting a single table.
