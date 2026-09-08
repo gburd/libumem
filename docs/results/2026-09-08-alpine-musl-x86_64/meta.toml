@@ -1,0 +1,19 @@
+# libumem benchmark matrix provenance
+captured = "2026-09-08T17:21:10Z"
+instance_type = "unknown"
+arch = "x86_64"
+vcpu = 8
+governor = "unknown"
+thp = "[always] madvise never"
+numa_balancing = "0"
+pinned = true
+runs = 5
+warmups = 1
+operations = 10000000
+uname = "Linux ip-172-31-39-206 6.18.38-0-virt #1-Alpine SMP PREEMPT_DYNAMIC 2026-07-05 14:55:27 x86_64 GNU/Linux"
+gcc = "gcc (Alpine 15.2.0) 15.2.0"
+glibc = "n/a"
+git_sha = "unknown"
+allocators = ["libc","umem","jemalloc","mimalloc","scudo","rpmalloc"]
+
+[cpu]
