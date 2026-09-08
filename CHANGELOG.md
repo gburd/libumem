@@ -3,7 +3,7 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased] - 2026-09-08
+## [2.6.0] - 2026-09-08
 
 ### Fixed
 
