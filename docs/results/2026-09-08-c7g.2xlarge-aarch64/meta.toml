@@ -1,5 +1,5 @@
 # libumem benchmark matrix provenance
-captured = "2026-09-08T12:37:57Z"
+captured = "2026-09-08T17:20:25Z"
 instance_type = "c7g.2xlarge"
 arch = "aarch64"
 vcpu = 8
@@ -10,12 +10,12 @@ pinned = true
 runs = 5
 warmups = 1
 operations = 10000000
-uname = "Linux ip-172-31-33-201.us-east-2.compute.internal 6.18.44-99.149.amzn2023.aarch64 #2 SMP Tue Aug 25 21:16:30 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
+uname = "Linux ip-172-31-31-42.us-east-2.compute.internal 6.18.44-99.149.amzn2023.aarch64 #2 SMP Tue Aug 25 21:16:30 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
 gcc = "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)"
 glibc = "ldd (GNU libc) 2.34
 n/a"
 git_sha = "unknown"
-allocators = ["libc","umem"]
+allocators = ["libc","umem","jemalloc","tcmalloc","mimalloc","snmalloc","scudo","rpmalloc"]
 
 [cpu]
 # Architecture:                            aarch64
