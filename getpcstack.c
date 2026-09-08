@@ -214,8 +214,7 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_signal)
 	(void) check_signal;
 	if (pcstack_limit <= 0)
 		return (0);
-#if defined(HAVE_EXECINFO_H) || defined(__linux__) || defined(__FreeBSD__) || \
-    defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+#if defined(HAVE_BACKTRACE)
 	/*
 	 * Fallback for arches without a dedicated frame-pointer walk above
 	 * (x86 and aarch64 have their own UMEM_HAVE_REAL_PCSTACK paths).

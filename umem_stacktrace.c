@@ -302,8 +302,7 @@ static void
 backtrace_warm(void)
 {
 #ifndef _WIN32
-#if defined(HAVE_EXECINFO_H) || defined(__linux__) || defined(__FreeBSD__) || \
-    defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+#if defined(HAVE_BACKTRACE)
 	extern int backtrace(void **, int);
 	void *frames[2];
 	(void) backtrace(frames, 2);
