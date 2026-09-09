@@ -113,18 +113,44 @@ umem_type_init(caddr_t start __attribute__((unused)),
 int
 umem_get_max_ncpus(void)
 {
-#ifdef linux
+#if defined(linux) || defined(__linux__)
   /*
    * On Linux, sysconf(_SC_NPROCESSORS_ONLN) reads /proc/stat via
    * glibc, which calls malloc internally. Since umem_get_max_ncpus
    * is called during umem_init before the allocator is fully ready,
    * we read /proc/stat directly into a static buffer to avoid
    * recursive malloc.
+   *
+   * NOTE: this guard must test __linux__, not just the bare `linux`
+   * macro -- GCC/Clang undefine the bare `linux` macro in strict
+   * conformance modes (-std=c17, -std=c11, ...), which is exactly
+   * what configure.ac passes on every build. With only `#ifdef linux`
+   * this branch was silently dead on Linux and execution fell through
+   * to the generic "non-Linux POSIX" branch below, which returns
+   * 2 * sysconf(_SC_NPROCESSORS_ONLN) -- doubling umem_max_ncpus (and
+   * therefore every per-CPU array umem allocates: cache_cpu[],
+   * cache_depot_full/empty[], cache_rseq[], ...) on every Linux build.
+   * At 8 vCPU this mostly rounds to the same power-of-two bucket and
+   * was invisible; at 192 vCPU it rounds 192->512 instead of 256, a
+   * real doubling of per-CPU RSS overhead on every cache -- the root
+   * cause of the ~2x-worse-than-the-field fragmentation ratio measured
+   * in docs/results/2026-09-08-allocator-shootout.md secs 7-8. See
+   * docs/results/2026-09-09-fragmentation-diagnosis.md.
    */
   static int ncpus = 0;
 
   if (ncpus == 0) {
-    char proc_stat[8192];
+    /*
+     * 65536 bytes covers /proc/stat's per-cpu lines up to roughly
+     * 1500+ CPUs (each line is ~40 bytes); a 192-vCPU box's /proc/stat
+     * is already ~11.5KB, so the previous 8192-byte buffer had almost
+     * no headroom.  If a single machine ever exceeds this, ncpus is
+     * undercounted (truncated read), not corrupted -- silently safe,
+     * just non-optimal.
+     * ponytail: fixed-size buffer, ceiling ~1500 CPUs; switch to a
+     * growing read loop if a box that large ever needs testing.
+     */
+    char proc_stat[65536];
     int fd;
 
     ncpus = 1;

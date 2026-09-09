@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **`umem_get_max_ncpus()`'s Linux fast path was silently dead on every
+  build, doubling `umem_max_ncpus` (and every per-CPU array umem sizes
+  off it) on all Linux builds** — root cause of the worst-in-field
+  fragmentation/memory-overhead ratio flagged in the 2026-09-08 allocator
+  shootout (§7/§8: umem 4.19/4.12 vs. the field's 2.2-2.4 under sustained
+  192-thread load). `init_lib.c` gated its `/proc/stat`-based fast CPU
+  count on `#ifdef linux`, but GCC/Clang undefine the bare `linux` macro
+  in strict ISO conformance modes (`-std=c17`/`-std=c11`), which
+  `configure.ac` always passes — so every build silently fell through to
+  the generic POSIX fallback, `2 * sysconf(_SC_NPROCESSORS_ONLN)`.
+  Invisible at 8 vCPU (16 rounds to the same power-of-two bucket as 8 in
+  practice) and a real 2x on 192-vCPU metal (`umem_max_ncpus` 512 instead
+  of 256), which sizes `cache_cpu[]`/`cache_depot_full[]`/
+  `cache_depot_empty[]`/`cache_rseq[]` on every one of ~58 internal +
+  size-class caches. Fixed by testing `__linux__` as well (`#if
+  defined(linux) || defined(__linux__)`); also widened the `/proc/stat`
+  read buffer 8KB -> 64KB (a 192-vCPU box's `/proc/stat` is ~11.5KB, so
+  the old buffer had almost no headroom once this branch became live
+  again). Verified on tuned EC2 (intel-hi/arm-hi 192 vCPU,
+  intel-lo/arm-lo 8 vCPU): `frag-sustained` ratio 4.19->2.70 (intel-hi),
+  4.12->2.63 (arm-hi) — lands in the field's competitive range; short
+  `frag` sweep ratio roughly halved on all four roles; no throughput
+  regression (several `multi`/`prodcons` throughput points improved);
+  `test_main --no-fork` 417/0/10 and `stress_concurrency_oracle` PASS
+  unchanged on all four roles. See
+  `docs/results/2026-09-09-fragmentation-diagnosis.md` for full
+  before/after data. (`init_lib.c`)
+
 - **musl: rseq(2) was registered with the wrong abort signature, causing
   intermittent SIGSEGV under real CPU migration.** `umem_rseq.c`'s manual
   (non-glibc) rseq registration path called `sys_rseq()` with `sig=0` at

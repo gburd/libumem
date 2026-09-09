@@ -324,6 +324,16 @@ sustained churn). It is *not* a scaling or throughput problem — umem's
 frag-sustained *throughput* is competitive (6.07M/5.28M ops/s, mid-pack)
 — it is specifically a memory-overhead cost.
 
+> **Root-caused and fixed 2026-09-09:** `umem_get_max_ncpus()`'s Linux
+> fast path was silently dead on every build (a `-std=c17`/`-std=c11`
+> conformance-mode macro-visibility bug), doubling `umem_max_ncpus` — and
+> every per-CPU array sized off it — on all Linux builds; invisible at 8
+> vCPU, a real 2x at 192 vCPU. Fixed in `init_lib.c`; `frag-sustained`
+> ratio measured at 2.70 (intel-hi) / 2.63 (arm-hi) post-fix, landing in
+> the field's range. Full mechanism, before/after data, and
+> non-regression verification:
+> `docs/results/2026-09-09-fragmentation-diagnosis.md`.
+
 ## 8. Fragmentation (short `frag` sweep, size 64:256)
 
 | Role | libc | jemalloc | tcmalloc | rpmalloc | snmalloc | mimalloc | scudo | umem |
@@ -357,6 +367,17 @@ rather than with load) rather than a purely load-driven one — a
 hypothesis future work should verify directly (e.g. `frag` at t=8 vs.
 t=192 with vCPU count held constant would isolate it), which this
 report's data does not by itself confirm.
+
+> **Root-caused and fixed 2026-09-09** — the hypothesis above was
+> confirmed directly: `umem_max_ncpus` was silently double the real
+> vCPU count on every Linux build (a dead `#ifdef linux` guard under
+> `-std=c17`/`-std=c11` conformance mode), so every per-CPU array in
+> every cache was sized for 512 "CPUs" on a 192-vCPU box instead of 256.
+> Fixed in `init_lib.c`; post-fix short-sweep ratio roughly halves on
+> all four glibc roles (intel-hi 40.77->21.42, arm-hi 39.76->20.59,
+> intel-lo 20.31->11.06, arm-lo 19.26->10.11) and the sustained-load
+> ratio (§7) lands in the field's range. See
+> `docs/results/2026-09-09-fragmentation-diagnosis.md`.
 
 ## 9. Reliability / stability of the data itself
 
