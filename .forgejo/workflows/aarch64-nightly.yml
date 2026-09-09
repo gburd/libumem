@@ -31,9 +31,14 @@
 # This workflow could not be live-triggered from the environment that wrote
 # it (no Actions API / secrets access from that sandbox -- see
 # scripts/ec2/README.md's "Scheduled aarch64 job" section for what was and
-# wasn't verified). It IS syntax-validated (YAML parses; the driver script
-# it calls, scripts/ec2/aarch64_nightly.sh, was run end-to-end by hand
-# against real EC2 arm-lo).
+# wasn't verified, and docs/AARCH64_NIGHTLY_ACTIVATION.md for the exact
+# human steps to add the secrets above and confirm a real run). It IS
+# YAML-syntax-validated, has job-/step-level timeout-minutes ceilings so a
+# hung AWS call or SSH session can't run indefinitely, and the driver
+# script it calls, scripts/ec2/aarch64_nightly.sh, was re-run end-to-end
+# against real EC2 arm-lo on 2026-09-09 against current master (unchanged
+# pass rate: 417 OK / 0 FAIL / 10 SKIP), with induced-kill trap behavior
+# re-confirmed.
 
 name: aarch64-nightly
 
@@ -49,10 +54,24 @@ jobs:
   aarch64-correctness:
     name: aarch64 correctness (EC2 arm-lo, scheduled)
     runs-on: docker
+    # Hard ceiling on the whole job so a hung EC2 API call (describe-images,
+    # `aws ec2 wait instance-running`, a stalled SSH session) can never pin
+    # a Forgejo runner -- or an arm-lo instance -- for hours. Real runs
+    # (launch+bootstrap+build+test+terminate, verified end-to-end) take
+    # ~3-4 minutes; 45 gives generous headroom for a slow AWS day without
+    # approaching "left running indefinitely". NOTE: a job-level timeout
+    # cancels the whole job, and Forgejo/act_runner (like GitHub Actions)
+    # gives `if: always()` steps only a short grace period to run during
+    # that cancellation -- it is not a guaranteed substitute for the
+    # trap-based termination in aarch64_nightly.sh or for this job's own
+    # step-level timeouts below. Treat all three (script trap, step
+    # timeout, job timeout) as layered, not redundant.
+    timeout-minutes: 45
     container:
       image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
     steps:
       - name: Install AWS CLI + SSH + rsync
+        timeout-minutes: 5
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
@@ -93,6 +112,7 @@ jobs:
           chmod 600 ~/.ssh/libumem-bench.pem
 
       - name: Launch + bootstrap + build + test + terminate (arm-lo)
+        timeout-minutes: 30
         env:
           AWS_PROFILE: bene
           AWS_DEFAULT_REGION: us-east-2
@@ -100,6 +120,7 @@ jobs:
 
       - name: Ensure arm-lo is terminated (belt-and-suspenders)
         if: always()
+        timeout-minutes: 5
         env:
           AWS_PROFILE: bene
           AWS_DEFAULT_REGION: us-east-2

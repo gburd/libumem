@@ -120,6 +120,12 @@ Without these three secrets the workflow fails loudly at the credential/key
 setup step -- it does not silently no-op, so a missing secret shows up as a
 failed scheduled run, not a false sense of security.
 
+**Activation runbook (do this once, human-with-Codeberg-access-only):**
+`docs/AARCH64_NIGHTLY_ACTIVATION.md` -- exact IAM policy JSON, where the SSH
+key material already lives, the Codeberg secrets UI path, how to fire a
+`workflow_dispatch` dry run before trusting the schedule, and what
+success/failure looks like.
+
 ### What this does and does not cover
 
 - Covers: `arm-lo` (`c7g.2xlarge`, 8 vCPU) correctness only -- the fast unit
@@ -131,10 +137,16 @@ failed scheduled run, not a false sense of security.
   NOT cover sanitizer builds on aarch64 (still human-run). Does NOT replace
   the full C2 authoritative scaling matrix.
 - Validation status: `scripts/ec2/aarch64_nightly.sh` was run end-to-end
-  against real EC2 hardware (success path and induced-failure path, both
-  confirmed to terminate the instance and propagate the correct exit code).
-  The **workflow file itself** (`aarch64-nightly.yml`) is YAML-syntax
-  validated but could not be live-triggered in the environment that wrote
-  it -- that environment has no Forgejo Actions API access to this repo and
-  no secrets configured. Confirm a real scheduled/manual run succeeds after
-  adding the secrets above.
+  against real EC2 hardware twice: once at introduction (success path and
+  induced-failure path, both confirmed to terminate the instance and
+  propagate the correct exit code), and again on 2026-09-09 against
+  current `master` (v2.6.0, post sparsemap v5.5.0 / allocator-shootout /
+  illumos+musl fixes / GC removal) -- 417 OK / 0 FAIL / 10 SKIP unchanged,
+  `kill -9`-vs-SIGTERM trap behavior re-confirmed, both re-verification
+  instances terminated cleanly. See `docs/AARCH64_NIGHTLY_ACTIVATION.md`
+  for the full account. The **workflow file itself** (`aarch64-nightly.yml`)
+  is YAML-syntax validated, has job- and step-level `timeout-minutes`
+  ceilings, but could not be live-triggered in this environment -- no
+  Forgejo Actions API/web access, no secrets configured. Activation
+  (secrets + a manual `workflow_dispatch` dry run) is a one-time human
+  action; see the runbook above.

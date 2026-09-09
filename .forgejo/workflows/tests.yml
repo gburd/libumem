@@ -22,9 +22,10 @@
 # scripts/ec2/launch.sh arm-lo by hand. That job needs AWS_ACCESS_KEY_ID /
 # AWS_SECRET_ACCESS_KEY / EC2_SSH_PRIVATE_KEY secrets configured in this
 # repo's Forgejo settings before it actually runs on schedule -- see its
-# header comment and scripts/ec2/README.md. Until those secrets are added,
-# treat it as validated-but-not-armed. It also only covers arm-lo (8 vCPU);
-# arm-hi (metal, very-high-core) is still human-run only. Do not assume arm
+# header comment, scripts/ec2/README.md, and the step-by-step activation
+# runbook at docs/AARCH64_NIGHTLY_ACTIVATION.md. Until those secrets are
+# added, treat it as validated-but-not-armed. It also only covers arm-lo
+# (8 vCPU); arm-hi (metal, very-high-core) is still human-run only. Do not assume arm
 # is fully green from CI alone.
 
 name: tests
