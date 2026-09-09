@@ -2284,8 +2284,49 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 			}
 		}
 
-		/* 2. Steal from same NUMA node first */
-		for (int i = 1; i < ncpus; i++) {
+		/*
+		 * 2/3. Steal from other CPU stripes (same NUMA node first,
+		 * then remote nodes), bounded to UMEM_DEPOT_STEAL_MAX total
+		 * stripe visits.
+		 *
+		 * umem_depot_pop() is BLOCKING (trylock, then mutex_lock on
+		 * failure) and this whole function runs with the caller's
+		 * per-CPU cc_lock held (see _umem_cache_alloc/_umem_cache_free
+		 * and the *_batch variants). Before this bound, both loops ran
+		 * unconditionally to ncpus-1 (== umem_max_ncpus-1, e.g. 255 on
+		 * a 192-vCPU box rounded to 256) -- up to ~510 stripe visits,
+		 * each a potential blocking mutex_lock, all under cc_lock.
+		 * Sustained-load evidence (docs/results/2026-09-08-
+		 * allocator-shootout.md sec 7,
+		 * docs/results/2026-09-09-sustained-depot-contention-
+		 * diagnosis.md): dep_remote/dep_conten counters over a 180s
+		 * 192-thread prodcons run showed hundreds of thousands of
+		 * same-node steal hits and blocking-lock-contention events per
+		 * cache -- the local stripe is essentially never useful under
+		 * cross-thread free pressure (a buffer freed by another
+		 * thread's CPU doesn't land in *your* stripe), so nearly every
+		 * magazine-layer reload took this unbounded scan, and under
+		 * 192-way concurrency enough of those scans overlap to form a
+		 * lock convoy that only builds up over sustained duration (a
+		 * short burst doesn't have enough concurrent misses in flight
+		 * to show it) -- the p999 tail-latency root cause. The
+		 * non-blocking PTC-refill counterpart
+		 * (umem_depot_alloc_trylock) already bounds its scan to
+		 * UMEM_DEPOT_STEAL_MAX for the same reason (see its own
+		 * comment); this applies the identical bound to the blocking
+		 * path it was missing. A miss within the bound still falls
+		 * through to the global depot then the slab layer, both
+		 * already-correct paths -- this only bounds how many donor
+		 * stripes are checked first, not what happens after a miss.
+		 * ponytail: fixed bound (matches the trylock variant); widen
+		 * or make adaptive if a workload proves 8 too shallow.
+		 */
+		{
+		int scan = ncpus < UMEM_DEPOT_STEAL_MAX ?
+		    ncpus : UMEM_DEPOT_STEAL_MAX;
+
+		/* 2. Steal from same NUMA node first, within the bound. */
+		for (int i = 1; i < scan; i++) {
 			int other = (cpu + i) & (ncpus - 1);
 			if (UMEM_CPU_NODE(other) != local_node)
 				continue;
@@ -2302,8 +2343,8 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 			}
 		}
 
-		/* 3. Steal from remote NUMA nodes */
-		for (int i = 1; i < ncpus; i++) {
+		/* 3. Steal from remote NUMA nodes, same bound. */
+		for (int i = 1; i < scan; i++) {
 			int other = (cpu + i) & (ncpus - 1);
 			if (UMEM_CPU_NODE(other) == local_node)
 				continue;
@@ -2318,6 +2359,7 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 				cp->cache_depot_cross_node++;
 				return (mp);
 			}
+		}
 		}
 	}
 
