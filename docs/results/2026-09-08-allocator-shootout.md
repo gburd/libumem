@@ -306,6 +306,25 @@ not been fully resolved: the depot handoff is still the long pole under
 real sustained cross-thread duress, and it costs umem the tail-latency
 crown against every purpose-built competitor tested.
 
+**Update (2026-09-09):** root-caused precisely and fixed on x86_64 --
+`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`. The
+depot-layer steal scan (`umem_depot_alloc()`) could block on another
+CPU's stripe lock while holding the caller's own `cc_lock`; under
+192-way sustained pressure that formed a lock convoy (not visible in a
+perf cycles profile, since a blocked thread is off-CPU -- the
+`umem_dump_contention()` counters were the load-bearing evidence). Made
+the scan non-blocking (same full breadth, `umem_depot_pop_trylock`
+instead of the blocking `umem_depot_pop`) and confirmed on a dedicated
+c7i.metal-48xl instance: sustained `prodcons` p999 156.7-163.2us ->
+83.8-92.6us (41-49% reduction), short-burst p999 253.8us -> 81.0us,
+throughput/RSS/single-thread flat, oracle clean (default + ASan, 192
+threads/60s), `test_main --no-fork` 417/0/10 unchanged. Does not reach
+the purpose-built allocators' tens-of-microseconds tier -- the
+remaining gap is attributed to the still-inert rseq lock-free reload
+path (owned by a separate workstream, out of this fix's scope; see the
+diagnosis doc's section 7 for the honest remaining-gap accounting) --
+and was not independently re-measured on aarch64/arm-hi in this pass.
+
 ### frag-sustained (192 threads, 3 minutes, RSS/allocated ratio)
 
 | Role | libc | umem | jemalloc | tcmalloc | mimalloc | snmalloc | scudo | rpmalloc |

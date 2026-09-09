@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Sustained 192-thread cross-thread alloc/free (`prodcons`) had worst-
+  or tied-worst-in-field p999 tail latency** (2026-09-08 allocator
+  shootout section 7: 157us vs. jemalloc's 24.6us/mimalloc's 26.0us/
+  rpmalloc's 22.2us on x86_64). Root cause: the magazine layer's depot
+  refill (`umem_depot_alloc()`, called from `_umem_cache_alloc`/
+  `_umem_cache_free`/the `_batch` variants while holding the caller's
+  own per-CPU `cc_lock`) scanned other CPUs' depot stripes with
+  `umem_depot_pop()` -- trylock, then a **blocking** `mutex_lock()` on
+  failure. Under sustained 192-way `prodcons` pressure (producers and
+  consumers on disjoint CPU sets, so a producer's own stripe is nearly
+  always empty and it must steal from wherever a consumer's frees
+  landed), `cache_depot_contention` (the blocking-fallback counter) ran
+  as high as 60-100% of successful-steal count per cache -- hundreds of
+  thousands of "thread blocks on a futex while holding its own cc_lock"
+  events per run, forming a lock convoy that only compounds over
+  sustained duration (not visible in a short burst, and not visible in
+  a perf cycles profile either, since a blocked thread is off-CPU --
+  the umem_dump_contention() counters were the load-bearing evidence,
+  not the profile). A first fix attempt (bounding scan breadth to the
+  same 8-stripe limit the PTC-refill trylock path already uses) was
+  measured and **reverted**: it broke the cross-thread search itself
+  (producers stopped finding consumer-filled magazines within 8 hops),
+  regressing p999 to 348-424us and ballooning RSS to 3-5GB. The correct
+  fix keeps the full scan breadth and switches each stripe visit from
+  the blocking `umem_depot_pop()` to the already-existing non-blocking
+  `umem_depot_pop_trylock()` (same primitive the PTC path uses).
+  Verified on a dedicated c7i.metal-48xl instance: sustained `prodcons`
+  p999 156.7-163.2us -> 83.8-92.6us (41-49% reduction across two
+  alternating A/B runs), short-burst p999 253.8us -> 81.0us, throughput/
+  RSS/single-thread-throughput flat (no regression), oracle clean
+  (default + `--enable-asan`, 192 threads/60s, both PASS), `test_main
+  --no-fork` 417/0/10 unchanged. Does not reach the purpose-built
+  allocators' tens-of-microseconds tier -- attributed to the still-
+  inert rseq lock-free reload path (owned by a separate workstream,
+  out of scope here) and not independently re-measured on aarch64 in
+  this pass. See
+  `docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`.
+  (`umem.c`, `test/bench/bench_contention.c`)
+
 - **`umem_get_max_ncpus()`'s Linux fast path was silently dead on every
   build, doubling `umem_max_ncpus` (and every per-CPU array umem sizes
   off it) on all Linux builds** — root cause of the worst-in-field

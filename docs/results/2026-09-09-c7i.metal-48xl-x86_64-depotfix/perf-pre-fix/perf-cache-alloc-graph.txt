@@ -1,0 +1,19 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 28831191
+#
+# Samples: 6M of event 'cycles'
+# Event count (approx.): 20936157067140
+#
+# Children      Self  Command          Shared Object     Symbol                   
+# ........  ........  ...............  ................  .........................
+#
+     0.16%     0.01%  bench_contentio  libumem.so.1.0.0  [.] _umem_cache_alloc
+     0.00%     0.00%  bench_contentio  libumem.so.1.0.0  [.] _umem_cache_alloc@plt
+     0.00%     0.00%  :64172           libumem.so.1.0.0  [.] _umem_cache_alloc
+
+
+#
+# (Tip: Skip collecting build-id when recording: perf record -B)
+#

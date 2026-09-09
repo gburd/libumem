@@ -1,0 +1,80 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 28831191
+#
+# Samples: 6M of event 'cycles'
+# Event count (approx.): 20936157067140
+#
+# Children      Self  Command          Shared Object         Symbol                                        
+# ........  ........  ...............  ....................  ..............................................
+#
+    99.63%     0.00%  bench_contentio  libc.so.6             [.] __clone3 (inlined)
+    99.63%     0.00%  bench_contentio  libc.so.6             [.] start_thread
+    64.41%     0.02%  bench_contentio  bench_contention      [.] consumer_thread
+    63.67%    63.63%  bench_contentio  bench_contention      [.] ring_pop
+    35.28%    32.06%  bench_contentio  bench_contention      [.] producer_thread
+    31.98%     0.00%  bench_contentio  bench_contention      [.] ring_push (inlined)
+     2.52%     0.00%  bench_contentio  libc.so.6             [.] __GI___sched_yield (inlined)
+     2.21%     0.05%  bench_contentio  [kernel.kallsyms]     [k] entry_SYSCALL_64_after_hwframe
+     2.16%     0.02%  bench_contentio  [kernel.kallsyms]     [k] do_syscall_64
+     2.05%     0.00%  bench_contentio  [kernel.kallsyms]     [k] __x64_sys_sched_yield
+     1.28%     0.02%  bench_contentio  [kernel.kallsyms]     [k] schedule
+     1.26%     0.31%  bench_contentio  [kernel.kallsyms]     [k] __schedule
+     1.05%     0.02%  bench_contentio  libumem.so.1.0.0      [.] umem_depot_alloc_trylock
+     1.03%     0.02%  bench_contentio  libumem.so.1.0.0      [.] umem_depot_pop_trylock
+     0.95%     0.95%  bench_contentio  libc.so.6             [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.95%     0.00%  bench_contentio  libc.so.6             [.] __GI___pthread_mutex_trylock (inlined)
+     0.86%     0.03%  bench_contentio  [kernel.kallsyms]     [k] raw_spin_rq_lock_nested
+     0.83%     0.83%  bench_contentio  [kernel.kallsyms]     [k] _raw_spin_lock
+     0.77%     0.04%  bench_contentio  [kernel.kallsyms]     [k] do_sched_yield
+     0.65%     0.02%  bench_contentio  bench_contention      [.] umem_alloc_wrapper
+     0.63%     0.01%  bench_contentio  libumem.so.1.0.0      [.] _umem_alloc
+     0.63%     0.02%  bench_contentio  [kernel.kallsyms]     [k] pick_next_task
+     0.61%     0.10%  bench_contentio  [kernel.kallsyms]     [k] pick_next_task_fair
+     0.60%     0.01%  bench_contentio  libumem.so.1.0.0      [.] _umem_free
+     0.41%     0.15%  bench_contentio  [kernel.kallsyms]     [k] update_curr
+     0.26%     0.00%  bench_contentio  [kernel.kallsyms]     [k] asm_sysvec_apic_timer_interrupt
+     0.23%     0.06%  bench_contentio  [kernel.kallsyms]     [k] entry_SYSCALL_64
+     0.22%     0.22%  bench_contentio  libc.so.6             [.] __GI___pthread_mutex_unlock_usercnt
+     0.19%     0.19%  bench_contentio  libc.so.6             [.] __sched_yield
+     0.16%     0.01%  bench_contentio  libumem.so.1.0.0      [.] _umem_cache_alloc
+     0.13%     0.02%  bench_contentio  bench_contention      [.] td_add
+     0.12%     0.00%  bench_contentio  libumem.so.1.0.0      [.] umem_depot_alloc
+     0.12%     0.01%  bench_contentio  libumem.so.1.0.0      [.] umem_depot_pop
+     0.11%     0.03%  bench_contentio  [kernel.kallsyms]     [k] update_rq_clock
+     0.11%     0.10%  bench_contentio  [kernel.kallsyms]     [k] __calc_delta
+     0.09%     0.09%  bench_contentio  [kernel.kallsyms]     [k] entry_SYSRETQ_unsafe_stack
+     0.09%     0.09%  bench_contentio  bench_contention      [.] umem_free_wrapper
+     0.09%     0.01%  bench_contentio  [kernel.kallsyms]     [k] sched_clock_cpu
+     0.09%     0.01%  bench_contentio  bench_contention      [.] td_compress
+     0.09%     0.07%  bench_contentio  [kernel.kallsyms]     [k] update_min_vruntime
+     0.08%     0.07%  bench_contentio  [kernel.kallsyms]     [k] pick_next_entity
+     0.07%     0.07%  bench_contentio  [kernel.kallsyms]     [k] native_sched_clock
+     0.07%     0.07%  bench_contentio  bench_contention      [.] td_qsort
+     0.07%     0.00%  bench_contentio  bench_contention      [.] partition (inlined)
+     0.07%     0.04%  bench_contentio  [kernel.kallsyms]     [k] __cgroup_account_cputime
+     0.05%     0.00%  bench_contentio  libumem.so.1.0.0      [.] _umem_cache_free
+     0.05%     0.00%  bench_contentio  libc.so.6             [.] ___pthread_mutex_lock (inlined)
+     0.05%     0.00%  bench_contentio  libc.so.6             [.] __clock_gettime_2 (inlined)
+     0.05%     0.00%  bench_contentio  [kernel.kallsyms]     [k] sysvec_apic_timer_interrupt
+     0.05%     0.05%  bench_contentio  [kernel.kallsyms]     [k] entry_SYSCALL_64_safe_stack
+     0.05%     0.05%  bench_contentio  libc.so.6             [.] pthread_mutex_lock@@GLIBC_2.2.5
+     0.04%     0.03%  bench_contentio  [kernel.kallsyms]     [k] rcu_note_context_switch
+     0.04%     0.00%  bench_contentio  [kernel.kallsyms]     [k] __sysvec_apic_timer_interrupt
+     0.04%     0.00%  bench_contentio  [kernel.kallsyms]     [k] hrtimer_interrupt
+     0.03%     0.01%  bench_contentio  [kernel.kallsyms]     [k] syscall_exit_to_user_mode
+     0.03%     0.00%  bench_contentio  [kernel.kallsyms]     [k] __hrtimer_run_queues
+     0.03%     0.00%  bench_contentio  [kernel.kallsyms]     [k] tick_sched_timer
+     0.03%     0.00%  bench_contentio  [vdso]                [.] 0x00007ffe595d57b9
+     0.03%     0.00%  bench_contentio  [kernel.kallsyms]     [k] tick_sched_handle
+     0.03%     0.03%  bench_contentio  [kernel.kallsyms]     [k] syscall_return_via_sysret
+     0.03%     0.00%  bench_contentio  [kernel.kallsyms]     [k] update_process_times
+     0.03%     0.02%  bench_contentio  [kernel.kallsyms]     [k] check_cfs_rq_runtime
+     0.03%     0.00%  bench_contentio  bench_contention      [.] bench_get_ns (inlined)
+     0.03%     0.03%  bench_contentio  [vdso]                [.] 0x0000000000000695
+     0.03%     0.00%  bench_contentio  [vdso]                [.] 0x00007ffe595d5695
+     0.03%     0.01%  bench_contentio  [kernel.kallsyms]     [k] cgroup_rstat_updated
+     0.03%     0.00%  bench_contentio  bench_contention      [.] bench_get_ns (inlined)
+     0.02%     0.02%  bench_contentio  [kernel.kallsyms]     [k] syscall_enter_from_user_mode
+     0.02%     0.02%  bench_contentio  [kernel.kallsyms]     [k] x64_sys_call

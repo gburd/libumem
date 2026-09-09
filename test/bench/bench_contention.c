@@ -25,9 +25,16 @@
  * docs/results/2026-07-23-baseline.md) to rseq aborts vs. depot lock vs.
  * magazine thrash, with counter evidence rather than guesswork.
  *
- * Usage: bench_contention [-t threads] [-n ops] [-s min:max]
+ * Usage: bench_contention [-t threads] [-n ops] [-s min:max] [-w multi|prodcons]
  *   Run under the same pinning as matrix.sh, e.g.
  *     numactl --physcpubind=0-127 --localalloc -- bench_contention -t 128
+ *
+ * -w prodcons runs the same cross-thread producer/consumer workload as
+ * scripts/ec2/sustained_load.sh's prodcons-sustained point (see
+ * docs/results/2026-09-08-allocator-shootout.md sec 7 and
+ * docs/results/2026-09-09-sustained-depot-contention-diagnosis.md), so the
+ * depot/rseq counters below can be attributed to the *sustained cross-thread*
+ * path specifically, not just the same-CPU `multi` path D1 diagnosed.
  */
 
 #ifndef _GNU_SOURCE
@@ -46,9 +53,10 @@ int main(int argc, char *argv[])
 	int thread_count = 8;
 	uint64_t operation_count = 10000000;
 	size_t min_size = 64, max_size = 256;
+	const char *workload_name = "multi";
 
 	int opt;
-	while ((opt = getopt(argc, argv, "t:n:s:h")) != -1) {
+	while ((opt = getopt(argc, argv, "t:n:s:w:h")) != -1) {
 		switch (opt) {
 		case 't':
 			thread_count = atoi(optarg);
@@ -67,20 +75,31 @@ int main(int argc, char *argv[])
 			}
 			break;
 		}
+		case 'w':
+			workload_name = optarg;
+			break;
 		case 'h':
 		default:
-			printf("Usage: %s [-t threads] [-n ops] [-s min:max]\n",
-			    argv[0]);
+			printf("Usage: %s [-t threads] [-n ops] [-s min:max] "
+			    "[-w multi|prodcons]\n", argv[0]);
 			return (opt == 'h' ? 0 : 1);
 		}
 	}
 
-	/* Divide ops across threads (matches matrix.sh multi semantics). */
+	int is_prodcons = !strcmp(workload_name, "prodcons");
+
+	/*
+	 * Divide ops across threads (matches matrix.sh multi semantics);
+	 * workload_producer_consumer divides operation_count across
+	 * producers itself, so pass the raw count for prodcons.
+	 */
 	workload_config_t wl = {
-		.name = "multi-thread",
-		.fn = workload_multi_thread,
+		.name = is_prodcons ? "producer-consumer" : "multi-thread",
+		.fn = is_prodcons ? workload_producer_consumer :
+		    workload_multi_thread,
 		.thread_count = thread_count,
-		.operation_count = operation_count / (uint64_t)thread_count,
+		.operation_count = is_prodcons ? operation_count :
+		    operation_count / (uint64_t)thread_count,
 		.min_size = min_size,
 		.max_size = max_size,
 		.custom_data = NULL,
@@ -92,8 +111,8 @@ int main(int argc, char *argv[])
 		return (1);
 	}
 
-	printf("# umem multi t=%d size=%zu:%zu ops=%llu\n",
-	    thread_count, min_size, max_size,
+	printf("# umem %s t=%d size=%zu:%zu ops=%llu\n",
+	    workload_name, thread_count, min_size, max_size,
 	    (unsigned long long)stats.total_operations);
 	printf("throughput_mops = %.3f\n", stats.ops_per_second / 1e6);
 	printf("lat_p50_ns = %.0f\n", stats.latency_p50);

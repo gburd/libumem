@@ -2284,12 +2284,56 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 			}
 		}
 
-		/* 2. Steal from same NUMA node first */
+		/*
+		 * 2/3. Steal from other CPU stripes (same NUMA node first,
+		 * then remote nodes). This scan must cover the FULL stripe
+		 * range (not a shallow subset): umem_depot_free() pushes a
+		 * freed magazine only onto the *freeing* thread's own local
+		 * stripe, so under cross-thread free (prodcons: producers
+		 * alloc, consumers free, disjoint CPU sets) a producer's own
+		 * stripe is essentially always empty and the magazine it needs
+		 * can legitimately be on any of the other ~255 stripes a
+		 * consumer thread landed on. An earlier attempt at this fix
+		 * capped the scan to UMEM_DEPOT_STEAL_MAX (8) stripes to bound
+		 * worst-case lock-hold time; measured on intel-hi it instead
+		 * made things worse (p999 157us -> 348us, RSS 180MB -> 4.2GB)
+		 * because producers stopped finding consumer-filled magazines
+		 * within 8 hops and fell through to allocating brand-new
+		 * magazines from the slab layer instead -- breadth is load-
+		 * bearing for this workload, not a tunable to shrink.
+		 *
+		 * The actual problem isn't scan breadth, it's that each visited
+		 * stripe used umem_depot_pop() -- trylock, and on failure a
+		 * BLOCKING mutex_lock() -- while this whole function runs
+		 * under the caller's per-CPU cc_lock (see _umem_cache_alloc/
+		 * _umem_cache_free and the *_batch variants). Sustained-load
+		 * evidence (docs/results/2026-09-08-allocator-shootout.md sec
+		 * 7, docs/results/2026-09-09-sustained-depot-contention-
+		 * diagnosis.md): dep_conten (blocking-lock-fallback count) ran
+		 * into the hundreds of thousands per cache over a 180s 192-
+		 * thread prodcons run -- every one of those is a thread
+		 * blocking on a futex while holding cc_lock, and under 192-way
+		 * concurrency enough of those overlap to form a lock convoy
+		 * that only builds up over sustained duration (a short burst
+		 * doesn't have enough concurrent misses in flight to show it).
+		 *
+		 * Fix: scan with umem_depot_pop_trylock() (same non-blocking
+		 * primitive the PTC-refill fast path already uses) instead of
+		 * the blocking umem_depot_pop(). A trylock miss on a momentarily-
+		 * busy stripe just moves on to the next candidate in the same
+		 * pass -- full breadth is preserved, no thread ever blocks on
+		 * another CPU's depot lock while holding its own cc_lock. A
+		 * magazine transiently missed this way is still valid and gets
+		 * picked up on a later call; this is the same accepted trade-off
+		 * the trylock-only PTC path already relies on.
+		 */
+
+		/* 2. Steal from same NUMA node first (non-blocking). */
 		for (int i = 1; i < ncpus; i++) {
 			int other = (cpu + i) & (ncpus - 1);
 			if (UMEM_CPU_NODE(other) != local_node)
 				continue;
-			mp = umem_depot_pop(cp, &pcpu_arr[other]);
+			mp = umem_depot_pop_trylock(&pcpu_arr[other]);
 			if (mp != NULL) {
 				if (unlikely(
 				    !UMEM_MAGAZINE_VALID(cp, mp))) {
@@ -2302,12 +2346,12 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 			}
 		}
 
-		/* 3. Steal from remote NUMA nodes */
+		/* 3. Steal from remote NUMA nodes (non-blocking). */
 		for (int i = 1; i < ncpus; i++) {
 			int other = (cpu + i) & (ncpus - 1);
 			if (UMEM_CPU_NODE(other) == local_node)
 				continue;
-			mp = umem_depot_pop(cp, &pcpu_arr[other]);
+			mp = umem_depot_pop_trylock(&pcpu_arr[other]);
 			if (mp != NULL) {
 				if (unlikely(
 				    !UMEM_MAGAZINE_VALID(cp, mp))) {

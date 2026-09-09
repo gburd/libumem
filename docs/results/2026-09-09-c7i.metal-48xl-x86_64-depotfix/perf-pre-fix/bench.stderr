@@ -1,0 +1,10 @@
+[ perf record: Woken up 3 times to write data ]
+Warning:
+Processed 6818733 events and lost 114248 chunks!
+
+Check IO/CPU overload!
+
+Warning:
+Processed 35513846 samples and lost 81.18%!
+
+[ perf record: Captured and wrote 53653.421 MB docs/results/2026-09-09-sustained-perf-intel-hi/perf.data (6682655 samples) ]
