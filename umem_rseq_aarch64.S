@@ -163,9 +163,9 @@ umem_rseq_alloc_fastpath:
 	cbz	x3, .Lrseq_alloc_empty
 
 	/* Decrement rounds. w4 (zero-extended into x4) holds the
-	 * POST-decrement count == the slot being popped. */
+	 * POST-decrement count == the slot being popped. Do NOT store it
+	 * yet -- see the ORDERING note below. */
 	sub	w4, w2, #1
-	str	w4, [x19, #CACHE_ROUNDS_OFFSET]
 
 	/* Get object from magazine: mag->mag_round[rounds-1] */
 	/* Magazine: void *mag_next [offset 0], void *mag_round[] [offset 8] */
@@ -175,12 +175,41 @@ umem_rseq_alloc_fastpath:
 	 * full one (matches the fix in umem_rseq_x86_64.S). */
 	lsl	x2, x4, #3	/* (rounds-1) * 8 */
 	add	x3, x3, #8	/* &mag_round[0] */
-	ldr	x0, [x3, x2]	/* Load mag_round[rounds-1] */
+	ldr	x0, [x3, x2]	/* Load mag_round[rounds-1] -> return value */
 
-	/* Increment alloc counter */
-	ldr	x4, [x19, #CACHE_ALLOC_COUNT_OFFSET]
-	add	x4, x4, #1
-	str	x4, [x19, #CACHE_ALLOC_COUNT_OFFSET]
+	/* Increment alloc counter (advisory; safe to "waste" on abort --
+	 * see ORDERING note below). */
+	ldr	x5, [x19, #CACHE_ALLOC_COUNT_OFFSET]
+	add	x5, x5, #1
+	str	x5, [x19, #CACHE_ALLOC_COUNT_OFFSET]
+
+	/*
+	 * ORDERING (rseq ABI requirement, not just a style choice): the
+	 * kernel aborts (jumps to abort_ip, discarding all register state
+	 * including x0) if this thread is preempted/migrated/signaled at
+	 * ANY point in [start_ip, post_commit_offset) -- i.e. anywhere from
+	 * .Lrseq_alloc_start up to (but not including)
+	 * .Lrseq_alloc_post_commit. Every store in this window except the
+	 * unconditional LAST one is at risk of being "orphaned": if it
+	 * retires but a LATER instruction in the same window is then
+	 * interrupted, the abort handler still runs and returns NULL,
+	 * discarding the return value -- even though an earlier store
+	 * inside the window already changed memory. Previously the rounds
+	 * store came BEFORE the mag_round[] load; a signal landing between
+	 * them committed "one fewer round" to memory while the popped
+	 * pointer was never delivered to any caller -- a real, reproducible
+	 * LEAK (see test/stress/repro_rseq_trailing_store.c, confirmed on
+	 * this hardware via a SIGALRM storm, no migration needed --
+	 * ordinary preemption is enough). Fix: the rounds store below is
+	 * now the unconditional LAST store before .Lrseq_alloc_post_commit.
+	 * Abort before it retires => memory still shows the OLD rounds
+	 * count => the object was never actually removed => NULL is a
+	 * consistent answer (no leak, safely retryable). Preemption at/
+	 * after this store retires is OUTSIDE the checked window (ordinary
+	 * preemption, no abort) => execution resumes normally and returns
+	 * the already-computed x0.
+	 */
+	str	w4, [x19, #CACHE_ROUNDS_OFFSET]	/* COMMIT: last store */
 
 	/* COMMIT POINT */
 .Lrseq_alloc_post_commit:
@@ -324,19 +353,35 @@ umem_rseq_free_fastpath:
 	cmp	w5, w6
 	b.ge	.Lrseq_free_full
 
-	/* Store object in magazine */
+	/* Store object in magazine (safe to "waste" on abort: if rounds
+	 * is not bumped, the alloc fast path never reads this slot -- it
+	 * only reads indices < rounds). */
 	lsl	x6, x5, #3
 	add	x4, x4, #8
 	str	x20, [x4, x6]
 
-	/* Increment rounds */
-	add	w5, w5, #1
-	str	w5, [x19, #CACHE_ROUNDS_OFFSET]
-
-	/* Increment free counter (at offset 32) */
+	/* Increment free counter (advisory; safe to "waste" on abort --
+	 * see the ORDERING note below). */
 	ldr	x6, [x19, #32]
 	add	x6, x6, #1
 	str	x6, [x19, #32]
+
+	/*
+	 * ORDERING (rseq ABI requirement -- see the matching comment in
+	 * umem_rseq_alloc_fastpath above): the rounds++ store below MUST be
+	 * the unconditional LAST store before .Lrseq_free_post_commit.
+	 * Previously the array write, THEN rounds++, THEN the stats counter
+	 * were three separate stores with rounds++ in the middle -- a
+	 * signal landing between rounds++ and the stats store left rounds
+	 * already bumped (buf now logically live and poppable by a future
+	 * alloc) while the caller was told -1 (failed, via the abort
+	 * handler) and would free the SAME buffer again via the fallback
+	 * path: a real double-presence/double-free hazard (confirmed via
+	 * signal-storm repro, test/stress/repro_rseq_trailing_store.c, no
+	 * migration needed).
+	 */
+	add	w5, w5, #1
+	str	w5, [x19, #CACHE_ROUNDS_OFFSET]	/* COMMIT: last store */
 
 	/* COMMIT POINT */
 .Lrseq_free_post_commit:

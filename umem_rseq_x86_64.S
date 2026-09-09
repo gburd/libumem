@@ -107,11 +107,39 @@ umem_rseq_alloc_fastpath:
 	 * hands-out the top round and reads past the magazine on the
 	 * very first pop from a full one. Was undetected because the
 	 * reload path that ever produces rounds>0 was dead code.
+	 *
+	 * ORDERING (rseq ABI requirement, not just a style choice): the
+	 * kernel aborts (jumps to abort_ip, discarding all register state
+	 * including %rax) if this thread is preempted/migrated/signaled
+	 * at ANY point in [start_ip, post_commit_offset) -- i.e. anywhere
+	 * from .Lrseq_alloc_start up to (but not including) the
+	 * .Lrseq_alloc_post_commit label. That means EVERY store in this
+	 * window except the very LAST one is at risk of being "orphaned":
+	 * if it retires but a later instruction in the same window is then
+	 * interrupted, the abort handler still runs and returns NULL,
+	 * discarding the return value -- even though an earlier store
+	 * inside the window already changed memory. Concretely: with the
+	 * rounds-- store BEFORE the mag_round[] load into %rax, a signal
+	 * landing between them commits "one fewer round" to memory while
+	 * the popped pointer is never delivered to any caller -- a real,
+	 * reproducible LEAK (see test/stress/repro_rseq_trailing_store.c,
+	 * confirmed on both x86_64 and aarch64 hardware via a SIGALRM
+	 * storm, no migration needed -- ordinary preemption is enough).
+	 * Fix: compute %rax (the full return value) and bump the stats
+	 * counter (advisory; harmless if "wasted" by an abort that
+	 * discards it) FIRST, and make the rounds store the unconditional
+	 * LAST instruction before .Lrseq_alloc_post_commit. Then: abort
+	 * before the rounds store retires => memory still shows the OLD
+	 * rounds count => the object was never actually removed => NULL
+	 * is a consistent answer (no leak, safely retryable). Preemption
+	 * at/after the rounds store retires is OUTSIDE the checked window
+	 * (ordinary preemption, no abort) => execution resumes normally
+	 * and returns the already-computed %rax.
 	 */
 	decl	%edx
-	movl	%edx, CACHE_ROUNDS_OFFSET(%rbx)
 	movq	8(%rcx,%rdx,8), %rax
 	incq	CACHE_ALLOC_COUNT_OFFSET(%rbx)
+	movl	%edx, CACHE_ROUNDS_OFFSET(%rbx)	/* COMMIT: last store */
 
 .Lrseq_alloc_post_commit:
 	/* Clear rseq_cs */
@@ -199,10 +227,28 @@ umem_rseq_free_fastpath:
 	cmpl	CACHE_MAGSIZE_OFFSET(%rbx), %edx
 	jge	.Lrseq_free_full
 
+	/*
+	 * ORDERING (rseq ABI requirement -- see the matching comment in
+	 * umem_rseq_alloc_fastpath above): the rounds++ store below MUST be
+	 * the unconditional LAST store before .Lrseq_free_post_commit.
+	 * Previously the array write (buf into mag_round[]), rounds++, AND
+	 * the stats counter were three separate stores with rounds++ in the
+	 * MIDDLE -- a signal landing between rounds++ and the stats store
+	 * left rounds already bumped (buf now logically live and poppable
+	 * by a future alloc) while the caller was told -1 (failed) and
+	 * would free the SAME buffer again via the fallback path: a real
+	 * double-presence/double-free hazard (confirmed via signal-storm
+	 * repro, test/stress/repro_rseq_trailing_store.c, no migration
+	 * needed). The array write happening before the final commit is
+	 * safe even if "wasted" by an abort: if rounds is NOT bumped, the
+	 * alloc fast path never reads that slot (it only reads indices <
+	 * rounds), so the write is silently overwritten by the next
+	 * successful free into the same slot.
+	 */
 	movq	%r13, 8(%rcx,%rdx,8)
-	incl	%edx
-	movl	%edx, CACHE_ROUNDS_OFFSET(%rbx)
 	incq	CACHE_FREE_COUNT_OFFSET(%rbx)
+	incl	%edx
+	movl	%edx, CACHE_ROUNDS_OFFSET(%rbx)	/* COMMIT: last store */
 
 .Lrseq_free_post_commit:
 	/* Clear rseq_cs */

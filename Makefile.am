@@ -13,6 +13,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/property/prop_profile \
 		  test/property/prop_palloc \
 		  test/bench/bench_contention \
+		  test/bench/bench_affinity_vs_mutex \
 		  test/integration/introspect_churn \
 		  tools/umemctl \
 		  test/property/prop_alloc_free2 \
@@ -31,6 +32,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_debug_features \
 		  test/integration/test_threading_stress \
 		  test/stress/stress_main \
+		  test/stress/repro_rseq_trailing_store \
 		  test/stress/stress_concurrency_oracle \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
@@ -298,6 +300,9 @@ test_bench_bench_contention_LDADD = libumem.la
 test_bench_bench_contention_LDFLAGS = -pthread -lm
 test_bench_bench_contention_CPPFLAGS = -I$(srcdir)
 
+test_bench_bench_affinity_vs_mutex_SOURCES = test/bench/bench_affinity_vs_mutex.c
+test_bench_bench_affinity_vs_mutex_LDFLAGS = -pthread
+
 # introspect_churn: long-running workload to drive umemctl (G1-G4 tests).
 test_integration_introspect_churn_SOURCES = test/integration/introspect_churn.c
 test_integration_introspect_churn_LDADD = libumem.la
@@ -390,6 +395,11 @@ test_integration_test_threading_stress_CPPFLAGS = -I$(srcdir)/test
 test_stress_stress_main_SOURCES = test/stress/stress_main.c
 test_stress_stress_main_LDADD = libumem.la
 test_stress_stress_main_LDFLAGS = -pthread
+
+test_stress_repro_rseq_trailing_store_SOURCES = test/stress/repro_rseq_trailing_store.c
+test_stress_repro_rseq_trailing_store_LDADD = libumem.la
+test_stress_repro_rseq_trailing_store_LDFLAGS = -pthread
+test_stress_repro_rseq_trailing_store_CPPFLAGS = -I$(srcdir)
 
 test_stress_stress_concurrency_oracle_SOURCES = test/stress/stress_concurrency_oracle.c
 test_stress_stress_concurrency_oracle_LDADD = libumem.la
