@@ -7,7 +7,71 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **Sustained 192-thread cross-thread alloc/free (`prodcons`) had worst-
+- **rseq fast path (already live in the hot path) had six independent,
+  pre-existing bugs**, found while evaluating whether to arm the still-inert
+  rseq per-CPU reload slowpath (see "Investigated" below). Invisible until
+  now because with the reload slowpath inert, `cache_rseq[cpu].rounds` is
+  permanently 0 and the fast path's pop/push arithmetic never actually runs
+  in production:
+  1. x86_64 + aarch64 alloc fast path indexed the magazine with the
+     pre-decrement round count instead of post-decrement -- an immediate
+     double-allocation the instant `rounds > 0`.
+  2. aarch64 fast path hardcoded access to umem's own private, unregistered
+     TLS rseq area instead of honoring the runtime glibc-rseq-offset
+     detection x86_64 already used -- silently never engaged the fast path
+     on any glibc >= 2.35 aarch64 target.
+  3. aarch64 free fast path hardcoded the magazine-full bound as 63 instead
+     of the cache's actual `magsize` -- heap buffer overflow for most
+     magtypes (1, 3, 7, 15, 31).
+  4. aarch64 free fast path's "magazine full" case fell through into the
+     success epilogue, clobbering the `-1` failure return with `0` --
+     silently reported a dropped free as successful.
+  5. aarch64 used x86_64's `RSEQ_SIG` (`0x53053053`) instead of the
+     architecturally-correct aarch64 value (`0xd428bc00`) -- the kernel
+     force-killed the thread with SIGSEGV ("possible attack attempt") on
+     any real migration-triggered abort once bug 2 was fixed and the
+     critical section actually started executing for real; reproduced live
+     on Graviton (c8g.metal) hardware.
+  6. Both fast paths placed a trailing stats-counter store *after* the true
+     commit store but still inside the kernel-checked critical-section
+     window, violating rseq's "single unconditional last store" rule -- a
+     plain preemption (no migration needed) landing between the two stores
+     produced a real, reproducible leak (alloc) or double-presence/
+     double-free (free); confirmed via a SIGALRM-storm repro
+     (`test/stress/repro_rseq_trailing_store.c`).
+  All fixed and verified on real intel-hi (c7i.metal-48xl) and arm-hi
+  (c8g.metal-48xl) hardware with new regression tests
+  (`test/unit/test_rseq_fastpath.c`, `test/stress/repro_rseq_trailing_store.c`)
+  plus the full concurrency oracle (192 threads/60s, default +
+  `--enable-asan`, both arches, 0 failures). (`umem_rseq_x86_64.S`,
+  `umem_rseq_aarch64.S`, `umem_rseq.c`)
+
+### Investigated
+
+- **rseq lock-free per-CPU reload slowpath: re-evaluated more rigorously,
+  decision confirmed (still inert).** Follow-up to the 2026-08-06 shelving
+  decision, asked to either find a genuinely safe C-only/lock-based design
+  or confirm the assembly-only conclusion with sharper rigor. Result:
+  confirmed, with hardware evidence rather than just race-sequence
+  reasoning. A plain-C "recheck cpu_id before the write" design (TOCTOU
+  mitigation) was directly reproduced racing the real fast path on shared
+  hardware state and measured at a ~42-47% double-issue rate under
+  contention on both intel-hi and arm-hi
+  (`test/stress/repro_naive_reload_race.c`) -- not a rare corner case, the
+  dominant outcome under realistic contention. A per-CPU lock array
+  (avoiding the 64-byte-struct constraint) does not provide mutual
+  exclusion against the fast path (which never takes any lock, by design);
+  adding `sched_setaffinity` pinning closes only the reload's own migration
+  path, not a concurrent thread's ordinary scheduling onto the same CPU,
+  and costs 12-27x a `mutex_lock`/`unlock` round trip even in its best case
+  (`test/bench/bench_affinity_vs_mutex.c`). No design closes the gap other
+  than giving the reload its own rseq critical section. Produced a precise,
+  mechanical assembly implementation spec
+  (`docs/results/2026-09-09-rseq-reload-asm-design.md`) for the next
+  attempt -- exact register mapping, instruction ordering (including a
+  subtle ordering requirement symmetric to Fixed-bug-6 above), ABI, and
+  validation checklist -- so implementing it is translation, not research.
+  See `docs/results/2026-09-09-rseq-reload-analysis-v2.md`.
   or tied-worst-in-field p999 tail latency** (2026-09-08 allocator
   shootout section 7: 157us vs. jemalloc's 24.6us/mimalloc's 26.0us/
   rpmalloc's 22.2us on x86_64). Root cause: the magazine layer's depot

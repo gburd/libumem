@@ -2497,12 +2497,17 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 
 #ifdef UMEM_RSEQ_AVAILABLE
 /*
- * UNUSED: see docs/results/2026-08-06-rseq-reload-analysis.md for why
- * arming this needs new asm, not a C wrapper. A plain-C reload here
- * races the lock-free rseq asm fastpath across a CPU migration, and a
- * lock does not help because the fastpath never takes one. Kept for
- * reference / as a starting point for a future migration-safe
- * per-CPU-commit assembly implementation; not called anywhere.
+ * UNUSED: see docs/results/2026-09-09-rseq-reload-analysis-v2.md (and the
+ * original docs/results/2026-08-06-rseq-reload-analysis.md) for the full,
+ * hardware-verified analysis of why arming this needs new asm, not a C
+ * wrapper. A plain-C reload here races the lock-free rseq asm fastpath
+ * across a CPU migration; a lock does not help because the fastpath never
+ * takes one, and rechecking cpu_id in C does not close the window either
+ * (measured ~42-47% double-issue rate under contention -- see
+ * test/stress/repro_naive_reload_race.c). The precise assembly design for
+ * arming this correctly is specified in
+ * docs/results/2026-09-09-rseq-reload-asm-design.md. Kept for reference /
+ * as a starting point; not called anywhere.
  */
 static void *
 umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
@@ -2532,9 +2537,9 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 }
 
 /*
- * UNUSED: see docs/results/2026-08-06-rseq-reload-analysis.md for why
- * arming this needs new asm, not a C wrapper. Same migration-race
- * hazard as umem_rseq_alloc_slowpath() above; not called anywhere.
+ * UNUSED: see docs/results/2026-09-09-rseq-reload-analysis-v2.md for the
+ * full analysis. Same migration-race hazard as
+ * umem_rseq_alloc_slowpath() above; not called anywhere.
  */
 static int
 umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id, void *buf)

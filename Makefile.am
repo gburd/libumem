@@ -33,6 +33,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_threading_stress \
 		  test/stress/stress_main \
 		  test/stress/repro_rseq_trailing_store \
+		  test/stress/repro_naive_reload_race \
 		  test/stress/stress_concurrency_oracle \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
@@ -400,6 +401,11 @@ test_stress_repro_rseq_trailing_store_SOURCES = test/stress/repro_rseq_trailing_
 test_stress_repro_rseq_trailing_store_LDADD = libumem.la
 test_stress_repro_rseq_trailing_store_LDFLAGS = -pthread
 test_stress_repro_rseq_trailing_store_CPPFLAGS = -I$(srcdir)
+
+test_stress_repro_naive_reload_race_SOURCES = test/stress/repro_naive_reload_race.c
+test_stress_repro_naive_reload_race_LDADD = libumem.la
+test_stress_repro_naive_reload_race_LDFLAGS = -pthread
+test_stress_repro_naive_reload_race_CPPFLAGS = -I$(srcdir)
 
 test_stress_stress_concurrency_oracle_SOURCES = test/stress/stress_concurrency_oracle.c
 test_stress_stress_concurrency_oracle_LDADD = libumem.la

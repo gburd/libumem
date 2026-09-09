@@ -77,11 +77,11 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
   Bonwick & Adams design (\~280 lines of complexity removed).
 - **Per-CPU depot arrays** to eliminate cross-CPU contention on the
   cold path.
-- **RSEQ fast path** wired into the x86_64 allocation hot path
-  (glibc 2.35+). The lock-free per-CPU alloc/free hit path is active;
-  a magazine-empty **miss** currently falls back to the standard
-  locked depot path rather than a lock-free per-CPU reload (see
-  "Known limitations" below) — this bounds rseq's benefit to
+- **RSEQ fast path** wired into the x86_64/aarch64 allocation hot path
+  (glibc 2.35+ or manual registration). The lock-free per-CPU alloc/free
+  hit path is active; a magazine-empty **miss** currently falls back to
+  the standard locked depot path rather than a lock-free per-CPU reload
+  (see "Known limitations" below) — this bounds rseq's benefit to
   fastpath hits, not full lock-free operation.
 - **Per-Thread Cache (PTC)** — lock-free fast path for allocations
   up to 2 KB, generated as inline assembly per architecture.  Falls
@@ -203,9 +203,12 @@ active on x86_64/aarch64. The per-CPU **magazine reload on a miss**
 currently falls back to the standard locked depot path — the lock-free
 reload is unimplemented pending migration-safe per-CPU-commit assembly
 on both architectures (a plain-C reload races the lock-free fastpath
-across a CPU migration; see
-[`docs/results/2026-08-06-rseq-reload-analysis.md`](docs/results/2026-08-06-rseq-reload-analysis.md)
-for the full analysis). This does not affect correctness — it means
+across a CPU migration -- measured ~42-47% double-issue rate under
+contention; see
+[`docs/results/2026-09-09-rseq-reload-analysis-v2.md`](docs/results/2026-09-09-rseq-reload-analysis-v2.md)
+for the rigorous re-evaluation and
+[`docs/results/2026-09-09-rseq-reload-asm-design.md`](docs/results/2026-09-09-rseq-reload-asm-design.md)
+for the precise implementation spec). This does not affect correctness — it means
 RSEQ's benefit is limited to fastpath hits, not full lock-free
 operation.
 

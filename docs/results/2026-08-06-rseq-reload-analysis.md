@@ -3,6 +3,15 @@
 **Follow-up:** "arm the currently-inert rseq per-CPU reload slowpath" (from
 `docs/results/2026-07-23-scaling-diagnosis.md` "Fix target (D2)").
 
+**2026-09-09 update:** re-evaluated more rigorously, with hardware-verified
+proof (not just race-sequence reasoning) that the obvious C-only/lock-based
+alternatives are unsafe, plus a precise assembly implementation spec for the
+actual fix. See `docs/results/2026-09-09-rseq-reload-analysis-v2.md` and its
+companion `docs/results/2026-09-09-rseq-reload-asm-design.md`. The decision
+below (keep it inert) is CONFIRMED, not overturned. That session also found
+and fixed six independent, pre-existing bugs in the already-live rseq fast
+path (separate from this reload question) -- see the `fix(rseq):` commits.
+
 **Decision: keep it INERT for now.** Arming it correctly requires new
 per-CPU-commit assembly on both x86_64 and aarch64; a plain-C reload is
 unfixably racy against the lock-free asm fastpath. Since the rseq path is a
