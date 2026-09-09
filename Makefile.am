@@ -8,6 +8,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/test_inspect test/test_inspect_live \
 		  test/unit/umem_env_helper \
 		  test/unit/repro_cpu_node_oob \
+		  test/unit/test_rseq_fastpath \
 		  test/property/prop_ownership \
 		  test/property/prop_profile \
 		  test/property/prop_palloc \
@@ -268,6 +269,11 @@ test_unit_repro_cpu_node_oob_SOURCES = test/unit/repro_cpu_node_oob.c
 test_unit_repro_cpu_node_oob_LDADD = libumem.la
 test_unit_repro_cpu_node_oob_LDFLAGS = -pthread
 test_unit_repro_cpu_node_oob_CPPFLAGS = -I$(srcdir)
+
+test_unit_test_rseq_fastpath_SOURCES = test/unit/test_rseq_fastpath.c
+test_unit_test_rseq_fastpath_LDADD = libumem.la
+test_unit_test_rseq_fastpath_LDFLAGS = -pthread
+test_unit_test_rseq_fastpath_CPPFLAGS = -I$(srcdir)
 
 test_property_prop_ownership_SOURCES = test/property/prop_ownership.c test/qc.c
 test_property_prop_ownership_LDADD = libumem.la

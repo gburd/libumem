@@ -26,6 +26,16 @@ sudo dnf -y install \
 	perf kernel-devel patchutils >/dev/null 2>&1 || \
 	sudo dnf -y install gcc clang autoconf automake libtool make numactl gdb python3 git rsync
 
+# AL2023 gcc packages ship libasan.so -> libasan.so.6.0.0 but omit the
+# libasan.so.6 SONAME symlink binaries actually need at runtime; without
+# this, any --enable-asan binary fails to start ("libasan.so.6: cannot
+# open shared object file"). Fix for both possible gcc target triples.
+for d in /usr/lib/gcc/*/*/; do
+	if [ -e "${d}libasan.so" ] && [ ! -e "${d}libasan.so.6" ]; then
+		sudo ln -sf "$(readlink -f "${d}libasan.so")" "${d}libasan.so.6" || true
+	fi
+done
+
 echo "== OS tuning (best-effort; metal honors more of these) =="
 # CPU governor -> performance
 if command -v cpupower >/dev/null 2>&1; then

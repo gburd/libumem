@@ -97,8 +97,19 @@ umem_rseq_alloc_fastpath:
 	testq	%rcx, %rcx
 	jz	.Lrseq_alloc_empty
 
-	leal	-1(%rdx), %eax
-	movl	%eax, CACHE_ROUNDS_OFFSET(%rbx)
+	/*
+	 * Index with the POST-decrement round count (the slot being
+	 * popped), matching the C fast path's
+	 * `cc_rounds = rounds - 1; buf = cc_loaded->mag_round[rounds - 1]`.
+	 * decl zero-extends %edx into %rdx, so %rdx is safe to use as a
+	 * 64-bit array index below. Off-by-one fix: this used to index
+	 * with the PRE-decrement %rdx (mag_round[rounds]), which double-
+	 * hands-out the top round and reads past the magazine on the
+	 * very first pop from a full one. Was undetected because the
+	 * reload path that ever produces rounds>0 was dead code.
+	 */
+	decl	%edx
+	movl	%edx, CACHE_ROUNDS_OFFSET(%rbx)
 	movq	8(%rcx,%rdx,8), %rax
 	incq	CACHE_ALLOC_COUNT_OFFSET(%rbx)
 

@@ -51,15 +51,33 @@
  * thread if they don't match the signature the thread registered
  * with via rseq(2)'s 4th argument ("Possible attack attempt" in
  * dmesg) -- registering with sig=0 while the asm abort points carry
- * 0x53053053 is exactly that mismatch. Only reachable when umem does
- * its own manual registration (glibc < 2.35, or no glibc rseq support
- * at all -- e.g. musl, which has none): glibc >= 2.35 pre-registers
- * rseq itself and this file never calls sys_rseq(), which is why this
- * was invisible on every glibc test environment and only ever fired
- * on musl/Alpine, intermittently, whenever a real CPU migration
- * landed inside the critical section.
+ * a nonzero signature is exactly that mismatch. Only reachable when
+ * umem does its own manual registration (glibc < 2.35, or no glibc
+ * rseq support at all -- e.g. musl, which has none): glibc >= 2.35
+ * pre-registers rseq itself with GLIBC's OWN architecture-correct
+ * signature (see glibc's sysdeps/unix/sysv/linux/<arch>/bits/rseq.h),
+ * independent of what umem would pass here.
+ *
+ * The signature is NOT the same value on every architecture: it is a
+ * real instruction encoding chosen so a stray jump into it (if the
+ * abort_ip math is ever wrong) traps immediately rather than executing
+ * garbage as code, so each arch picks a value valid in ITS instruction
+ * set. x86_64 uses the literal value 0x53053053 (not tied to any
+ * particular x86 opcode -- ud1-style filler). aarch64 uses 0xd428bc00,
+ * the encoding of "BRK #0x45e0" (see glibc's aarch64/bits/rseq.h and
+ * the kernel's tools/testing/selftests/rseq/rseq-arm64.h, both of
+ * which define RSEQ_SIG_CODE 0xd428bc00 for aarch64 -- NOT 0x53053053,
+ * which is the x86-only value). umem_rseq_aarch64.S must use the same
+ * 0xd428bc00 before its abort labels, or (as verified on real Graviton
+ * hardware) any migration into a glibc-registered rseq critical
+ * section aborts into a signature the kernel doesn't recognize and it
+ * force-kills the thread with SIGSEGV instead of restarting it.
  */
+#if defined(__aarch64__)
+#define UMEM_RSEQ_SIG 0xd428bc00
+#else
 #define UMEM_RSEQ_SIG 0x53053053
+#endif
 
 /*
  * glibc 2.35+ registers rseq for every thread automatically.

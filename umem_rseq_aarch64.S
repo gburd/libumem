@@ -24,9 +24,25 @@
 .text
 
 /*
- * rseq signature - unique value to identify rseq abort points
+ * rseq signature - unique value to identify rseq abort points.
+ *
+ * MUST match the architecture-specific signature glibc/the kernel use for
+ * aarch64: the encoding of "BRK #0x45e0" (see glibc's
+ * sysdeps/unix/sysv/linux/aarch64/bits/rseq.h RSEQ_SIG_CODE, and the
+ * kernel's tools/testing/selftests/rseq/rseq-arm64.h). This is NOT the
+ * same value as x86_64's RSEQ_SIG (0x53053053, an arbitrary filler value
+ * with no architectural meaning on x86) -- aarch64's must be a real BRK
+ * encoding because the kernel validates *(abort_ip-4) against the
+ * signature the thread registered via rseq(2)'s 4th argument, and
+ * glibc >= 2.35 (which owns rseq registration whenever it is present,
+ * including on this target) registers with ITS OWN 0xd428bc00, not
+ * umem's previous copy-pasted 0x53053053. A mismatch here is not a
+ * silent no-op: the kernel treats it as a "possible attack attempt"
+ * and SIGSEGVs the thread the first time a real migration lands inside
+ * the critical section -- verified by reproducing exactly this crash
+ * on Graviton (c8g.metal) hardware before this fix.
  */
-#define RSEQ_SIG 0x53053053
+#define RSEQ_SIG 0xd428bc00
 
 /*
  * Offsets into umem_rseq_cache_t structure
@@ -37,6 +53,28 @@
 #define CACHE_PROUNDS_OFFSET 20
 #define CACHE_ALLOC_COUNT_OFFSET 24
 #define CACHE_RESTART_COUNT_OFFSET 40
+#define CACHE_MAGSIZE_OFFSET 56
+
+/*
+ * Load umem_rseq_fs_offset (a plain, non-TLS global int; GOT-indirect
+ * access since this is a shared library) sign-extended into a 64-bit
+ * register. This is the offset from the thread pointer (TPIDR_EL0) to
+ * the CURRENTLY ACTIVE rseq area: glibc's own struct when glibc manages
+ * rseq (glibc >= 2.35, umem_rseq_use_glibc=1, offset = __rseq_offset),
+ * or umem's private umem_rseq_area otherwise. Mirrors umem_rseq_x86_64.S's
+ * LOAD_FS_OFFSET macro -- see umem_rseq_init() in umem_rseq.c for how the
+ * two cases set umem_rseq_fs_offset. A previous version of this file used
+ * a fixed :gottprel:umem_rseq_area offset here, which only ever pointed at
+ * umem's own (unregistered, when glibc owns rseq) struct -- the cpu_id
+ * check below then always mismatched and every call fell through to
+ * .Lrseq_*_abort, silently disabling the fast path on any glibc >= 2.35
+ * aarch64 target.
+ */
+.macro LOAD_RSEQ_OFFSET reg
+	adrp	\reg, :got:umem_rseq_fs_offset
+	ldr	\reg, [\reg, #:got_lo12:umem_rseq_fs_offset]
+	ldrsw	\reg, [\reg]
+.endm
 
 /*
  * umem_rseq_alloc_fastpath - Allocate from per-CPU magazine using rseq
@@ -100,12 +138,12 @@ umem_rseq_alloc_fastpath:
 	/* Get TLS base via TPIDR_EL0 */
 	mrs	x22, tpidr_el0
 
-	/* Register critical section */
-	/* umem_rseq_area is at fixed TLS offset - get from GOT */
-	adrp	x0, :gottprel:umem_rseq_area
-	ldr	x0, [x0, #:gottprel_lo12:umem_rseq_area]
-	add	x0, x22, x0	/* x0 = &umem_rseq_area */
-	str	x21, [x0, #8]	/* umem_rseq_area.rseq_cs = &rseq_cs */
+	/* Register critical section: x0 = &active_rseq_area, using the
+	 * runtime fs-relative offset (handles both glibc-managed and
+	 * umem-managed rseq -- see LOAD_RSEQ_OFFSET above). */
+	LOAD_RSEQ_OFFSET x0
+	add	x0, x22, x0	/* x0 = &active rseq area */
+	str	x21, [x0, #8]	/* rseq_area.rseq_cs = &rseq_cs */
 
 .Lrseq_alloc_start:
 	/* CRITICAL SECTION START */
@@ -124,15 +162,20 @@ umem_rseq_alloc_fastpath:
 	ldr	x3, [x19, #CACHE_LOADED_MAG_OFFSET]
 	cbz	x3, .Lrseq_alloc_empty
 
-	/* Decrement rounds */
+	/* Decrement rounds. w4 (zero-extended into x4) holds the
+	 * POST-decrement count == the slot being popped. */
 	sub	w4, w2, #1
 	str	w4, [x19, #CACHE_ROUNDS_OFFSET]
 
 	/* Get object from magazine: mag->mag_round[rounds-1] */
 	/* Magazine: void *mag_next [offset 0], void *mag_round[] [offset 8] */
-	lsl	x2, x2, #3	/* rounds * 8 */
+	/* Off-by-one fix: index with x4 (post-decrement), not x2
+	 * (pre-decrement) -- indexing with x2 double-hands-out the top
+	 * round and reads past the magazine on the very first pop from a
+	 * full one (matches the fix in umem_rseq_x86_64.S). */
+	lsl	x2, x4, #3	/* (rounds-1) * 8 */
 	add	x3, x3, #8	/* &mag_round[0] */
-	ldr	x0, [x3, x2]	/* Load mag_round[rounds] */
+	ldr	x0, [x3, x2]	/* Load mag_round[rounds-1] */
 
 	/* Increment alloc counter */
 	ldr	x4, [x19, #CACHE_ALLOC_COUNT_OFFSET]
@@ -142,8 +185,7 @@ umem_rseq_alloc_fastpath:
 	/* COMMIT POINT */
 .Lrseq_alloc_post_commit:
 	/* Clear rseq_cs pointer */
-	adrp	x1, :gottprel:umem_rseq_area
-	ldr	x1, [x1, #:gottprel_lo12:umem_rseq_area]
+	LOAD_RSEQ_OFFSET x1
 	add	x1, x22, x1
 	str	xzr, [x1, #8]
 
@@ -175,8 +217,7 @@ umem_rseq_alloc_fastpath:
 	str	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
 
 	/* Clear rseq_cs pointer */
-	adrp	x1, :gottprel:umem_rseq_area
-	ldr	x1, [x1, #:gottprel_lo12:umem_rseq_area]
+	LOAD_RSEQ_OFFSET x1
 	add	x1, x22, x1
 	str	xzr, [x1, #8]
 
@@ -250,9 +291,9 @@ umem_rseq_free_fastpath:
 	/* Get TLS base */
 	mrs	x3, tpidr_el0
 
-	/* Register critical section */
-	adrp	x0, :gottprel:umem_rseq_area
-	ldr	x0, [x0, #:gottprel_lo12:umem_rseq_area]
+	/* Register critical section: x0 = &active_rseq_area (see
+	 * LOAD_RSEQ_OFFSET above). */
+	LOAD_RSEQ_OFFSET x0
 	add	x0, x3, x0
 	str	x22, [x0, #8]
 
@@ -271,8 +312,16 @@ umem_rseq_free_fastpath:
 	/* Load rounds */
 	ldr	w5, [x19, #CACHE_ROUNDS_OFFSET]
 
-	/* Check if magazine full (assume max 63 rounds) */
-	cmp	w5, #63
+	/* Check if magazine full: compare against the cache's ACTUAL
+	 * magsize field, not a hardcoded constant. A previous version of
+	 * this file hardcoded "cmp w5, #63", which is a heap-buffer-
+	 * overflow landmine for any magtype with magsize < 63 (e.g. 1, 3,
+	 * 7, 15, 31 -- see umem_magtype[] in umem.c): it would keep
+	 * storing past the end of a magazine allocated for only
+	 * (magsize+1) pointers. Matches x86_64's
+	 * "cmpl CACHE_MAGSIZE_OFFSET(%rbx), %edx". */
+	ldr	w6, [x19, #CACHE_MAGSIZE_OFFSET]
+	cmp	w5, w6
 	b.ge	.Lrseq_free_full
 
 	/* Store object in magazine */
@@ -292,8 +341,7 @@ umem_rseq_free_fastpath:
 	/* COMMIT POINT */
 .Lrseq_free_post_commit:
 	/* Clear rseq_cs pointer */
-	adrp	x1, :gottprel:umem_rseq_area
-	ldr	x1, [x1, #:gottprel_lo12:umem_rseq_area]
+	LOAD_RSEQ_OFFSET x1
 	add	x1, x3, x1
 	str	xzr, [x1, #8]
 
@@ -305,10 +353,21 @@ umem_rseq_free_fastpath:
 	.cfi_adjust_cfa_offset -96
 	ret
 
-	/* Magazine full */
+	/* Magazine full: own epilogue (do NOT fall through to
+	 * .Lrseq_free_post_commit's "mov x0, #0" -- that would clobber
+	 * the -1 failure return with success, silently reporting the push
+	 * as accepted while the buffer was never stored anywhere. Matches
+	 * x86_64's .Lrseq_free_full, which likewise never falls through to
+	 * the success path's xorq %rax,%rax). */
 .Lrseq_free_full:
+	LOAD_RSEQ_OFFSET x1
+	add	x1, x3, x1
+	str	xzr, [x1, #8]
 	mov	x0, #-1
-	b	.Lrseq_free_post_commit
+	ldp	x21, x22, [sp, #32]
+	ldp	x19, x20, [sp, #16]
+	ldp	x29, x30, [sp], #96
+	ret
 
 	/* ABORT HANDLER */
 	/* signature BEFORE label — kernel reads *(abort_ip-4) */
@@ -321,8 +380,7 @@ umem_rseq_free_fastpath:
 	str	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
 
 	/* Clear rseq_cs pointer */
-	adrp	x1, :gottprel:umem_rseq_area
-	ldr	x1, [x1, #:gottprel_lo12:umem_rseq_area]
+	LOAD_RSEQ_OFFSET x1
 	add	x1, x3, x1
 	str	xzr, [x1, #8]
 

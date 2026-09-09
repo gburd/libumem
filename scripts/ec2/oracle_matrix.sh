@@ -15,9 +15,17 @@ make -j"$(nproc)" test/stress/stress_concurrency_oracle >/dev/null 2>&1
 echo "BUILD_OK mode=$MODE ncpu=$(nproc) threads=$THREADS dur=${DUR}s"
 
 BIN=./test/stress/.libs/stress_concurrency_oracle
+# AL2023 gcc's libasan has no libasan.so.6 soname symlink (see
+# scripts/ec2/remote_run_asan.sh); preload the real .so.6.0.0 file
+# directly and disable leak detection -- umem intentionally retains
+# process-lifetime TLS/init allocations that LSAN misreports as leaks
+# (same convention as remote_run_asan.sh / oob_validate.sh).
+ASAN="$(gcc -print-file-name=libasan.so.6.0.0)"
+[ -f "$ASAN" ] || ASAN="$(ls /usr/lib/gcc/*/*/libasan.so.6.0.0 2>/dev/null | head -1)"
 run() {
 	echo "--- oracle $* ---"
-	LD_LIBRARY_PATH=.libs "$BIN" "$@"
+	ASAN_OPTIONS=detect_leaks=0:abort_on_error=0 \
+	    LD_PRELOAD="$ASAN" LD_LIBRARY_PATH=.libs "$BIN" "$@"
 	echo "exit=$?"
 }
 
