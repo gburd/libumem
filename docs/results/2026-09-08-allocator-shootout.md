@@ -364,23 +364,25 @@ report's data does not by itself confirm.
   crashes in the final, reproducible data set.** `matrix.sh`'s
   crash-tolerant design (capture + log + continue) was exercised and
   never had to skip a point in the committed results.
-- **One non-reproducible intermittent issue found and investigated,
-  not silently dropped:** an early Alpine/musl run logged 14 `CRASH:
-  umem ... rc=139` (SIGSEGV) points, concentrated in `prodcons` and the
-  largest size class (1024:4096). Two full repeat runs on a fresh
-  instance (one umem-only, one the complete 6-allocator sweep,
-  including the exact failing points) both completed with **zero**
-  crashes. This was not written off — real time was spent trying to
-  reproduce it under `gdb`, including watching the process tree live
-  during a hang-suspicious run (which turned out to be an SSH-session
-  artifact, not an app hang, once re-run under `setsid`/`nohup`). The
-  honest conclusion: **there is a rare, non-deterministic issue that
-  reproduces on musl/x86_64 under specific timing/memory conditions
-  this report could not pin down in the time available**; it is not a
-  fabricated non-issue, and it is not a confirmed deterministic bug
-  either. It deserves a dedicated follow-up with core-dump capture
-  configured *before* the triggering run (the original crashes'
-  core files were on an already-terminated instance).
+- **RESOLVED (2026-09-09):** the 14 `CRASH: umem ... rc=139` (SIGSEGV)
+  points from the original musl/Alpine run were **not** a one-off —
+  they were a real, deterministic bug in `umem_rseq.c`'s manual rseq(2)
+  registration, invisible on every glibc environment in this report
+  because glibc >= 2.35 pre-registers rseq itself and umem's own
+  `sys_rseq()` calls are never reached there. musl has no rseq support
+  at all, so every umem process on musl took the manual-registration
+  path, which registered with `sig=0` while the hand-written x86_64/
+  aarch64 assembly critical sections embed abort-signature `0x53053053`
+  before every abort label (required by the rseq ABI). Any real CPU
+  migration landing inside a critical section triggered the kernel's
+  signature check, which SIGSEGV'd the thread and logged `Possible
+  attack attempt. Unexpected rseq signature 0x53053053, expecting 0x0`
+  to dmesg — reproduced on demand (100% first-try hit rate) once
+  core dumps were configured *before* the triggering run, per the
+  original finding's own recommendation. Full gdb backtrace, dmesg
+  evidence, fix, and 50+-iteration non-regression verification on both
+  musl and glibc: `docs/results/2026-09-09-musl-sigsegv-investigation.md`
+  (`8ee87cd`).
 - **CoV instability is real and reported, not hidden.** 63-132 points
   per role (mostly `prodcons`/`multi` at higher thread counts, where
   scheduler noise is inherently larger) were flagged `unstable`

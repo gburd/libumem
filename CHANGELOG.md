@@ -3,6 +3,40 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **musl: rseq(2) was registered with the wrong abort signature, causing
+  intermittent SIGSEGV under real CPU migration.** `umem_rseq.c`'s manual
+  (non-glibc) rseq registration path called `sys_rseq()` with `sig=0` at
+  all four call sites, but `umem_rseq_x86_64.S`/`umem_rseq_aarch64.S`
+  embed abort-signature `0x53053053` before every rseq critical-section
+  abort label, per the rseq(2) ABI. Any CPU migration landing inside a
+  critical section made the kernel's signature check fail
+  (`Possible attack attempt. Unexpected rseq signature 0x53053053,
+  expecting 0x0` in dmesg) and SIGSEGV the thread. This is the root cause
+  of the 14 non-reproducible `CRASH: umem ... rc=139` points from the
+  2026-09-08 allocator-shootout musl/Alpine run (see that report's §9 and
+  `docs/results/2026-09-09-musl-sigsegv-investigation.md`). Invisible on
+  every glibc environment because glibc >= 2.35 pre-registers rseq
+  itself, so umem's own `sys_rseq()` calls are never reached there —
+  confirmed the fix is a no-op on glibc (`test_main --no-fork` unchanged
+  at 417 OK / 0 FAIL / 10 SKIP) and reproduced-then-fixed on musl
+  (0/50+ repeat-iteration failures post-fix, was crashing on the first
+  attempt pre-fix). (`8ee87cd`)
+- **musl: `test/unit/umem_env_helper.c`'s warm-up crashed the whole
+  `test_main` run under `UMEM_OPTIONS=backend=sbrk`**, unrelated to the
+  rseq bug above: `sbrk(2)` itself fails (`ENOMEM`) under this platform's
+  PIE/ASLR memory layout in the Alpine AMI used to investigate the rseq
+  bug, so `umem_alloc()` legitimately returns `NULL` and the helper's
+  unconditional `umem_free(warm, 64)` called `umem_free(NULL, ...)` —
+  which, unlike libc's `free()`, `umem_free()` does not tolerate by
+  design. Found and fixed (NULL-guarded in the test helper only) while
+  verifying the rseq fix didn't regress `test_main` parity; restored
+  musl's `test_main --no-fork` to 417 OK / 0 FAIL / 10 SKIP, matching
+  the glibc baseline exactly. (`8ee87cd`)
+
 ## [2.6.0] - 2026-09-08
 
 ### Fixed
