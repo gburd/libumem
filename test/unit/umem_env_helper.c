@@ -111,7 +111,8 @@ main(int argc, char **argv)
 
 	/* Force init so env-derived flags are applied. */
 	void *warm = umem_alloc(64, UMEM_DEFAULT);
-	umem_free(warm, 64);
+	if (warm != NULL)
+		umem_free(warm, 64);
 
 	const char *cmd = argv[1];
 

@@ -45,6 +45,23 @@
 #endif
 
 /*
+ * Must match the RSEQ_SIG embedded before every abort label in
+ * umem_rseq_x86_64.S / umem_rseq_aarch64.S. The kernel reads the 4
+ * bytes at (abort_ip - 4) on every rseq restart and SIGSEGVs the
+ * thread if they don't match the signature the thread registered
+ * with via rseq(2)'s 4th argument ("Possible attack attempt" in
+ * dmesg) -- registering with sig=0 while the asm abort points carry
+ * 0x53053053 is exactly that mismatch. Only reachable when umem does
+ * its own manual registration (glibc < 2.35, or no glibc rseq support
+ * at all -- e.g. musl, which has none): glibc >= 2.35 pre-registers
+ * rseq itself and this file never calls sys_rseq(), which is why this
+ * was invisible on every glibc test environment and only ever fired
+ * on musl/Alpine, intermittently, whenever a real CPU migration
+ * landed inside the critical section.
+ */
+#define UMEM_RSEQ_SIG 0x53053053
+
+/*
  * glibc 2.35+ registers rseq for every thread automatically.
  * It exports __rseq_offset (offset into TLS) and __rseq_size
  * (size of the rseq area, 0 if not registered).
@@ -131,10 +148,10 @@ umem_rseq_available(void)
 		.flags = 0,
 	};
 
-	long ret = sys_rseq(&test_area, sizeof(test_area), 0, 0);
+	long ret = sys_rseq(&test_area, sizeof(test_area), 0, UMEM_RSEQ_SIG);
 	if (ret == 0) {
 		sys_rseq(&test_area, sizeof(test_area),
-		    RSEQ_FLAG_UNREGISTER, 0);
+		    RSEQ_FLAG_UNREGISTER, UMEM_RSEQ_SIG);
 		return 1;
 	}
 
@@ -261,7 +278,7 @@ umem_rseq_register_thread(void)
 	umem_rseq_area.flags = 0;
 
 	long ret = sys_rseq(&umem_rseq_area,
-	    sizeof (umem_rseq_area), 0, 0);
+	    sizeof (umem_rseq_area), 0, UMEM_RSEQ_SIG);
 	if (ret != 0) {
 		if (errno == EBUSY) {
 			/*
@@ -300,7 +317,7 @@ umem_rseq_unregister_thread(void)
 
 #ifdef __NR_rseq
 	sys_rseq(&umem_rseq_area, sizeof (umem_rseq_area),
-	    RSEQ_FLAG_UNREGISTER, 0);
+	    RSEQ_FLAG_UNREGISTER, UMEM_RSEQ_SIG);
 	umem_rseq_cpu_idp = NULL;
 	umem_rseq_registered = 0;
 	return 0;
