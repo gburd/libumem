@@ -225,7 +225,17 @@ main(int argc, char **argv)
 	sched_setaffinity(0, sizeof(set), &set);
 
 	long iters = (argc > 1) ? atol(argv[1]) : 200000;
-	long interval_us = (argc > 2) ? atol(argv[2]) : 1;
+	/*
+	 * ponytail: 1us default livelocks on some x86_64 hosts (observed:
+	 * a real 5+ hour hang on c7i.2xlarge) -- rt_sigreturn overhead per
+	 * signal can exceed the loop body's own per-iteration cost at 1us,
+	 * so the alloc-leak loop's `null_returns < 4` exit condition never
+	 * accumulates forward progress. 5us leaves ample margin (verified:
+	 * still delivers hundreds of thousands of signals per run, 0 leaks
+	 * found, on both x86_64 and aarch64) while never livelocking.
+	 * Raise back toward 1us only with a livelock timeout guard.
+	 */
+	long interval_us = (argc > 2) ? atol(argv[2]) : 5;
 
 	arm_signal_storm(interval_us);
 	int r1 = repro_alloc_leak(cpu, iters);

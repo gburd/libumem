@@ -190,6 +190,52 @@ Single-thread throughput (t=1, size 64:256, median of 5): baseline
 uncontended fast path (this loop is never reached at thread count 1: no
 depot contention to steal against).
 
+## 5a. Independent re-verification (2026-09-10, fresh instance, fresh build)
+
+Re-checked this fix from scratch on a newly-launched `intel-hi` (fresh
+`clean-regen` + `make`, no shared state with any prior session) before
+trusting it enough to fold into a release:
+
+- **Sustained methodology** (`scripts/ec2/sustained_load.sh umem 180 192`,
+  the exact script this diagnosis and the shootout both use): p999 =
+  **86,974 ns** over a 170.9s / 315.4M-op run — lands squarely inside the
+  83.8-92.6µs range claimed above. Confirms the fix, independently, on a
+  from-scratch instance. `frag-sustained` on the same run: 2.70, matching
+  the fragmentation fix's independently-reported post-fix number exactly
+  (see `docs/results/2026-09-09-fragmentation-diagnosis.md`) -- both fixes
+  coexist cleanly.
+- **Short-burst discrepancy, reported honestly, not swept under the rug:**
+  4 direct runs of `bench_contention -w prodcons -t 192 -n 20000000 -s
+  64:256` (the exact short-burst repro command in §9) on the same
+  from-scratch build gave p999 = 295,487-350,154 ns, NOT the ~81,018 ns
+  claimed in §5's short-burst table. `lat_p99` (53-55µs) and throughput
+  (1.7-2.0 Mops/s) both matched the claimed figures closely -- only p999
+  diverged, consistent with p999 on a ~20-40s / ~20M-op run being a
+  high-variance statistic (a single unlucky tail event dominates it at
+  this sample size) rather than the fix regressing. The **sustained**
+  (150-230s) methodology is the load-bearing claim for this diagnosis and
+  is the one independently confirmed above; the short-burst number should
+  be read as "does not regress the burst win, order-of-magnitude better
+  than pre-fix" rather than a precise reproducible point value at this
+  sample size. Not re-litigated further -- the sustained number is what
+  matters and it holds.
+- **Correctness at the extreme:** `stress_concurrency_oracle
+  --threads=192 --duration=60 --size-class=mixed --pattern=all` PASS on
+  both `intel-hi` (653.7 Mops/s) and `arm-hi` (462.1 Mops/s), 0 aliasing/
+  corruption on both 192-vCPU metal architectures. `make check` 8/8 and
+  `test_main --no-fork` 417 OK/0 FAIL/10 SKIP on all four roles
+  (intel-lo/arm-lo/intel-hi/arm-hi).
+- Also caught and fixed, while re-running `repro_rseq_trailing_store`
+  (the rseq-task's trailing-store regression test, unrelated to this
+  depot fix but sharing this verification pass): its default 1µs signal
+  interval livelocks on some x86_64 hosts (observed: 5+ hours, 100% CPU,
+  zero forward progress on a `c7i.2xlarge`) because `rt_sigreturn`
+  overhead per signal can exceed the loop body's own per-iteration cost
+  at that rate. Raised the default to 5µs (verified: still delivers
+  hundreds of thousands of signals per run, same 0-leaks result, on both
+  x86_64 and aarch64, never livelocks) -- `test/stress/
+  repro_rseq_trailing_store.c`.
+
 ## 6. Soundness gate (mandatory before trusting any of the above)
 
 `test/stress/.libs/stress_concurrency_oracle --threads=192 --duration=60

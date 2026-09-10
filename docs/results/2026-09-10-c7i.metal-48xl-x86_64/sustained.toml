@@ -1,0 +1,40 @@
+# sustained high-thread-count punishing-load results
+# threads=192 duration_target_sec=180
+instance_type = "c7i.metal-48xl"
+arch = "x86_64"
+
+[[sustained]]
+allocator = "umem"
+workload = "prodcons-sustained"
+threads = 192
+size = "64:256"
+ops = 315375744
+elapsed_sec = 170.901907
+ops_per_sec = 1845361.17
+lat_min = 20
+lat_p50 = 532
+lat_p90 = 4504
+lat_p99 = 19326
+lat_p999 = 86974
+lat_max = 37828682
+lat_mean = 1985
+peak_rss_bytes = 175280128
+frag = 0.01
+
+[[sustained]]
+allocator = "umem"
+workload = "frag-sustained"
+threads = 1
+size = "16:4096"
+ops = 998835419
+elapsed_sec = 165.438360
+ops_per_sec = 6037507.97
+lat_min = 16
+lat_p50 = 51
+lat_p90 = 123
+lat_p99 = 202
+lat_p999 = 303
+lat_max = 3081109
+lat_mean = 65
+peak_rss_bytes = 24997888
+frag = 2.70
