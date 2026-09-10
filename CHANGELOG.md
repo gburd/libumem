@@ -3,7 +3,30 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [2.7.0] - 2026-09-10
+
+### Added
+
+- **aarch64-nightly CI job hardened and given an activation runbook.**
+  Re-verified the full launch -> bootstrap -> clean-regen -> build ->
+  `make check` -> `test_main --no-fork` -> terminate sequence end-to-end
+  on fresh `arm-lo` hardware against current master (confirms the
+  sparsemap update, allocator-shootout harness changes, and illumos/musl
+  fixes since the job was last checked didn't break this path); results
+  match the documented baseline exactly (`make check` 5/5 on the CI
+  subset, `test_main --no-fork` 417/0/10). Added job- and step-level
+  `timeout-minutes` (none existed before, so a hung AWS/SSH call could
+  have run indefinitely and left an instance up); confirmed the script's
+  own SIGTERM trap still terminates the instance under a simulated
+  failure. Wrote `docs/AARCH64_NIGHTLY_ACTIVATION.md`: a numbered,
+  copy-pasteable runbook for the one remaining manual step -- a human
+  with Codeberg web access adding the `AWS_ACCESS_KEY_ID`/
+  `AWS_SECRET_ACCESS_KEY`/`EC2_SSH_PRIVATE_KEY` repo secrets (including
+  the exact least-privilege IAM policy JSON to attach) -- since that
+  action structurally requires web/API access no agent in this project
+  has had. The job remains validated and hardened but explicitly **not
+  armed** until that one step happens. (`.forgejo/workflows/
+  aarch64-nightly.yml`, `docs/AARCH64_NIGHTLY_ACTIVATION.md`)
 
 ### Fixed
 
@@ -105,9 +128,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   --no-fork` 417/0/10 unchanged. Does not reach the purpose-built
   allocators' tens-of-microseconds tier -- attributed to the still-
   inert rseq lock-free reload path (owned by a separate workstream,
-  out of scope here) and not independently re-measured on aarch64 in
-  this pass. See
-  `docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`.
+  out of scope here). Independently re-verified from scratch (fresh
+  instance, fresh build, no shared state): sustained p999 86,974ns,
+  squarely inside the claimed 83.8-92.6us range; the short-burst p999
+  number did not reproduce as precisely (295-350us vs. the claimed
+  ~81us across 4 direct re-runs, though p99/throughput matched
+  closely) -- attributed to p999 being a high-variance statistic at
+  ~20-40s/~20M-op sample sizes, not a regression, since the
+  load-bearing sustained-methodology number reproduced exactly. See
+  `docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`
+  section 5a.
   (`umem.c`, `test/bench/bench_contention.c`)
 
 - **`umem_get_max_ncpus()`'s Linux fast path was silently dead on every

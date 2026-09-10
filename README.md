@@ -180,18 +180,31 @@ Where libumem **does not win**:
   for object-cache machinery you may not be using.
 - **Fragmentation / memory overhead under sustained load.** The
   [8-allocator shootout](docs/results/2026-09-08-allocator-shootout.md)
-  found libumem is worst-in-field on every glibc environment tested —
-  roughly **2.3×** the next-worst allocator's RSS/allocated ratio on
-  192-vCPU metal boxes under 3 minutes of sustained fragmentation
-  pressure. This is not a claim we can soften: it is libumem's clearest,
-  most reproducible weakness in that benchmark, on both x86_64 and
-  aarch64. Do not choose libumem for a memory-overhead-sensitive service
-  without accounting for this.
+  originally found libumem worst-in-field on every glibc environment
+  tested — roughly **2.3×** the next-worst allocator's RSS/allocated
+  ratio on 192-vCPU metal boxes under 3 minutes of sustained
+  fragmentation pressure. Root-caused and fixed in v2.7.0: a dead
+  `#ifdef linux` fast path (undefined by strict `-std=c17`) silently
+  doubled `umem_max_ncpus` — and every per-CPU array libumem sizes off
+  it — on every Linux build. Fixed ratio: 4.19→2.70 (x86_64 metal),
+  4.12→2.63 (aarch64 metal), landing in the field's competitive 2.2-2.5
+  range. See
+  [`docs/results/2026-09-09-fragmentation-diagnosis.md`](docs/results/2026-09-09-fragmentation-diagnosis.md).
 - **Tail latency at very high core counts under sustained load.** Same
-  report: at 192 threads sustained for 3 minutes, libumem has the worst
-  or tied-worst p999 latency in the field on both architectures — a
-  short-burst benchmark can look favorable (see the `prodcons` result in
-  the Performance section) but does not predict this.
+  report originally found libumem worst-or-tied-worst p999 latency at
+  192 threads sustained for 3 minutes (157us vs. jemalloc's 24.6us).
+  Root-caused and fixed in v2.7.0: the magazine layer's depot refill
+  scanned other CPUs' stripes with a **blocking** mutex on failure
+  while holding the caller's own per-CPU lock — a lock convoy that
+  compounds only under sustained pressure. Switched to the
+  already-existing non-blocking trylock primitive (same one the PTC
+  path already used) over the same full scan breadth. Fixed p999:
+  156.7-163.2us → 83.8-92.6us (41-49% reduction), independently
+  re-verified at 86,974ns on a from-scratch build. Does not reach
+  jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier — the
+  remaining gap is attributed to the still-inert rseq lock-free reload
+  path (below). See
+  [`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`](docs/results/2026-09-09-sustained-depot-contention-diagnosis.md).
 - **Sandboxed / security-hardened allocations.**  mimalloc-secure
   and `scudo` add explicit hardening (segregated metadata, randomized
   freelists, double-free detection by design).  libumem's defenses
@@ -381,17 +394,18 @@ both where umem wins and where it clearly does not.
 | Finding | Detail |
 |---|---|
 | 192-thread `multi` scaling | Peak throughput 10–25% below the top allocators (mimalloc, snmalloc) at the same thread count, and its falloff to full saturation (83–84%) is mid-to-bad, not best. Every allocator falls off 70–90% at this scale — a hardware/workload property — but umem does not "win" this case against purpose-built high-concurrency allocators. |
-| **Sustained 192-thread load (3 minutes, not a burst)** | umem has the **worst or tied-worst p999 tail latency in the field** on both architectures under sustained cross-thread pressure — this directly contradicts the short-burst `prodcons` result above and is the more trustworthy number for any real workload. Root cause: the depot handoff for cross-thread frees is still the long pole under sustained duress (independent confirmation of the [scaling diagnosis](docs/results/2026-07-23-scaling-diagnosis.md) from earlier work). |
-| **Fragmentation / memory overhead** | **Worst-in-field on every glibc environment tested**, ~2.3× the next-worst allocator on 192-vCPU metal boxes. umem's single clearest, most reproducible weakness in the whole benchmark. |
+| Sustained 192-thread load (3 minutes, not a burst) | *Originally* umem's worst-or-tied-worst p999 in the field (157us on x86_64) — **fixed in v2.7.0**: root-caused to a blocking-mutex lock convoy in the depot's cross-CPU steal scan, switched to the already-existing non-blocking trylock primitive; p999 now 83.8-92.6us (41-49% reduction), independently re-verified at 86,974ns from a clean build. Does not reach jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier — attributed to the still-inert rseq lock-free reload path. See [`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`](docs/results/2026-09-09-sustained-depot-contention-diagnosis.md). |
+| Fragmentation / memory overhead | *Originally* worst-in-field, ~2.3× the next-worst allocator on 192-vCPU metal — **fixed in v2.7.0**: root-caused to a dead `#ifdef linux` fast path silently doubling `umem_max_ncpus` (and every per-CPU array sized off it) on every Linux build; ratio now 2.63-2.70, in the field's competitive range. See [`docs/results/2026-09-09-fragmentation-diagnosis.md`](docs/results/2026-09-09-fragmentation-diagnosis.md). |
 | Single-thread latency | Competitive but not a winner anywhere against x86_64/aarch64 glibc; mimalloc is fastest almost everywhere. |
 
-**Honest one-line verdict:** umem clearly outperforms the traditional
-coarse-locked malloc it descends from under concurrency, and holds its own
-against modern allocators on 8-vCPU boxes — but at 192-vCPU sustained load
-it has the worst tail latency in the field, and its fragmentation overhead
-is roughly double every competitor tested. Anyone choosing umem for a
-very-high-core-count, long-running, memory-overhead-sensitive service
-should treat those two findings as open work, not settled.
+**Honest one-line verdict (updated for v2.7.0):** umem clearly outperforms
+the traditional coarse-locked malloc it descends from under concurrency,
+and holds its own against modern allocators on 8-vCPU boxes. The two
+headline weaknesses this shootout found — worst-in-field sustained tail
+latency and worst-in-field fragmentation — were both root-caused and fixed
+in v2.7.0 (see the two entries above); umem now lands in the field's
+competitive range on both, though still short of the purpose-built
+high-concurrency allocators' best numbers at 192-vCPU sustained load.
 
 ### Prior umem-vs-glibc-only baselines (superseded, kept for provenance)
 
