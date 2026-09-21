@@ -23,9 +23,17 @@
 #define _UMEM_PROFILE_H
 
 /*
- * EXPERIMENTAL API -- not production-ready.
- * This API may change without notice. Do not use in production code
- * without thorough testing. See README.md for stability guarantees.
+ * EXPERIMENTAL API -- not production-ready, and NOT A MONITORING OR
+ * ACCOUNTING GUARANTEE.
+ *
+ * The profile is a sampled, lossy record intended for pre-warming caches
+ * and spotting allocation phases.  It is not an audit trail: events can
+ * be dropped, counts can be approximate, and a profile that looks
+ * complete may not be.  Do not use it as the basis for capacity
+ * decisions, billing, or leak accounting -- use umem_inspect(3) or
+ * umem(1) findleaks for those.
+ *
+ * This API may change without notice.  See README.md.
  */
 #if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(_UMEM_INTERNAL)
 #error "This header requires #define UMEM_ENABLE_EXPERIMENTAL before inclusion"

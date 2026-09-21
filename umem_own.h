@@ -28,9 +28,17 @@
 #define	_UMEM_OWN_H
 
 /*
- * EXPERIMENTAL API -- not production-ready.
- * This API may change without notice. Do not use in production code
- * without thorough testing. See README.md for stability guarantees.
+ * EXPERIMENTAL API -- not production-ready, and NOT A MEMORY-SAFETY
+ * MECHANISM.
+ *
+ * Do not rely on this to catch use-after-free, double-free, or
+ * cross-thread misuse.  It reports violations best-effort and can miss
+ * them; worse, the 2026-09-21 design review found that the tracking
+ * itself can corrupt memory, so enabling it is not a strictly safer
+ * configuration than leaving it off.  Use ASan/UBSan, or
+ * UMEM_DEBUG=guards, when you need an actual safety check.
+ *
+ * This API may change without notice.  See README.md.
  */
 #if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(_UMEM_INTERNAL)
 #error "This header requires #define UMEM_ENABLE_EXPERIMENTAL before inclusion"

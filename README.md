@@ -5,10 +5,18 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
+> **Status: not production-ready at this commit.** The 2026-09-21 design
+> review found reachable correctness and lifetime defects in *default* code
+> paths, plus measurement defects that invalidate several performance
+> conclusions previously published in this file. Work and exit criteria:
+> [`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
+> Claims below are qualified by what has actually been measured; where
+> something is unknown, it says so.
+
 ```bash
 ./autogen.sh && ./configure && make -j"$(nproc)" && make check
-sudo make install     # installs libumem.so, libumem_malloc.so,
-                      # the umem(1) tool, and gdb/lldb integrations
+sudo make install     # installs libumem.so, libumem_malloc.so, the umem(1)
+                      # and umemctl tools, and gdb/lldb integrations
 ```
 
 Drop-in malloc replacement:
@@ -78,11 +86,10 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 - **Per-CPU depot arrays** to eliminate cross-CPU contention on the
   cold path.
 - **RSEQ fast path** wired into the x86_64/aarch64 allocation hot path
-  (glibc 2.35+ or manual registration). The lock-free per-CPU alloc/free
-  hit path is active; a magazine-empty **miss** currently falls back to
-  the standard locked depot path rather than a lock-free per-CPU reload
-  (see "Known limitations" below) — this bounds rseq's benefit to
-  fastpath hits, not full lock-free operation.
+  (glibc 2.35+ or manual registration). Read the "Known limitation"
+  below before counting on this: the assembly runs, but it serves **zero**
+  magazine hits today, because nothing populates the per-CPU magazines it
+  reads.
 - **Per-Thread Cache (PTC)** — lock-free fast path for allocations
   up to 2 KB, generated as inline assembly per architecture.  Falls
   through to the magazine layer cleanly when sizes don't qualify.
@@ -90,7 +97,11 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 - **Cache-line auditing** of hot fields with `_Static_assert`
   verification.
 - **NUMA-aware depot stealing** with statistics for local /
-  same-node / cross-node hits.
+  same-node / cross-node hits. This is the `HAVE_LIBNUMA` topology code in
+  `umem.c` (a CPU→node table consulted when the depot scans other CPUs'
+  stripes) and it is live in a build configured with libnuma. It is not the
+  same thing as the `umem_numa.[ch]` policy layer, most of which was
+  removed on 2026-09-21 because it never ran — see `umem_numa.h`.
 
 ### Platform fixes
 
@@ -142,14 +153,19 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
   codebase (multiple releases of new code — sparsemap vendoring,
   `umem_introspect.c`, `tools/umem.c`, `umem_inspect.c` — have
   shifted the aggregate since then).
-- Property-based tests, integration tests, stress tests.
+- Property-based tests, integration tests, stress tests. Note that
+  `make check` runs only an 8-entry smoke suite; the broader suites are
+  separate targets (see "Testing" below).
 - Cross-platform benchmark suite (TOML output with OS / arch /
-  compiler metadata).
+  compiler metadata). Two harness defects found on 2026-09-21 affect
+  previously published numbers — see P2.1/P2.2 in
+  [the readiness plan](docs/plans/2026-09-21-production-readiness.md).
 - Forgejo Actions CI (build × asan / ubsan / coverage; lint;
-  tagged-release pipeline).
+  tagged-release pipeline), Linux x86_64 only.
 - Removed \~2,500 lines of stale code and several documentation
   artifacts that were lying about features that didn't actually
-  work.
+  work. That housekeeping is not finished: the 2026-09-21 review found
+  more of the same, and this README was part of it.
 
 ---
 
@@ -161,7 +177,7 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 | Constructor / destructor caches | ✅ | ❌ | ❌ | ❌ | ❌ |
 | vmem virtual address arenas | ✅ | partial (extents) | ❌ | partial | ❌ |
 | Per-CPU magazines | ✅ | ✅ (tcache) | ✅ (thread cache) | ✅ (heap) | partial |
-| RSEQ fast path | ⚠️ (x86_64, hit path only) | ❌ | ✅ | ❌ | ❌ |
+| RSEQ fast path | ⚠️ wired, zero hits (see below) | ❌ | ✅ | ❌ | ❌ |
 | Lock-free per-thread cache | ✅ (PTC) | ✅ (tcache) | ✅ | ✅ | ❌ |
 | Built-in leak detection | ✅ (`::findleaks`) | profile-based | ❌ | profile-based | ❌ |
 | Allocation history ring buffer | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -178,52 +194,66 @@ Where libumem **does not win**:
   mimalloc are faster on `malloc(8)` / `free` micro-benchmarks,
   primarily because their fast paths are smaller and they don't pay
   for object-cache machinery you may not be using.
-- **Fragmentation / memory overhead under sustained load.** The
+- **Fragmentation / memory overhead under sustained load — no supportable
+  number either way.** The
   [8-allocator shootout](docs/results/2026-09-08-allocator-shootout.md)
-  originally found libumem worst-in-field on every glibc environment
-  tested — roughly **2.3×** the next-worst allocator's RSS/allocated
-  ratio on 192-vCPU metal boxes under 3 minutes of sustained
-  fragmentation pressure. Root-caused and fixed in v2.7.0: a dead
-  `#ifdef linux` fast path (undefined by strict `-std=c17`) silently
-  doubled `umem_max_ncpus` — and every per-CPU array libumem sizes off
-  it — on every Linux build. Fixed ratio: 4.19→2.70 (x86_64 metal),
-  4.12→2.63 (aarch64 metal), landing in the field's competitive 2.2-2.5
-  range. See
-  [`docs/results/2026-09-09-fragmentation-diagnosis.md`](docs/results/2026-09-09-fragmentation-diagnosis.md).
-- **Tail latency at very high core counts under sustained load.** Same
-  report originally found libumem worst-or-tied-worst p999 latency at
-  192 threads sustained for 3 minutes (157us vs. jemalloc's 24.6us).
-  Root-caused and fixed in v2.7.0: the magazine layer's depot refill
-  scanned other CPUs' stripes with a **blocking** mutex on failure
-  while holding the caller's own per-CPU lock — a lock convoy that
-  compounds only under sustained pressure. Switched to the
-  already-existing non-blocking trylock primitive (same one the PTC
-  path already used) over the same full scan breadth. Fixed p999:
-  156.7-163.2us → 83.8-92.6us (41-49% reduction), independently
-  re-verified at 86,974ns on a from-scratch build. Does not reach
-  jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier — the
-  remaining gap is attributed to the still-inert rseq lock-free reload
-  path (below). See
+  reported libumem worst-in-field on RSS/allocated ratio, and v2.7.0
+  reported that fixed. **Both conclusions are withdrawn as of 2026-09-21**:
+  a review of the harness found the fragmentation measurement itself
+  invalid, so neither the original finding nor the claimed fix is
+  supported by it. Three independent defects, any one of which breaks the
+  ratio: the live-bytes denominator accumulated bytes that had already been
+  freed; `peak_rss_bytes` was sampled after cleanup, so it is not the peak;
+  and the workload labelled "192-thread fragmentation" runs on exactly one
+  thread (`test/bench/bench_main.c` sets `thread_count = 1` for it). The
+  underlying `umem_max_ncpus` doubling bug *was* real and is fixed — that
+  part stands on the code, not on the benchmark. What the fix does to
+  fragmentation is simply not measured yet. See
+  [`docs/results/2026-09-09-fragmentation-diagnosis.md`](docs/results/2026-09-09-fragmentation-diagnosis.md)
+  for the original analysis, read with that caveat, and P2.2 in
+  [the readiness plan](docs/plans/2026-09-21-production-readiness.md).
+- **Tail latency at very high core counts under sustained load — improved,
+  measured narrowly.** The shootout found libumem worst-or-tied-worst p999
+  at 192 threads sustained for 3 minutes (157us vs jemalloc's 24.6us).
+  Root cause in the code: the depot refill scanned other CPUs' stripes with
+  a **blocking** mutex on failure while holding the caller's own per-CPU
+  lock — a lock convoy that compounds only under sustained pressure.
+  Switched to the already-existing non-blocking trylock primitive over the
+  same scan breadth. Measured p999 156.7-163.2us → 83.8-92.6us, and
+  independently re-verified at 86,974ns on a from-scratch build — **on
+  x86_64 (`c7i.metal-48xl`) only**, with the operation-budget defect
+  described in P2.1 of the readiness plan present in the harness at the
+  time. The improvement is large and reproducible; treat the exact
+  percentage as provisional until re-measured on the corrected harness, and
+  note it was not re-measured on aarch64. It does not reach
+  jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier. The residual gap
+  has been *attributed* to the inert rseq reload path; that is an untested
+  hypothesis, not a finding — nothing has isolated it. See
   [`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`](docs/results/2026-09-09-sustained-depot-contention-diagnosis.md).
 - **Sandboxed / security-hardened allocations.**  mimalloc-secure
   and `scudo` add explicit hardening (segregated metadata, randomized
   freelists, double-free detection by design).  libumem's defenses
   are opt-in via `UMEM_DEBUG=guards`.
 
-**Known limitation — RSEQ per-CPU magazine reload is unimplemented:**
-the lock-free per-CPU alloc/free **hit** path (fastpath) is wired and
-active on x86_64/aarch64. The per-CPU **magazine reload on a miss**
-currently falls back to the standard locked depot path — the lock-free
-reload is unimplemented pending migration-safe per-CPU-commit assembly
-on both architectures (a plain-C reload races the lock-free fastpath
-across a CPU migration -- measured ~42-47% double-issue rate under
-contention; see
+**Known limitation — the rseq per-CPU layer serves no allocations:**
+the rseq fast-path assembly is registered and executes on every qualifying
+alloc/free on x86_64 and aarch64. It nonetheless satisfies **zero**
+allocations, because `cache_rseq[cpu].rounds` is permanently 0: the only
+functions that would populate a per-CPU magazine are the reload paths, and
+nothing calls them. Entering the code is not the same as the code doing its
+job — so "rseq's benefit is limited to fastpath hits" would be too generous.
+There are no hits. The benefit today is zero, and the cost is the
+fast-path check.
+
+The reload is unimplemented pending migration-safe per-CPU-commit assembly
+on both architectures; a plain-C reload races the lock-free fastpath across
+a CPU migration (measured ~42-47% double-issue rate under contention). See
 [`docs/results/2026-09-09-rseq-reload-analysis-v2.md`](docs/results/2026-09-09-rseq-reload-analysis-v2.md)
-for the rigorous re-evaluation and
+for the re-evaluation and
 [`docs/results/2026-09-09-rseq-reload-asm-design.md`](docs/results/2026-09-09-rseq-reload-asm-design.md)
-for the precise implementation spec). This does not affect correctness — it means
-RSEQ's benefit is limited to fastpath hits, not full lock-free
-operation.
+for the implementation spec — which the 2026-09-21 review judged unsafe as
+written, so the spec is a starting point, not an approved design. This does
+not affect correctness.
 
 Where libumem **wins decisively**:
 
@@ -247,20 +277,34 @@ jemalloc or mimalloc.  If it's the other way around, pick libumem.
 
 ## Platform support
 
-| Platform | Architecture | Status |
-|---|---|---|
-| Linux | x86_64 | Production |
-| Linux | aarch64 | Production |
-| Linux | riscv64 | Production |
-| FreeBSD | amd64 | Production |
-| illumos | SPARCv9 | Production |
-| illumos | x86_64 | Production |
-| macOS | x86_64, arm64 | Tested |
-| Windows | x64 (MSVC, MinGW) | Experimental |
+"Status" here means *what has been demonstrated*, not what is expected to
+work. It was previously a column of "Production" labels with no recorded
+evidence behind most of them; the 2026-09-21 review also found reachable
+correctness defects in default paths on the best-covered platform, so no
+row can currently claim production readiness.
 
-CI (Forgejo Actions, see `.forgejo/workflows/`) covers Linux x86_64
-in normal, AddressSanitizer, UndefinedBehaviorSanitizer, and gcov
-modes.  RISC-V and aarch64 are validated via Nix + QEMU.
+| Platform | Architecture | Evidence | Status |
+|---|---|---|---|
+| Linux | x86_64 | CI on every push (normal, ASan, UBSan, gcov); benchmarks on EC2 `c7i` and `c7i.metal-48xl`; all Phase 1 regressions run here | Best covered. Not production-ready — see below |
+| Linux | aarch64 | Manual EC2 runs on `c7g`/`c8g.metal-48xl` (build, `make check`, `test_main`, benchmarks). The nightly CI job exists and is validated but is **not armed** (repo secrets never added) | Builds and tests pass when run by hand; unattended coverage absent |
+| Linux | riscv64 | Cross-build via Nix + QEMU only | Cross-compiles; no hardware validation |
+| FreeBSD | amd64 | Ported, W^X and `MAP_ANON` fixes verified at the time | No CI, no recent run recorded |
+| illumos | x86_64 | Manual `m4.xlarge` run (build, `LD_PRELOAD` smoke, benchmark matrix) | Manually validated at one point in time |
+| illumos | SPARCv9 | Source-level support (GAS syntax, `__EXTENSIONS__`, alloca/pcstack) | Compiles; no recorded run on hardware |
+| macOS | x86_64, arm64 | `dladdr`/`backtrace` paths and lldb integration exercised by hand | Tested, not continuously |
+| Windows | x64 (MSVC, MinGW) | Guarded symbols, compat wrappers | Experimental |
+
+**Not production-ready at this commit, on any platform.** The 2026-09-21
+design review found reachable correctness and lifetime defects in *default*
+code paths — not only in experimental features — plus measurement defects
+that invalidate several previously published performance conclusions. Work
+is tracked in
+[`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md);
+that plan's exit criteria are what "production" will mean here.
+
+CI (Forgejo Actions, see `.forgejo/workflows/`) covers Linux x86_64 in
+normal, AddressSanitizer, UndefinedBehaviorSanitizer, and gcov modes. That
+is the only architecture with unattended coverage.
 
 ### illumos / Solaris x86 notes
 
@@ -351,61 +395,108 @@ auto-clean on scope exit.
 
 ## Experimental features
 
-Headers under `#define UMEM_ENABLE_EXPERIMENTAL`.  Active development;
+Headers require `#define UMEM_ENABLE_EXPERIMENTAL`.  Active development;
 APIs may change.
+
+**These are diagnostic aids, not guarantees.** None of them is a
+memory-safety mechanism, a budget-enforcement mechanism, or a monitoring
+guarantee, and none should be relied on as one. The 2026-09-21 review found
+that ownership tracking can itself corrupt memory and that budgets do not
+actually enforce. Each header repeats the specific limitation.
 
 - **Ownership tracking (`umem_own.h`)** — Rust-inspired ownership /
   borrowing with runtime checks.  Two modes: lightweight (~2%) and
-  full (~15%).
+  full (~15%).  *Not* a use-after-free defense: violations are reported
+  best-effort, and the tracking itself can corrupt memory.
 - **Allocation profiling (`umem_profile.h`)** — record / replay,
-  phase detection.
+  phase detection.  Sampling-based and lossy; not an audit trail.
 - **Budget contexts (`examples/umem_palloc.h`)** — PostgreSQL-style
-  per-context memory management.
+  per-context memory management.  The budget is *accounting*, not a limit:
+  allocations are not reliably refused when it is exhausted.
 
 ---
 
 ## Performance
 
-Measured with the stabilized `test/bench/` harness (CPU-pinned, warm-up
-discarded, median of 5, coefficient-of-variation reported) on real AWS EC2
-hardware — never local, never a single quick run. Two complementary result
-sets exist:
+Measured with the `test/bench/` harness (CPU-pinned, warm-up discarded,
+median of 5, coefficient-of-variation reported) on real AWS EC2 hardware —
+never local, never a single quick run.
 
-### The 8-allocator shootout (authoritative)
+> **Read this first (2026-09-21).** A review of the harness found defects
+> that invalidate part of what is reported below, so the numbers are not all
+> equally trustworthy:
+>
+> - **The operation budget was divided by thread count twice**
+>   (`test/bench/matrix.sh` and `test/bench/bench_main.c` each did it). The
+>   192-thread points therefore measured ~52k total operations in ~3.8 ms
+>   with >27% coefficient of variation — far too little work, far too much
+>   noise, to support a scaling conclusion. **All 192-thread
+>   throughput/scaling conclusions are withdrawn** pending re-measurement.
+> - **The fragmentation metric is wrong in three independent ways**: freed
+>   bytes stayed in the live denominator, "peak" RSS was sampled after
+>   cleanup, and the workload labelled 192-thread runs on one thread.
+>   **All fragmentation conclusions are withdrawn**, in both directions —
+>   the original worst-in-field finding and the claimed fix.
+> - 8-vCPU points, single-thread latency, and the sustained-load *tail
+>   latency* comparison do not depend on the double division and are
+>   reported below with their provenance.
+>
+> Tracked as P2.1/P2.2 in
+> [the readiness plan](docs/plans/2026-09-21-production-readiness.md).
+> Reproduce on your own target rather than trusting any table here.
+
+### The 8-allocator shootout
 
 [`docs/results/2026-09-08-allocator-shootout.md`](docs/results/2026-09-08-allocator-shootout.md)
 compares umem against **libc, jemalloc, tcmalloc, mimalloc, snmalloc,
 scudo, and rpmalloc** on x86_64 and aarch64 at 8 and 192 vCPU, plus musl
 (Alpine) and illumos (umem's own lineage) — ~9,600 benchmark runs including
-3-minute *sustained* 192-thread loads, not just quick bursts. This is a
-fair, unflattering-where-warranted comparison; the summary below states
-both where umem wins and where it clearly does not.
+3-minute *sustained* 192-thread loads. Read it with the caveat box above:
+its 8-vCPU and latency findings stand, its 192-thread scaling and
+fragmentation findings do not.
 
-**Where umem wins:**
-
-| Finding | Detail |
-|---|---|
-| illumos (its own lineage) | Up to **4×** faster than illumos's own libc malloc under concurrency (16.4M vs 4.1M ops/s at 4 threads); dramatically tighter tail latency. The clearest, most unambiguous win in the report — and the most meaningful comparison, since illumos ships the allocator umem re-implements. |
-| 8-vCPU multi-thread scaling | Beats glibc by 25–30% on x86_64 through 8 threads; roughly ties glibc on aarch64. No allocator falls over at this scale. |
-| Short-burst `prodcons` (x86_64) | Lowest peak-to-saturation falloff of any allocator except scudo under cross-thread alloc/free at high thread counts — the one clean "magazine/depot design wins" result. Not reproduced on aarch64. |
-
-**Where umem loses — stated plainly, not spun:**
+**What still stands:**
 
 | Finding | Detail |
 |---|---|
-| 192-thread `multi` scaling | Peak throughput 10–25% below the top allocators (mimalloc, snmalloc) at the same thread count, and its falloff to full saturation (83–84%) is mid-to-bad, not best. Every allocator falls off 70–90% at this scale — a hardware/workload property — but umem does not "win" this case against purpose-built high-concurrency allocators. |
-| Sustained 192-thread load (3 minutes, not a burst) | *Originally* umem's worst-or-tied-worst p999 in the field (157us on x86_64) — **fixed in v2.7.0**: root-caused to a blocking-mutex lock convoy in the depot's cross-CPU steal scan, switched to the already-existing non-blocking trylock primitive; p999 now 83.8-92.6us (41-49% reduction), independently re-verified at 86,974ns from a clean build. Does not reach jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier — attributed to the still-inert rseq lock-free reload path. See [`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`](docs/results/2026-09-09-sustained-depot-contention-diagnosis.md). |
-| Fragmentation / memory overhead | *Originally* worst-in-field, ~2.3× the next-worst allocator on 192-vCPU metal — **fixed in v2.7.0**: root-caused to a dead `#ifdef linux` fast path silently doubling `umem_max_ncpus` (and every per-CPU array sized off it) on every Linux build; ratio now 2.63-2.70, in the field's competitive range. See [`docs/results/2026-09-09-fragmentation-diagnosis.md`](docs/results/2026-09-09-fragmentation-diagnosis.md). |
+| illumos (its own lineage) | Up to **4×** faster than illumos's own libc malloc under concurrency (16.4M vs 4.1M ops/s at 4 threads); dramatically tighter tail latency. The clearest win in the report — and the most meaningful comparison, since illumos ships the allocator umem re-implements. Low thread count, so unaffected by the budget defect. |
+| 8-vCPU multi-thread scaling | Beats glibc by 25–30% on x86_64 through 8 threads; roughly ties glibc on aarch64. |
 | Single-thread latency | Competitive but not a winner anywhere against x86_64/aarch64 glibc; mimalloc is fastest almost everywhere. |
 
-**Honest one-line verdict (updated for v2.7.0):** umem clearly outperforms
-the traditional coarse-locked malloc it descends from under concurrency,
-and holds its own against modern allocators on 8-vCPU boxes. The two
-headline weaknesses this shootout found — worst-in-field sustained tail
-latency and worst-in-field fragmentation — were both root-caused and fixed
-in v2.7.0 (see the two entries above); umem now lands in the field's
-competitive range on both, though still short of the purpose-built
-high-concurrency allocators' best numbers at 192-vCPU sustained load.
+**What is withdrawn pending re-measurement:**
+
+| Withdrawn | Why |
+|---|---|
+| 192-thread `multi` scaling ("10–25% below the top allocators", falloff percentages) | Measured under the double-divided budget: ~52k ops in ~3.8 ms, CoV >27%. Not enough work to conclude anything. |
+| Fragmentation, original finding ("worst-in-field, ~2.3× the next-worst") | The ratio's denominator counted freed bytes; "peak" RSS was post-cleanup; the workload is single-threaded. |
+| Fragmentation, claimed v2.7.0 fix ("4.19→2.70 / 4.12→2.63, in the competitive 2.2-2.5 range") | Same broken metric — and 2.63-2.70 is not inside 2.2-2.5 in any case. The `umem_max_ncpus` doubling bug behind it was real and is fixed; its effect on fragmentation is unmeasured. |
+| Short-burst `prodcons` falloff win (x86_64) | Falloff is computed across the same high-thread-count points as the scaling numbers. |
+
+**Sustained tail latency — improved, narrowly measured.** The shootout found
+umem worst-or-tied-worst p999 at 192 threads sustained for 3 minutes
+(157us; jemalloc 24.6us). The mechanism was identified in the code, not just
+correlated: the depot's cross-CPU steal scan blocked on a mutex while
+holding the caller's own per-CPU lock. Replacing that with the existing
+non-blocking trylock took p999 from 156.7-163.2us to 83.8-92.6us,
+independently re-verified at 86,974ns on a from-scratch build — on x86_64
+`c7i.metal-48xl`, with the budget defect present in the harness. Sustained
+p999 is a tail-latency distribution rather than a throughput count, so it is
+less sensitive to the total-operations error than the scaling numbers are,
+but the exact percentage should be treated as provisional and it was not
+re-measured on aarch64. It does not reach
+jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier; the residual gap has
+been *attributed* to the inert rseq reload path, which is a hypothesis
+nobody has isolated, not a finding. See
+[`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`](docs/results/2026-09-09-sustained-depot-contention-diagnosis.md).
+
+**Verdict, as narrowly as the evidence allows:** umem clearly outperforms
+the traditional coarse-locked malloc it descends from under concurrency
+(strongest on illumos, its own lineage), and holds its own against modern
+allocators on 8-vCPU boxes. Its sustained 192-thread tail latency improved
+substantially in v2.7.0 and still trails the purpose-built
+high-concurrency allocators. How it scales at 192 threads, and what its
+memory overhead is, are currently **unknown** — the measurements that
+claimed to answer both were invalid.
 
 ### Prior umem-vs-glibc-only baselines (superseded, kept for provenance)
 
@@ -430,13 +521,13 @@ high-concurrency allocators' best numbers at 192-vCPU sustained load.
 | `multi` (same-size-class 160 B), 192 threads | 457.5 Mops/s | ~99% of glibc; p999 43 ns (flat — no cliff at any thread count measured) |
 | `prodcons`, 4 threads | ~120% of glibc | mixed across thread counts (49–120%); does **not** reproduce x86_64's decisive ~245%/10×-lower-p99 win |
 
-These isolated umem-vs-glibc baselines are consistent with (and were used
-to sanity-check) the 8-allocator shootout above, which is now the primary
-reference — it uses the same harness and adds the sustained-load and
-cross-allocator context that a two-way comparison can't show (e.g. that
-umem's `multi`-at-192-threads falloff, while real, matches or beats
-glibc's own falloff — the shootout's point is that neither umem nor glibc
-is the *best* allocator at that scale, mimalloc/snmalloc are).
+These isolated umem-vs-glibc baselines were taken with the same harness as
+the shootout, so their 192-thread rows carry the same double-divided-budget
+defect and are withdrawn on the same grounds. The single-thread and
+8-thread rows are unaffected. Both umem and glibc were measured under the
+identical (wrong) budget, so the *relative* 192-thread ratios may well
+survive re-measurement — but "may well" is not evidence, and the absolute
+Mops/s figures at that thread count are not meaningful.
 
 Numbers vary substantially with workload and hardware; reproduce with the
 harness on your own target rather than trusting a single table.
@@ -495,13 +586,23 @@ nix build .#libumem-aarch64 # cross-compile for aarch64
 nix run .#test-native       # run tests
 ```
 
-Detail: [NIX_USAGE.md](NIX_USAGE.md).
+The flake builds the library but **does not run the test suite**
+(`doCheck = false`), so `nix build` succeeding is a compile result, not a
+correctness result. Use `nix run .#test-native`, or the autotools targets, to
+actually test.
 
 ---
 
 ## Documentation
 
+- [AGENTS.md](AGENTS.md) — working rules for this repository (all
+  building/testing happens on EC2; see `scripts/ec2/`).
+- [docs/plans/2026-09-21-production-readiness.md](docs/plans/2026-09-21-production-readiness.md)
+  — current workstream and what "production-ready" will require.
 - [tools/DEBUGGING.md](tools/DEBUGGING.md) — debugging workflows.
+- [docs/UMEMCTL.md](docs/UMEMCTL.md) — the live introspection channel.
+- [docs/results/](docs/results/) — benchmark and diagnosis reports, with
+  the provenance of every number quoted in this file.
 - [examples/](examples/) — usage examples, including PostgreSQL
   palloc integration.
 - [CHANGELOG.md](CHANGELOG.md) — version history.
@@ -509,6 +610,7 @@ Detail: [NIX_USAGE.md](NIX_USAGE.md).
   - `umem(1)` — runtime introspection CLI.
   - `umem_alloc(3)`, `umem_cache_create(3)` — core API.
   - `umem_inspect(3)` — introspection C API.
+  - `umem_hooks(3)` — allocation/free hook API.
   - `umem_debug(3)` — debug environment variables.
   - `umem_debugging(7)` — debugging guide.
 
@@ -516,19 +618,34 @@ Detail: [NIX_USAGE.md](NIX_USAGE.md).
 
 ## Testing
 
+`make check` is a deliberately small smoke suite — **8 entries**, listed in
+`TESTS` in `Makefile.am`. It is not the comprehensive suite, and passing it
+does not mean the allocator is exercised broadly: `test/test_main` (the
+several-hundred-assertion unit suite), the property tests, the concurrency
+oracle, and the lifecycle stress tests are all separate targets that
+`make check` does not run.
+
 ```bash
-make check                                            # autotools suite
-LD_LIBRARY_PATH=.libs test/.libs/test_main --no-fork  # comprehensive
+make check                                            # 8-entry smoke suite
+LD_LIBRARY_PATH=.libs test/.libs/test_main --no-fork  # comprehensive unit suite
+test/property/prop_alloc_free2                        # property tests (one of several)
+test/stress/stress_concurrency_oracle --help          # concurrency oracle
 ./test/debugger/test_inspect_e2e.sh                   # gdb integration
 ./test/debugger/test_lldb_e2e.sh                      # lldb integration
+make install-check                                    # installed prefix is usable
 ```
+
+All building and testing for this project happens on EC2, never on the
+development host — see [AGENTS.md](AGENTS.md) and `scripts/ec2/`. More detail
+in [test/README.md](test/README.md).
 
 ---
 
 ## License
 
 CDDL 1.0 (Common Development and Distribution License).  Same license
-as OpenSolaris / illumos.  See [LICENSE](LICENSE).
+as OpenSolaris / illumos.  See [COPYING](COPYING) and
+[OPENSOLARIS.LICENSE](OPENSOLARIS.LICENSE).
 
 ---
 

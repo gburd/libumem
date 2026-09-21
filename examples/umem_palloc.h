@@ -1,25 +1,37 @@
 /*
  * umem_palloc.h - Budget-based memory contexts backed by libumem
  *
+ * EXAMPLE CODE.  This lives under examples/ because it is a demonstration
+ * of building PostgreSQL-style memory contexts on vmem arenas, not a
+ * supported part of the library.  It is not installed and not part of
+ * libumem's API.
+ *
  * Provides PostgreSQL-style per-context memory management with:
- *   - Memory budgets with enforcement and backpressure
+ *   - Memory budget *accounting* (see the warning below -- not enforcement)
  *   - Pre-allocated backing via mmap(MAP_POPULATE)
  *   - Shared memory support for multi-process access
  *   - Parent/child context hierarchy
  *   - Per-context debug flags (audit, guards, ownership)
  *
- * Each UmemBudgetContext wraps a vmem arena. The budget caps how much
- * memory the arena can dispense. When the budget is exhausted, callers
- * either block (backpressure), get NULL, or abort, depending on flags.
+ * Each UmemBudgetContext wraps a vmem arena.
  */
 
 #ifndef UMEM_PALLOC_H
 #define UMEM_PALLOC_H
 
 /*
- * EXPERIMENTAL API -- not production-ready.
- * This API may change without notice. Do not use in production code
- * without thorough testing. See README.md for stability guarantees.
+ * EXPERIMENTAL API -- not production-ready, and NOT A BUDGET-ENFORCEMENT
+ * MECHANISM.
+ *
+ * The "budget" is accounting, not a limit.  Do not use it as a memory cap,
+ * an OOM guard, or a backpressure signal you depend on: allocations are
+ * not reliably refused once the budget is exhausted, the accounting and
+ * the allocation are not a single atomic decision, and the
+ * UMEM_BUDGET_NOWAIT / UMEM_BUDGET_NOFAIL flags below do not make it one.
+ * If you need a hard limit, impose it outside this API (cgroups,
+ * setrlimit, or your own admission control).
+ *
+ * This API may change without notice.  See README.md.
  */
 #if !defined(UMEM_ENABLE_EXPERIMENTAL) && !defined(_UMEM_INTERNAL)
 #error "This header requires #define UMEM_ENABLE_EXPERIMENTAL before inclusion"
@@ -38,8 +50,12 @@
 #define UMEM_BUDGET_AUDIT      0x0010  /* enable UMF_AUDIT on caches */
 #define UMEM_BUDGET_GUARDS     0x0020  /* enable redzone + deadbeef */
 #define UMEM_BUDGET_OWN        0x0040  /* enable ownership tracking */
-#define UMEM_BUDGET_NOWAIT     0x0100  /* return NULL when over budget */
-#define UMEM_BUDGET_NOFAIL     0x0200  /* abort() when over budget */
+/*
+ * The two flags below describe the INTENDED over-budget behaviour.  Neither
+ * is reliably enforced today; see the warning at the top of this file.
+ */
+#define UMEM_BUDGET_NOWAIT     0x0100  /* intent: return NULL when over budget */
+#define UMEM_BUDGET_NOFAIL     0x0200  /* intent: abort() when over budget */
 
 typedef struct UmemBudgetContext UmemBudgetContext;
 
