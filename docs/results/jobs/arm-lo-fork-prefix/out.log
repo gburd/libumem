@@ -1,0 +1,37 @@
+REGEN_OK
+BUILD_OK
+=== P1.6 prefix (expect FAIL/hang) ===
+FAIL: umem_reap() did not return -- update-thread startup handshake lost its wakeup (P1.6)
+P16_RC=1
+=== P1.2 prefix (expect FAIL/hang) ===
+fork-under-load: pid=46582 threads=8 forks=400 deadline=90s
+--- stacks of 37867 at t=45s ---
+PID 37867 - process
+TID 37867:
+#0  0x0000ffffb550c1d8 wait4
+#1  0x0066aaaae4438dc4
+#2  0x0066aaaae4438dc4
+#3  0x0038aaaae4397694
+#4  0x0024aaaae4381388
+#5  0x0067aaaae43dfee8
+#6  0x003baaaae443deac
+#7  0x0047aaaae4361b44
+#8  0x005fffffb5475558
+#9  0x0041ffffb547563c
+#10 0x002daaaae4362730
+eu-stack: dwfl_thread_getframes tid 37867 at 0x2daaaae436272f in /usr/lib/ld-linux-aarch64.so.1: no matching address range
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+0x0000ffffb550c1d8 in wait4 () from /lib64/libc.so.6
+
+Thread 1 (Thread 0xffffb56a4020 (LWP 37867) "bash"):
+#0  0x0000ffffb550c1d8 in wait4 () from /lib64/libc.so.6
+#1  0x0000aaaae4438dc4 [PAC] in waitchld.constprop ()
+#2  0x0000aaaae4397694 [PAC] in wait_for ()
+#3  0x0000aaaae4381388 [PAC] in execute_command_internal ()
+#4  0x0000aaaae43dfee8 [PAC] in parse_and_execute ()
+#5  0x0000aaaae443deac [PAC] in run_one_command.isra ()
+#6  0x0000aaaae4361b44 [PAC] in main ()
+[Inferior 1 (process 37867) detached]
+FAIL: deadline 90s exceeded -- fork()/alloc deadlock (pid 46582; attach with: gdb -p 46582 -batch -ex 'thread apply all bt')
+P12_RC=0

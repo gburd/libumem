@@ -1,0 +1,44 @@
+tsan dir: /usr/lib/gcc/aarch64-amazon-linux/11
+TSAN_BUILD_OK
+=== TSAN: P1.6 regression ===
+TSAN_P16_RC=66
+self-check: interposer sound (delay armed, handshake completed)
+PASS: update-thread startup handshake completed
+TSAN_P16_WARNINGS=2
+      2 WARNING: ThreadSanitizer: data race
+=== TSAN: P1.2 regression (40 forks, 4 threads) ===
+TSAN_P12_RC=66
+PASS: 40/40 forks completed, 161818 allocs, 161818 frees
+TSAN_P12_WARNINGS=15
+--- warning kinds ---
+     14 WARNING: ThreadSanitizer: data race
+      1 WARNING: ThreadSanitizer: thread leak
+--- any lock-order-inversion reports? (the thing P1.2 is about) ---
+0
+--- first report verbatim ---
+WARNING: ThreadSanitizer: data race (pid=205310)
+  Read of size 8 at 0xfffff650f4d0 by thread T3:
+    #0 umem_init /home/ec2-user/libumem-fork/umem.c:5015 (libumem.so.1+0x8798c)
+    #1 umem_alloc_retry /home/ec2-user/libumem-fork/umem.c:1273 (libumem.so.1+0x8855c)
+    #2 _umem_alloc /home/ec2-user/libumem-fork/umem.c:3432 (libumem.so.1+0x8eca8)
+    #3 worker test/integration/test_fork_mt_load.c:162 (test_fork_mt_load+0x411004)
+
+  Previous write of size 8 at 0xfffff650f4d0 by thread T2 (mutexes: write M16):
+    #0 umem_init /home/ec2-user/libumem-fork/umem.c:5045 (libumem.so.1+0x8823c)
+    #1 umem_alloc_retry /home/ec2-user/libumem-fork/umem.c:1273 (libumem.so.1+0x8855c)
+    #2 _umem_alloc /home/ec2-user/libumem-fork/umem.c:3432 (libumem.so.1+0x8eca8)
+    #3 worker test/integration/test_fork_mt_load.c:133 (test_fork_mt_load+0x410da8)
+
+  Location is global 'umem_init_thr' of size 8 at 0xfffff650f4d0 (libumem.so.1+0x00000010f4d0)
+
+  Mutex M16 (0xfffff650f508) created at:
+    #0 pthread_mutex_lock <null> (libtsan.so.0+0x58fb0)
+    #1 umem_init /home/ec2-user/libumem-fork/umem.c:5019 (libumem.so.1+0x88128)
+    #2 umem_alloc_retry /home/ec2-user/libumem-fork/umem.c:1273 (libumem.so.1+0x8855c)
+    #3 _umem_alloc /home/ec2-user/libumem-fork/umem.c:3432 (libumem.so.1+0x8eca8)
+    #4 worker test/integration/test_fork_mt_load.c:133 (test_fork_mt_load+0x410da8)
+
+  Thread T3 (tid=205314, running) created by main thread at:
+    #0 pthread_create <null> (libtsan.so.0+0x6521c)
+    #1 main test/integration/test_fork_mt_load.c:315 (test_fork_mt_load+0x410470)
+=== TSAN DONE ===

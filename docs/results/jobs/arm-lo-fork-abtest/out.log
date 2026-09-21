@@ -1,0 +1,15 @@
+########## B: FIXED tree ##########
+BUILD_OK 
+expected 2 cached, got 1
+expected 2 cached, got 1
+expected 2 cached, got 1
+INSPECT_E2E_FAILS=3/30
+
+########## A: CONTROL (my 3 files at pre-fix state) ##########
+BUILD_OK 
+expected 2 cached, got 1
+expected 2 cached, got 1
+expected 2 cached, got 1
+expected 2 cached, got 1
+expected 2 cached, got 1
+INSPECT_E2E_FAILS=5/30

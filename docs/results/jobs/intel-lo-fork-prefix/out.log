@@ -1,0 +1,22 @@
+REGEN_OK
+BUILD_OK
+=== P1.6 prefix (expect FAIL/hang) ===
+FAIL: umem_reap() did not return -- update-thread startup handshake lost its wakeup (P1.6)
+P16_RC=1
+=== P1.2 prefix (expect FAIL/hang) ===
+fork-under-load: pid=47197 threads=8 forks=400 deadline=90s
+--- stacks of 38473 at t=45s ---
+PID 38473 - process
+TID 38473:
+#0  0x00007ff9d72da73a wait4
+#1  0x0000557dfe514055 waitchld.constprop.0
+#2  0x0000557dfe46fe4a wait_for
+#3  0x0000557dfe457764 execute_command_internal
+#4  0x0000557dfe4ba811 parse_and_execute
+#5  0x0000557dfe519b8c run_one_command.isra.0
+#6  0x0000557dfe439236 main
+#7  0x00007ff9d722a610 __libc_start_call_main
+#8  0x00007ff9d722a6c0 __libc_start_main@@GLIBC_2.34
+#9  0x0000557dfe439ec5 _start
+FAIL: deadline 90s exceeded -- fork()/alloc deadlock (pid 47197; attach with: gdb -p 47197 -batch -ex 'thread apply all bt')
+P12_RC=0

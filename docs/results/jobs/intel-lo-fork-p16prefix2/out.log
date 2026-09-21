@@ -1,0 +1,15 @@
+REGEN_OK
+BUILD_OK
+=== P1.6 regression (debug build) ===
+self-check: interposer sound (delay armed, handshake completed)
+FAIL: umem_reap() did not return -- update-thread startup handshake lost its wakeup (P1.6)
+RC=1
+=== P1.6 regression (-DNDEBUG: ASSERT compiled out) ===
+test/integration/test_update_thread_startup.c:55: warning: "_GNU_SOURCE" redefined
+   55 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+self-check: interposer sound (delay armed, handshake completed)
+FAIL: umem_reap() did not return -- update-thread startup handshake lost its wakeup (P1.6)
+NDEBUG_RC=1
+=== DONE ===

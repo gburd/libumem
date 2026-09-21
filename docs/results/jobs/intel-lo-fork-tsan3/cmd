@@ -1,0 +1,20 @@
+TSANDIR=$(dirname "$(ls /usr/lib/gcc/*/*/libtsan.so.0 2>/dev/null|head -1)")
+export LD_LIBRARY_PATH=".libs:$TSANDIR"
+echo "=== P1.6 full TSAN log: what are the double-lock and race reports? ==="
+TSAN_OPTIONS=halt_on_error=0:exitcode=0 timeout -s KILL 300 ./test/integration/.libs/test_update_thread_startup >/tmp/t16b.log 2>&1
+echo "RC_with_exitcode0=$?"
+grep -E "PASS|FAIL|self-check" /tmp/t16b.log
+echo "--- double lock reports (is any in umem_update_thread.c?) ---"
+awk "/double lock of a mutex/,/^SUMMARY/" /tmp/t16b.log | head -40
+echo "--- do ANY reports name my files? ---"
+grep -cE "umem_update_thread\.c|umem_fork\.c|vmem_sbrk\.c" /tmp/t16b.log
+grep -E "umem_update_thread\.c|umem_fork\.c|vmem_sbrk\.c" /tmp/t16b.log | sort | uniq -c | head
+echo "=== P1.2 with exitcode=0: does it COMPLETE (no deadlock) despite race noise? ==="
+TSAN_OPTIONS=halt_on_error=0:exitcode=0 FORK_MT_DEADLINE=500 FORK_MT_FORKS=40 FORK_MT_THREADS=4 \
+	timeout -s KILL 700 ./test/integration/.libs/test_fork_mt_load >/tmp/t12b.log 2>&1
+echo "RC_with_exitcode0=$?"
+grep -E "PASS:|FAIL:" /tmp/t12b.log
+echo "--- do ANY P1.2 reports name my files? ---"
+grep -cE "umem_update_thread\.c|umem_fork\.c|vmem_sbrk\.c" /tmp/t12b.log
+echo "--- where are the races? (top frames) ---"
+grep -A2 "WARNING: ThreadSanitizer: data race" /tmp/t12b.log | grep "#0" | sed "s/(.*//" | sort | uniq -c | sort -rn | head

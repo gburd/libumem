@@ -1,0 +1,13 @@
+ASAN_BUILD_OK
+asan dir: /usr/lib/gcc/x86_64-amazon-linux/11
+=== ASAN: P1.6 regression ===
+ASAN_P16_RC=0
+self-check: interposer sound (delay armed, handshake completed)
+PASS: update-thread startup handshake completed
+ASAN_P16_ERRORS=0
+=== ASAN: P1.2 regression (120 forks, 6 threads) ===
+ASAN_P12_RC=0
+fork-under-load: pid=110368 threads=6 forks=120 deadline=400s
+PASS: 120/120 forks completed, 1050054 allocs, 1050054 frees
+ASAN_P12_ERRORS=0
+=== ASAN DONE ===

@@ -36,6 +36,8 @@ umem_test3
 *.log
 *.trs
 test-suite.log
+# ...but job.sh evidence under docs/results/ is durable and cited by reports.
+!docs/results/**/*.log
 umem_ptc_test
 umem_ptc_fork_test
 umem_ptc_bench

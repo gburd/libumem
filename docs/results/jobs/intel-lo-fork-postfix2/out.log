@@ -1,0 +1,55 @@
+REGEN_OK
+BUILD_OK
+=== [1] P1.6 regression, debug (expect PASS) ===
+self-check: interposer sound (delay armed, handshake completed)
+PASS: update-thread startup handshake completed
+P16_RC=0
+=== [1b] P1.6 regression, -DNDEBUG (expect PASS) ===
+self-check: interposer sound (delay armed, handshake completed)
+PASS: update-thread startup handshake completed
+P16_NDEBUG_RC=0
+=== [2] P1.2 regression (expect PASS) ===
+fork-under-load: pid=77503 threads=8 forks=400 deadline=180s
+PASS: 8 forks, 2063830 allocs, 2063830 frees
+P12_RC=0
+=== [2b] P1.2 regression, backend=sbrk (exercises sbrk_lock) ===
+fork-under-load: pid=77915 threads=8 forks=150 deadline=120s
+PASS: 8 forks, 1038334 allocs, 1038334 frees
+P12_SBRK_RC=0
+=== [3] make check ===
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  8
+# SKIP:  0
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+CHECK_RC=0
+=== [4] test_main --no-fork ===
+/umem_debug/corruption_detection     [ OK    ] [ 0.69564429 / 0.00012302 CPU ]
+/umem_debug/uninitialized_pattern    [ OK    ] [ 0.00000591 / 0.00000575 CPU ]
+[ OK    ] [ 0.00006447 / 0.00006453 CPU ]
+==================
+All tests passed!
+=== [5] concurrency oracle ===
+=== libumem concurrency oracle ===
+threads=8  iters=50000  size-class=mixed  pattern=all
+  multi            400000 ops     10.3 Mops/s  ok
+  prodcons         400000 ops      0.6 Mops/s  ok
+  churn            400000 ops      0.9 Mops/s  ok
+
+Result: PASS (no cross-thread aliasing or corruption)
+ORACLE_RC=0
+=== [6] umem_ptc_fork_test ===
+PTCFORK_RC=0
+ok 18 - rapid-fork: all children completed successfully
+# All tests passed
+=== ALL DONE ===

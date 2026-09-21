@@ -1,0 +1,1 @@
+echo "=== P1.2 prefix stack capture ==="; ( FORK_MT_DEADLINE=200 FORK_MT_FORKS=400 LD_LIBRARY_PATH=.libs ./test/integration/.libs/test_fork_mt_load & echo $! > /tmp/fmt.pid ) ; sleep 40; PID=$(cat /tmp/fmt.pid); echo "target pid=$PID"; gdb -p $PID -batch -ex "thread apply all bt" 2>&1 | head -120; echo "=== end stacks ==="; kill -9 $PID 2>/dev/null; wait 2>/dev/null; true

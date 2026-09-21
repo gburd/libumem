@@ -1,0 +1,115 @@
+=== P1.2 prefix stack capture ===
+fork-under-load: pid=47448 threads=8 forks=400 deadline=200s
+target pid=47448
+[New LWP 47459]
+[New LWP 47458]
+[New LWP 47457]
+[New LWP 47456]
+[New LWP 47455]
+[New LWP 47454]
+[New LWP 47453]
+[New LWP 47452]
+[New LWP 47451]
+[New LWP 47450]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+
+Thread 11 (Thread 0x7fe11afff640 (LWP 47450) "test_fork_mt_lo"):
+#0  0x00007fe11b0d5dd5 in clock_nanosleep@GLIBC_2.2.5 () from /lib64/libc.so.6
+#1  0x00007fe11b0da9c7 in nanosleep () from /lib64/libc.so.6
+#2  0x00000000004017a8 in watchdog (arg=<optimized out>) at test/integration/test_fork_mt_load.c:196
+#3  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#4  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 10 (Thread 0x7fe11a5fe640 (LWP 47451) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b47a8b8 in _umem_cache_alloc (cp=cp@entry=0x7fe115f727c0, umflag=umflag@entry=0) at umem.c:2822
+#3  0x00007fe11b47e998 in _umem_alloc (size=size@entry=16384, umflag=umflag@entry=0) at umem.c:3426
+#4  0x00000000004018d1 in worker (arg=0x3d582300) at test/integration/test_fork_mt_load.c:133
+#5  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#6  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 9 (Thread 0x7fe119bfd640 (LWP 47452) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b47a8b8 in _umem_cache_alloc (cp=cp@entry=0x7fe115f727c0, umflag=umflag@entry=0) at umem.c:2822
+#3  0x00007fe11b47e998 in _umem_alloc (size=size@entry=16384, umflag=umflag@entry=0) at umem.c:3426
+#4  0x0000000000401a70 in worker (arg=0x3d582308) at test/integration/test_fork_mt_load.c:162
+#5  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#6  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 8 (Thread 0x7fe1191fc640 (LWP 47453) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b47a8b8 in _umem_cache_alloc (cp=cp@entry=0x7fe115f727c0, umflag=umflag@entry=0) at umem.c:2822
+#3  0x00007fe11b47e998 in _umem_alloc (size=size@entry=16384, umflag=umflag@entry=0) at umem.c:3426
+#4  0x00000000004018d1 in worker (arg=0x3d582310) at test/integration/test_fork_mt_load.c:133
+#5  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#6  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 7 (Thread 0x7fe1187fb640 (LWP 47454) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b478c4f in umem_depot_pop (cp=cp@entry=0x7fe115f827c0, mlp=mlp@entry=0x7fe115f7b000) at umem.c:1993
+#3  0x00007fe11b47be72 in umem_depot_alloc (cp=cp@entry=0x7fe115f827c0, mlp=mlp@entry=0x7fe115f82a40) at umem.c:2276
+#4  0x00007fe11b47aca7 in _umem_cache_free (cp=0x7fe115f827c0, buf=0x7fe1156ce000) at umem.c:3102
+#5  0x00000000004019ec in worker (arg=0x3d582318) at test/integration/test_fork_mt_load.c:154
+#6  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#7  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 6 (Thread 0x7fe117dfa640 (LWP 47455) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b47a8b8 in _umem_cache_alloc (cp=cp@entry=0x7fe115f727c0, umflag=umflag@entry=0) at umem.c:2822
+#3  0x00007fe11b47e998 in _umem_alloc (size=size@entry=16384, umflag=umflag@entry=0) at umem.c:3426
+#4  0x00000000004018d1 in worker (arg=0x3d582320) at test/integration/test_fork_mt_load.c:133
+#5  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#6  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 5 (Thread 0x7fe1173f9640 (LWP 47456) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b47a8b8 in _umem_cache_alloc (cp=cp@entry=0x7fe115f727c0, umflag=umflag@entry=0) at umem.c:2822
+#3  0x00007fe11b47e998 in _umem_alloc (size=size@entry=16384, umflag=umflag@entry=0) at umem.c:3426
+#4  0x0000000000401a70 in worker (arg=0x3d582328) at test/integration/test_fork_mt_load.c:162
+#5  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#6  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 4 (Thread 0x7fe10ffff640 (LWP 47457) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b47a8b8 in _umem_cache_alloc (cp=cp@entry=0x7fe115f727c0, umflag=umflag@entry=0) at umem.c:2822
+#3  0x00007fe11b47e998 in _umem_alloc (size=size@entry=16384, umflag=umflag@entry=0) at umem.c:3426
+#4  0x00000000004018d1 in worker (arg=0x3d582330) at test/integration/test_fork_mt_load.c:133
+#5  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#6  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 3 (Thread 0x7fe1169f8640 (LWP 47458) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b47a8b8 in _umem_cache_alloc (cp=cp@entry=0x7fe115f727c0, umflag=umflag@entry=0) at umem.c:2822
+#3  0x00007fe11b47e998 in _umem_alloc (size=size@entry=16384, umflag=umflag@entry=0) at umem.c:3426
+#4  0x0000000000401a70 in worker (arg=0x3d582338) at test/integration/test_fork_mt_load.c:162
+#5  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#6  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 2 (Thread 0x7fe11555a640 (LWP 47459) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08d923 in __pthread_mutex_cond_lock () from /lib64/libc.so.6
+#2  0x00007fe11b08aa3e in pthread_cond_timedwait@@GLIBC_2.3.2 () from /lib64/libc.so.6
+#3  0x00007fe11b476ef3 in umem_update_thread (arg=<optimized out>) at umem_update_thread.c:136
+#4  0x00007fe11b08b2ea in start_thread () from /lib64/libc.so.6
+#5  0x00007fe11b110b40 in clone3 () from /lib64/libc.so.6
+
+Thread 1 (Thread 0x7fe11b2517c0 (LWP 47448) "test_fork_mt_lo"):
+#0  0x00007fe11b088540 in __lll_lock_wait () from /lib64/libc.so.6
+#1  0x00007fe11b08e6d2 in pthread_mutex_lock@@GLIBC_2.2.5 () from /lib64/libc.so.6
+#2  0x00007fe11b476844 in umem_lockup_cache (cp=cp@entry=0x7fe115f827c0) at umem_fork.c:72
+#3  0x00007fe11b4768d8 in umem_lockup () at umem_fork.c:145
+#4  0x00007fe11b0db2d7 in __run_prefork_handlers () from /lib64/libc.so.6
+#5  0x00007fe11b0daa2d in fork () from /lib64/libc.so.6
+#6  0x000000000040135d in main () at test/integration/test_fork_mt_load.c:327
+[Inferior 1 (process 47448) detached]
+=== end stacks ===

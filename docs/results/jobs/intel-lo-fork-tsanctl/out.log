@@ -1,0 +1,5 @@
+=== CONTROL: umem_reap under TSAN, NO interposer ===
+RC=0
+REAP_RETURNED
+double_lock_reports=0
+reports_naming_umem_update_thread=3

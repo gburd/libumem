@@ -1,0 +1,60 @@
+=== P1.6 full TSAN log: what are the double-lock and race reports? ===
+RC_with_exitcode0=0
+self-check: interposer sound (delay armed, handshake completed)
+PASS: update-thread startup handshake completed
+--- double lock reports (is any in umem_update_thread.c?) ---
+WARNING: ThreadSanitizer: double lock of a mutex (pid=128647)
+    #0 pthread_mutex_lock <null> (libtsan.so.0+0x506fa)
+    #1 sc_worker test/integration/test_update_thread_startup.c:122 (test_update_thread_startup+0x401856)
+
+  Location is global 'sc' of size 96 at 0x000000404160 (test_update_thread_startup+0x000000404160)
+
+  Mutex M13 (0x000000404160) created at:
+    #0 pthread_mutex_init <null> (libtsan.so.0+0x49863)
+    #1 self_check test/integration/test_update_thread_startup.c:153 (test_update_thread_startup+0x401231)
+    #2 main test/integration/test_update_thread_startup.c:210 (test_update_thread_startup+0x401231)
+
+SUMMARY: ThreadSanitizer: double lock of a mutex (/usr/lib/gcc/x86_64-amazon-linux/11/libtsan.so.0+0x506fa) in pthread_mutex_lock
+WARNING: ThreadSanitizer: double lock of a mutex (pid=128647)
+    #0 pthread_mutex_lock <null> (libtsan.so.0+0x506fa)
+    #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:221 (libumem.so.1+0x7db7f)
+    #2 umem_reap /home/ec2-user/libumem-fork/umem.c:4234 (libumem.so.1+0x883d5)
+    #3 main test/integration/test_update_thread_startup.c:238 (test_update_thread_startup+0x40141e)
+
+  Location is stack of main thread.
+
+  Location is global '<null>' at 0x000000000000 ([stack]+0x00000001fa80)
+
+  Mutex M1879 (0x7ffce4ac6a80) created at:
+    #0 pthread_mutex_init <null> (libtsan.so.0+0x49863)
+    #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:199 (libumem.so.1+0x7da94)
+    #2 umem_reap /home/ec2-user/libumem-fork/umem.c:4234 (libumem.so.1+0x883d5)
+    #3 main test/integration/test_update_thread_startup.c:238 (test_update_thread_startup+0x40141e)
+
+SUMMARY: ThreadSanitizer: double lock of a mutex (/usr/lib/gcc/x86_64-amazon-linux/11/libtsan.so.0+0x506fa) in pthread_mutex_lock
+--- do ANY reports name my files? ---
+27
+      1     #0 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:223 (libumem.so.1+0x7db8b)
+      1     #0 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:232 (libumem.so.1+0x7dba5)
+      1     #0 umem_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:81 (libumem.so.1+0x7d6a6)
+      1     #0 umem_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:83 (libumem.so.1+0x7d6d5)
+      5     #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:199 (libumem.so.1+0x7da94)
+      6     #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:204 (libumem.so.1+0x7daf7)
+      1     #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:221 (libumem.so.1+0x7db7f)
+      2     #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:233 (libumem.so.1+0x7dbba)
+      1     #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:237 (libumem.so.1+0x7dbf7)
+      1     #1 umem_create_update_thread /home/ec2-user/libumem-fork/umem_update_thread.c:238 (libumem.so.1+0x7dbff)
+=== P1.2 with exitcode=0: does it COMPLETE (no deadlock) despite race noise? ===
+RC_with_exitcode0=0
+PASS: 40/40 forks completed, 168202 allocs, 168202 frees
+--- do ANY P1.2 reports name my files? ---
+0
+--- where are the races? (top frames) ---
+      3     #0 umem_depot_alloc /home/ec2-user/libumem-fork/umem.c:2344 
+      2     #0 umem_depot_alloc /home/ec2-user/libumem-fork/umem.c:2282 
+      2     #0 umem_cache_init /home/ec2-user/libumem-fork/umem.c:4917 
+      1     #0 vmem_populate /home/ec2-user/libumem-fork/vmem.c:648 
+      1     #0 umem_rseq_init /home/ec2-user/libumem-fork/umem_rseq.c:221 
+      1     #0 umem_init /home/ec2-user/libumem-fork/umem.c:5200 
+      1     #0 umem_init /home/ec2-user/libumem-fork/umem.c:5015 
+      1     #0 main test/integration/test_fork_mt_load.c:344 

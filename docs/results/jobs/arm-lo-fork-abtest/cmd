@@ -1,0 +1,1 @@
+echo "########## B: FIXED tree ##########"; bash ab.sh; echo; echo "########## A: CONTROL (my 3 files at pre-fix state) ##########"; cd ~/libumem-ctl && bash ab.sh

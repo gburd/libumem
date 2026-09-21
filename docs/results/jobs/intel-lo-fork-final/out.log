@@ -1,0 +1,57 @@
+commit: detached copy d9cf08a
+BUILD_OK
+=== [1] P1.6 regression (debug) ===
+self-check: interposer sound (delay armed, handshake completed)
+PASS: update-thread startup handshake completed
+P16_RC=0
+=== [1b] P1.6 regression (-DNDEBUG) ===
+self-check: interposer sound (delay armed, handshake completed)
+PASS: update-thread startup handshake completed
+P16_NDEBUG_RC=0
+=== [2] P1.2 regression (400 forks, 8 threads) ===
+fork-under-load: pid=138171 threads=8 forks=400 deadline=180s
+PASS: 400/400 forks completed, 2189009 allocs, 2189009 frees
+P12_RC=0
+=== [2b] P1.2 regression, backend=sbrk ===
+fork-under-load: pid=138583 threads=8 forks=150 deadline=150s
+PASS: 150/150 forks completed, 1099907 allocs, 1099907 frees
+P12_SBRK_RC=0
+=== [3] make check ===
+CHECK_RC=0
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  8
+# SKIP:  0
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+=== [4] test_main --no-fork ===
+MAIN_RC=0
+OK_count=422
+FAIL_count=0
+SKIP_count=10
+
+==================
+All tests passed!
+=== [5] concurrency oracle ===
+ORACLE_RC=0
+threads=8  iters=50000  size-class=mixed  pattern=all
+  multi            400000 ops     13.0 Mops/s  ok
+  prodcons         400000 ops      0.6 Mops/s  ok
+  churn            400000 ops      1.0 Mops/s  ok
+
+Result: PASS (no cross-thread aliasing or corruption)
+=== [6] umem_ptc_fork_test ===
+PTCFORK_RC=0
+ok 18 - rapid-fork: all children completed successfully
+# All tests passed
+OVERALL_REGRESSION_RC=0
+=== FINAL DONE ===
