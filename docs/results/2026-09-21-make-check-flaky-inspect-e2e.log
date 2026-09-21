@@ -1,0 +1,106 @@
+=== 1a. --disable-rseq with the CURRENT umem_rseq.h ===
+CONFIG_OK
+MAKE_FAIL (current) -- first errors:
+test/stress/repro_rseq_trailing_store.c:48:39: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_rseq_trailing_store.c:49:36: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_rseq_trailing_store.c:96:9: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_rseq_trailing_store.c:107:19: error: request for member ‘loaded_mag’ in something not a structure or union
+test/stress/repro_rseq_trailing_store.c:108:19: error: request for member ‘magsize’ in something not a structure or union
+test/stress/repro_rseq_trailing_store.c:109:19: error: request for member ‘rounds’ in something not a structure or union
+test/stress/repro_rseq_trailing_store.c:116:26: error: request for member ‘rounds’ in something not a structure or union
+test/stress/repro_rseq_trailing_store.c:117:47: error: request for member ‘rounds’ in something not a structure or union
+failing objects:
+Makefile:3010: test/stress/repro_naive_reload_race-repro_naive_reload_race.o
+Makefile:3024: test/stress/repro_rseq_trailing_store-repro_rseq_trailing_store.o
+
+=== 1b. --disable-rseq with the PRE-Phase-4 umem_rseq.h ===
+MAKE_FAIL (pre-Phase-4 header too) -- first errors:
+test/stress/repro_rseq_trailing_store.c:48:39: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_naive_reload_race.c:66:39: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_rseq_trailing_store.c:49:36: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_naive_reload_race.c:67:36: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_naive_reload_race.c:118:8: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_rseq_trailing_store.c:96:9: error: unknown type name ‘umem_rseq_cache_t’
+test/stress/repro_rseq_trailing_store.c:107:19: error: request for member ‘loaded_mag’ in something not a structure or union
+test/stress/repro_rseq_trailing_store.c:108:19: error: request for member ‘magsize’ in something not a structure or union
+
+=== 2. test_inspect_e2e.sh: AVX2-specific or flaky? ===
+--- configuration: default
+  run 1: rc=0
+  run 2: rc=0
+  run 3: rc=1
+  --- failing output (run 3, default) ---
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+test pid: 210468
+[1/8] live findleaks --text
+[2/8] live findleaks --json (parse + assert counts)
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+AssertionError: expected 2 cached, got 1
+./test/debugger/test_inspect_e2e.sh: line 33: 210468 Killed                  UMEM_DEBUG=audit UMEM_LOGGING=transaction=1m LD_LIBRARY_PATH="$ROOT/.libs" "$ROOT/test/test_inspect_live" "$PIDFILE" > /dev/null
+  --- end ---
+  run 4: rc=0
+  run 5: rc=1
+  --- failing output (run 5, default) ---
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+test pid: 210738
+[1/8] live findleaks --text
+[2/8] live findleaks --json (parse + assert counts)
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+AssertionError: expected 2 cached, got 1
+./test/debugger/test_inspect_e2e.sh: line 33: 210738 Killed                  UMEM_DEBUG=audit UMEM_LOGGING=transaction=1m LD_LIBRARY_PATH="$ROOT/.libs" "$ROOT/test/test_inspect_live" "$PIDFILE" > /dev/null
+  --- end ---
+--- configuration: --enable-avx2
+  run 1: rc=0
+  run 2: rc=0
+  run 3: rc=0
+  run 4: rc=0
+  run 5: rc=0
+
+=== FINDING 1: `./configure --disable-rseq && make` does not build ===
+PRE-EXISTING, not caused by Phase 4.  Section 1a shows the failure with the
+current umem_rseq.h; section 1b shows the identical failure after restoring
+the pre-Phase-4 umem_rseq.h (git show 5c7fd76:umem_rseq.h), so the extern "C"
+guard fix is not the cause.
+
+Cause: test/stress/repro_naive_reload_race.c and
+test/stress/repro_rseq_trailing_store.c are in noinst_PROGRAMS
+unconditionally, but both use umem_rseq_cache_t and umem_rseq_* entry points
+that exist only when UMEM_RSEQ_AVAILABLE is defined.  Neither file has an
+availability guard (test/unit/test_rseq_fastpath.c and
+test/bench/bench_cache_rseq.c do).  With rseq auto-detected on (every Linux
+host with linux/rseq.h) the breakage is invisible; --disable-rseq exposes it.
+
+Fixed by gating both targets on ENABLE_RSEQ in Makefile.am.
+
+=== FINDING 2: `make check` is FLAKY (~40% failure in a default build) ===
+test/debugger/test_inspect_e2e.sh, one of the 8 TESTS entries, failed 2 of 5
+consecutive runs in a DEFAULT build on the same binary (rc = 0,0,1,0,1).
+Always the same assertion:
+
+  [2/8] live findleaks --json (parse + assert counts)
+  AssertionError: expected 2 cached, got 1
+
+The script asserts cached_skipped == 2, derived from test_inspect_live.c's
+100-iteration alloc/free(32) churn loop.  How many of those 32-byte buffers
+are still sitting in a magazine at inspection time is not deterministic: it
+depends on the loaded/previous magazine split and on whether the
+reap/update thread flushed in between.  The assertion encodes one observed
+outcome as an invariant.
+
+This is NOT an AVX2 problem.  The same script passed 5/5 under
+--enable-avx2 in the second half of this run; the verify_phase4.sh failure
+that appeared under --enable-avx2 was this flake landing in that
+configuration.  Attributing it to AVX2 would have been wrong.
+
+NOT FIXED HERE: test/debugger/ is outside this workstream's file set.  The
+fix is to assert a plausible range (or quiesce the update thread before
+sampling), and it belongs with the coordinated TESTS change.
+
+Consequence for anyone reading a "make check 8/8": that result has roughly a
+60% per-run probability in a default build, and a 7/8 with this test failing
+is most likely this flake rather than the change under test.
+
+Host: intel-lo@surface, c7i.2xlarge, x86_64, Amazon Linux 2023, gcc 11.
+Reproduce: scripts/ec2/diagnose_ph4_failures.sh

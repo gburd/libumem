@@ -33,8 +33,6 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_fork_mt_load \
 		  test/integration/test_update_thread_startup \
 		  test/stress/stress_main \
-		  test/stress/repro_rseq_trailing_store \
-		  test/stress/repro_naive_reload_race \
 		  test/stress/stress_concurrency_oracle \
 		  test/stress/repro_calloc_interpose_race \
 		  test/unit/test_overflow_contracts \
@@ -442,6 +440,19 @@ test_integration_test_update_thread_startup_CPPFLAGS = -I$(srcdir)
 test_stress_stress_main_SOURCES = test/stress/stress_main.c
 test_stress_stress_main_LDADD = libumem.la
 test_stress_stress_main_LDFLAGS = -pthread
+
+# rseq repros.  BUILT ONLY UNDER --enable-rseq: unlike
+# test/unit/test_rseq_fastpath.c and test/bench/bench_cache_rseq.c, neither
+# of these two has a UMEM_RSEQ_AVAILABLE guard, and both use
+# umem_rseq_cache_t and the umem_rseq_* entry points directly.  Listed
+# unconditionally, they made `./configure --disable-rseq && make` fail to
+# build -- invisible on any host with linux/rseq.h, since rseq is
+# auto-detected on there.  Confirmed pre-existing:
+# docs/results/2026-09-21-make-check-flaky-inspect-e2e.log.
+if ENABLE_RSEQ
+noinst_PROGRAMS += test/stress/repro_rseq_trailing_store \
+		   test/stress/repro_naive_reload_race
+endif
 
 test_stress_repro_rseq_trailing_store_SOURCES = test/stress/repro_rseq_trailing_store.c
 test_stress_repro_rseq_trailing_store_LDADD = libumem.la
