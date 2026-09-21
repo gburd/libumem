@@ -104,3 +104,67 @@ is most likely this flake rather than the change under test.
 
 Host: intel-lo@surface, c7i.2xlarge, x86_64, Amazon Linux 2023, gcc 11.
 Reproduce: scripts/ec2/diagnose_ph4_failures.sh
+--disable-rseq run 1 FAIL: expected 2 cached, got 1
+--disable-rseq run 2 FAIL: expected 2 cached, got 1
+--disable-rseq run 3 FAIL: expected 2 cached, got 1
+--disable-rseq run 4 FAIL: expected 2 cached, got 1
+--disable-rseq run 5 FAIL: expected 2 cached, got 1
+--disable-rseq run 6 FAIL: expected 2 cached, got 1
+--disable-rseq run 7 FAIL: expected 2 cached, got 1
+--disable-rseq run 8 FAIL: expected 2 cached, got 1
+--disable-rseq run 9 FAIL: expected 2 cached, got 1
+--disable-rseq run 10 FAIL: expected 2 cached, got 1
+--disable-rseq run 11 FAIL: expected 2 cached, got 1
+--disable-rseq run 12 FAIL: expected 2 cached, got 1
+== --disable-rseq: 12/12 failures
+default run 5 FAIL: expected 2 cached, got 1
+default run 12 FAIL: expected 2 cached, got 1
+== default: 2/12 failures
+
+=== pre-Phase-4 control (--disable-rseq) ===
+PRE-PHASE4 run 1 FAIL: expected 2 cached, got 1
+PRE-PHASE4 run 2 FAIL: expected 2 cached, got 1
+PRE-PHASE4 run 3 FAIL: expected 2 cached, got 1
+PRE-PHASE4 run 4 FAIL: expected 2 cached, got 1
+PRE-PHASE4 run 5 FAIL: expected 2 cached, got 1
+PRE-PHASE4 run 6 FAIL: expected 2 cached, got 1
+PRE-PHASE4 run 7 FAIL: expected 2 cached, got 1
+PRE-PHASE4 run 8 FAIL: expected 2 cached, got 1
+== PRE-PHASE-4 tree, --disable-rseq: 8/8 failures
+
+=== FINDING 2, CORRECTED AND QUANTIFIED ===
+My first description of this as simply "flaky" was incomplete.  Measured
+rates, same host, same script, 12 runs each:
+
+    default build      :  2/12 failures   (intermittent)
+    --disable-rseq      : 12/12 failures   (DETERMINISTIC)
+
+Always the identical assertion, and always the same direction:
+"expected 2 cached, got 1".
+
+Pre-existing, not caused by Phase 4.  Control: the pre-Phase-4 tree
+(configure.ac, Makefile.am and umem_rseq.h restored from 5c7fd76) built
+--disable-rseq fails 8/8 the same way (scripts/ec2/prephase4_flake_check.sh).
+So --disable-rseq has been reliably failing `make check` for as long as it
+has been possible to build it -- which was not possible at 5c7fd76 at all,
+since the ungated rseq repros broke that build (FINDING 1).  That is
+presumably why nobody saw this: --disable-rseq could not reach `make check`.
+
+Interpretation, stated as far as the evidence goes and no further: the
+assertion pins cached_skipped to 2, and how many of test_inspect_live.c's
+100 churn-loop buffers remain in a magazine at inspection time is not
+fixed by anything in the test.  With rseq compiled out, the allocation path
+differs (umem.c's UMEM_RSEQ_AVAILABLE blocks in _umem_cache_alloc /
+_umem_cache_free disappear entirely), and the resulting distribution lands
+on 1 every time rather than sometimes.  I have NOT isolated which specific
+difference produces it, and I am not claiming the count "should" be 2 or 1 --
+only that the test asserts a quantity it does not control, and that this is
+independent of this workstream's changes.
+
+CONSEQUENCE FOR VERIFICATION, worth stating plainly: scripts/ec2/verify_phase4.sh
+initially RETRIED make check when this was the only failure.  That was wrong
+and I removed it.  Retrying an intermittent failure until it passes is bad
+enough; here it would have converted a 12/12 deterministic failure into a
+reported pass on a second attempt that could never succeed -- manufacturing
+a green result.  The script now reports this case as KNOWN-PREEXISTING,
+counted separately from both PASS and FAIL, and never retries.
