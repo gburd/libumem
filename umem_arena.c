@@ -39,16 +39,26 @@ struct umem_arena {
 
 /*
  * Round up to the system page size.
+ *
+ * Returns 0 if the rounding would wrap past SIZE_MAX -- callers MUST treat 0
+ * as failure.  Rounding SIZE_MAX up to a page used to yield 0, so
+ * umem_arena_create(SIZE_MAX) attempted a zero-length mmap.
  */
 static size_t
 arena_page_round(size_t sz)
 {
 	long pgsz = sysconf(_SC_PAGESIZE);
+	size_t p;
 
 	if (pgsz <= 0) {
 		pgsz = 4096;
 	}
-	return ((sz + (size_t)pgsz - 1) & ~((size_t)pgsz - 1));
+	p = (size_t)pgsz;
+
+	if (sz > SIZE_MAX - (p - 1)) {
+		return (0);
+	}
+	return ((sz + p - 1) & ~(p - 1));
 }
 
 umem_arena_t *
@@ -72,6 +82,14 @@ umem_arena_create(size_t capacity, int flags)
 	}
 
 	map_size = arena_page_round(capacity);
+	if (map_size == 0) {
+		/* capacity so large that page rounding would wrap */
+		umem_free(arena, sizeof(umem_arena_t));
+		if (flags & UMEM_NOFAIL) {
+			exit(1);
+		}
+		return (NULL);
+	}
 	mem = mmap(NULL, map_size, PROT_READ | PROT_WRITE,
 	    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (mem == MAP_FAILED) {
@@ -103,6 +121,21 @@ umem_arena_alloc(umem_arena_t *arena, size_t size)
 	if (size > SIZE_MAX - (ARENA_ALIGN - 1))
 		return (NULL);
 	aligned_size = (size + ARENA_ALIGN - 1) & ~(ARENA_ALIGN - 1);
+
+	/*
+	 * The addition must be CHECKED, not merely its result compared with
+	 * capacity: offset + aligned_size used to wrap, so a request of
+	 * SIZE_MAX-15 after a 32-byte allocation produced new_offset == 16,
+	 * passed the capacity test, returned base+32 and moved the bump
+	 * pointer BACKWARD -- handing the same bytes out twice.
+	 *
+	 * Equivalent to (offset + aligned_size > capacity) in exact
+	 * arithmetic, arranged so no intermediate can wrap.  offset <=
+	 * capacity is an invariant of this structure.
+	 */
+	if (aligned_size > arena->capacity - arena->offset) {
+		return (NULL);
+	}
 	new_offset = arena->offset + aligned_size;
 
 	if (new_offset > arena->capacity) {

@@ -84,7 +84,18 @@ void *
 bootstrap_malloc(size_t size)
 {
 	bootstrap_header_t *hdr;
-	size_t total_size = size + sizeof(bootstrap_header_t);
+	size_t total_size;
+
+	/*
+	 * Checked header addition.  Unchecked, bootstrap_malloc(SIZE_MAX)
+	 * wrapped to a ~15-byte total, mapped that, and returned a non-NULL
+	 * pointer claiming SIZE_MAX usable bytes.
+	 */
+	if (size > SIZE_MAX - sizeof (bootstrap_header_t)) {
+		errno = ENOMEM;
+		return (NULL);
+	}
+	total_size = size + sizeof (bootstrap_header_t);
 
 	if (++bootstrap_depth > BOOTSTRAP_MAX_DEPTH) {
 		const char msg[] = "libumem: fatal bootstrap malloc "
