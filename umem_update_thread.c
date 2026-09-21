@@ -35,17 +35,32 @@
 
 #include <signal.h>
 
+/*
+ * Startup handshake between umem_create_update_thread() (the creator) and
+ * the new umem_update_thread() (the worker).  The object lives on the
+ * creator's stack, so the creator may not return until the worker has
+ * stopped touching it.
+ *
+ * One mutex guards BOTH predicates and one condvar carries both signals:
+ *
+ *   go   - set by the creator once umem_update_thr is published; until
+ *          then the worker must not run (it asserts on umem_update_thr).
+ *   done - set by the worker once it will never touch this object again;
+ *          until then the creator must not return or destroy the object.
+ *
+ * Every mutation of go/done happens under mtx and is followed by a
+ * broadcast under mtx, so no wakeup can be lost between a waiter's
+ * predicate test and its wait.  Previously the worker set the predicate and
+ * signalled without holding the waiter's mutex (and used a second mutex the
+ * worker never locked), so the signal could land in exactly that window and
+ * umem_reap() hung forever; the worker also never released the gate mutex,
+ * which the creator then destroyed while held.
+ */
 struct umem_suspend_signal_object {
-	/* locked by creating thread; unlocked when umem_update_thread
-	 * can proceed */
 	pthread_mutex_t mtx;
-	/* lock associated with the condition variable */
-	pthread_mutex_t cmtx;
-	/* condition variable is signalled by umem_update_thread when
-	 * it has obtained the mtx; it is then safe for the creating
-	 * thread to clean up its stack (on which this object resides) */
 	pthread_cond_t cond;
-	int flag;
+	int go;
+	int done;
 };
 
 /*ARGSUSED*/
@@ -56,9 +71,18 @@ THR_API umem_update_thread(void *arg)
 	int in_update = 0;
 	struct umem_suspend_signal_object *obj = arg;
 
+	/*
+	 * Wait for the creator to publish umem_update_thr, then tell it we
+	 * are done with the object.  Both predicates are handled under the
+	 * single mutex; the mutex is released before we return so the
+	 * creator never destroys a held mutex.
+	 */
 	pthread_mutex_lock(&obj->mtx);
-	obj->flag = 1;
-	pthread_cond_signal(&obj->cond);
+	while (!obj->go)
+		(void) pthread_cond_wait(&obj->cond, &obj->mtx);
+	obj->done = 1;
+	(void) pthread_cond_broadcast(&obj->cond);
+	pthread_mutex_unlock(&obj->mtx);
 	obj = NULL;
 
 	(void) mutex_lock(&umem_update_lock);
@@ -173,10 +197,9 @@ umem_create_update_thread(void)
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
 	pthread_mutex_init(&obj.mtx, NULL);
-	pthread_mutex_init(&obj.cmtx, NULL);
 	pthread_cond_init(&obj.cond, NULL);
-	obj.flag = 0;
-	pthread_mutex_lock(&obj.mtx);
+	obj.go = 0;
+	obj.done = 0;
 
 	if (pthread_create(&newthread, &attr, umem_update_thread, &obj) == 0) {
 #ifndef _WIN32
@@ -193,21 +216,25 @@ umem_create_update_thread(void)
 		umem_update_thr = newthread;
 		(void) mutex_unlock(&umem_update_lock);
 
-		/* tell the thread to continue */
+		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancel_state);
+
+		pthread_mutex_lock(&obj.mtx);
+		/* tell the worker to continue */
+		obj.go = 1;
+		(void) pthread_cond_broadcast(&obj.cond);
+		/*
+		 * Wait for it to be done with obj.  The wait must NOT live
+		 * inside ASSERT(): misc.h compiles ASSERT() out entirely
+		 * under NDEBUG, which removed the wait from release builds
+		 * and let this function return while the worker was still
+		 * dereferencing this stack object.
+		 */
+		while (!obj.done)
+			(void) pthread_cond_wait(&obj.cond, &obj.mtx);
 		pthread_mutex_unlock(&obj.mtx);
 
-		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancel_state);
-		/* wait for it to be done with obj */
-		pthread_mutex_lock(&obj.cmtx);
-		do {
-			if (obj.flag) {
-				break;
-			}
-			ASSERT(pthread_cond_wait(&obj.cond, &obj.cmtx) == 0);
-		} while (1);
 		pthread_setcancelstate(cancel_state, NULL);
 		pthread_mutex_destroy(&obj.mtx);
-		pthread_mutex_destroy(&obj.cmtx);
 		pthread_cond_destroy(&obj.cond);
 
 		(void) mutex_lock(&umem_update_lock);
@@ -216,8 +243,8 @@ umem_create_update_thread(void)
 	} else { /* thr_create failed */
 		(void) thr_sigsetmask(SIG_SETMASK, &oldmask, NULL);
 		(void) mutex_lock(&umem_update_lock);
+		/* no worker exists, so nothing can hold obj.mtx */
 		pthread_mutex_destroy(&obj.mtx);
-		pthread_mutex_destroy(&obj.cmtx);
 		pthread_cond_destroy(&obj.cond);
 	}
 	return (0);
