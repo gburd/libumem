@@ -497,12 +497,16 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/stress/oracle_fast.sh
 
+# Generated API documentation goes to doxygen-out/, NOT docs/.
+# docs/ is durable, version-controlled project documentation (plans, results,
+# runbooks).  This target used to write into docs/ and clean-local used to
+# `rm -rf docs`, so `make clean` silently deleted committed documentation.
 html-local:
-	mkdir -p docs
+	mkdir -p doxygen-out
 	doxygen Doxyfile
 
 clean-local:
-	rm -rf docs
+	rm -rf doxygen-out
 
 # Coverage targets
 if ENABLE_COVERAGE

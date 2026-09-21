@@ -20,7 +20,7 @@ IID="$(require_running_role "$ROLE")"
 DNS="$(public_dns_for_id "$IID")"
 
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
-REMOTE_DIR="libumem"
+REMOTE_DIR="$(role_remote_dir "$ROLE")"
 
 log "sync -> $DNS:$REMOTE_DIR"
 rsync -az --delete \

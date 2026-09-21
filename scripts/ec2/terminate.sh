@@ -53,6 +53,9 @@ case "${1:-}" in
 				--query 'Reservations[].Instances[].Tags[?Key==`Role`].Value|[0]' \
 				--output text 2>/dev/null)"
 			case "$role" in
+				# Never auto-reap the SHARED bare low-core dev boxes.  Worker-
+				# scoped roles (intel-lo@foo) are private to one agent and are
+				# safe to reclaim when idle.
 				intel-lo|arm-lo)
 					log "skip shared box $id ($role) — reap explicitly if needed"
 					continue ;;
@@ -66,7 +69,11 @@ case "${1:-}" in
 		done
 		terminate_ids $reap
 		;;
-	intel-lo|intel-hi|arm-lo|arm-hi)
+	# Accept both bare roles and worker-scoped roles ("intel-lo@ptc"), since
+	# parallel agents each own a private worker-scoped instance.  Without the
+	# @* patterns these fell through to usage and the instance was NOT
+	# terminated -- a silent cost leak.
+	intel-lo|intel-hi|arm-lo|arm-hi|intel-lo@*|intel-hi@*|arm-lo@*|arm-hi@*)
 		terminate_ids "$(instance_id_for_role "$1")"
 		;;
 	*)

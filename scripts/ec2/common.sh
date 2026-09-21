@@ -9,7 +9,11 @@
 set -euo pipefail
 
 # --- account / region -------------------------------------------------------
-export AWS_PROFILE="${AWS_PROFILE:-bene}"
+# NOTE: this burner account/profile has rotated repeatedly (numa -> beef ->
+# bene -> hotdog).  Always verify with `aws sts get-caller-identity` before a
+# session; if it fails, probe `aws configure list-profiles` for a live one and
+# update this default rather than assuming the previous one still works.
+export AWS_PROFILE="${AWS_PROFILE:-hotdog}"
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-2}"
 export AWS_PAGER=""
 
@@ -24,8 +28,19 @@ SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliv
 
 # --- role -> (arch, instance-type) -----------------------------------------
 # Low = 8 vCPU; High = very high core count (metal). Intel + Graviton(aarch64).
+#
+# WORKER-SCOPED ROLES: a role may carry a "@worker" suffix, e.g.
+# "intel-lo@ptc" or "arm-hi@w2".  The suffix selects the same arch and
+# instance type as the base role but gets its OWN tagged instance and its own
+# remote working directory (see run-remote.sh).  This exists because
+# run-remote.sh rsyncs the local worktree with --delete: two agents sharing one
+# role's instance silently clobber each other's in-flight sources and logs.
+# Parallel agents MUST each use a distinct @worker suffix.
+role_base() { echo "${1%%@*}"; }
+role_worker() { case "$1" in *@*) echo "${1#*@}" ;; *) echo "" ;; esac; }
+
 role_arch() {
-	case "$1" in
+	case "$(role_base "$1")" in
 		intel-lo|intel-hi) echo x86_64 ;;
 		arm-lo|arm-hi)     echo arm64 ;;
 		*) echo "unknown role: $1" >&2; return 1 ;;
@@ -33,13 +48,20 @@ role_arch() {
 }
 
 role_instance_type() {
-	case "$1" in
+	case "$(role_base "$1")" in
 		intel-lo) echo c7i.2xlarge ;;       # 8 vCPU
 		intel-hi) echo c7i.metal-48xl ;;    # 192 vCPU
 		arm-lo)   echo c7g.2xlarge ;;        # 8 vCPU
 		arm-hi)   echo c8g.metal-48xl ;;     # 192 vCPU (Graviton4); c7g.metal=64 fallback
 		*) echo "unknown role: $1" >&2; return 1 ;;
 	esac
+}
+
+# Remote working directory for a role.  Worker-scoped roles get their own
+# directory so a shared instance (if ever reused) still cannot cross-clobber.
+role_remote_dir() {
+	local w; w="$(role_worker "$1")"
+	if [ -n "$w" ]; then echo "libumem-$w"; else echo "libumem"; fi
 }
 
 # --- helpers ----------------------------------------------------------------
