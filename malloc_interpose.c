@@ -237,6 +237,55 @@ static struct libc_ptr_ent libc_ptrs[MAX_LIBC_PTRS];
 static pthread_mutex_t libc_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
+ * Fork participation.
+ *
+ * static_buffer_lock and libc_ptr_lock are taken by ORDINARY free() and
+ * realloc() on every call (see interpose_owner_of()).  Without fork handling a
+ * child could inherit either one held by a thread that does not exist in the
+ * child, and the child's very next free() would block forever.
+ *
+ * libumem.so's fork handler calls these weak hooks (see umem_fork.c): they run
+ * BEFORE umem_init_lock and every allocator lock on the prepare side, and
+ * after them on the release side, because free() acquires these locks before
+ * it enters the allocator.
+ *
+ * In the child the locks are RE-INITIALIZED rather than unlocked: the owning
+ * thread may be gone, and unlocking a mutex this thread does not own is
+ * undefined.  Re-initializing is safe because a post-fork child has exactly
+ * one thread, so no other thread can be mid-critical-section.  The protected
+ * data itself (the static buffer offset and the tracking table) is plain
+ * memory copied by fork and remains consistent: entries describe allocations
+ * the child has inherited and may legitimately free.
+ */
+void
+umem_interpose_lockup(void)
+{
+	(void) pthread_mutex_lock(&static_buffer_lock);
+	(void) pthread_mutex_lock(&libc_ptr_lock);
+}
+
+void
+umem_interpose_release(void)
+{
+	(void) pthread_mutex_unlock(&libc_ptr_lock);
+	(void) pthread_mutex_unlock(&static_buffer_lock);
+}
+
+void
+umem_interpose_release_child(void)
+{
+	(void) pthread_mutex_init(&libc_ptr_lock, NULL);
+	(void) pthread_mutex_init(&static_buffer_lock, NULL);
+	/*
+	 * calloc_depth is per-thread (initial-exec TLS).  The single surviving
+	 * child thread inherits ITS OWN value, which is 0 unless fork() was
+	 * called from inside calloc() -- impossible, since calloc() does not
+	 * fork.  Threads that vanished took their own copies with them, so
+	 * there is nothing to reset here.
+	 */
+}
+
+/*
  * Record a libc allocation.  Returns 0 if the table is full, in which case
  * the caller MUST NOT return the pointer to the application.
  */

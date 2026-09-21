@@ -145,10 +145,37 @@ umem_release_log_header(umem_log_header_t *lhp)
 		(void) mutex_unlock(&lhp->lh_cpu[idx].clh_lock);
 }
 
+/*
+ * Interposer (libumem_malloc.so) fork participation.
+ *
+ * malloc_interpose.c owns two mutexes that ORDINARY free()/realloc() acquire
+ * on every call: the static-buffer lock and the libc-pointer-tracking lock.
+ * Neither had any fork handling, so a child could inherit either one held by a
+ * thread that does not exist in the child -- and the child's very next free()
+ * would block forever.
+ *
+ * These are weak symbols because libumem.so must keep working when
+ * libumem_malloc.so is not loaded (direct-link use, no LD_PRELOAD): the
+ * references then resolve to NULL and are skipped.
+ *
+ * ORDERING: the interposer locks are acquired BEFORE umem_init_lock and every
+ * allocator lock, because free() takes them before it enters the allocator.
+ * Registering them here (rather than via a second pthread_atfork inside the
+ * interposer) keeps that order explicit; glibc runs prepare handlers in
+ * reverse registration order, which makes a second registration fragile with
+ * respect to load order.
+ */
+extern void umem_interpose_lockup(void) __attribute__((weak));
+extern void umem_interpose_release(void) __attribute__((weak));
+extern void umem_interpose_release_child(void) __attribute__((weak));
+
 static void
 umem_lockup(void)
 {
 	umem_cache_t *cp;
+
+	if (umem_interpose_lockup != NULL)
+		umem_interpose_lockup();
 
 	(void) mutex_lock(&umem_init_lock);
 	/*
@@ -255,6 +282,19 @@ umem_do_release(int as_child)
 	vmem_release();
 
 	(void) mutex_unlock(&umem_init_lock);
+
+	/*
+	 * Released LAST, mirroring the acquisition order in umem_lockup().
+	 * The child variant re-initializes rather than unlocks: the owning
+	 * thread may not exist here.
+	 */
+	if (as_child) {
+		if (umem_interpose_release_child != NULL)
+			umem_interpose_release_child();
+	} else {
+		if (umem_interpose_release != NULL)
+			umem_interpose_release();
+	}
 }
 
 static void
