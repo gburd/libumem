@@ -49,6 +49,7 @@
 #endif
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdlib.h>
 
 #include "umem_impl.h"
 #include "malloc_guard.h"
@@ -69,6 +70,7 @@ extern void umem_malloc_free(void *);
 extern void *bootstrap_malloc(size_t);
 extern void bootstrap_free(void *);
 extern int is_bootstrap_pointer(void *);
+extern int process_free(void *, int, size_t *);
 
 /* Bootstrap header structure (from malloc.c) */
 #define BOOTSTRAP_MAGIC 0xB007B007B007B007ULL
@@ -95,32 +97,179 @@ static void *(*libc_realloc)(void *, size_t) = NULL;
 static void *(*libc_memalign)(size_t, size_t) = NULL;
 
 /*
- * Pointer tracking: track which allocations came from libc
- * during bootstrap phase so we can free them correctly.
+ * ===========================================================================
+ * POINTER OWNERSHIP
+ * ===========================================================================
  *
- * THREAD SAFETY: These functions are protected by a mutex to prevent
- * races when tracking/checking libc pointers from multiple threads.
+ * Under interposition a pointer reaching free()/realloc()/
+ * malloc_usable_size() can come from four different owners.  Every one of
+ * those entry points MUST classify it the same way: a pointer one of them
+ * recognizes and another does not is how a static-buffer or libc pointer
+ * ends up in umem's metadata decoder.  That is what interpose_owner_of()
+ * below is for -- it is the single classifier all three use.
+ *
+ *   OWN_STATIC    Storage carved out of a static bump buffer during
+ *                 dlsym(3) resolution, before any real allocator exists.
+ *                 LIFETIME: permanent.  Never freed, never reused -- see
+ *                 static_alloc().
+ *   OWN_BOOTSTRAP mmap'd by bootstrap_malloc() (malloc.c), carrying a
+ *                 bootstrap_header_t.  Freed with bootstrap_free().
+ *   OWN_LIBC      Obtained from the real libc allocator during the bootstrap
+ *                 window (only libc memalign(3) does this).  Recorded in
+ *                 libc_ptrs[] together with its size; freed with libc_free.
+ *   OWN_UMEM      Everything else once interposition is READY: umem's own
+ *                 malloc_data_t-tagged storage.
  */
-#define MAX_BOOTSTRAP_PTRS 512
-static void *bootstrap_ptrs[MAX_BOOTSTRAP_PTRS];
-static size_t bootstrap_ptr_count = 0;
-static pthread_mutex_t bootstrap_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
+typedef enum {
+	OWN_UNKNOWN,
+	OWN_STATIC,
+	OWN_BOOTSTRAP,
+	OWN_LIBC,
+	OWN_UMEM
+} interpose_owner_t;
 
-static void
-track_bootstrap_ptr(void *ptr)
+/*
+ * Static bump buffer for allocations made while resolving libc symbols.
+ *
+ * dlsym(3) may call calloc() internally, which would recurse back into us
+ * before libc_malloc is known.  Storage handed out here is PERMANENT: the
+ * bump offset never moves backward and the buffer is never reset.  That is
+ * deliberate and is the core of the P1.1 fix -- any scheme that recycles this
+ * storage can hand the same bytes to two live callers.  The total is a few
+ * hundred bytes for the process lifetime.
+ *
+ * Each chunk carries a header so malloc_usable_size()/realloc() know the
+ * exact size, rather than guessing and over-reading.
+ *
+ * THREAD SAFETY: static_buffer_used is advanced under static_buffer_lock.
+ * in_dlsym is only ever set by resolve_libc_functions(), which runs from the
+ * library constructor before the process has created a second thread.
+ */
+#define STATIC_BUFFER_SIZE 4096
+#define STATIC_CHUNK_MAGIC 0x5A5A0BEEFULL
+
+typedef struct static_chunk {
+	uint64_t magic;
+	size_t size;		/* usable bytes following this header */
+} static_chunk_t;
+
+static char static_buffer[STATIC_BUFFER_SIZE]
+    __attribute__((aligned(16)));
+static size_t static_buffer_used = 0;
+static pthread_mutex_t static_buffer_lock = PTHREAD_MUTEX_INITIALIZER;
+static int in_dlsym = 0;
+
+/*
+ * Carve `size` permanent bytes out of the static buffer.  Returns NULL when
+ * exhausted -- never wraps, never reuses.
+ */
+static void *
+static_alloc(size_t size)
 {
-	if (ptr == NULL)
-		return;
+	size_t need;
+	static_chunk_t *chunk = NULL;
 
-	(void) pthread_mutex_lock(&bootstrap_ptr_lock);
-	if (bootstrap_ptr_count < MAX_BOOTSTRAP_PTRS) {
-		bootstrap_ptrs[bootstrap_ptr_count++] = ptr;
+	/* header + 16-byte-aligned payload, with overflow checks */
+	if (size > SIZE_MAX - 15)
+		return (NULL);
+	need = (size + 15) & ~(size_t)15;
+	if (need > SIZE_MAX - sizeof (static_chunk_t))
+		return (NULL);
+	need += sizeof (static_chunk_t);
+
+	(void) pthread_mutex_lock(&static_buffer_lock);
+	if (need <= STATIC_BUFFER_SIZE - static_buffer_used) {
+		chunk = (static_chunk_t *)&static_buffer[static_buffer_used];
+		static_buffer_used += need;
 	}
-	(void) pthread_mutex_unlock(&bootstrap_ptr_lock);
+	(void) pthread_mutex_unlock(&static_buffer_lock);
+
+	if (chunk == NULL)
+		return (NULL);
+
+	chunk->magic = STATIC_CHUNK_MAGIC;
+	chunk->size = need - sizeof (static_chunk_t);
+	return ((void *)(chunk + 1));
 }
 
 static int
-is_libc_pointer(void *ptr)
+is_static_pointer(const void *ptr)
+{
+	return (ptr >= (const void *)static_buffer &&
+	    ptr < (const void *)(static_buffer + STATIC_BUFFER_SIZE));
+}
+
+static size_t
+get_static_size(void *ptr)
+{
+	static_chunk_t *chunk = (static_chunk_t *)ptr - 1;
+
+	if (!is_static_pointer(chunk) || chunk->magic != STATIC_CHUNK_MAGIC)
+		return (0);
+	return (chunk->size);
+}
+
+/*
+ * libc pointer tracking.
+ *
+ * Records pointer AND size: without the size, realloc() of one of these had
+ * to guess the old length (it copied the NEW size from the OLD pointer, an
+ * over-read on growth) on any platform lacking malloc_usable_size(3).
+ *
+ * Slots are reused once cleared.  The table used to be append-only, so a
+ * program doing sustained memalign/free churn during the bootstrap window
+ * exhausted all 512 entries and every later libc pointer became untracked --
+ * and an untracked libc pointer reaching free() is handed to umem's decoder.
+ *
+ * INVARIANT: a libc allocation is either recorded here or has been handed to
+ * libc_free().  It is never live-and-unrecorded, which is why tracking
+ * failure fails the allocation (see track_libc_ptr callers) and why the
+ * record is released only AFTER the operation that replaces it has succeeded.
+ *
+ * THREAD SAFETY: every field is accessed under libc_ptr_lock.
+ */
+#define MAX_LIBC_PTRS 512
+struct libc_ptr_ent {
+	void *ptr;
+	size_t size;
+};
+static struct libc_ptr_ent libc_ptrs[MAX_LIBC_PTRS];
+static pthread_mutex_t libc_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * Record a libc allocation.  Returns 0 if the table is full, in which case
+ * the caller MUST NOT return the pointer to the application.
+ */
+static int
+track_libc_ptr(void *ptr, size_t size)
+{
+	size_t i;
+	int ok = 0;
+
+	if (ptr == NULL)
+		return (0);
+
+	(void) pthread_mutex_lock(&libc_ptr_lock);
+	for (i = 0; i < MAX_LIBC_PTRS; i++) {
+		if (libc_ptrs[i].ptr == NULL) {
+			libc_ptrs[i].ptr = ptr;
+			libc_ptrs[i].size = size;
+			ok = 1;
+			break;
+		}
+	}
+	(void) pthread_mutex_unlock(&libc_ptr_lock);
+
+	return (ok);
+}
+
+/*
+ * Look up a libc allocation WITHOUT releasing the record; optionally reports
+ * its size.  Ownership stays with the table so a caller that then fails can
+ * leave the allocation recognizable.
+ */
+static int
+is_libc_pointer(void *ptr, size_t *sizep)
 {
 	size_t i;
 	int found = 0;
@@ -128,17 +277,41 @@ is_libc_pointer(void *ptr)
 	if (ptr == NULL)
 		return (0);
 
-	(void) pthread_mutex_lock(&bootstrap_ptr_lock);
-	for (i = 0; i < bootstrap_ptr_count; i++) {
-		if (bootstrap_ptrs[i] == ptr) {
-			bootstrap_ptrs[i] = NULL;  /* Clear slot */
+	(void) pthread_mutex_lock(&libc_ptr_lock);
+	for (i = 0; i < MAX_LIBC_PTRS; i++) {
+		if (libc_ptrs[i].ptr == ptr) {
+			if (sizep != NULL)
+				*sizep = libc_ptrs[i].size;
 			found = 1;
 			break;
 		}
 	}
-	(void) pthread_mutex_unlock(&bootstrap_ptr_lock);
+	(void) pthread_mutex_unlock(&libc_ptr_lock);
 
 	return (found);
+}
+
+/*
+ * Release the ownership record for a libc allocation.  Call this only once
+ * the allocation is actually about to be handed to libc_free().
+ */
+static void
+untrack_libc_ptr(void *ptr)
+{
+	size_t i;
+
+	if (ptr == NULL)
+		return;
+
+	(void) pthread_mutex_lock(&libc_ptr_lock);
+	for (i = 0; i < MAX_LIBC_PTRS; i++) {
+		if (libc_ptrs[i].ptr == ptr) {
+			libc_ptrs[i].ptr = NULL;
+			libc_ptrs[i].size = 0;
+			break;
+		}
+	}
+	(void) pthread_mutex_unlock(&libc_ptr_lock);
 }
 
 /*
@@ -162,31 +335,103 @@ get_bootstrap_size(void *ptr)
 }
 
 /*
- * Static buffer for dlsym allocations.
- * dlsym may call calloc internally, which creates a circular dependency.
- * We use a static buffer to handle these allocations.
+ * The single ownership classifier.  free(), realloc() and
+ * malloc_usable_size() all route through this so they cannot disagree.
+ * *sizep, when non-NULL, receives the usable size for every owner except
+ * OWN_UNKNOWN.
  */
-#define DLSYM_BUFFER_SIZE 1024
-static char dlsym_buffer[DLSYM_BUFFER_SIZE];
-static size_t dlsym_buffer_used = 0;
-static int in_dlsym = 0;
+static interpose_owner_t
+interpose_owner_of(void *ptr, size_t *sizep)
+{
+	size_t size;
+
+	if (ptr == NULL)
+		return (OWN_UNKNOWN);
+
+	if (is_static_pointer(ptr)) {
+		if (sizep != NULL)
+			*sizep = get_static_size(ptr);
+		return (OWN_STATIC);
+	}
+
+	if (is_bootstrap_pointer(ptr)) {
+		if (sizep != NULL)
+			*sizep = get_bootstrap_size(ptr);
+		return (OWN_BOOTSTRAP);
+	}
+
+	if (is_libc_pointer(ptr, &size)) {
+		if (sizep != NULL)
+			*sizep = size;
+		return (OWN_LIBC);
+	}
+
+	if (atomic_load(&interpose_state) == INTERPOSE_READY) {
+		if (process_free(ptr, 0, &size) != 0) {
+			if (sizep != NULL)
+				*sizep = size;
+			return (OWN_UMEM);
+		}
+	}
+
+	return (OWN_UNKNOWN);
+}
 
 /*
- * Static buffer for calloc recursion.
- * During pthread_create, allocate_dtv() calls calloc() for TLS initialization.
- * Our calloc() calls malloc(), which may trigger another calloc() through
- * memset() or TLS operations, creating infinite recursion.
- * We use a separate static buffer to break this cycle.
+ * Per-thread calloc recursion depth.
  *
- * NOTE: in_calloc is NOT __thread because we use it to detect TLS initialization.
- * Using __thread here would create a chicken-and-egg problem: we'd need TLS
- * to be initialized to access in_calloc, but we're using in_calloc to handle
- * the malloc calls that happen during TLS initialization.
+ * WHY THIS IS PER-THREAD (it used to be a process-global int):
+ *   A global flag set on every ordinary calloc() makes every OTHER thread
+ *   that enters calloc() concurrently believe it is recursing.  With the old
+ *   shared static bump buffer as the recursion path that produced
+ *   overlapping live allocations; with any recursion path it is simply
+ *   wrong -- recursion is a property of one call stack, i.e. of one thread.
+ *
+ * WHY initial-exec TLS IS SAFE HERE:
+ *   The old comment claimed __thread could not be used because "we'd need
+ *   TLS to be initialized to access it".  That is true of the general-dynamic
+ *   model, whose access goes through __tls_get_addr() and can allocate.  It
+ *   is not true of initial-exec: the variable lives in the static TLS block,
+ *   which pthread_create() allocates and zeroes BEFORE the new thread runs
+ *   any code, and access is a single register-relative load with no call and
+ *   no allocation.  The calloc() that TLS setup performs happens on the
+ *   CREATING thread, whose static TLS block has long existed.  malloc_guard.c
+ *   already depends on exactly this for umem_malloc()'s own guard.
+ *   Constraint (shared with malloc_guard.h): LD_PRELOAD only, not dlopen --
+ *   which is already this library's only supported mode.
  */
-#define CALLOC_BUFFER_SIZE 2048
-static char calloc_buffer[CALLOC_BUFFER_SIZE];
-static size_t calloc_buffer_used = 0;
-static volatile int in_calloc = 0;
+static __thread int calloc_depth __attribute__((tls_model("initial-exec")));
+
+/*
+ * Zero-fill an allocation calloc() is about to return.
+ *
+ * This exists as a separate noinline function, and not as a plain memset()
+ * call inside calloc(), because GCC's strlen/memset pass rewrites an
+ * adjacent
+ *
+ *	p = malloc(n); memset(p, 0, n);
+ *
+ * pair into
+ *
+ *	p = calloc(n, 1);
+ *
+ * Inside calloc() itself that is unbounded self-recursion.  This was not
+ * theoretical: with the memset written inline the generated calloc() ended in
+ * "jmp calloc@plt" and the process spun at 100% CPU issuing zero syscalls
+ * with flat RSS.  (The pre-fix code escaped the transform only by accident,
+ * because its `volatile int in_calloc` stores sat between the two calls.)
+ *
+ * An opaque asm barrier is kept as well so the property does not depend on
+ * the pass's willingness to look through a static function, nor on
+ * -fno-builtin-malloc surviving in AM_CFLAGS.  Cost is nil next to the
+ * memset itself.
+ */
+static void __attribute__((noinline))
+calloc_zero_fill(void *p, size_t n)
+{
+	__asm__ __volatile__("" : : "r"(p) : "memory");
+	(void) memset(p, 0, n);
+}
 
 /*
  * Resolve libc malloc functions using dlsym(RTLD_NEXT)
@@ -270,23 +515,13 @@ umem_interpose_init(void)
 void *
 malloc(size_t size)
 {
-	void *ret;
-
 	/*
-	 * Handle dlsym's malloc calls with static buffer.
-	 * dlsym may call malloc/calloc internally, so we provide
-	 * a temporary buffer to avoid infinite recursion.
+	 * Handle dlsym's malloc calls with the permanent static buffer.
+	 * dlsym may call malloc/calloc internally, so we provide storage
+	 * that does not depend on any allocator existing yet.
 	 */
-	if (in_dlsym) {
-		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
-		if (dlsym_buffer_used + aligned_size <= DLSYM_BUFFER_SIZE) {
-			ret = &dlsym_buffer[dlsym_buffer_used];
-			dlsym_buffer_used += aligned_size;
-			return (ret);
-		}
-		/* Buffer exhausted - this shouldn't happen */
-		return (NULL);
-	}
+	if (in_dlsym)
+		return (static_alloc(size));
 
 	/*
 	 * Trigger umem initialization if startup is complete but
@@ -337,47 +572,37 @@ free(void *ptr)
 	if (ptr == NULL)
 		return;
 
-	/*
-	 * Check if this is from the dlsym static buffer.
-	 * These allocations cannot be freed.
-	 */
-	if (ptr >= (void *)dlsym_buffer &&
-	    ptr < (void *)(dlsym_buffer + DLSYM_BUFFER_SIZE)) {
-		/* Ignore frees of dlsym buffer allocations */
+	switch (interpose_owner_of(ptr, NULL)) {
+	case OWN_STATIC:
+		/*
+		 * Permanent storage from the dlsym-resolution buffer.  It is
+		 * never reused, so "freeing" it is a no-op by design: reuse
+		 * is exactly what would let two callers hold the same bytes.
+		 */
 		return;
-	}
-
-	/*
-	 * Check if this is from the calloc recursion buffer.
-	 * These allocations cannot be freed.
-	 */
-	if (ptr >= (void *)calloc_buffer &&
-	    ptr < (void *)(calloc_buffer + CALLOC_BUFFER_SIZE)) {
-		/* Ignore frees of calloc buffer allocations */
-		return;
-	}
-
-	/*
-	 * Check if this is a bootstrap allocation.
-	 * Bootstrap allocations use mmap with a magic header.
-	 */
-	if (is_bootstrap_pointer(ptr)) {
+	case OWN_BOOTSTRAP:
 		bootstrap_free(ptr);
 		return;
-	}
-
-	/*
-	 * Check if this came from libc during bootstrap phase
-	 */
-	if (is_libc_pointer(ptr)) {
+	case OWN_LIBC:
+		/* Release the record only as we hand it back to libc. */
+		untrack_libc_ptr(ptr);
 		if (libc_free != NULL)
 			libc_free(ptr);
 		return;
+	case OWN_UMEM:
+		umem_malloc_free(ptr);
+		return;
+	case OWN_UNKNOWN:
+		break;
 	}
 
 	/*
-	 * If we're not ready yet and it's not a tracked pointer,
-	 * be defensive and try libc_free
+	 * Unrecognized.  Before interposition is READY the pointer most
+	 * likely predates us, so libc owns it.  Once READY, hand it to umem,
+	 * which logs a recoverable error (umem_abort is 0 in interpose mode)
+	 * rather than crashing on a foreign pointer -- matching glibc's
+	 * tolerance and keeping LD_PRELOAD usable with libraries that carry
+	 * their own allocators.
 	 */
 	if (atomic_load(&interpose_state) != INTERPOSE_READY) {
 		if (libc_free != NULL)
@@ -385,17 +610,38 @@ free(void *ptr)
 		return;
 	}
 
-	/*
-	 * Normal umem free.
-	 * If this is an invalid pointer (from libc, zlib, etc.),
-	 * umem_err_recoverable() will log an error but won't crash
-	 * because we set umem_abort = 0 in umem_interpose_init().
-	 */
 	umem_malloc_free(ptr);
 }
 
 /*
+ * malloc_usable_size - report the usable size of an interposer-owned pointer.
+ *
+ * Must be interposed for the same reason realloc() must: without it the
+ * application's malloc_usable_size() reaches libc, which reads libc malloc
+ * metadata that does not exist in front of umem/bootstrap/static storage.
+ * Uses the same classifier as free()/realloc().
+ */
+size_t
+malloc_usable_size(void *ptr)
+{
+	size_t size = 0;
+
+	if (interpose_owner_of(ptr, &size) == OWN_UNKNOWN)
+		return (0);
+	return (size);
+}
+
+/*
  * calloc - allocate and zero
+ *
+ * The recursion guard is per-thread (calloc_depth) and the recursion path is
+ * bootstrap_malloc(), not a shared bump buffer.  Two consequences, both
+ * required by P1.1:
+ *   - One thread's ordinary calloc() cannot push another thread onto the
+ *     recursion path.
+ *   - Storage handed out on the recursion path is individually owned
+ *     (mmap + header) and freeable, so nothing has to be "recycled" while it
+ *     might still be live.
  */
 void *
 calloc(size_t nelem, size_t elsize)
@@ -414,82 +660,57 @@ calloc(size_t nelem, size_t elsize)
 	size = nelem * elsize;
 
 	/*
-	 * Handle dlsym's calloc calls with static buffer.
+	 * Handle dlsym's calloc calls with the permanent static buffer.
 	 * dlsym may call calloc internally on some systems.
 	 */
 	if (in_dlsym) {
-		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
-		/* Also check that alignment doesn't overflow */
-		if (aligned_size < size) {
+		ret = static_alloc(size);
+		if (ret == NULL) {
 			errno = ENOMEM;
 			return (NULL);
 		}
-		if (dlsym_buffer_used + aligned_size <= DLSYM_BUFFER_SIZE) {
-			ret = &dlsym_buffer[dlsym_buffer_used];
-			dlsym_buffer_used += aligned_size;
-			(void) memset(ret, 0, size);
-			return (ret);
-		}
-		/* Buffer exhausted */
-		return (NULL);
+		calloc_zero_fill(ret, size);
+		return (ret);
 	}
 
 	/*
-	 * Handle recursive calloc during pthread TLS initialization.
-	 * pthread_create -> allocate_dtv() -> calloc() -> malloc() ->
-	 * memset/TLS ops -> calloc() creates infinite recursion.
-	 * Use static buffer to break the cycle.
+	 * Recursive calloc on THIS thread (pthread_create -> allocate_dtv ->
+	 * calloc -> malloc -> ... -> calloc).  Break the cycle with the
+	 * bootstrap allocator, which needs no TLS and no umem.
 	 */
-	if (in_calloc > 0) {
-		size_t aligned_size = (size + 15) & ~15;  /* 16-byte align */
-		/* Also check that alignment doesn't overflow */
-		if (aligned_size < size) {
+	if (calloc_depth > 0) {
+		ret = bootstrap_malloc(size);
+		if (ret == NULL) {
 			errno = ENOMEM;
 			return (NULL);
 		}
-		if (calloc_buffer_used + aligned_size <= CALLOC_BUFFER_SIZE) {
-			ret = &calloc_buffer[calloc_buffer_used];
-			calloc_buffer_used += aligned_size;
-			(void) memset(ret, 0, size);
-			return (ret);
-		}
-		/* Buffer exhausted */
-		return (NULL);
+		calloc_zero_fill(ret, size);
+		return (ret);
 	}
 
-	/*
-	 * Set recursion guard before calling malloc() and memset().
-	 * This prevents infinite recursion during pthread TLS initialization.
-	 */
-	in_calloc = 1;
+	calloc_depth++;
 	ret = malloc(size);
 	if (ret != NULL)
-		(void) memset(ret, 0, size);
-	in_calloc = 0;
-
-	/*
-	 * Reset calloc buffer after TLS initialization completes.
-	 * Allocations from calloc_buffer can never be freed (static buffer),
-	 * and are only used during pthread TLS setup. Once in_calloc returns
-	 * to 0, TLS init is complete and we can reuse the buffer for the
-	 * next thread. This fixes the bug where creating 8+ threads would
-	 * exhaust the 2KB buffer and cause pthread_create to fail.
-	 */
-	if (calloc_buffer_used > 0 && in_calloc == 0) {
-		calloc_buffer_used = 0;
-	}
+		calloc_zero_fill(ret, size);
+	calloc_depth--;
 
 	return (ret);
 }
 
 /*
  * realloc - resize allocation
+ *
+ * Ownership rule (P1.7c): the old allocation's ownership record is released
+ * only after the replacement has been allocated AND the contents copied.  A
+ * realloc that fails must leave the original live, intact, and still
+ * recognized by free() and by a later realloc().
  */
 void *
 realloc(void *ptr, size_t size)
 {
 	void *new_ptr;
-	size_t old_size;
+	size_t old_size = 0;
+	interpose_owner_t owner;
 
 	if (ptr == NULL)
 		return (malloc(size));
@@ -499,103 +720,50 @@ realloc(void *ptr, size_t size)
 		return (NULL);
 	}
 
-	/*
-	 * Check for bootstrap pointers first.
-	 * These can exist even in READY state if they were allocated
-	 * during bootstrap phase and never freed.
-	 */
-	if (is_bootstrap_pointer(ptr)) {
-		old_size = get_bootstrap_size(ptr);
-		if (old_size == 0) {
-			/* Header corrupted or invalid */
-			errno = EINVAL;
-			return (NULL);
-		}
+	owner = interpose_owner_of(ptr, &old_size);
 
-		new_ptr = malloc(size);
-		if (new_ptr == NULL)
-			return (NULL);
-
-		/*
-		 * Copy old data to new buffer.
-		 * Use the smaller of old_size or new size to avoid overruns.
-		 */
-		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
-
-		/*
-		 * Free the old buffer AFTER copying is complete.
-		 * The order is critical to ensure data integrity.
-		 */
-		free(ptr);
-		return (new_ptr);
-	}
-
-	if (is_libc_pointer(ptr)) {
-		new_ptr = malloc(size);
-		if (new_ptr == NULL)
-			return (NULL);
-
-#ifdef HAVE_MALLOC_USABLE_SIZE
-		old_size = malloc_usable_size(ptr);
-		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
-#else
-		/*
-		 * Without malloc_usable_size (e.g. Solaris), we cannot
-		 * determine the old allocation size.  Copy up to `size`
-		 * bytes, which is safe: the new buffer is at least `size`
-		 * bytes, and libc pointers only appear during early
-		 * bootstrap when allocations are small.
-		 */
-		(void) memcpy(new_ptr, ptr, size);
-#endif
-		free(ptr);
-		return (new_ptr);
-	}
-
-	/*
-	 * In READY state, try umem's process_free to get the size.
-	 * If that fails, the pointer is invalid.
-	 */
-	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
-		extern int process_free(void *, int, size_t *);
-
-		if (process_free(ptr, 0, &old_size) == 0) {
-			/*
-			 * Pointer is invalid or corrupted.
-			 * Don't fall through to malloc_usable_size as that
-			 * reads libc malloc metadata, not umem metadata.
-			 */
-			errno = EINVAL;
-			return (NULL);
-		}
-
-		/* Valid umem pointer */
+	switch (owner) {
+	case OWN_UMEM:
 		if (size == old_size)
 			return (ptr);
-
-		new_ptr = malloc(size);
-		if (new_ptr == NULL)
+		break;
+	case OWN_STATIC:
+	case OWN_BOOTSTRAP:
+	case OWN_LIBC:
+		if (old_size == 0) {
+			/* Recognized owner but unusable size: corrupt header. */
+			errno = EINVAL;
 			return (NULL);
-
-		(void) memcpy(new_ptr, ptr, MIN(old_size, size));
-		free(ptr);
-		return (new_ptr);
+		}
+		break;
+	case OWN_UNKNOWN:
+		/*
+		 * Not ours.  Before READY this is a pre-interposition libc
+		 * pointer and libc_realloc can handle it correctly (it knows
+		 * its own metadata).  After READY an unrecognized pointer is
+		 * invalid: we must not guess a length by reading foreign
+		 * metadata, which is what the old malloc_usable_size()
+		 * fallback did.
+		 */
+		if (atomic_load(&interpose_state) != INTERPOSE_READY &&
+		    libc_realloc != NULL)
+			return (libc_realloc(ptr, size));
+		errno = EINVAL;
+		return (NULL);
 	}
 
-	/*
-	 * Bootstrap phase fallback.
-	 * This path should only be reached during bootstrap phase.
-	 */
 	new_ptr = malloc(size);
-	if (new_ptr == NULL)
+	if (new_ptr == NULL) {
+		/*
+		 * Failure: ptr is untouched and still recorded under its
+		 * original owner.  errno is set by malloc().
+		 */
 		return (NULL);
+	}
 
-#ifdef HAVE_MALLOC_USABLE_SIZE
-	old_size = malloc_usable_size(ptr);
 	(void) memcpy(new_ptr, ptr, MIN(old_size, size));
-#else
-	(void) memcpy(new_ptr, ptr, size);
-#endif
+
+	/* Only now does the old allocation stop being the live one. */
 	free(ptr);
 	return (new_ptr);
 }
@@ -608,7 +776,7 @@ memalign(size_t align, size_t size)
 {
 	void *ret;
 
-	/* Validate alignment */
+	/* Validate alignment: must be a nonzero power of two. */
 	if (align == 0 || (align & (align - 1)) != 0) {
 		errno = EINVAL;
 		return (NULL);
@@ -621,35 +789,105 @@ memalign(size_t align, size_t size)
 	}
 
 	/*
-	 * Bootstrap phase: use libc_memalign if available,
-	 * otherwise use regular malloc (may not be aligned as requested)
+	 * Bootstrap phase: use libc_memalign if available.
+	 *
+	 * The resulting pointer MUST be recorded, because free() has no other
+	 * way to tell it apart from a umem pointer -- an unrecorded libc
+	 * pointer reaching free() after READY is handed to umem's metadata
+	 * decoder.  If the table is full we therefore give the allocation
+	 * straight back rather than return a pointer we cannot classify.
 	 */
-	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP && libc_memalign != NULL) {
+	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP &&
+	    libc_memalign != NULL) {
 		ret = libc_memalign(align, size);
-		if (ret != NULL)
-			track_bootstrap_ptr(ret);
+		if (ret == NULL)
+			return (NULL);
+		if (!track_libc_ptr(ret, size)) {
+			if (libc_free != NULL)
+				libc_free(ret);
+			errno = ENOMEM;
+			return (NULL);
+		}
 		return (ret);
 	}
 
-	/* Fall back to malloc */
-	return (malloc(size));
+	/*
+	 * Last resort (pre-constructor, no libc memalign): bootstrap storage.
+	 * bootstrap_malloc() is page-granular from mmap, so it satisfies any
+	 * alignment up to a page; beyond that we cannot honor the request and
+	 * must fail rather than return misaligned storage.
+	 */
+	{
+		extern size_t pagesize;
+		size_t pgsz = pagesize != 0 ? pagesize : 4096;
+
+		ret = bootstrap_malloc(size);
+		if (ret == NULL)
+			return (NULL);
+		if (((uintptr_t)ret & (align - 1)) != 0 || align > pgsz) {
+			bootstrap_free(ret);
+			errno = ENOMEM;
+			return (NULL);
+		}
+		return (ret);
+	}
 }
 
 /*
  * posix_memalign - POSIX aligned allocation
+ *
+ * POSIX requires alignment to be a power of two AND a multiple of
+ * sizeof(void *); anything else is EINVAL.  It also requires the error
+ * number to be RETURNED -- reading errno after a failure is wrong because
+ * errno may legitimately be 0, which would report success while *memptr
+ * stayed unset.
  */
 int
 posix_memalign(void **memptr, size_t alignment, size_t size)
 {
 	void *ptr;
 
+	if (memptr == NULL)
+		return (EINVAL);
+
+	if (alignment == 0 || (alignment & (alignment - 1)) != 0 ||
+	    (alignment % sizeof (void *)) != 0)
+		return (EINVAL);
+
 	ptr = memalign(alignment, size);
-	if (ptr != NULL) {
-		*memptr = ptr;
-		return (0);
+	if (ptr == NULL) {
+		/*
+		 * size == 0 is permitted to return either NULL or a freeable
+		 * pointer; report success with NULL rather than a spurious
+		 * error.
+		 */
+		if (size == 0) {
+			*memptr = NULL;
+			return (0);
+		}
+		return (ENOMEM);
 	}
 
-	return (errno);
+	*memptr = ptr;
+	return (0);
+}
+
+/*
+ * aligned_alloc - C11 aligned allocation
+ *
+ * Must be interposed: left to libc it would return libc storage that this
+ * library's free() then classifies as umem's.  C11 leaves behavior undefined
+ * when size is not a multiple of alignment; we accept it (as glibc does)
+ * rather than fail, since rejecting it breaks conforming-enough callers.
+ */
+void *
+aligned_alloc(size_t alignment, size_t size)
+{
+	if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+		errno = EINVAL;
+		return (NULL);
+	}
+	return (memalign(alignment, size));
 }
 
 /*
@@ -659,5 +897,5 @@ void *
 valloc(size_t size)
 {
 	extern size_t pagesize;
-	return (memalign(pagesize, size));
+	return (memalign(pagesize != 0 ? pagesize : 4096, size));
 }

@@ -67,7 +67,7 @@ run_case "calloc race (control, no preload)"  "" \
 run_case "calloc race (LD_PRELOAD interposer)" "$PRELOAD" \
 	"$RACE" --threads="$THREADS" --iters="$ITERS"
 run_case "aligned contracts (control, no preload)" "" "$ALIGN"
-run_case "aligned contracts (LD_PRELOAD interposer)" "$PRELOAD" "$ALIGN"
+run_case "aligned contracts (LD_PRELOAD interposer)" "$PRELOAD" "$ALIGN" --strict
 
 if [[ $rc -eq 0 ]]; then
 	echo "PASS: interposer regressions"

@@ -62,6 +62,15 @@
 #endif
 
 static int failures;
+/*
+ * Strict mode: require invalid alignments to be DIAGNOSED (NULL) rather than
+ * accepted.  C11 leaves aligned_alloc's behavior undefined when alignment is
+ * not supported, and glibc does not diagnose it -- glibc's aligned_alloc(3,
+ * 16) returns non-NULL.  libumem's interposer does diagnose it, and must, so
+ * this is required under LD_PRELOAD and merely reported without it.
+ * interpose_regress.sh passes --strict for the preload run only.
+ */
+static int strict;
 
 #define CHECK(cond, ...)						\
 	do {								\
@@ -185,11 +194,29 @@ test_aligned_alloc_contract(void)
 		free(q);
 	}
 
-	/* Invalid alignment: not a power of two. */
-	CHECK(aligned_alloc(3, 16) == NULL,
-	    "aligned_alloc(3, 16) succeeded; 3 is not a power of two\n");
-	CHECK(aligned_alloc(0, 16) == NULL,
-	    "aligned_alloc(0, 16) succeeded\n");
+	/*
+	 * Invalid alignment: not a power of two.  See the `strict` comment
+	 * above -- this is a libumem requirement, not a portable one.
+	 */
+	{
+		void *p3 = aligned_alloc(3, 16);
+		void *p0 = aligned_alloc(0, 16);
+
+		if (strict) {
+			CHECK(p3 == NULL,
+			    "aligned_alloc(3, 16) succeeded; 3 is not a power "
+			    "of two\n");
+			CHECK(p0 == NULL, "aligned_alloc(0, 16) succeeded\n");
+		} else {
+			(void) printf("  info: system aligned_alloc(3,16)=%s, "
+			    "(0,16)=%s (C11 leaves this undefined; not "
+			    "required of the control allocator)\n",
+			    p3 != NULL ? "non-NULL" : "NULL",
+			    p0 != NULL ? "non-NULL" : "NULL");
+		}
+		free(p3);
+		free(p0);
+	}
 }
 
 /*
@@ -273,10 +300,23 @@ test_aligned_churn(void)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
+	int i;
+
+	for (i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--strict") == 0) {
+			strict = 1;
+		} else {
+			(void) fprintf(stderr, "usage: %s [--strict]\n",
+			    argv[0]);
+			return (2);
+		}
+	}
+
 	(void) printf("aligned-contracts: posix_memalign, aligned_alloc, "
-	    "realloc ownership, churn\n");
+	    "realloc ownership, churn%s\n",
+	    strict ? " [strict]" : " [control]");
 
 	test_posix_memalign_contract();
 	test_aligned_alloc_contract();
