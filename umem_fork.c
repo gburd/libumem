@@ -34,21 +34,50 @@
 /*
  * The following functions are for pre- and post-fork1(2) handling.
  *
- * Lock ordering (must be acquired in this order to avoid deadlock):
+ * THE ONE TRUE LOCK ORDER.  Every lock below is acquired in this order, by
+ * the fork handlers and by ordinary allocation paths alike:
  *
  *   1. umem_init_lock
- *   2. vmem locks (vmem_lockup / vmem_sbrk_lockup)
+ *   2. vmem locks (vmem_lockup(): vmem_list_lock, vmem_nosleep_lock, each
+ *      arena's vm_lock, vmem_segfree_lock; then vmem_sbrk_lockup():
+ *      sbrk_lock, then sbrk_faillock)
  *   3. umem_cache_lock
  *   4. umem_update_lock
  *   5. umem_flags_lock
- *   6. cache_lock (per-cache slab layer lock)
- *   7. ml_lock (depot magazine list locks: global full, global empty,
- *              then per-CPU full/empty in CPU order)
- *   8. cc_lock (per-CPU cache locks, in CPU order)
- *   9. log header per-CPU locks, then lh_lock
+ *   6. per umem_cache_t, in this order:
+ *        a. cache_cpu[*].cc_lock          (ascending CPU index)
+ *        b. depot maglist locks: cache_full.ml_lock, cache_empty.ml_lock,
+ *           then cache_depot_full[i].ml_lock / cache_depot_empty[i].ml_lock
+ *           (ascending stripe index)
+ *        c. cache_lock                    (slab layer)
+ *   7. log headers: lh_cpu[*].clh_lock (ascending), then lh_lock
  *
- * See "Lock Ordering" in umem.c for the full specification.
- * umem_depot_alloc/free must NOT be called while holding cache_lock.
+ * 6a before 6b before 6c is dictated by the allocation paths, so it is not
+ * negotiable here:
+ *
+ *   - _umem_cache_alloc() takes ccp->cc_lock and then, still holding it,
+ *     calls umem_depot_alloc()/umem_depot_free(), which BLOCK on ml_lock:
+ *     the local-stripe pop and the global fallback both use the blocking
+ *     umem_depot_pop(), and umem_depot_push() is unconditionally blocking.
+ *     _umem_cache_free() and both *_batch() variants do the same.  So
+ *     cc_lock is always ABOVE ml_lock.  (The trylock-based cross-CPU steal
+ *     does not change this; only the remote-stripe scan is non-blocking.)
+ *   - umem_depot_alloc() -> umem_depot_destroy_stale() -> umem_slab_free()
+ *     takes cache_lock while cc_lock and no ml_lock are held, so cache_lock
+ *     is below both.  Nothing in the allocator takes cc_lock or ml_lock
+ *     while holding cache_lock -- that is the documented contract on
+ *     umem_depot_alloc()/umem_depot_free().
+ *
+ * This is also the Solaris/illumos lineage: the original umem_lockup_cache()
+ * took the per-CPU cc_locks first, then the depot lock, then cache_lock.  It
+ * agrees with the hierarchy documented under "Lock Ordering" in umem.c.
+ *
+ * A previous version of this file acquired cache_lock -> ml_locks ->
+ * cc_locks, with a comment claiming that matched normal operation.  It did
+ * not: it was the exact reverse of 6a/6b, so a forking thread holding
+ * ml_lock and waiting for cc_lock deadlocked against an allocating thread
+ * holding cc_lock and waiting for ml_lock (ABBA).  Reproduced by
+ * test/integration/test_fork_mt_load.c.
  */
 
 static void
@@ -57,19 +86,18 @@ umem_lockup_cache(umem_cache_t *cp)
 	int idx;
 	int ncpus = cp->cache_cpu_mask + 1;
 
-	/*
-	 * Lock order must match normal operation: cache_lock first,
-	 * then depot locks (global then per-CPU), then per-CPU cache locks.
-	 */
-	(void) mutex_lock(&cp->cache_lock);
+	/* See THE ONE TRUE LOCK ORDER above: 6a, then 6b, then 6c. */
+	for (idx = 0; idx < ncpus; idx++)
+		(void) mutex_lock(&cp->cache_cpu[idx].cc_lock);
+
 	(void) mutex_lock(&cp->cache_full.ml_lock);
 	(void) mutex_lock(&cp->cache_empty.ml_lock);
 	for (idx = 0; idx < cp->cache_depot_ncpus; idx++) {
 		(void) mutex_lock(&cp->cache_depot_full[idx].ml_lock);
 		(void) mutex_lock(&cp->cache_depot_empty[idx].ml_lock);
 	}
-	for (idx = 0; idx < ncpus; idx++)
-		(void) mutex_lock(&cp->cache_cpu[idx].cc_lock);
+
+	(void) mutex_lock(&cp->cache_lock);
 }
 
 static void
@@ -79,15 +107,17 @@ umem_release_cache(umem_cache_t *cp)
 	int ncpus = cp->cache_cpu_mask + 1;
 
 	/* Release in reverse of acquisition order */
-	for (idx = ncpus - 1; idx >= 0; idx--)
-		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);
+	(void) mutex_unlock(&cp->cache_lock);
+
 	for (idx = cp->cache_depot_ncpus - 1; idx >= 0; idx--) {
 		(void) mutex_unlock(&cp->cache_depot_empty[idx].ml_lock);
 		(void) mutex_unlock(&cp->cache_depot_full[idx].ml_lock);
 	}
 	(void) mutex_unlock(&cp->cache_empty.ml_lock);
 	(void) mutex_unlock(&cp->cache_full.ml_lock);
-	(void) mutex_unlock(&cp->cache_lock);
+
+	for (idx = ncpus - 1; idx >= 0; idx--)
+		(void) mutex_unlock(&cp->cache_cpu[idx].cc_lock);
 }
 
 static void

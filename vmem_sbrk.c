@@ -91,6 +91,16 @@ static sbrk_fail_t sbrk_fails = {
 	0
 };
 
+/*
+ * sbrk_lock serializes the read-modify-write of the process break in
+ * _sbrk_grow_aligned(); sbrk_faillock protects the sbrk_fails list.
+ * Both are taken by ordinary allocation paths, so BOTH must be held
+ * across fork() -- see vmem_sbrk_lockup() below.
+ *
+ * Order: sbrk_lock before sbrk_faillock.  No path holds sbrk_faillock
+ * while acquiring sbrk_lock (vmem_sbrk_alloc() calls tryfail, which
+ * releases sbrk_faillock, before calling _sbrk_grow_aligned()).
+ */
 static mutex_t sbrk_faillock = DEFAULTMUTEX;
 static mutex_t sbrk_lock = DEFAULTMUTEX;
 
@@ -268,10 +278,19 @@ vmem_sbrk_alloc(vmem_t *src, size_t size, int vmflags)
 
 /*
  * fork1() support
+ *
+ * Every lock an ordinary allocation path can take must be held across the
+ * fork, or the child can inherit it locked by a thread that no longer
+ * exists and hang on its first allocation.  sbrk_lock qualifies:
+ * _sbrk_grow_aligned() holds it across sbrk(0)/brk(), which any thread
+ * reaches through vmem_sbrk_alloc() when the sbrk backend is in use
+ * (UMEM_OPTIONS=backend=sbrk).  It used to be omitted here; only
+ * sbrk_faillock was held.
  */
 void
 vmem_sbrk_lockup(void)
 {
+	(void) mutex_lock(&sbrk_lock);
 	(void) mutex_lock(&sbrk_faillock);
 }
 
@@ -279,6 +298,7 @@ void
 vmem_sbrk_release(void)
 {
 	(void) mutex_unlock(&sbrk_faillock);
+	(void) mutex_unlock(&sbrk_lock);
 }
 
 vmem_t *
