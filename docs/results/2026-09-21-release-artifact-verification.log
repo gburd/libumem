@@ -1,0 +1,105 @@
+REGEN_OK
++ echo '=== 0. PRE-FIX CONTROL: hash-partition test against the pre-fix source ==='
+=== 0. PRE-FIX CONTROL: hash-partition test against the pre-fix source ===
++ mkdir -p /tmp/ctl
++ git show '413a795^:umem_hash_partition.c'
+fatal: not a git repository (or any of the parent directories): .git
++ cp umem_hash_partition.h test/unit/test_hash_partition.c /tmp/ctl/
++ gcc -I/tmp/ctl -o /tmp/ctl/ctl /tmp/ctl/test_hash_partition.c /tmp/ctl/old_hash.c -lm
+/usr/bin/ld: /tmp/cchuKM7s.o: in function `count_samples':
+test_hash_partition.c:(.text+0x9a): undefined reference to `hash_partitions_get_claimant'
+/usr/bin/ld: /tmp/cchuKM7s.o: in function `test_rejected_entry_does_not_shift_weights':
+test_hash_partition.c:(.text+0x120): undefined reference to `hash_partitions_create_with_weights'
+/usr/bin/ld: test_hash_partition.c:(.text+0x397): undefined reference to `hash_partitions_free'
+/usr/bin/ld: /tmp/cchuKM7s.o: in function `test_weight_proportions':
+test_hash_partition.c:(.text+0x3e2): undefined reference to `hash_partitions_create_with_weights'
+/usr/bin/ld: test_hash_partition.c:(.text+0x602): undefined reference to `hash_partitions_free'
+/usr/bin/ld: /tmp/cchuKM7s.o: in function `test_nonfinite_weights_rejected':
+test_hash_partition.c:(.text+0x64d): undefined reference to `hash_partitions_create_with_weights'
+/usr/bin/ld: test_hash_partition.c:(.text+0x7c2): undefined reference to `hash_partitions_free'
+/usr/bin/ld: test_hash_partition.c:(.text+0x7f5): undefined reference to `hash_partitions_create_with_weights'
+/usr/bin/ld: /tmp/cchuKM7s.o: in function `test_oversized_sizes_keep_bounds_sorted':
+test_hash_partition.c:(.text+0x882): undefined reference to `hash_partitions_create_with_sizes'
+/usr/bin/ld: test_hash_partition.c:(.text+0x987): undefined reference to `hash_partitions_free'
+/usr/bin/ld: /tmp/cchuKM7s.o: in function `test_equal_distribution':
+test_hash_partition.c:(.text+0x9c9): undefined reference to `hash_partitions_create'
+/usr/bin/ld: test_hash_partition.c:(.text+0xb20): undefined reference to `hash_partitions_free'
+collect2: error: ld returned 1 exit status
++ set +e
++ /tmp/ctl/ctl
+./scripts/ec2/verify_release_artifacts.sh: line 19: /tmp/ctl/ctl: No such file or directory
++ echo PRE_FIX_EXIT=127
+PRE_FIX_EXIT=127
++ set -e
++ echo '=== 1. make install-check (installed prefix + external consumer) ==='
+=== 1. make install-check (installed prefix + external consumer) ===
++ make install-check
++ tail -25
+install-check: DESTDIR=/tmp/tmp.QpcsoInOv5
+install-check: compiling external consumer against /tmp/tmp.QpcsoInOv5/usr/local/include
+external_consumer: installed headers and library OK
+install-check: running installed umem(1)
+install-check: PASS (prefix /tmp/tmp.QpcsoInOv5)
++ echo '=== 2. make dist ==='
+=== 2. make dist ===
++ make dist
++ tail -8
+  ! -type d ! -perm -400 -exec chmod a+r {} \; -o \
+  ! -type d ! -perm -444 -exec /bin/sh /home/ec2-user/libumem-surface/install-sh -c -m a+r {} {} \; \
+|| chmod -R a+r "umem-2.7.0"
+make[2]: Leaving directory '/home/ec2-user/libumem-surface'
+tardir=umem-2.7.0 && ${TAR-tar} chof - "$tardir" | BZIP2=${BZIP2--9} bzip2 -c >umem-2.7.0.tar.bz2
+tardir=umem-2.7.0 && ${TAR-tar} chof - "$tardir" | eval GZIP= gzip --best -c >umem-2.7.0.tar.gz
+make[1]: Leaving directory '/home/ec2-user/libumem-surface'
+if test -d "umem-2.7.0"; then find "umem-2.7.0" -type d ! -perm -200 -exec chmod u+w {} ';' && rm -rf "umem-2.7.0" || { sleep 5 && rm -rf "umem-2.7.0"; }; else :; fi
++ ls -la umem-2.7.0.tar.gz
+-rw-rw-r--. 1 ec2-user ec2-user 966376 Sep 21 21:59 umem-2.7.0.tar.gz
++ echo '=== 3. configure + make + make check from the extracted tarball ==='
+=== 3. configure + make + make check from the extracted tarball ===
++ D=/tmp/distcheck
++ '[' -d /tmp/distcheck ']'
++ mkdir -p /tmp/distcheck
++ tar xzf umem-2.7.0.tar.gz -C /tmp/distcheck
++ cd /tmp/distcheck/umem-2.7.0
++ ./configure
++ echo TARBALL_CONFIGURE_OK
+TARBALL_CONFIGURE_OK
+++ nproc
++ make -j8
++ echo TARBALL_MAKE_OK
+TARBALL_MAKE_OK
++ make check
++ tail -18
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+============================================================================
+Testsuite summary for umem 2.7.0
+============================================================================
+# TOTAL: 8
+# PASS:  8
+# SKIP:  0
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+============================================================================
+make[2]: Leaving directory '/tmp/distcheck/umem-2.7.0'
+make[1]: Leaving directory '/tmp/distcheck/umem-2.7.0'
++ echo '=== 4. tarball can build prop_palloc (examples/umem_palloc.c in EXTRA_DIST) ==='
+=== 4. tarball can build prop_palloc (examples/umem_palloc.c in EXTRA_DIST) ===
++ make test/property/prop_palloc
++ tail -6
++ echo PROP_PALLOC_OK
+PROP_PALLOC_OK
++ echo '=== 5. tarball install-check ==='
+=== 5. tarball install-check ===
++ make install-check
++ tail -12
+install-check: DESTDIR=/tmp/tmp.fy6NLFGMAd
+install-check: compiling external consumer against /tmp/tmp.fy6NLFGMAd/usr/local/include
+external_consumer: installed headers and library OK
+install-check: running installed umem(1)
+install-check: PASS (prefix /tmp/tmp.fy6NLFGMAd)

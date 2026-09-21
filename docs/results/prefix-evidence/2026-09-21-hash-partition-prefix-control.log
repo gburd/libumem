@@ -1,0 +1,21 @@
+FAIL test/unit/test_hash_partition.c:100: B owns 0/10000 samples, expected ~5000
+FAIL test/unit/test_hash_partition.c:103: C owns 10000/10000 samples, expected ~5000
+FAIL test/unit/test_hash_partition.c:130: big owns 0/10000 samples, expected ~7500
+FAIL test/unit/test_hash_partition.c:133: small owns 10000/10000 samples, expected ~2500
+FAIL test/unit/test_hash_partition.c:160: infinite-weight claimant owns hash space
+FAIL test/unit/test_hash_partition.c:164: sole finite claimant does not own the whole hash space
+FAIL test/unit/test_hash_partition.c:171: all-nonfinite input produced a partition table
+test_hash_partition: 7 failure(s)
+PRE_FIX_EXIT=1
+
+--- how this was produced ---
+Pre-fix source: `git show 413a795^:umem_hash_partition.c`, staged into the
+rsynced tree as tmp/prefix-control/old_hash_partition.c (the EC2 copy has no
+.git).  Compiled with the POST-fix test:
+
+  gcc -I. -o /tmp/ctl_bin test/unit/test_hash_partition.c \
+      tmp/prefix-control/old_hash_partition.c -lm
+
+Host: intel-lo@surface (c7i.2xlarge, x86_64, Amazon Linux 2023, gcc 11).
+Post-fix run of the same test on the same host: "all checks passed" (see the
+build-default job in this directory's sibling logs).
