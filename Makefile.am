@@ -35,6 +35,9 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/stress/repro_rseq_trailing_store \
 		  test/stress/repro_naive_reload_race \
 		  test/stress/stress_concurrency_oracle \
+		  test/stress/repro_calloc_interpose_race \
+		  test/unit/test_overflow_contracts \
+		  test/unit/test_aligned_contracts \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
 		  tools/umem_profile_dump
@@ -411,6 +414,24 @@ test_stress_stress_concurrency_oracle_SOURCES = test/stress/stress_concurrency_o
 test_stress_stress_concurrency_oracle_LDADD = libumem.la
 test_stress_stress_concurrency_oracle_LDFLAGS = -pthread
 
+# P1.1 regression: interposer calloc storage ownership under concurrency.
+# Deliberately NOT linked against libumem_malloc.la -- it must be run under
+# LD_PRELOAD (see test/stress/interpose_regress.sh), and it doubles as its own
+# control when run against the platform allocator.
+test_stress_repro_calloc_interpose_race_SOURCES = \
+	test/stress/repro_calloc_interpose_race.c
+test_stress_repro_calloc_interpose_race_LDFLAGS = -pthread
+
+# P1.7(a,b) regression: checked arithmetic in the arena and bootstrap paths.
+test_unit_test_overflow_contracts_SOURCES = test/unit/test_overflow_contracts.c
+test_unit_test_overflow_contracts_LDADD = libumem.la
+test_unit_test_overflow_contracts_CPPFLAGS = -I$(srcdir)
+
+# P1.7(c,e) regression: aligned-allocation and realloc-ownership contracts.
+# Like the calloc race, run both with and without LD_PRELOAD.
+test_unit_test_aligned_contracts_SOURCES = test/unit/test_aligned_contracts.c
+test_unit_test_aligned_contracts_CPPFLAGS = -I$(srcdir)
+
 # Debug overhead benchmark
 test_bench_bench_debug_overhead_SOURCES = test/bench/bench_debug_overhead.c
 test_bench_bench_debug_overhead_LDADD = libumem.la
@@ -482,7 +503,9 @@ endif
 # See PTHREAD_LIMITATION.md for details.
 TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh \
-	test/stress/oracle_fast.sh
+	test/stress/oracle_fast.sh \
+	test/unit/test_overflow_contracts \
+	test/stress/interpose_regress.sh
 
 TEST_EXTENSIONS = .sh
 SH_LOG_COMPILER = $(SHELL)
@@ -495,7 +518,8 @@ test_test_inspect_live_LDADD = libumem.la
 
 dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/test_lldb_e2e.sh \
-	test/stress/oracle_fast.sh
+	test/stress/oracle_fast.sh \
+	test/stress/interpose_regress.sh
 
 # Generated API documentation goes to doxygen-out/, NOT docs/.
 # docs/ is durable, version-controlled project documentation (plans, results,
