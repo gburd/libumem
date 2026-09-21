@@ -11,6 +11,8 @@
  *   hash_guards   aborts with "boundary tag corrupted" on a valid alloc (P1.5a)
  *   big_quantum   second pass gets a truncated freelist (P1.5b)
  *   race          reclaim publishes slab_state unlocked (P1.5c)
+ *   reap_reentry  reap inside an update pass self-deadlocks on
+ *                 umem_cache_lock (found by the race test; pre-existing)
  */
 
 #include "../munit.h"
@@ -152,6 +154,24 @@ test_reclaim_race(const MunitParameter params[], void *data)
         vars, vals));
 }
 
+/*
+ * P1.5c control: reap-driven update passes under churn.  The inner
+ * umem_reap() reached from vmem_xalloc inside a pass that holds
+ * umem_cache_lock must decline instead of deadlocking.  Without the
+ * IN_UPDATE() guard in umem_reap() the helper hangs and this test times out
+ * with the process still alive.
+ */
+static MunitResult
+test_reclaim_reap_reentry(const MunitParameter params[], void *data)
+{
+    (void)params; (void)data;
+    static const char *const vars[] = { "UMEM_OPTIONS", NULL };
+    static const char *const vals[] = {
+        "reclaim=1,reclaim_delay=0,reap_interval=1", NULL };
+    return helper_result(run_helper(UMEM_RECLAIM_REUSE_HELPER, "reap_reentry",
+        vars, vals));
+}
+
 static MunitTest reclaim_tests[] = {
     { "/destroy_releases_slabs", test_reclaim_destroy_releases_slabs,
       NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
@@ -160,6 +180,8 @@ static MunitTest reclaim_tests[] = {
     { "/big_quantum_reuse", test_reclaim_big_quantum_reuse,
       NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/race", test_reclaim_race,
+      NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/reap_reentry", test_reclaim_reap_reentry,
       NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }
 };

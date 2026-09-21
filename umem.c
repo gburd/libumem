@@ -4363,6 +4363,32 @@ umem_reap(void)
 	extern int __nthreads(void);
 #endif
 
+	/*
+	 * A reap requested from inside an update pass is both redundant and
+	 * fatal.  Redundant: the pass is already doing the reap work.  Fatal:
+	 * umem_cache_applyall() holds umem_cache_lock across the whole walk,
+	 * and umem_updateall() below takes umem_cache_lock -- which is not
+	 * recursive, so the update thread deadlocks against itself.
+	 *
+	 * The path is real, not theoretical, and was observed hanging:
+	 *
+	 *   umem_cache_applyall(umem_cache_update)   [holds umem_cache_lock]
+	 *     umem_cache_reclaim_pages -> umem_slab_destroy -> vmem_free
+	 *       -> _umem_cache_free -> _umem_cache_alloc (vmem seg refill)
+	 *         -> umem_slab_create -> vmem_alloc -> vmem_xalloc
+	 *           -> vmem_reap -> umem_reap -> umem_updateall  [blocks here]
+	 *
+	 * It stayed latent because the rate limiter above usually returns
+	 * early, so the inner reap normally never reaches umem_updateall().
+	 *
+	 * Dropping the reap is consistent with what this function already
+	 * does when umem_reaping != UMEM_REAP_DONE or the interval has not
+	 * elapsed: reaps are advisory and self-throttling, so the contract
+	 * has always been "may be skipped", never "always performed".
+	 */
+	if (IN_UPDATE())
+		return;
+
 	if (umem_ready != UMEM_READY || umem_reaping != UMEM_REAP_DONE ||
 	    gethrtime() < umem_reap_next)
 		return;

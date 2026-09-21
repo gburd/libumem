@@ -49,6 +49,11 @@
  *     Reclaim passes concurrent with allocation/free on one cache, so the
  *     unsynchronized slab_state publication has a real racing reader.
  *
+ *   reap_reentry  (P1.5c control)
+ *     Reap-driven update passes under churn, which reach
+ *     vmem_xalloc -> vmem_reap -> umem_reap from INSIDE a pass that holds
+ *     umem_cache_lock.  Hangs without the IN_UPDATE() guard in umem_reap().
+ *
  * Exit: 0 pass, 1 fail, 2 usage, 77 skip (preconditions not met).
  */
 
@@ -58,7 +63,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
+
+/*
+ * Run one update pass the way umem_st_update() does: with
+ * umem_st_update_thr set, so IN_UPDATE() is true for the duration.
+ *
+ * That is not cosmetic.  A pass destroys slabs, and umem_slab_destroy ->
+ * vmem_free can need a vmem seg refill, which reaches
+ * vmem_xalloc -> vmem_reap -> umem_reap.  umem_reap() must see IN_UPDATE()
+ * to decline, because umem_cache_applyall() is holding umem_cache_lock and
+ * umem_updateall() would block on it from this same thread.  Driving the
+ * pass without publishing the thread id tests a state the library never
+ * reaches, and hangs.
+ */
+static void
+update_pass(void)
+{
+	umem_st_update_thr = thr_self();
+	umem_cache_applyall(umem_cache_update);
+	umem_st_update_thr = 0;
+}
 
 /*
  * Count this cache's slabs and how many have reached SLAB_CLEAN.
@@ -89,7 +115,8 @@ slab_census(umem_cache_t *cp, int *nslabs, int *nclean)
  * Each pass through umem_cache_update() -- the same entry point the update
  * thread uses -- adds umem_reap_interval to every idle slab's
  * slab_idle_time and acts once it reaches umem_reclaim_delay.  Calling it
- * directly skips umem_reap()'s rate limiter, so the test need not sleep out
+ * directly (via update_pass(), which publishes the thread id first) skips
+ * umem_reap()'s rate limiter, so the test need not sleep out
  * umem_reap_interval.
  *
  * Stopping at the first CLEAN slab matters: one further pass past
@@ -103,7 +130,7 @@ reclaim_until_clean(umem_cache_t *cp)
 	int i, nslabs, nclean;
 
 	for (i = 0; i < 64; i++) {
-		umem_cache_applyall(umem_cache_update);
+		update_pass();
 		slab_census(cp, &nslabs, &nclean);
 		if (nclean > 0)
 			return (1);
@@ -319,6 +346,16 @@ run_big_quantum(void)
  * same cache, so slab_state has a real reader (umem_slab_alloc /
  * umem_slab_free under cache_lock) racing a real writer (the reclaim pass).
  *
+ * Reclaim is driven through umem_reap(), which is how it is actually
+ * reached: umem_reap() hands the work to the update thread (or runs it
+ * inline through umem_st_update()), so the pass executes with
+ * umem_st_update_thr / umem_update_thr set and IN_UPDATE() true.  Calling
+ * umem_cache_applyall(umem_cache_update) directly from an application
+ * thread, as an earlier version of this test did, runs the pass with
+ * IN_UPDATE() false -- which defeats the guards that depend on it and
+ * deadlocks on umem_cache_lock, i.e. it tests a configuration that cannot
+ * occur.
+ *
  * Two kinds of check:
  *  - TSAN, when the library is built with --enable-tsan, reports the
  *    unsynchronized slab_state store directly.
@@ -364,8 +401,15 @@ race_reclaim(void *arg)
 {
 	struct race_ctx *ctx = arg;
 
-	while (!ctx->stop)
-		umem_cache_applyall(umem_cache_update);
+	while (!ctx->stop) {
+		/*
+		 * umem_reap() is rate-limited to one reap per
+		 * umem_reap_interval (1 s here, set by the caller's
+		 * UMEM_OPTIONS), so this loop yields instead of spinning.
+		 */
+		umem_reap();
+		usleep(20000);
+	}
 	return (NULL);
 }
 
@@ -419,13 +463,81 @@ run_race(void)
 	return (0);
 }
 
+/*
+ * P1.5c control: reproduce the umem_cache_lock self-deadlock that an
+ * unguarded reap-inside-update hits, so the guard in umem_reap() has a
+ * check that fails without it.
+ *
+ * Runs the reclaim pass the way the update thread does -- through
+ * umem_reap(), which sets umem_st_update_thr and calls
+ * umem_cache_applyall(umem_cache_update) with umem_cache_lock held -- while
+ * other threads churn hard enough that slab destroy inside the pass has to
+ * refill vmem segs, reaching vmem_xalloc -> vmem_reap -> umem_reap.
+ *
+ * WITHOUT the IN_UPDATE() guard that inner umem_reap() calls
+ * umem_updateall(), which blocks on the umem_cache_lock its own thread
+ * already holds: the process hangs and the harness times out.  WITH the
+ * guard the inner reap returns immediately.
+ *
+ * Reports elapsed time so a hang is distinguishable from a fast pass in the
+ * log rather than only by the harness's timeout.
+ */
+static int
+run_reap_reentry(void)
+{
+	enum { NCHURN = 4, SECONDS = 5 };
+	struct race_ctx ctx;
+	pthread_t churn[NCHURN];
+	time_t start, elapsed;
+	int i, created = 0;
+
+	ctx.cp = umem_cache_create("reclaim_reap_reentry", 64, 0,
+	    NULL, NULL, NULL, NULL, NULL, UMC_NOMAGAZINE);
+	if (ctx.cp == NULL) {
+		printf("FAIL: umem_cache_create failed\n");
+		return (1);
+	}
+	ctx.stop = 0;
+	ctx.alloc_fail = 0;
+
+	for (i = 0; i < NCHURN; i++) {
+		if (pthread_create(&churn[i], NULL, race_churn, &ctx) != 0)
+			break;
+		created++;
+	}
+	if (created == 0) {
+		printf("FAIL: pthread_create failed\n");
+		umem_cache_destroy(ctx.cp);
+		return (1);
+	}
+
+	start = time(NULL);
+	while (time(NULL) - start < SECONDS) {
+		umem_reap();
+		usleep(5000);
+	}
+	elapsed = time(NULL) - start;
+
+	ctx.stop = 1;
+	for (i = 0; i < created; i++)
+		(void) pthread_join(churn[i], NULL);
+
+	umem_cache_destroy(ctx.cp);
+
+	printf("ok: %d reap-driven update passes under churn completed in "
+	    "%lds (no umem_cache_lock self-deadlock)\n",
+	    SECONDS, (long)elapsed);
+	return (0);
+}
+
 int
 main(int argc, char **argv)
 {
 	void *warm;
 
 	if (argc < 2) {
-		printf("usage: %s <hash_guards|big_quantum|race>\n", argv[0]);
+		printf("usage: %s <hash_guards|big_quantum|race|reap_reentry>\n",
+		    argv[0]);
 		return (2);
 	}
 
@@ -445,7 +557,10 @@ main(int argc, char **argv)
 		return (run_big_quantum());
 	if (strcmp(argv[1], "race") == 0)
 		return (run_race());
+	if (strcmp(argv[1], "reap_reentry") == 0)
+		return (run_reap_reentry());
 
-	printf("usage: %s <hash_guards|big_quantum|race>\n", argv[0]);
+	printf("usage: %s <hash_guards|big_quantum|race|reap_reentry>\n",
+	    argv[0]);
 	return (2);
 }
