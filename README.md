@@ -287,8 +287,8 @@ row can currently claim production readiness.
 
 | Platform | Architecture | Evidence | Status |
 |---|---|---|---|
-| Linux | x86_64 | CI on every push (normal, ASan, UBSan, gcov); benchmarks on EC2 `c7i` and `c7i.metal-48xl`; all Phase 1 regressions run here | Best covered. Not production-ready — see below |
-| Linux | aarch64 | Manual EC2 runs on `c7g`/`c8g.metal-48xl` (build, `make check`, `test_main`, benchmarks). The nightly CI job exists and is validated but is **not armed** (repo secrets never added) | Builds and tests pass when run by hand; unattended coverage absent |
+| Linux | x86_64 | CI on every push (normal, ASan, UBSan, gcov); benchmarks on EC2 `c7i` and `c7i.metal-48xl`; all Phase 1 regressions run here; 2026-09-21 build-option matrix ([log](docs/results/2026-09-21-phase4-verification.log)) | Best covered. Not production-ready — see below |
+| Linux | aarch64 | Manual EC2 runs on `c7g`/`c8g.metal-48xl` (build, `make check`, `test_main`, benchmarks, and the 2026-09-21 build-option matrix: [log](docs/results/2026-09-21-phase4-verification-aarch64.log)). The nightly CI job exists and is validated but is **not armed** (repo secrets never added) | Builds and tests pass when run by hand; unattended coverage absent |
 | Linux | riscv64 | Cross-build via Nix + QEMU only | Cross-compiles; no hardware validation |
 | FreeBSD | amd64 | Ported, W^X and `MAP_ANON` fixes verified at the time | No CI, no recent run recorded |
 | illumos | x86_64 | Manual `m4.xlarge` run (build, `LD_PRELOAD` smoke, benchmark matrix) | Manually validated at one point in time |
@@ -338,6 +338,33 @@ make && make install
 A single `LD_PRELOAD=/usr/lib/libumem_malloc.so.1` then resolves to the
 32-bit lib for 32-bit targets and, via the `/64` path token, to
 `/usr/lib/64/libumem_malloc.so.1` for 64-bit targets.
+
+---
+
+## Build options
+
+The default build is deliberately portable and conservative. Every option
+below either works or does not exist — there is no flag that turns on broken
+behaviour (Phase 4 of the readiness plan).
+
+| Option | Default | Effect |
+|---|---|---|
+| `--enable-rseq[=auto]` | auto (on where `linux/rseq.h` exists) | Builds the rseq fast-path assembly. Currently serves **zero** magazine hits — see "Known limitation" above. |
+| `--enable-numa[=auto]` | auto (on where libnuma exists) | NUMA **topology queries** (node count, CPU→node map, distances) plus the depot's cross-CPU locality accounting. Not a NUMA allocation policy; see `umem_numa.h`. |
+| `--enable-introspect` | off | The in-process `umemctl` control channel. Zero hot-path cost when off. |
+| `--enable-avx2` | **off** | `-mavx2` for the whole library. **Not generic**: the result requires an AVX2-capable CPU (Haswell / Excavator or newer) and will `SIGILL` on older x86-64. x86_64 only; refused elsewhere. |
+| `--enable-asan` / `--enable-ubsan` / `--enable-tsan` | off | Sanitizer builds. |
+| `--enable-coverage` | off | gcov/lcov instrumentation; adds the `coverage` target. |
+| `--enable-pgo=generate\|use` | off | Profile-guided optimization. |
+
+The default x86-64 build targets the SSE2 baseline, which every x86-64 CPU
+has, so it runs anywhere. Configure used to promote "the compiler accepts
+`-mavx2`" into a global `-mavx2`, which silently made a nominally generic
+build illegal on pre-Haswell hardware; that is now opt-in and loud. There is
+no runtime ISA dispatch.
+
+Removed options: `--enable-percpu-caching` and `--enable-htm` (neither ever
+worked — see `attic/README.md`), and `UMEM_OPTIONS=numa` (never registered).
 
 ---
 
