@@ -1,0 +1,14 @@
+--- P1.4 destroy (default options) ---
+FAIL: reclaim_destroy_nohash: arena still holds bytes after destroy (4096)
+FAIL: reclaim_destroy_hash: arena still holds bytes after destroy (4096)
+FAILED (2)
+rc=1
+--- P1.5a hash_guards ---
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=-32, ncpus=8)
+bash: line 1: 50645 Aborted                 (core dumped) UMEM_DEBUG=guards UMEM_OPTIONS=reclaim=1,reclaim_delay=0,reap_interval=1 ./test/unit/.libs/repro_reclaim_reuse hash_guards
+rc=134
+--- P1.5b big_quantum ---
+bash: line 1: 50708 Aborted                 (core dumped) UMEM_OPTIONS=reclaim=1,reclaim_delay=0,reap_interval=1 ./test/unit/.libs/repro_reclaim_reuse big_quantum
+rc=134
+--- P1.5c race ---
+rc=124

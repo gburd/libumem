@@ -1,0 +1,21 @@
+=== P1.5a hash_guards, stderr captured ===
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+umem allocator: boundary tag corrupted
+bcp ^ bxstat = 0, should be f4eef4ee
+buffer=0x7f279a583000  bufctl=0x7f279a5b7970  cache: reclaim_hash_guards
+umem: heap corruption detected
+bash: line 1: 51830 Aborted                 (core dumped) UMEM_DEBUG=guards,verbose UMEM_OPTIONS=reclaim=1,reclaim_delay=0,reap_interval=1 ./test/unit/.libs/repro_reclaim_reuse hash_guards 2>&1
+     51831 Done                    | head -30
+rc=134
+=== P1.5b big_quantum, stderr captured ===
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+Assertion failed: sp->slab_refcnt == sp->slab_chunks, file umem.c, line 1659
+bash: line 1: 51837 Aborted                 (core dumped) UMEM_DEBUG=verbose UMEM_OPTIONS=reclaim=1,reclaim_delay=0,reap_interval=1 ./test/unit/.libs/repro_reclaim_reuse big_quantum 2>&1
+     51839 Done                    | head -30
+rc=134
+=== P1.4 destroy, verbose ===
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+vmem_destroy('reclaim_destroy_nohash'): leaked 4096 bytesvmem_destroy('reclaim_destroy_hash'): leaked 4096 bytesFAIL: reclaim_destroy_nohash: arena still holds bytes after destroy (4096)
+FAIL: reclaim_destroy_hash: arena still holds bytes after destroy (4096)
+FAILED (2)
+rc=1
