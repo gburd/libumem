@@ -35,6 +35,7 @@ extern MunitSuite suite_sbo;
 extern MunitSuite suite_arena;
 extern MunitSuite suite_umem_own;
 extern MunitSuite suite_coverage;
+extern MunitSuite suite_reclaim;
 extern MunitSuite suite_stacktrace;
 extern MunitSuite suite_profile;
 
@@ -60,6 +61,7 @@ static MunitSuite* test_suites[] = {
     &suite_sbo,
     &suite_arena,
     &suite_coverage,
+    &suite_reclaim,
     &suite_stacktrace,
     &suite_profile,
     &suite_vmem,

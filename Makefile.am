@@ -40,6 +40,8 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/unit/test_overflow_contracts \
 		  test/unit/test_aligned_contracts \
 		  test/unit/test_hash_partition \
+		  test/unit/repro_reclaim_destroy \
+		  test/unit/repro_reclaim_reuse \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
 		  tools/umem_profile_dump
@@ -264,12 +266,31 @@ test_test_main_SOURCES = test/test_main.c test/munit.c \
 			 test/unit/test_arena.c \
 			 test/unit/test_umem_own.c \
 			 test/unit/test_coverage.c \
+			 test/unit/test_reclaim.c \
 			 test/unit/test_stacktrace.c \
 			 test/unit/test_profile.c
 test_test_main_LDADD = libumem.la
 test_test_main_LDFLAGS = -pthread -lm
 test_test_main_CPPFLAGS = -I$(srcdir)/test \
-	-DUMEM_ENV_HELPER='"$(abs_builddir)/test/unit/.libs/umem_env_helper"'
+	-DUMEM_ENV_HELPER='"$(abs_builddir)/test/unit/.libs/umem_env_helper"' \
+	-DUMEM_RECLAIM_DESTROY_HELPER='"$(abs_builddir)/test/unit/.libs/repro_reclaim_destroy"' \
+	-DUMEM_RECLAIM_REUSE_HELPER='"$(abs_builddir)/test/unit/.libs/repro_reclaim_reuse"'
+
+# P1.4 / P1.5 regressions: cache destroy with retained empty slabs, and
+# reclaimed-slab reuse (hash+guards buftags, multi-page non-hash freelists,
+# unlocked slab_state publication).  Exec helpers because the interesting
+# cases need UMEM_DEBUG / UMEM_OPTIONS, which umem reads once at init.  They
+# reach into allocator internals (slab_state, cache_slabsize), so they
+# include umem_base.h and need -I$(srcdir) plus the sys/ headers.
+test_unit_repro_reclaim_destroy_SOURCES = test/unit/repro_reclaim_destroy.c
+test_unit_repro_reclaim_destroy_LDADD = libumem.la
+test_unit_repro_reclaim_destroy_LDFLAGS = -pthread
+test_unit_repro_reclaim_destroy_CPPFLAGS = -I$(srcdir)
+
+test_unit_repro_reclaim_reuse_SOURCES = test/unit/repro_reclaim_reuse.c
+test_unit_repro_reclaim_reuse_LDADD = libumem.la
+test_unit_repro_reclaim_reuse_LDFLAGS = -pthread
+test_unit_repro_reclaim_reuse_CPPFLAGS = -I$(srcdir)
 
 # --- v2.1.0 additive test/tool targets (exec-helper harness, property
 # --- tests, benchmark contention driver, umemctl live-inspection CLI) ---
