@@ -125,10 +125,24 @@ fi
 build_cfg "numa-off" --disable-numa && check_suite "numa-off"
 
 step "avx2: opt-in build"
-build_cfg "avx2-on" --enable-avx2 && {
-	if grep -q -- '-mavx2' /tmp/make.log; then ok "--enable-avx2 passes -mavx2"; else bad "--enable-avx2 did not pass -mavx2"; fi
-	check_suite "avx2-on"
-}
+# --enable-avx2 is x86_64-only and must REFUSE elsewhere rather than silently
+# doing nothing.  Both outcomes below are correct behaviour; which one is
+# correct depends on the host.
+if [ "$(uname -m)" = "x86_64" ]; then
+	build_cfg "avx2-on" --enable-avx2 && {
+		if grep -q -- '-mavx2' /tmp/make.log; then ok "--enable-avx2 passes -mavx2"; else bad "--enable-avx2 did not pass -mavx2"; fi
+		check_suite "avx2-on"
+	}
+else
+	if ./configure --enable-avx2 > /tmp/avx2-nonx86.log 2>&1; then
+		bad "--enable-avx2 was accepted on $(uname -m) (must be refused)"
+	elif grep -q 'x86_64-only' /tmp/avx2-nonx86.log; then
+		ok "--enable-avx2 is refused on $(uname -m) with a clear message"
+	else
+		bad "--enable-avx2 failed on $(uname -m) but not with the x86_64-only error"
+		tail -5 /tmp/avx2-nonx86.log
+	fi
+fi
 
 build_cfg "introspect" --enable-introspect && check_suite "introspect"
 

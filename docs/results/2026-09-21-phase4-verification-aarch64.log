@@ -1,0 +1,211 @@
+
+############ default: configure  ############
+PASS: default: configure
+PASS: default: make
+  compiler warnings: 15
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+FAIL: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  7
+# SKIP:  0
+# FAIL:  1
+# ERROR: 0
+KNOWN: default: make check 7/8 -- sole failure is
+       test/debugger/test_inspect_e2e.sh's invalid
+       cached_skipped==2 assertion, pre-existing and not owned
+       by this workstream.  NOT counted as a pass.
+
+############ default: hash-partition regression ############
+test_hash_partition: all checks passed
+PASS: test_hash_partition
+
+############ default: no AVX2 in a generic build ############
+PASS: default build is AVX2-free
+PASS: HAVE_AVX2 not defined by default
+
+############ default: removed options are actually gone ############
+PASS: --enable-percpu-caching is gone from configure --help
+PASS: --enable-htm is gone from configure --help
+PASS: --enable-percpu-caching is reported as unrecognized
+PASS: UMEM_PER_CPU_CACHE cannot be defined
+
+############ default: install-check (installed prefix + external consumer) ############
+install-check: DESTDIR=/tmp/tmp.bPuOCHIEg6
+install-check: compiling external consumer against /tmp/tmp.bPuOCHIEg6/usr/local/include
+external_consumer: installed headers and library OK
+install-check: running installed umem(1)
+install-check: PASS (prefix /tmp/tmp.bPuOCHIEg6)
+PASS: install-check
+
+############ rseq-off: configure --disable-rseq ############
+PASS: rseq-off: configure
+PASS: rseq-off: make
+  compiler warnings: 13
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+FAIL: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  7
+# SKIP:  0
+# FAIL:  1
+# ERROR: 0
+KNOWN: rseq-off: make check 7/8 -- sole failure is
+       test/debugger/test_inspect_e2e.sh's invalid
+       cached_skipped==2 assertion, pre-existing and not owned
+       by this workstream.  NOT counted as a pass.
+
+############ rseq-on: configure --enable-rseq ############
+PASS: rseq-on: configure
+PASS: rseq-on: make
+  compiler warnings: 15
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  8
+# SKIP:  0
+# FAIL:  0
+# ERROR: 0
+PASS: rseq-on: make check 8/8
+
+############ numa: is libnuma present on this host? ############
+  libnuma not installed; installing
+
+############ numa-on: configure --enable-numa ############
+PASS: numa-on: configure
+PASS: numa-on: make
+  compiler warnings: 15
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  8
+# SKIP:  0
+# FAIL:  0
+# ERROR: 0
+PASS: numa-on: make check 8/8
+
+############ numa-off: configure --disable-numa ############
+PASS: numa-off: configure
+PASS: numa-off: make
+  compiler warnings: 12
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  8
+# SKIP:  0
+# FAIL:  0
+# ERROR: 0
+PASS: numa-off: make check 8/8
+
+############ avx2: opt-in build ############
+PASS: --enable-avx2 is refused on aarch64 with a clear message
+
+############ introspect: configure --enable-introspect ############
+PASS: introspect: configure
+PASS: introspect: make
+  compiler warnings: 15
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+# TOTAL: 8
+# PASS:  8
+# SKIP:  0
+# FAIL:  0
+# ERROR: 0
+PASS: introspect: make check 8/8
+
+############ dist-base: configure  ############
+PASS: dist-base: configure
+PASS: dist-base: make
+  compiler warnings: 15
+
+############ make dist ############
+PASS: make dist
+-rw-rw-r--. 1 ec2-user ec2-user 982785 Sep 21 23:40 umem-2.7.0.tar.gz
+
+############ build + check + install-check from the extracted tarball ############
+PASS: tarball configure
+PASS: tarball make
+# TOTAL: 8
+# PASS:  8
+# FAIL:  0
+PASS: tarball builds prop_palloc (examples/umem_palloc.c is distributed)
+install-check: DESTDIR=/tmp/tmp.56ZrLEiZfQ
+install-check: compiling external consumer against /tmp/tmp.56ZrLEiZfQ/usr/local/include
+external_consumer: installed headers and library OK
+install-check: running installed umem(1)
+install-check: PASS (prefix /tmp/tmp.56ZrLEiZfQ)
+PASS: tarball end-to-end
+
+############ SUMMARY ############
+PASS: 29   FAIL: 0   KNOWN-PREEXISTING: 2
+
+=== provenance ===
+Host:    arm-lo@surface, c7g.2xlarge (8 vCPU), aarch64,
+         Amazon Linux 2023, gcc 11.5.0, libnuma present
+Runner:  scripts/ec2/job.sh arm-lo@surface start ph4arm2 5400 \
+             './scripts/ec2/verify_phase4.sh'
+
+=== aarch64-specific results ===
+  * --enable-avx2 is REFUSED with "configure: error: --enable-avx2 is
+    x86_64-only (this host is aarch64)" rather than silently accepted and
+    ignored.  This is the intended behaviour of moving AC_ARG_ENABLE out of
+    the amd64-only block: an option that cannot apply must fail loudly.
+    (The first aarch64 run counted this as a FAIL because the harness, not
+    the build, assumed x86_64; the harness was corrected, not the build.)
+  * default build is AVX2-free and HAVE_AVX2 undefined, as on x86_64.
+  * the hash-partition regression passes.
+  * --enable-rseq, --disable-rseq, --enable-numa, --disable-numa,
+    --enable-introspect all build; make dist -> tarball builds, passes
+    make check, builds prop_palloc, and passes install-check.
+
+=== the two KNOWN-PREEXISTING entries ===
+test/debugger/test_inspect_e2e.sh's cached_skipped == 2 assertion failed here
+in BOTH the default and the --disable-rseq configuration.  On x86_64 the
+default build failed it intermittently (2/12) and --disable-rseq
+deterministically (12/12); on this aarch64 host it failed in the default
+build too on this run.  Same pre-existing invalid assertion (proven
+independent of this workstream by a pre-Phase-4 rebuild on x86_64; see
+2026-09-21-make-check-flaky-inspect-e2e.log).  Not retried, and counted
+separately from PASS and FAIL.
+
+Not established by this run: whether the aarch64 default-build failure rate
+is higher than x86_64's 2/12 or whether this run was unlucky -- the per-run
+rate was not measured on aarch64.
+
+=== not covered ===
+  * high-core-count aarch64 (arm-hi) -- this is an 8 vCPU box.
+  * sanitizer/PGO builds; anything outside make check's 8 entries.
