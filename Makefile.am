@@ -554,11 +554,17 @@ nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h \
 	umem_arena.h umem_own.h \
 	umem_profile.h umem_stacktrace.h umem_inspect.h
 
-# Test suite
-# Using simple smoke tests that don't trigger pthread_create/malloc deadlock.
-# test/test_main (comprehensive unit tests) hangs due to malloc interposition
-# creating circular dependency: pthread_create -> malloc -> pthread_getspecific.
-# See PTHREAD_LIMITATION.md for details.
+# Test suite -- DELIBERATELY SMALL.  `make check` is a smoke suite, not the
+# comprehensive one, and anything that quotes it as evidence should say so.
+#
+# test/test_main (the several-hundred-assertion unit suite) is excluded: it
+# is run explicitly as `test/test_main --no-fork`.  Historically this was
+# attributed to a pthread_create -> malloc -> pthread_getspecific deadlock
+# under malloc interposition, documented in a PTHREAD_LIMITATION.md that no
+# longer exists in the tree; the interposer has since been reworked (it now
+# hands off to umem proper once initialization completes), so that
+# attribution is stale.  Whether test_main can safely join TESTS has not
+# been re-tested -- do not assume either way without running it.
 TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh \
 	test/stress/oracle_fast.sh

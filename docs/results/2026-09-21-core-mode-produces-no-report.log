@@ -1,0 +1,100 @@
++ which gdb
++ alias
++ eval declare -f
+++ declare -f
++ /usr/bin/which --tty-only --read-alias --read-functions --show-tilde --show-dot gdb
+/usr/bin/gdb
++ cat
++ gcc -I. -o /tmp/holder /tmp/holder.c -L.libs -lumem -lpthread -lm
++ UMEM_BIN=tools/umem
++ '[' -x tools/.libs/umem ']'
++ '[' -x tools/umem ']'
++ HPID=96057
++ sleep 3
++ LD_LIBRARY_PATH=.libs
++ UMEM_DEBUG=audit
++ /tmp/holder
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+ready 96057
++ set +e
++ LD_LIBRARY_PATH=.libs
++ timeout 180 tools/umem --pid 96057 findleaks
++ echo LIVE_EXIT=0
+LIVE_EXIT=0
++ set -e
++ kill 96057
+++ wc -c
++ echo '--- LIVE stdout (597 bytes) ---'
+--- LIVE stdout (597 bytes) ---
++ head -25 /tmp/live.out
+findleaks: 200 allocated buffers (25600 bytes) in 1 distinct leak class
+   COUNT        BYTES         SIZE CACHE                    STACK (top frame)
+-------- ------------ ------------ ------------------------ ------------------------------
+     200        25600          128 umem_alloc_128             #0  0x7f92b3a7b790 in umem_cache_alloc_debug+0x0 () at /home/ec2-user/libumem-surface/umem.c:1840
+
+== class 0: 200 allocs, 25600 bytes, cache=umem_alloc_128 (sample buffer 0x7f92b344c000) ==
+    #0  0x7f92b3a7b790 in umem_cache_alloc_debug+0x0 () at /home/ec2-user/libumem-surface/umem.c:1840
+
++ echo '--- LIVE stderr ---'
+--- LIVE stderr ---
++ head -10 /tmp/live.err
++ cd /tmp
++ ulimit -c unlimited
++ echo core.%p
++ sudo tee /proc/sys/kernel/core_pattern
++ set +e
++ LD_LIBRARY_PATH=/home/ec2-user/libumem-surface/.libs
++ UMEM_DEBUG=audit
++ /tmp/holder crash
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+./scripts/ec2/core_mode_probe.sh: line 53: 96088 Aborted                 (core dumped) LD_LIBRARY_PATH="$OLDPWD/.libs" UMEM_DEBUG=audit /tmp/holder crash
++ set -e
+++ ls -t /tmp/core.69386 /tmp/core.69635 /tmp/core.78278 /tmp/core.87212 /tmp/core.96088
+++ head -1
++ CORE=/tmp/core.96088
++ cd /home/ec2-user/libumem-surface
++ '[' -n /tmp/core.96088 ']'
++ set +e
++ LD_LIBRARY_PATH=.libs
++ timeout 180 tools/umem --core /tmp/core.96088 --exe /tmp/holder findleaks
++ echo CORE_EXIT=0
+CORE_EXIT=0
++ set -e
+++ wc -c
++ echo '--- CORE stdout (0 bytes) ---'
+--- CORE stdout (0 bytes) ---
++ head -25 /tmp/core.out
++ echo '--- CORE stderr ---'
+--- CORE stderr ---
++ head -25 /tmp/core.err
++ echo '=== VERDICT ==='
+=== VERDICT ===
++ '[' '!' -s /tmp/core.out ']'
++ echo 'CORE MODE PRODUCES NO REPORT (and check CORE_EXIT above: exiting 0'
+CORE MODE PRODUCES NO REPORT (and check CORE_EXIT above: exiting 0
++ echo 'with empty output is a silent false '\''no leaks'\'')'
+with empty output is a silent false 'no leaks')
+
+=== FINDING ===
+`umem --core <core> --exe <bin> findleaks` EXITS 0 AND PRINTS NOTHING.
+
+Control in the same run, same binary, same allocations, same command: the
+live-pid path printed a 597-byte report listing 200 outstanding buffers in 1
+class.  The core path printed 0 bytes and returned success.  Exiting 0 with
+an empty report is indistinguishable, to a script or a human, from "no
+leaks found" -- so this is worse than an error.
+
+Mechanism: tools/gdb/umem_gdb.py implements every command by making inferior
+calls -- it fopen()s a temp file IN THE TARGET and calls umem_findleaks()
+there (see _call_library()).  A core file is not a process; there is nothing
+to execute those calls.  gdb declines, umem_gdb.py produces no output, and
+tools/umem reports the debugger's success.
+
+Reproduce: scripts/ec2/core_mode_probe.sh (after a build).
+Host: intel-lo@surface, c7i.2xlarge, x86_64, Amazon Linux 2023, gdb 14.2.
+
+Scope note: fixing this needs a passive core reader (read allocator
+structures out of the core's memory image instead of calling into it), which
+is Phase 3 of docs/plans/2026-09-21-production-readiness.md.  This
+workstream withdraws the claim in umem(1), umem_debugging(7) and README.md
+rather than leaving a documented command that silently reports nothing.

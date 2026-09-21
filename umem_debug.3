@@ -116,9 +116,9 @@ extensions or can be dumped using the contents log.
 .sp
 .in +2
 .nf
-UMEM_DEBUG=audit,contents=512 \\
-UMEM_LOGGING=transaction=1M,contents=10M \\
-./myapp
+UMEM_DEBUG=audit,contents=512 \e
+UMEM_LOGGING=transaction=1M,contents=10M \e
+\&./myapp
 .fi
 .in -2
 .sp
@@ -144,7 +144,7 @@ UMEM_DEBUG=default ./myapp
 .fi
 .in -2
 .sp
-Performance impact: 50-70% overhead compared to production builds. Memory
+Performance impact: ~60% measured (see PERFORMANCE). Memory
 overhead: 100-500 bytes per allocation for audit structures and guards.
 .RE
 
@@ -344,7 +344,7 @@ UMEM_DEBUG=lite ./myapp
 .in -2
 .sp
 Lite mode is useful for performance-sensitive applications that still need
-some debugging capability. Performance impact: 15-25% overhead (vs 50-70%
+some debugging capability. Performance impact: ~28% measured (vs ~60%
 for full default mode).
 .RE
 
@@ -459,18 +459,23 @@ flags:
 .sp
 .TS
 box;
-cb | cb | cb | cb
-l | l | l | l .
-Debug Option	Flag(s)	Detects	Overhead
+cb | cb | cb
+l | l | l .
+Option	Flag(s)	Detects
 _
-audit	UMF_AUDIT	Memory leaks, allocation history	30-50%
-deadbeef	UMF_DEADBEEF	Use-after-free, uninitialized data	10-15%
-redzone	UMF_REDZONE	Buffer overruns	5-10%
-contents	UMF_CONTENTS	Buffer corruption (with audit)	10-15%
-guards	UMF_DEADBEEF | UMF_REDZONE	All of above	10-20%
-lite	UMF_LITE	Same as guards, lightweight	15-25%
-default	All of above	Comprehensive debugging	50-70%
+audit	UMF_AUDIT	outstanding allocs, history
+deadbeef	UMF_DEADBEEF	use-after-free, uninit reads
+redzone	UMF_REDZONE	buffer overruns
+contents	UMF_CONTENTS	corruption (needs audit)
+guards	UMF_DEADBEEF|UMF_REDZONE	both of the above
+lite	UMF_LITE	cheaper subset of guards
+default	all of the above	comprehensive
 .TE
+.sp
+.LP
+For overhead see PERFORMANCE below.  The per-option percentages this table
+used to carry had no recorded measurement behind them and disagreed with the
+one measurement that exists.
 .sp
 .LP
 Debug flags can be combined. Some flags automatically enable others:
@@ -541,19 +546,19 @@ To analyze buffer corruption:
 .sp
 .in +2
 .nf
-UMEM_DEBUG=audit,contents=1024 \\
-UMEM_LOGGING=transaction=10M,contents=50M \\
-./myapp
+UMEM_DEBUG=audit,contents=1024 \e
+UMEM_LOGGING=transaction=10M,contents=50M \e
+\&./myapp
 # Contents log saves buffer state at free time
 .fi
 .in -2
 .sp
-For production debugging with minimal overhead:
+For the cheapest useful configuration:
 .sp
 .in +2
 .nf
 UMEM_DEBUG=guards ./myapp
-# Only 10-20% overhead, catches most common bugs
+# ~32% measured (see PERFORMANCE); catches overruns and use-after-free
 .fi
 .in -2
 .SS "Debug Mode Interactions"
@@ -695,30 +700,51 @@ For complete documentation, see \fBumem_inspect\fR(3),
 .sp
 .LP
 Debug features have the following performance characteristics:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-\fBguards\fR: 10-20% overhead (pattern fill/check on alloc/free)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-\fBaudit\fR: 30-50% overhead (stack unwinding on every alloc/free)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-\fBUMEM_LOGGING\fR: 40-60% overhead (logging transaction history)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Combined \fBdefault\fR mode: 50-70% overhead
-.RE
+.LP
+Measured 2026-09-21 on a c7i.2xlarge (x86_64, Amazon Linux 2023, gcc 11,
+default build) with
+.IR test/bench/bench_debug_overhead :
+1,000,000 single-threaded 64-byte alloc/free cycles, one run per mode.
+.sp
+.TS
+box;
+cb | cb | cb
+l | l | l .
+Mode	Throughput vs none	p99 vs none
+_
+none	1.00x	33 ns
+lite	0.72x (28% cost)	47 ns
+guards	0.68x (32% cost)	50 ns
+audit	0.42x (58% cost)	78 ns
+default	0.40x (60% cost)	80 ns
+.TE
+.sp
+.LP
+.B contents
+and
+.B firewall
+are
+.I not measured.
+That benchmark reports no cost for either, which reflects the benchmark
+rather than the modes:
+.B contents
+is only meaningful together with
+.B audit
+and does not engage alone, and
+.B firewall
+only places guard pages at or above
+.I minfirewall,
+which the benchmark's 64-byte allocations never reach.  A firewall
+measurement above the threshold would be far more expensive \(em one mapped
+page plus one unmapped page per allocation.
+.B UMEM_LOGGING
+is likewise unmeasured here.
+.sp
+.LP
+One run, one size class, one thread, one machine.  Treat these as
+order-of-magnitude guidance and measure your own workload; see
+.I docs/results/2026-09-21-debug-mode-overhead-x86_64.log
+for the raw output and provenance.
 .sp
 .LP
 Memory overhead varies but typically adds 100-500 bytes per allocation for

@@ -179,7 +179,7 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 | Per-CPU magazines | ✅ | ✅ (tcache) | ✅ (thread cache) | ✅ (heap) | partial |
 | RSEQ fast path | ⚠️ wired, zero hits (see below) | ❌ | ✅ | ❌ | ❌ |
 | Lock-free per-thread cache | ✅ (PTC) | ✅ (tcache) | ✅ | ✅ | ❌ |
-| Built-in leak detection | ✅ (`::findleaks`) | profile-based | ❌ | profile-based | ❌ |
+| Built-in leak detection | ⚠️ outstanding-allocation report (`::findleaks`) | profile-based | ❌ | profile-based | ❌ |
 | Allocation history ring buffer | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Live attach for inspection | ✅ (`umem --pid`) | runtime stats only | runtime stats only | runtime stats only | ❌ |
 | Per-buffer stack capture | ✅ (`UMEM_DEBUG=audit`) | profile mode | sampling profile | ❌ | mtrace |
@@ -263,8 +263,10 @@ Where libumem **wins decisively**:
 - **Long-running services with episodic leaks.**  `umem --pid
   $(pgrep mydaemon) findleaks` against an unmodified production
   process is a workflow no other allocator supports.
-- **Forensics on a core dump.**  `umem --core core.* --exe ./bin
-  findleaks` works without re-running the workload.
+- **Forensics without re-running the workload.** Snapshot a live process
+  (`umem_inspect_snapshot()`, or `umem --pid ... snapshot`) and analyze the
+  `.ums` file offline, anywhere, with no target process required. Note that
+  `umem --core` does **not** work — see the Debugging section.
 - **Embedded address-space management.**  vmem hierarchies handle
   use cases (DMA pools, NUMA-bound allocations, custom
   page-replacement) where you'd otherwise hand-roll.
@@ -372,13 +374,26 @@ Quantum-cached, hierarchical virtual address management.  See
 
 Controlled via environment variable; no recompile.
 
-| Mode | Variable | Overhead | Detects |
-|------|----------|----------|---------|
-| Guards | `UMEM_DEBUG=guards` | ~10% | Buffer overruns, use-after-free |
-| Audit | `UMEM_DEBUG=audit` | ~30% | Per-buffer alloc / free stack traces |
-| Contents | `UMEM_DEBUG=default` | ~50% | Uninitialized reads, corruption |
-| Firewall | `UMEM_DEBUG=firewall` | high | Guard page per allocation |
-| Logging | `UMEM_LOGGING=transaction=1m` | ~5% | Chronological transaction log |
+| Mode | Variable | Measured overhead | Detects |
+|------|----------|-------------------|---------|
+| Lite | `UMEM_DEBUG=lite` | 28% (1.4× p99) | Cheaper subset of guards |
+| Guards | `UMEM_DEBUG=guards` | 32% (1.5× p99) | Buffer overruns, use-after-free |
+| Audit | `UMEM_DEBUG=audit` | 58% (2.4× p99) | Per-buffer alloc / free stack traces |
+| Contents | `UMEM_DEBUG=contents` | not measured | Buffer contents logging (needs `audit`) |
+| Default | `UMEM_DEBUG=default` | 60% (2.4× p99) | All of the above |
+| Firewall | `UMEM_DEBUG=firewall` | not measured | Guard page per allocation (≥ `minfirewall`) |
+| Logging | `UMEM_LOGGING=transaction=1m` | not measured | Chronological transaction log |
+
+Measured 2026-09-21 on `c7i.2xlarge` (x86_64) with
+`test/bench/bench_debug_overhead`: 1M single-threaded 64-byte alloc/free
+cycles, one run per mode — order-of-magnitude guidance, not a median-of-N
+result, and not measured on aarch64
+([log](docs/results/2026-09-21-debug-mode-overhead-x86_64.log)). The two
+"not measured" rows are honest: that benchmark's 64-byte allocations are
+below the default firewall threshold and do not engage `contents` either, so
+it reports ~0% for both, which is a property of the benchmark and not of the
+modes. Earlier revisions of this table published ~10%/~30%/~50%/~5% figures
+with no recorded measurement behind them.
 
 ### Per-Thread Cache (PTC)
 
@@ -540,9 +555,19 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
 `::findleaks`, `::umem_log`, and friends, via **two complementary tools**:
 
 - **`umem(1)`** — gdb/ptrace-driven, point-in-time. Works against a live
-  pid, a **core dump**, or an offline `.ums` snapshot; emits text or JSON.
+  pid or an offline `.ums` snapshot; emits text or JSON.
   Non-invasive (no in-process thread). Best for CI, post-mortem, and
   scripted leak-finding.
+
+  **`umem --core` does not work.** It is accepted and exits 0 while printing
+  nothing, which reads as "no leaks". Verified 2026-09-21 against a control:
+  the same command on a live process reported 200 outstanding buffers; on
+  that process's own core it produced zero bytes
+  ([log](docs/results/2026-09-21-core-mode-produces-no-report.log)). The
+  cause is structural — every command is executed by calling
+  `umem_inspect(3)` entry points *inside the target process*, and a core has
+  no process to call into. A passive core reader is not implemented
+  (Phase 3 of the readiness plan). Use the snapshot workflow instead.
 - **`umemctl`** — an opt-in in-process channel (`--enable-introspect` +
   `UMEM_OPTIONS=introspect=1`) for the live/interactive things a ptrace
   snapshot cannot do: **streaming** event logs (`logtail`), a live TUI
@@ -551,12 +576,13 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
   Zero hot-path cost when off. See [`docs/UMEMCTL.md`](docs/UMEMCTL.md).
 
 ```bash
-# umem(1): snapshot / core / CI leak-finding
+# umem(1): live pid / offline snapshot / CI leak-finding
 umem --pid $(pgrep myapp) findleaks
 umem --pid $(pgrep myapp) findleaks -f json | jq .
 umem --pid $(pgrep myapp) status
-umem --core core.12345 --exe ./myapp findleaks
-umem --dump /tmp/state.ums findleaks    # offline; no live process
+umem --pid $(pgrep myapp) snapshot /tmp/state.ums   # capture while alive
+umem --dump /tmp/state.ums findleaks               # analyze offline
+#   NOT: umem --core ...  (accepted, reports nothing -- see above)
 
 # umemctl: live streaming + interactive break-on-leak
 #   (built with --enable-introspect; target run with UMEM_OPTIONS=introspect=1)

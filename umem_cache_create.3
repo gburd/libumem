@@ -813,100 +813,45 @@ Use UMC_NOMAGAZINE only when objects are rarely allocated
 .el o
 Keep \fIbufsize\fR under 16KB for full debug support
 .RE
-.SS "Depot Striping"
+.SS "Per-CPU Depot Arrays"
 .sp
 .LP
-The magazine depot layer uses striped locks to reduce contention in
-multi-threaded applications. Each cache maintains 16 independent depot stripes,
-each with its own lock and magazine lists. Threads are assigned to stripes
-based on their thread ID using a hash function.
+The magazine depot layer is split per CPU to reduce contention.  Each cache
+allocates two arrays of
+.I umem_max_ncpus
+magazine lists (full and empty), each with its own lock, and a thread's
+depot operations go to the slot for the CPU it is currently running on (a
+cached CPU hint, refreshed periodically, rather than a syscall per
+operation).  When a thread's own slot is empty it scans the other slots with
+a non-blocking trylock before falling back to the central depot.
 .sp
 .LP
-The number of depot stripes is fixed at compile time (UMEM_DEPOT_STRIPES = 16).
-This value provides optimal performance for systems with up to 32 hardware
-threads. With depot striping enabled:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Lock contention is distributed across 16 independent stripes
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Each stripe maintains separate full and empty magazine lists
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Thread-to-stripe mapping is deterministic based on thread ID
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-No additional configuration is required
-.RE
+The array size follows
+.I umem_max_ncpus
+(rounded up to a power of two) and is decided at initialization, not at
+compile time.  Earlier releases used 16 fixed stripes selected by hashing
+the thread ID; that is no longer the design, and any documentation
+describing UMEM_DEPOT_STRIPES is describing code that no longer exists.
 .sp
 .LP
-Performance improvements from depot striping depend on thread count and
-allocation patterns:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-1-4 threads: Minimal improvement (depot lock rarely contested)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-8-16 threads: Moderate improvement (20-40% reduction in lock contention)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-16+ threads: Significant improvement (50-150% throughput increase possible)
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-32+ threads: Maximum benefit (each stripe typically accessed by 2 threads)
-.RE
+The scan is deliberately non-blocking: a blocking mutex here, taken while
+holding the caller's own per-CPU cache lock, produced a lock convoy under
+sustained load (see
+.I docs/results/2026-09-09-sustained-depot-contention-diagnosis.md
+).
 .sp
 .LP
-Depot striping is most effective when:
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Multiple threads allocate from the same cache concurrently
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Per-thread caches (magazines) overflow frequently
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Workload has high allocation/free rates
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
-Thread count exceeds 8
-.RE
+This is transparent to applications and requires no configuration.  No
+current, trustworthy measurement of its benefit as a function of thread
+count exists: the benchmark harness defect described in
+.I docs/plans/2026-09-21-production-readiness.md
+(P2.1) invalidated the high-thread-count numbers that earlier revisions of
+this page quoted, so the per-thread-count improvement percentages have been
+removed rather than restated.  Measure your own workload.
 .sp
 .LP
-Depot striping is transparent to applications and requires no code changes.
-The implementation automatically balances magazine distribution across stripes.
-For debugging depot contention, see \fBumem_debug\fR(3MALLOC) for information
-on contention statistics.
+Contention statistics are reported per cache
+.RB ( cache_depot_local ", " cache_depot_remote ", " cache_depot_cross_node );
+see
+.B umem
+.BR status " and " umem_debug (3MALLOC).

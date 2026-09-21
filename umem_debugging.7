@@ -87,9 +87,21 @@ reports buffers currently allocated, grouped by allocation stack
 fingerprint and ranked by total bytes.  Output mirrors
 .BR mdb (1)'s
 .BR ::findleaks .
-Buffers sitting in per-CPU magazines are subtracted (and reported as
+.PP
+Read it as
+.IR "outstanding allocations" ,
+not as leaks.  Buffers sitting in per-CPU magazines are subtracted (and
+reported as
 .IR cached_skipped ),
-so the count is the actual leak count.
+but buffers held by the per-thread cache (PTC) or the rseq per-CPU layer
+are
+.I not
+subtracted, and oversize allocations are not accounted here at all.  A
+buffer an application legitimately still owns is also "outstanding".  So
+the report can list buffers that are cached rather than leaked, and its
+count is an upper bound on leaks, not a leak count.  Compare successive
+reports over time: a class whose total grows without bound is the
+interesting signal.
 .PP
 For machine-readable output:
 .PP
@@ -98,12 +110,21 @@ For machine-readable output:
 $ umem --pid $! findleaks -f json | jq '.classes[0]'
 .fi
 .in -4
-.SS Core dump
+.SS Core dump \(em not supported
+.PP
+.B umem \-\-core
+is accepted but produces
+.I no report,
+while exiting 0.  Verified 2026-09-21 against a control: the same command
+on a live process listed 200 outstanding buffers; on that process's core it
+printed zero bytes and returned success.  Every command is implemented by
+calling into the target process, and a core has no process to call into; a
+passive core reader is not implemented.  Use the snapshot workflow below
+instead.
 .PP
 .in +4
 .nf
-$ umem --core core.12345 --exe ./myapp findleaks
-$ umem --core core.12345 --exe ./myapp log -n 100
+$ umem --core core.12345 --exe ./myapp findleaks   # prints nothing
 .fi
 .in -4
 .SS Offline (binary snapshot)
@@ -266,20 +287,28 @@ because the fork interferes with debugger inferior calls.
 .SH COMPARISON TO OTHER LEAK DETECTORS
 .TS
 l l l .
-Tool	Live process	Production friendly
+Tool	Live process	Cheap enough to leave on
 _
-\fBumem\fR(1)	yes	yes (snapshot mode)
-\fBvalgrind\fR(1) memcheck	full restart only	no (>10x slowdown)
-AddressSanitizer	full restart only	no (>2x slowdown)
+\fBumem\fR(1)	yes	yes (audit, ~30%)
+\fBvalgrind\fR(1) memcheck	restart only	no (>10x)
+AddressSanitizer	restart only	no (>2x)
 \fBjeprof\fR(1) (jemalloc)	yes	yes
 .TE
 .PP
+The overhead figures are order-of-magnitude guidance, not measurements from
+this project's harness.  "Leave on" means the cost is tolerable in a
+long-running service, not that the tooling is production-qualified \(em see
+.I docs/plans/2026-09-21-production-readiness.md
+for this library's current status.
+.PP
 .B umem
-is the only of these that lets you attach to a long-running process
+is the only one of these that lets you attach to a long-running process
 that was not started with special instrumentation
 .RB ( UMEM_DEBUG=audit
-counts as instrumentation, but has lower overhead than the others
-and can be left on indefinitely).
+counts as instrumentation, but is cheaper than the others and can be left
+on indefinitely).  Note that leak
+.I classes
+still require audit; without it buffers are counted but not attributed.
 .SH SEE ALSO
 .BR umem (1),
 .BR umem_alloc (3),

@@ -58,8 +58,15 @@ argument may be passed
 .BR NULL ;
 output is then written to
 .BR stderr .
-All routines are safe to call against a running allocator: each cache
-is briefly locked while it is walked, but no global state is mutated.
+Each cache is briefly locked while it is walked, and no global state is
+mutated.  Two caveats the 2026-09-21 review identified, both tracked in
+Phase 3 of
+.IR docs/plans/2026-09-21-production-readiness.md :
+the cache list itself is walked without
+.BR umem_cache_lock ,
+so a cache destroyed concurrently can be read; and a report is not a
+consistent snapshot, since per-cache locks are taken and released one cache
+at a time.  Prefer inspecting a quiesced process, a snapshot, or a core.
 .SS umem_findleaks
 Walks every user-visible cache, enumerates buffers that are currently
 allocated, groups them by allocation stack-trace fingerprint, and
@@ -71,14 +78,26 @@ visited.
 Buffers currently sitting in per-CPU magazines are detected and
 subtracted (and reported as
 .I cached_skipped
-in the JSON output) so the count reflects only buffers that have not
-yet been freed by the application.  Allocator-internal caches
+in the JSON output), and allocator-internal caches
 .RB ( UMC_NOHASH ", " UMC_QCACHE )
 are filtered out.
 .PP
+The result is
+.I outstanding allocations,
+which is not the same as leaks.  The cached-set computation covers the
+central depot, the per-CPU depot arrays, and each per-CPU loaded/previous
+magazine; it does
+.I not
+cover buffers held by the per-thread cache (PTC) or the rseq per-CPU layer,
+and oversize allocations are not accounted here.  A buffer the application
+legitimately still owns is also outstanding.  Use the count as an upper
+bound on leaked buffers, and compare reports over time rather than reading
+a single one as a verdict.
+.PP
 Stack traces are present only when the target was started with
 .BR UMEM_DEBUG=audit ;
-without audit the count is still accurate but the stacks are empty.
+without audit the buffers are still counted but the stacks are empty, so
+classes cannot be distinguished from one another.
 .SS umem_log_dump
 Walks the per-CPU transaction-log ring buffer, sorts its entries by
 .BR bc_timestamp ,

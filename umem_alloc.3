@@ -677,14 +677,20 @@ debugging features.
 .TP
 .ie t \(bu
 .el o
-\fBLD_PRELOAD\fR (limited): Use \fBlibumem_malloc.so\fR with LD_PRELOAD to
-intercept \fBmalloc\fR(3C) calls. This mode uses a bootstrap allocator to
-avoid circular dependencies with \fBpthread_create\fR(3C) and does NOT
-provide umem's performance optimizations. Use this only for compatibility
-testing, not production deployments.
+\fBLD_PRELOAD\fR: Use \fBlibumem_malloc.so\fR with LD_PRELOAD to
+intercept \fBmalloc\fR(3C) calls.  Allocations made before libumem has
+finished initializing (including the ones \fBpthread_create\fR(3C) itself
+makes, which is why the bootstrap path exists) are served by a simple
+mmap-based bootstrap allocator; once initialization completes, interposed
+\fBmalloc\fR() calls go to umem proper and do get its magazine and
+per-thread-cache fast paths.  \fBfree\fR() recognizes both origins.
+.sp
+The interposer is nonetheless the less-tested path of the two, and it adds
+an ownership check to every free.  Direct linking against the native umem
+API remains the recommended way to use this library, and is the only way to
+reach the object-cache and arena interfaces at all.
 .RE
 .sp
 .LP
-For best performance, always use direct linking with the native umem API.
-See \fBPTHREAD_LIMITATION.md\fR for technical details on the LD_PRELOAD
-limitation
+For best performance, and for access to the full API, link directly against
+\fB-lumem\fR and call the umem entry points.

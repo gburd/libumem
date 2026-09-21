@@ -123,7 +123,18 @@ Returns 0 on success, -1 on error (duplicate name or NULL hook).
 .sp
 .LP
 The \fBumem_hook_unregister()\fR function removes a previously registered
-hook. The hook structure can be freed after this call returns.
+hook from the hook list.
+.sp
+.LP
+\fBIt does not wait for in-flight callbacks.\fR Unregistration takes the
+hook-list lock, unlinks the hook, and returns; a callback that another thread
+has already entered may still be running, and may still touch the hook
+structure, after the call has returned.  Freeing the hook structure
+immediately is therefore only safe if you know no other thread can be
+inside it \(em for example because the hook was only ever driven by the
+calling thread, or because the application has already quiesced.  There is
+currently no "drain" or grace-period primitive; see Phase 3 of
+\fBdocs/plans/2026-09-21-production-readiness.md\fR.
 .SS "Tracking Functions"
 .sp
 .LP
@@ -266,12 +277,15 @@ MT-Level	MT-Safe
 Hook functions must be thread-safe if called from multiple threads.
 .sp
 .LP
-Statistics tracking has minimal overhead (atomic counter updates) and is
-suitable for production use.
+Statistics tracking is a small number of atomic counter updates.  Note that
+the counters are individually atomic but are not a consistent snapshot: a
+reader can observe an allocation count that does not match the byte count.
 .sp
 .LP
-The hook structure must remain valid while registered. Do not free or modify
-it until after calling \fBumem_hook_unregister()\fR.
+The hook structure must remain valid while registered, and \(em because
+\fBumem_hook_unregister()\fR does not drain in-flight callbacks \(em may
+need to remain valid after unregistering.  See the description of
+\fBumem_hook_unregister()\fR above.
 .sp
 .LP
 Hook names must be unique. Attempting to register a duplicate name fails.

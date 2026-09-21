@@ -1,0 +1,50 @@
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=2464, ncpus=8)
+=== libumem debug overhead benchmark ===
+Operations: 1000000 x 64-byte alloc/free cycles
+
+Mode               Throughput    Ratio   p99 (ns)   Overhead
+----               ----------    -----   --------   --------
+none              15.9M ops/s    1.00x        33         0%
+lite              11.4M ops/s    0.72x        47        28%
+guards            10.8M ops/s    0.68x        50        32%
+audit              6.7M ops/s    0.42x        78        58%
+contents          16.0M ops/s    1.01x        33         0%
+default            6.4M ops/s    0.40x        80        60%
+firewall          16.1M ops/s    1.01x        33         0%
+
+=== provenance ===
+Host:      intel-lo@surface, c7i.2xlarge, x86_64, Amazon Linux 2023
+Commit:    Phase-4 branch at 2073a43 + working tree
+Build:     ./configure (default: no AVX2, rseq auto-enabled), gcc 11, -O2
+Harness:   test/bench/bench_debug_overhead, 1,000,000 x 64-byte alloc/free,
+           single-threaded, one run per mode (NOT median-of-N; no CoV)
+Run:       scripts/ec2/job.sh intel-lo@surface start dbgoverhead ...
+
+=== reading these numbers ===
+Single-threaded, one size class, one run, one machine.  They are the right
+order of magnitude for "what does this mode cost me", and they are NOT a
+substitute for measuring your own workload.  No aarch64 measurement.
+
+Two results need explaining rather than quoting:
+
+  contents  -> 1.01x (no measurable cost)
+  firewall  -> 1.01x (no measurable cost)
+
+Neither means the mode is free.  `contents` records buffer contents into the
+content log and is only meaningful together with audit (the mode's own
+documentation says "with audit"); alone, it does not engage on this path.
+`firewall` places a guard page per allocation only at or above
+umem_minfirewall, and this benchmark allocates 64 bytes, which is below the
+default threshold -- so the mode is on but never triggers.  A firewall
+measurement at a size that actually crosses the threshold would be much
+more expensive (one page plus one unmapped page per allocation).
+
+These two rows are therefore evidence that the BENCHMARK does not exercise
+those modes, not evidence that the modes are cheap.  That is why the
+documentation now carries the measured audit/guards/lite figures and says
+plainly that contents and firewall are unmeasured.

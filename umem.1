@@ -16,6 +16,7 @@ umem \- runtime introspection for libumem-using processes
 .I BIN
 .I CMD
 .RI [ ARGS... ]
+.RB " (accepted, but see MODES: produces no report)"
 .br
 .B umem
 .B \-\-dump
@@ -36,12 +37,16 @@ Internally,
 .B umem
 drives
 .BR gdb (1)
-in batch mode against the target process or core file and invokes the
+in batch mode against the target process and invokes the
 exported
 .BR umem_inspect (3)
 entry points (\fBumem_findleaks\fR, \fBumem_log_dump\fR,
 \fBumem_status_dump\fR, \fBumem_whatis\fR, \fBumem_walk_dump\fR) using
-the debugger's expression evaluator.  In offline mode
+the debugger's expression evaluator \(em that is, by calling them
+.I in the target.
+This is why
+.B \-\-core
+does not work (see MODES).  In offline mode
 .RB ( \-\-dump )
 it bypasses the debugger and reads a binary snapshot directly via the
 \fBumem_dump_reader\fR(1) helper.
@@ -53,8 +58,31 @@ Attach to a live process.  The process must be linked against
 sub-command and detached afterwards.
 .TP
 \fB\-\-core\fR \fICORE\fR \fB\-\-exe\fR \fIBIN\fR
-Read a core dump.  Requires the original binary so the debugger can
-resolve symbols.  Read-only; no side effects on disk.
+.B DOES NOT WORK; DO NOT USE.
+This mode is accepted and exits 0 while producing
+.I no report at all,
+which is indistinguishable from "nothing found".  Verified 2026-09-21: the
+same command against a live process printed 200 outstanding buffers, and
+against that process's own core printed zero bytes and returned success
+(see
+.IR docs/results/2026-09-21-core-mode-produces-no-report.log ).
+.IP
+The cause is structural, not a bug in the option parsing: every command is
+implemented by calling
+.BR umem_inspect (3)
+entry points
+.I inside the target process
+(see
+.IR tools/gdb/umem_gdb.py ),
+and a core file has no process to run them.  Making this work requires a
+passive reader that parses allocator structures out of the core's memory
+image; that is not implemented.
+.IP
+For post-mortem analysis, use
+.B \-\-dump
+instead: take a snapshot with
+.BR umem_inspect_snapshot (3)
+while the process is alive, and analyze it offline.
 .TP
 .BI \-\-dump " FILE"
 Read a binary snapshot previously written by
@@ -69,22 +97,28 @@ helper.
 \fBfindleaks\fR \fB[\-f text|json]\fR \fB[\-n N]\fR
 Report buffers that are currently allocated, grouped by allocation
 stack-trace fingerprint and ranked by total bytes.  The default report
-shows the top 50 leak classes; use \fB\-n\fR to change this.  With
+shows the top 50 classes; use \fB\-n\fR to change this.  With
 \fB\-f json\fR the output is a single-line JSON object suitable for
 piping to
 .BR jq (1).
 .IP
-Allocator-internal caches
+These are
+.I outstanding allocations,
+not proven leaks.  Allocator-internal caches
 .RB ( UMC_NOHASH ", " UMC_QCACHE )
-are filtered out, and buffers currently sitting in per-CPU magazines
-are subtracted (and reported as
-.IR cached_skipped )
-so the count reflects actual leaks.
+are filtered out, and buffers sitting in per-CPU magazines are subtracted
+(and reported as
+.IR cached_skipped ).
+Buffers held by the per-thread cache (PTC) or the rseq per-CPU layer are
+.I not
+subtracted, oversize allocations are not accounted, and a buffer the
+application legitimately still owns is outstanding too.  Treat the count as
+an upper bound and look for classes that grow across successive reports.
 .IP
 For stack traces the target must run with
 .B UMEM_DEBUG=audit
-in its environment.  Without audit the count is still accurate but no
-stacks are recorded.
+in its environment.  Without audit the buffers are still counted but no
+stacks are recorded, so classes cannot be distinguished.
 .TP
 \fBlog\fR \fB[\-f text|json]\fR \fB[\-n N]\fR
 Dump the allocator transaction log in chronological order.  Each
@@ -219,19 +253,36 @@ $ while sleep 60; do
 .RE
 .fi
 .PP
-Investigate a core dump:
+Post-mortem analysis \(em use a snapshot, not a core.
+.B \-\-core
+does not produce a report (see MODES); take the snapshot while the process
+is still alive:
 .PP
 .nf
 .RS
-$ umem --core core.12345 --exe ./myapp findleaks
-$ umem --core core.12345 --exe ./myapp log -n 100
+/* in the process, e.g. from a signal handler or an admin command */
+umem_inspect_snapshot("/var/log/umem/14.ums");
+.RE
+.fi
+.PP
+.nf
+.RS
+$ umem --dump /var/log/umem/14.ums findleaks
+$ umem --dump /var/log/umem/14.ums log -n 100
 .RE
 .fi
 .SH EXIT STATUS
 Returns 0 on success, non-zero on error (target not running, missing
 debugger, malformed snapshot, etc.).
+.PP
+Note that
+.B \-\-core
+returns 0 while printing nothing; do not treat a zero exit from that mode as
+"no findings".
 .SH SEE ALSO
 .BR umem_alloc (3),
+.BR umem_cache_create (3),
+.BR umem_hooks (3),
 .BR umem_inspect (3),
 .BR umem_debug (3),
 .BR umem_debugging (7),
@@ -241,7 +292,15 @@ debugger, malformed snapshot, etc.).
 .PP
 .I tools/DEBUGGING.md
 in the libumem source distribution covers full workflows and
-worked examples.
+worked examples, and
+.I docs/UMEMCTL.md
+covers
+.BR umemctl ,
+the separate in-process channel for streaming logs, a live TUI, and
+break-on-leaked-allocation (built with
+.BR --enable-introspect ,
+target run with
+.BR UMEM_OPTIONS=introspect=1 ).
 .SH HISTORY
 The libumem allocator originated at Sun Microsystems in 2001 (Bonwick
 & Adams) as the userspace counterpart to the Solaris kernel's slab
