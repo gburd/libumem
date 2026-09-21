@@ -283,6 +283,7 @@ main(void)
 	struct worker_arg *args;
 	pthread_t wd;
 	int i, rc = 0;
+	int forks_done = 0;
 
 	nthreads = env_int("FORK_MT_THREADS", 8);
 	nforks = env_int("FORK_MT_FORKS", 300);
@@ -336,6 +337,8 @@ main(void)
 
 		if (wait_child(pid, child_wait_s) != 0)
 			rc = 1;
+		else
+			forks_done++;
 	}
 
 	stop_flag = 1;
@@ -353,7 +356,8 @@ main(void)
 		total_frees++;
 	}
 
-	printf("%s: %d forks, %llu allocs, %llu frees\n",
-	    rc == 0 ? "PASS" : "FAIL", i, total_allocs, total_frees);
+	printf("%s: %d/%d forks completed, %llu allocs, %llu frees\n",
+	    rc == 0 ? "PASS" : "FAIL", forks_done, nforks,
+	    total_allocs, total_frees);
 	return (rc);
 }
