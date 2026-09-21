@@ -1,52 +1,103 @@
 # libumem Allocator Benchmarks
 
-Comprehensive benchmark suite for comparing libumem against other memory allocators.
+Benchmark suite for comparing libumem against other memory allocators.
 
-## Overview
+> **Known-invalid measurements (2026-09-21).** Two defects in this harness
+> invalidate results previously published from it. Fix them, or account for
+> them, before trusting a number:
+>
+> 1. **The operation budget is divided by thread count twice** — once in
+>    `matrix.sh` (`ops=$(( OPERATIONS / t ))`) and again in `bench_main.c`
+>    (`.operation_count = operation_count / thread_count`). High-thread-count
+>    points therefore run a small fraction of the intended work: 192-thread
+>    points measured ~52k total operations in ~3.8 ms with >27% CoV.
+> 2. **The fragmentation metric is wrong three ways**: the live-bytes
+>    denominator in `bench_framework.c` accumulates bytes that were already
+>    freed; `peak_rss_bytes` is sampled after cleanup, so it is not a peak;
+>    and the `frag` workload runs on **one** thread regardless of `-t`
+>    (`bench_main.c` sets `thread_count = 1` for it), so results labelled
+>    "192-thread fragmentation" are single-threaded.
+>
+> Tracked as P2.1/P2.2 in
+> [`../../docs/plans/2026-09-21-production-readiness.md`](../../docs/plans/2026-09-21-production-readiness.md).
 
-This benchmark framework provides:
+## Which driver to use
 
-- **Accurate latency measurement** using t-digest for percentile tracking
-- **Multiple workloads**: Single-threaded, multi-threaded, producer-consumer, fragmentation
-- **Comprehensive metrics**: Throughput, latency (p50/p90/p99/p99.9), memory overhead, fragmentation
-- **Comparison support**: Test against libc, jemalloc, tcmalloc, mimalloc, snmalloc, scudo, rpmalloc (all dlopen'd at runtime by `test/bench/allocators.c`; use `scripts/ec2/install_extra_allocators.sh` to build/install the ones without a distro package)
+There are two, and they are not interchangeable:
+
+| | `matrix.sh` | `bench_allocators.sh` |
+|---|---|---|
+| Binary | `bench_main` (built by `make`, in `.libs/`) | `bench_allocators` (**not built by `make`**) |
+| Sweep | workloads × thread ladder (1…192) × 4 size ranges × allocators | workloads × thread list × size list |
+| Output | `docs/results/<date>-<instance>-<arch>/matrix.toml` + `meta.toml` provenance | `results/bench_TIMESTAMP.csv` |
+| Status | **the maintained driver**; every result under `docs/results/` came from it | legacy; kept because its CSV output and options are still referenced |
+
+Use `matrix.sh`. It records provenance (commit, instance type, allocator
+versions) alongside the numbers, which `bench_allocators.sh` does not, and it
+is the driver every committed result set was produced with. Older revisions of
+this file pointed users at `./bench_allocators.sh` with no such caveat, and at
+a `bench_allocators` target that the autotools build does not produce — only
+the hand-written `test/bench/Makefile` builds it.
+
+```bash
+# on EC2 (never locally -- see ../../AGENTS.md)
+./scripts/ec2/job.sh intel-hi@w1 start matrix 7200 \
+    './scripts/ec2/clean-regen.sh && make -j$(nproc) && test/bench/matrix.sh umem libc'
+```
+
+`bench_gate.sh` is a third, deliberately non-blocking driver used by CI: it
+runs a short single-thread + 2-thread configuration against
+`baseline/x86_64-ci.toml` and always exits 0, because a shared runner's
+variance is too high to gate a build on.
+
+## What the framework provides
+
+- latency percentiles via t-digest (p50/p90/p99/p999)
+- workloads: `single`, `multi`, `prodcons`, `frag`
+- throughput, latency, RSS, and an RSS/allocated ratio (see the caveat above)
+- comparison against libc, jemalloc, tcmalloc, mimalloc, snmalloc, scudo,
+  rpmalloc — all `dlopen`'d at runtime by `allocators.c`; use
+  `scripts/ec2/install_extra_allocators.sh` to build the ones without a
+  distro package
 
 ## Building
 
-```bash
-# Build benchmarks
-make
+`bench_main` and the other `test/bench/bench_*` targets are built by the
+normal autotools build:
 
-# Build with optional allocators (if installed)
-# jemalloc: sudo apt install libjemalloc-dev
-# tcmalloc: sudo apt install libgoogle-perftools-dev
-# mimalloc: sudo apt install libmimalloc-dev
-make
+```bash
+./configure && make -j"$(nproc)"
+ls test/bench/.libs/bench_main
 ```
 
-## Running Benchmarks
+The hand-written `test/bench/Makefile` builds the legacy `bench_allocators`
+binary separately; it is not part of `make` at the top level.
 
-### Quick Test
+## Running benchmarks
+
+### The maintained path (`matrix.sh` + `bench_main`)
 
 ```bash
-./bench_allocators.sh -q
+# full matrix, one allocator
+test/bench/matrix.sh umem
+
+# umem vs libc, results into a chosen directory
+test/bench/matrix.sh -o /tmp/run umem libc
+
+# a single point, straight from the binary
+LD_LIBRARY_PATH=.libs test/bench/.libs/bench_main \
+    -a umem -w multi -t 8 -n 10000000 -s 64:256 -r 5 -W 1 -c
 ```
 
-### Full Comparison
+### The legacy path (`bench_allocators.sh` + `bench_allocators`)
+
+Requires `make -C test/bench` first; the top-level build does not produce
+`bench_allocators`. Prefer `matrix.sh` — this driver records no provenance.
 
 ```bash
-./bench_allocators.sh
-```
-
-### Specific Allocator
-
-```bash
-./bench_allocators.sh umem libc
-```
-
-### Custom Configuration
-
-```bash
+./bench_allocators.sh -q                                  # quick
+./bench_allocators.sh                                     # full
+./bench_allocators.sh umem libc                           # specific allocators
 ./bench_allocators.sh -n 10000000 -t 1,4,8,16 -s 16:1024 umem
 ```
 
@@ -129,6 +180,10 @@ Allocates various sizes with specific free patterns to measure memory fragmentat
 
 **Use case**: Long-running applications with varied allocation patterns
 
+**Single-threaded regardless of `-t`**: `bench_main.c` hardcodes
+`thread_count = 1` for this workload. A result labelled with any other thread
+count is mislabelled.
+
 ## Metrics
 
 ### Throughput
@@ -156,6 +211,11 @@ Lower is better for all latency metrics.
 - **Fragmentation**: RSS / Allocated ratio
   - 1.0 = perfect (no overhead)
   - Higher = more fragmentation/overhead
+
+**Do not use the fragmentation ratio as reported.** See the warning at the
+top of this file: the denominator includes freed bytes, the "peak" RSS is
+sampled after cleanup, and the `frag` workload ignores the thread count.
+All three have to be fixed before this number means anything.
 
 ## Output
 
@@ -237,6 +297,12 @@ plt.show()
 3. **Low fragmentation**: <1.5 for mixed workloads
 4. **Linear scaling**: 2x threads = 2x throughput (up to core count)
 
+These are rules of thumb for reading a run, not thresholds this project
+gates on. Authoritative comparison is the EC2 matrix with its provenance
+file; a single run on an unpinned box says nothing. Any point with
+`ops_cov` > 10% is flagged `unstable` in the CSV — do not draw a conclusion
+from it.
+
 ### Red Flags
 
 1. **High p99/p99.9**: Indicates contention or lock issues
@@ -270,77 +336,55 @@ done
 
 ### Comparing Changes
 
+A/B on the same instance, via the maintained driver — the branch is `master`,
+not `main`, and each side must be a from-scratch build on the *same* box or
+the comparison is noise:
+
 ```bash
-# Baseline
-git checkout main
-make clean && make
-./bench_allocators.sh umem > baseline.txt
-
-# New code
-git checkout feature-branch
-make clean && make
-./bench_allocators.sh umem > feature.txt
-
-# Compare
-diff -u baseline.txt feature.txt
+# on EC2, one instance, one job (see ../../AGENTS.md §4)
+./scripts/ec2/job.sh intel-hi@ab start ab 7200 '
+  git checkout master && ./scripts/ec2/clean-regen.sh && make -j$(nproc) &&
+    test/bench/matrix.sh -o /tmp/base umem &&
+  git checkout feature-branch && ./scripts/ec2/clean-regen.sh && make -j$(nproc) &&
+    test/bench/matrix.sh -o /tmp/feat umem'
 ```
+
+`scripts/ec2/d2_ab.sh` and `scripts/ec2/aarch64_ab.sh` already implement this
+pattern; prefer them over hand-rolling it.
 
 ## Adding Allocators
 
-To add a new allocator:
+Allocators are loaded at **runtime** by `allocators.c` via
+`dlopen(RTLD_NOW|RTLD_LOCAL)` — not linked at build time. Read the comment
+block at the top of `allocators.c` first; it explains why (a TLS
+initial-exec model in some allocators makes late `dlopen` fail outright, so
+some are `LD_PRELOAD`ed and detected via `RTLD_DEFAULT` instead).
 
-1. Edit `allocators.c`:
+To add one:
 
-```c
-#ifdef HAVE_MYALLOC
-#include <myalloc.h>
+1. Add a path list and a `dlopen_malloc_syms_t` entry in `allocators.c`,
+   following an existing allocator (`jemalloc`, `mimalloc`, ...). Give it an
+   `..._LIB` environment override so a user can point at a custom build.
+2. Register its `allocator_ops_t` in the allocator table so `-a <name>`
+   finds it.
+3. If it needs building from source on the test host, extend
+   `scripts/ec2/install_extra_allocators.sh`.
 
-allocator_ops_t allocator_myalloc = {
-    .name = "myalloc",
-    .alloc = my_malloc,
-    .calloc = my_calloc,
-    .realloc = my_realloc,
-    .free = my_free,
-    .cleanup = NULL
-};
-#endif
-```
-
-2. Update `Makefile`:
-
-```makefile
-HAVE_MYALLOC := $(shell pkg-config --exists myalloc && echo 1)
-ifeq ($(HAVE_MYALLOC),1)
-    CFLAGS += -DHAVE_MYALLOC $(shell pkg-config --cflags myalloc)
-    LDFLAGS += $(shell pkg-config --libs myalloc)
-endif
-```
-
-3. Add to `bench_main.c`:
-
-```c
-extern allocator_ops_t allocator_myalloc;
-
-allocator_ops_t *allocators[] = {
-    // ...
-    &allocator_myalloc,
-    NULL
-};
-```
+No `configure` change, no `pkg-config` check, and no `-DHAVE_*` macro is
+needed — earlier revisions of this file described exactly that, which is a
+scheme this harness no longer uses.
 
 ## Troubleshooting
 
 ### Build Errors
 
 ```bash
-# Missing tdigest
-make -C .. tdigest.o
+# Everything under test/bench/ except bench_allocators is built by the
+# top-level autotools build:
+./configure && make -j"$(nproc)"
 
-# Missing libumem
-make -C ../..
-
-# Clean rebuild
-make distclean && make
+# Legacy bench_allocators only (hand-written Makefile in this directory):
+make -C test/bench
 ```
 
 ### Runtime Errors
@@ -349,8 +393,10 @@ make distclean && make
 # Increase stack size
 ulimit -s unlimited
 
-# Check allocator availability
-./bench_allocators -h | grep "not available"
+# Which allocators actually loaded (they are dlopen'd; a missing one is
+# reported on stderr at startup, not by a --help flag)
+LD_LIBRARY_PATH=.libs test/bench/.libs/bench_main -a all -w single -n 1000 2>&1 | \
+    grep -i 'warning\|not available'
 ```
 
 ## References

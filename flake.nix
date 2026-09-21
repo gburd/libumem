@@ -40,7 +40,10 @@
         # Helper to build libumem for a specific package set
         mkLibumem = targetPkgs: targetName: targetPkgs.stdenv.mkDerivation (finalAttrs: {
           pname = "libumem-${targetName}";
-          version = "1.0.2";
+          # Must match AC_INIT in configure.ac.  It read "1.0.2" from
+          # 2.0.0 through 2.7.0, so the flake and its generated .pc files
+          # advertised a version this tree has not been for years.
+          version = "2.7.0";
 
           src = lib.cleanSource ./.;
 
@@ -65,13 +68,21 @@
             # Platform detection works automatically via config.guess
           ];
 
-          # Only run checks for native builds
-          # TEMPORARY: Disabled due to hanging test - investigate separately
+          # NOTE: `nix build` does NOT run the test suite.
+          #
+          # doCheck was turned off for a hanging test and left off.  Anything
+          # produced by this flake is therefore a COMPILE result, not a
+          # correctness result -- do not read a successful `nix build` as
+          # "tests pass".  Use `nix run .#test-native`, or the autotools
+          # targets on EC2 (see AGENTS.md), to actually test.
+          #
+          # Re-enabling it needs the hang diagnosed first; `make check` itself
+          # is green on EC2 (8/8), so the hang is specific to the sandboxed
+          # Nix build environment and has not been root-caused.
           doCheck = false;
           # doCheck = (targetName == "native");
 
           preCheck = lib.optionalString (targetName == "native") ''
-            patchShebangs umem_test4
             export LD_LIBRARY_PATH="$PWD/.libs:''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           '';
 
@@ -81,7 +92,6 @@
 
           postInstall = ''
             mkdir -p $dev/lib/pkgconfig
-
             cat > $dev/lib/pkgconfig/libumem.pc <<EOF
             prefix=$out
             exec_prefix=$out
@@ -109,8 +119,13 @@
             EOF
 
             mkdir -p $doc/share/doc/libumem
-            if [ -d docs/html ]; then
-              cp -r docs/html $doc/share/doc/libumem/
+            # Doxygen output moved to doxygen-out/ (docs/ is durable,
+            # version-controlled documentation and must not be a build
+            # target -- `make clean` used to delete it).  This used to look
+            # for docs/html, which no longer exists, so the doc output was
+            # silently always empty.
+            if [ -d doxygen-out/html ]; then
+              cp -r doxygen-out/html $doc/share/doc/libumem/
             fi
           '';
 
@@ -478,7 +493,11 @@
         apps = {
           default = self.apps.${system}.test;
 
-          # Main test suite
+          # Smoke suite: `make check`.  This is 8 entries (see TESTS in
+          # Makefile.am), not the comprehensive suite -- do not print a
+          # blanket "all tests passed".  Let the automake summary speak for
+          # itself rather than restating a hardcoded count, which said "4/4"
+          # here for several releases in which it was 8.
           test = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "test" ''
               set -e
@@ -489,10 +508,11 @@
                 ./configure --quiet
               fi
 
-              echo "=== Running main test suite ==="
+              echo "=== make check (smoke suite; see Makefile.am TESTS) ==="
               make check
               echo ""
-              echo "✅ All main tests passed (4/4)"
+              echo "Note: this is the 8-entry smoke suite, NOT the full suite."
+              echo "      Comprehensive: test/test_main --no-fork (nix run .#unit)"
             '';
           };
 

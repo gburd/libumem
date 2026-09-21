@@ -581,15 +581,19 @@ Man pages: `umem(1)`, `umem_inspect(3)`, `umem_debugging(7)`.
 
 ```bash
 nix develop                 # dev shell with toolchain
-nix build                   # native build
+nix build                   # native build (does NOT run tests -- see below)
 nix build .#libumem-aarch64 # cross-compile for aarch64
-nix run .#test-native       # run tests
+nix run .#test              # make check (the 8-entry smoke suite)
+nix run .#unit              # test/test_main, the comprehensive unit suite
+nix run .#prop              # property tests
+nix run .#integ             # integration tests
 ```
 
 The flake builds the library but **does not run the test suite**
 (`doCheck = false`), so `nix build` succeeding is a compile result, not a
-correctness result. Use `nix run .#test-native`, or the autotools targets, to
-actually test.
+correctness result. Use the apps above, or the autotools targets, to actually
+test. (Earlier revisions of this file advertised `nix run .#test-native`,
+which is not one of the flake's apps.)
 
 ---
 
