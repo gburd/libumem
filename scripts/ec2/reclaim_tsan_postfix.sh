@@ -8,7 +8,9 @@
 # too, i.e. the run never sampled the window.
 set -u
 ./scripts/ec2/clean-regen.sh --enable-tsan >/dev/null 2>&1
-make -j"$(nproc)" > /tmp/b.log 2>&1 || { echo "TSAN BUILD FAILED"; tail -30 /tmp/b.log; exit 1; }
+# Build only the targets this probe needs.  A broken unrelated target elsewhere
+# in the tree must not silently turn into "TSAN unavailable".
+make -j"$(nproc)" libumem.la test/unit/repro_reclaim_reuse > /tmp/b.log 2>&1 || { echo "TSAN BUILD FAILED"; tail -30 /tmp/b.log; exit 1; }
 echo "TSAN BUILD OK (post-fix)"
 TSAN_LIB="$(ls /usr/lib/gcc/*/*/libtsan.so.0.0.0 2>/dev/null | head -1)"
 [ -f "$TSAN_LIB" ] || { echo "no TSAN runtime"; exit 1; }

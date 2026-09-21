@@ -76,7 +76,7 @@ git diff --stat 2>/dev/null || true
 grep -n "slab_state = SLAB_CLEAN" umem.c
 grep -n "uintptr_t limit" umem.c
 
-./configure --enable-tsan >/dev/null 2>&1 && make -j"$(nproc)" >/dev/null 2>&1 && echo "TSAN BUILD OK (pre-fix reclaim)"
+./configure --enable-tsan >/dev/null 2>&1 && make -j"$(nproc)" libumem.la test/unit/repro_reclaim_reuse >/dev/null 2>&1 && echo "TSAN BUILD OK (pre-fix reclaim)"
 TSAN_LIB="$(ls /usr/lib/gcc/*/*/libtsan.so.0.0.0 2>/dev/null | head -1)"
 [ -f "$TSAN_LIB" ] || { echo "no TSAN runtime"; exit 0; }
 export LD_PRELOAD="$TSAN_LIB" LD_LIBRARY_PATH=.libs
