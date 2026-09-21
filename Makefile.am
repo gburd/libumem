@@ -465,6 +465,16 @@ test_stress_repro_naive_reload_race_LDADD = libumem.la
 test_stress_repro_naive_reload_race_LDFLAGS = -pthread
 test_stress_repro_naive_reload_race_CPPFLAGS = -I$(srcdir)
 
+# Interposer fork participation (P1.2 cross-file follow-up).  Links only
+# libumem.la; it is meant to be run under LD_PRELOAD=libumem_malloc.so and
+# reports automake SKIP (77) when it is not, since without the interposer
+# there is nothing of ours in front of malloc to test.
+noinst_PROGRAMS += test/stress/repro_interpose_fork
+test_stress_repro_interpose_fork_SOURCES = test/stress/repro_interpose_fork.c
+test_stress_repro_interpose_fork_LDADD = libumem.la
+test_stress_repro_interpose_fork_LDFLAGS = -pthread
+test_stress_repro_interpose_fork_CPPFLAGS = -I$(srcdir)
+
 test_stress_stress_concurrency_oracle_SOURCES = test/stress/stress_concurrency_oracle.c
 test_stress_stress_concurrency_oracle_LDADD = libumem.la
 test_stress_stress_concurrency_oracle_LDFLAGS = -pthread
