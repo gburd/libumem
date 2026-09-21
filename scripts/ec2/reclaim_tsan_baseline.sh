@@ -81,8 +81,8 @@ TSAN_LIB="$(ls /usr/lib/gcc/*/*/libtsan.so.0.0.0 2>/dev/null | head -1)"
 [ -f "$TSAN_LIB" ] || { echo "no TSAN runtime"; exit 0; }
 export LD_PRELOAD="$TSAN_LIB" LD_LIBRARY_PATH=.libs
 export TSAN_OPTIONS=halt_on_error=0:exitcode=0:history_size=7
-echo "--- tsan race, PRE-FIX slab_state publication ---"
-UMEM_OPTIONS=reclaim=1,reclaim_delay=0,reap_interval=1 timeout 600 \
+echo "--- tsan race, PRE-FIX slab_state publication (long, unthrottled) ---"
+RECLAIM_RACE_SECONDS=30 UMEM_OPTIONS=reclaim=1,reclaim_delay=0,reap_interval=0 timeout 600 \
     ./test/unit/.libs/repro_reclaim_reuse race > /tmp/base.log 2>&1
 echo "rc=$?"
 echo "tsan_warnings=$(grep -c 'WARNING: ThreadSanitizer' /tmp/base.log)"
@@ -92,3 +92,10 @@ echo "--- any report mentioning the reclaim functions ---"
 grep -nE 'umem_slab_reclaim|umem_slab_alloc|umem_slab_free|umem_cache_reclaim_pages' /tmp/base.log | head -20
 echo "--- full report containing umem_slab_reclaim, if any ---"
 awk 'BEGIN{RS="=================="} /umem_slab_reclaim/{print; exit}' /tmp/base.log | head -40
+
+echo "=== how many reclaim passes did the run actually get? ==="
+# If the publication window is never entered, a zero-report result says
+# nothing about the race.  Count DIRTY->CLEAN transitions by instrumenting
+# nothing: just report the reap interval in effect and the run length, so the
+# log carries the sensitivity of the measurement.
+echo "reap_interval=0 (limiter off), run=30s"

@@ -404,11 +404,15 @@ race_reclaim(void *arg)
 	while (!ctx->stop) {
 		/*
 		 * umem_reap() is rate-limited to one reap per
-		 * umem_reap_interval (1 s here, set by the caller's
-		 * UMEM_OPTIONS), so this loop yields instead of spinning.
+		 * umem_reap_interval, so how often a reclaim pass actually
+		 * runs is set by the caller's UMEM_OPTIONS.  With
+		 * reap_interval=1 that is ~1/s -- few enough passes that a
+		 * race detector can easily miss the publication window; set
+		 * reap_interval=0 to remove the limiter when the point of the
+		 * run is to hit that window.
 		 */
 		umem_reap();
-		usleep(20000);
+		usleep(2000);
 	}
 	return (NULL);
 }
@@ -419,7 +423,12 @@ run_race(void)
 	enum { NCHURN = 4 };
 	struct race_ctx ctx;
 	pthread_t churn[NCHURN], reclaimer;
+	int seconds = 3;
+	const char *env = getenv("RECLAIM_RACE_SECONDS");
 	int i;
+
+	if (env != NULL && atoi(env) > 0)
+		seconds = atoi(env);
 
 	ctx.cp = umem_cache_create("reclaim_race", 64, 0,
 	    NULL, NULL, NULL, NULL, NULL, UMC_NOMAGAZINE);
@@ -449,7 +458,7 @@ run_race(void)
 		return (1);
 	}
 
-	sleep(3);
+	sleep((unsigned)seconds);
 	ctx.stop = 1;
 
 	for (i = 0; i < NCHURN; i++)
@@ -458,8 +467,8 @@ run_race(void)
 
 	umem_cache_destroy(ctx.cp);
 
-	printf("ok: reclaim raced %d churn threads for 3s "
-	    "(%d allocation failures)\n", NCHURN, ctx.alloc_fail);
+	printf("ok: reclaim raced %d churn threads for %ds "
+	    "(%d allocation failures)\n", NCHURN, seconds, ctx.alloc_fail);
 	return (0);
 }
 
