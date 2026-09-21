@@ -47,9 +47,16 @@
 #include "umem_profile.h"
 #include "umem_introspect.h"
 
-#ifdef UMEM_NUMA_AVAILABLE
-#include "umem_numa.h"
-#endif
+/*
+ * There used to be an `#ifdef UMEM_NUMA_AVAILABLE / #include "umem_numa.h"`
+ * here, which could never fire: UMEM_NUMA_AVAILABLE is defined *by*
+ * umem_numa.h, so testing it before the include always failed.  The
+ * UMEM_OPTIONS=numa tunable it guarded (below) was therefore never
+ * registered on any build.  It is gone rather than repaired:
+ * umem_numa_enabled is now a detection result ("a multi-node topology was
+ * found"), not a user-settable policy switch, so letting UMEM_OPTIONS
+ * write to it would only falsify it.  See umem_numa.h.
+ */
 
 /*
  * A umem environment variable, like UMEM_DEBUG, is set to a series
@@ -167,12 +174,6 @@ static umem_env_item_t umem_options_items[] = {
 		"Enable magazine size auto-tuning (1=enable, 0=disable)",
 		NULL, 0,	&umem_magazine_tuning
 	},
-#ifdef UMEM_NUMA_AVAILABLE
-	{ "numa",		"Evolving",	ITEM_UINT,
-		"Enable NUMA-aware allocation (1=enable, 0=disable, auto-detected)",
-		NULL, 0,	(uint_t *)&umem_numa_enabled
-	},
-#endif
 
 	{ "size_add",		"Private",	ITEM_SPECIAL,
 		"add a size to the cache size table",

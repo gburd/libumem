@@ -26,11 +26,11 @@
 #ifndef _UMEM_RSEQ_H
 #define _UMEM_RSEQ_H
 
+/*
+ * PRIVATE HEADER.  Not installed: it includes "config.h", which is not
+ * installed either, so an external consumer cannot compile against it.
+ */
 #include "config.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* Check for rseq support at compile time */
 #ifdef __linux__
@@ -40,6 +40,15 @@ extern "C" {
 #endif
 
 #ifdef UMEM_RSEQ_AVAILABLE
+
+/*
+ * extern "C" opens and closes INSIDE the availability guard.  It used to
+ * open above it and close below its #endif, so a C++ translation unit on a
+ * host without linux/rseq.h saw an unbalanced brace.
+ */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <stdint.h>
 #include <stddef.h>

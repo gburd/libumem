@@ -216,10 +216,16 @@ apply_*.py
 gen_compile_commands.*
 check_tcache.c
 
-# Experimental features not yet integrated
+# Quarantined/unintegrated sources.  umem_htm.[ch] and umem_percpu.[ch] now
+# live in attic/ (tracked, not built -- see attic/README.md); these entries
+# only keep a stray top-level copy from being re-added by accident.
+# umem_numa.[ch] is NOT ignored: it is a tracked, built source under
+# --enable-numa.
 depot_functions_lockfree.c
-umem_htm.[ch]
-umem_numa.[ch]
+/umem_htm.c
+/umem_htm.h
+/umem_percpu.c
+/umem_percpu.h
 
 # Temporary cleanup directory
 tmp/
@@ -243,6 +249,11 @@ umem-*.tar.xz
 opencode.json
 config/
 install/
+# ...but test/install/ holds the installed-prefix check's source, which is
+# version-controlled and distributed.
+!test/install/
+!test/install/*.c
+/test/install/external_consumer
 
 # v2.1.0: EC2/bench/introspect artifacts + perf captures (keep folded text only)
 docs/results/**/perf.data

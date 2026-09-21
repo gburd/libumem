@@ -209,6 +209,26 @@ if test "$GENASM_DIR" = "aarch64"; then
     )
 fi
 
+# AVX2 is OPT-IN and NOT part of a default build.
+#
+# Configure used to turn "the compiler accepts -mavx2" into a global -mavx2
+# for the whole library (Makefile.am's AM_CFLAGS).  Compiler acceptance says
+# nothing about the CPU the binary will run on, so a nominally generic
+# x86-64 build acquired an AVX2 requirement and died with SIGILL on any
+# pre-Haswell machine -- at an arbitrary point inside the allocator, with no
+# diagnostic.
+#
+# SSE2 is in the x86-64 baseline, so the default build stays portable.
+# --enable-avx2 raises the requirement deliberately, for someone who knows
+# their target.  There is no runtime dispatch: the SIMD helpers are static
+# inlines in a header consumed across the library, so dispatch means
+# restructuring them into resolved function pointers, which is not a
+# configure-time change.
+AC_ARG_ENABLE([avx2],
+    [AS_HELP_STRING([--enable-avx2],
+        [Build with -mavx2.  NOT GENERIC: the resulting library requires an AVX2-capable CPU (Intel Haswell / AMD Excavator or newer) and will SIGILL on older hardware.  x86_64 only.  @<:@default=no@:>@])],
+    [avx2=$enableval], [avx2=no])
+
 # SIMD vectorization support
 AC_MSG_CHECKING([for x86_64 SSE2 support])
 if test "$GENASM_DIR" = "amd64"; then
@@ -219,21 +239,35 @@ if test "$GENASM_DIR" = "amd64"; then
         [AC_MSG_RESULT([no])]
     )
 
-    AC_MSG_CHECKING([for x86_64 AVX2 support])
-    OLD_CFLAGS_SIMD="$CFLAGS"
-    CFLAGS="$CFLAGS -mavx2"
-    AC_COMPILE_IFELSE(
-        [AC_LANG_PROGRAM([[#include <immintrin.h>]], [[__m256i v = _mm256_setzero_si256();]])],
-        [AC_MSG_RESULT([yes])
-         AC_DEFINE([HAVE_AVX2], [1], [x86_64 AVX2 SIMD support available])
-         SIMD_CFLAGS="-mavx2"],
-        [AC_MSG_RESULT([no])
-         SIMD_CFLAGS=""]
-    )
-    CFLAGS="$OLD_CFLAGS_SIMD"
+    # AVX2: see the --enable-avx2 rationale above.
+    if test "x$avx2" = "xyes"; then
+        AC_MSG_CHECKING([for x86_64 AVX2 support])
+        OLD_CFLAGS_SIMD="$CFLAGS"
+        CFLAGS="$CFLAGS -mavx2"
+        AC_COMPILE_IFELSE(
+            [AC_LANG_PROGRAM([[#include <immintrin.h>]], [[__m256i v = _mm256_setzero_si256();]])],
+            [AC_MSG_RESULT([yes])
+             AC_DEFINE([HAVE_AVX2], [1], [x86_64 AVX2 SIMD support available])
+             SIMD_CFLAGS="-mavx2"
+             AC_MSG_WARN([*** AVX2 enabled: this build REQUIRES an AVX2-capable CPU and will])
+             AC_MSG_WARN([*** fail with SIGILL on older x86-64 hardware.  Do not ship it as generic.])],
+            [AC_MSG_RESULT([no])
+             SIMD_CFLAGS=""
+             AC_MSG_ERROR([--enable-avx2 given but the compiler cannot build AVX2 code])]
+        )
+        CFLAGS="$OLD_CFLAGS_SIMD"
+    else
+        SIMD_CFLAGS=""
+        AC_MSG_NOTICE([AVX2 disabled (default): building for the generic x86-64 baseline (SSE2)])
+    fi
     AC_SUBST(SIMD_CFLAGS)
 else
     AC_MSG_RESULT([skipped (not x86_64)])
+    if test "x$avx2" = "xyes"; then
+        AC_MSG_ERROR([--enable-avx2 is x86_64-only (this host is $host_cpu)])
+    fi
+    SIMD_CFLAGS=""
+    AC_SUBST(SIMD_CFLAGS)
 fi
 
 AC_MSG_CHECKING([whether pthread_mutex_t is larger than 24 bytes])
@@ -371,32 +405,18 @@ if test "x$introspect" = "xyes"; then
     AC_DEFINE([UMEM_INTROSPECT], [1], [Enable umemctl introspection channel])
 fi
 
-# Per-CPU caching support (experimental)
-AC_ARG_ENABLE([percpu-caching],
-    [AS_HELP_STRING([--enable-percpu-caching],
-        [Enable experimental per-CPU magazine caching (provides 100-200% throughput improvement at high thread counts, disabled by default)])],
-    [percpu_caching=$enableval], [percpu_caching=no])
-
-AM_CONDITIONAL([ENABLE_PERCPU_CACHING], [test "x$percpu_caching" = "xyes"])
-
-if test "x$percpu_caching" = "xyes"; then
-    AC_MSG_NOTICE([Per-CPU caching enabled (experimental)])
-    AC_DEFINE([UMEM_PER_CPU_CACHE], [1], [Enable per-CPU magazine caching])
-
-    # Check for sched_getcpu on Linux
-    AC_CHECK_FUNCS([sched_getcpu], [
-        AC_DEFINE([HAVE_SCHED_GETCPU], [1], [Define if sched_getcpu is available])
-    ])
-
-    # Check for libnuma (optional NUMA support)
-    AC_CHECK_LIB([numa], [numa_available], [
-        AC_DEFINE([HAVE_LIBNUMA], [1], [Define if libnuma is available])
-        NUMA_LIBS="-lnuma"
-        AC_SUBST(NUMA_LIBS)
-    ])
-else
-    AC_MSG_NOTICE([Per-CPU caching disabled (default)])
-fi
+# Per-CPU magazine caching: REMOVED 2026-09-21.
+#
+# --enable-percpu-caching used to exist here and used to add umem_percpu.c to
+# the build.  It could not work: the source referenced a nonexistent
+# umem_cache_t.cache_percpu field, a nonexistent umem_magazine_t.mag_size,
+# and five functions that are static inside umem.c, so the flag turned a
+# working build into a compile error.  Nothing ever called
+# umem_init_percpu() either.  Captured evidence:
+# docs/results/prefix-evidence/2026-09-21-percpu-build-failure.log.
+# The source is quarantined in attic/ -- see attic/README.md.  Do not
+# re-add the flag without a per-CPU layer written against the current
+# umem_cache_t.
 
 # Experimental rseq support (Linux 4.18+)
 AC_ARG_ENABLE([rseq],
@@ -444,38 +464,16 @@ else
     AC_MSG_NOTICE([NUMA-aware allocation disabled (not available)])
 fi
 
-# Hardware Transactional Memory (Intel TSX)
-AC_ARG_ENABLE([htm],
-    [AS_HELP_STRING([--enable-htm],
-        [Enable Hardware Transactional Memory support (5-15% improvement, Intel Haswell+)])],
-    [htm=$enableval], [htm=no])
-
-AM_CONDITIONAL([ENABLE_HTM], [test "x$htm" = "xyes"])
-
-if test "x$htm" = "xyes"; then
-    AC_MSG_NOTICE([Hardware Transactional Memory enabled])
-    AC_CHECK_HEADERS([immintrin.h], [
-        AC_DEFINE([HAVE_IMMINTRIN_H], [1], [Define if immintrin.h is available])
-
-        # Check for TSX support
-        AC_MSG_CHECKING([for Intel TSX intrinsics])
-        AC_COMPILE_IFELSE([
-            AC_LANG_PROGRAM([[#include <immintrin.h>]],
-                [[unsigned int status = _xbegin();
-                  if (status == _XBEGIN_STARTED) _xend();]])
-        ], [
-            AC_MSG_RESULT([yes])
-            AC_DEFINE([HAVE_TSX], [1], [Define if Intel TSX is available])
-        ], [
-            AC_MSG_RESULT([no])
-            AC_MSG_WARN([immintrin.h found but TSX intrinsics not available])
-        ])
-    ], [
-        AC_MSG_WARN([immintrin.h not found, HTM support limited])
-    ])
-else
-    AC_MSG_NOTICE([Hardware Transactional Memory disabled (default)])
-fi
+# Hardware Transactional Memory: REMOVED 2026-09-21.
+#
+# --enable-htm used to exist here.  It never added any source to the build
+# (HTM_SOURCES was unconditionally empty) while the header advertised a
+# "5-15% improvement", so the flag could only ever mislead.  The prototype
+# was also unsound: its lock elision never subscribed to the fallback lock,
+# so two threads could both believe they held the depot exclusively; the
+# depot fast paths were comments; and _xabort() was called with a runtime
+# value where the instruction requires an immediate.  The source is
+# quarantined in attic/ -- see attic/README.md.
 
 # Profile-Guided Optimization support
 AC_ARG_ENABLE([pgo],
@@ -511,10 +509,9 @@ Configuration summary:
   Architecture:     $host_cpu ($GENASM_DIR)
   OS:               $host_os
   Recursion guard:  $recursion_guard
-  Per-CPU caching:  $percpu_caching
   RSEQ support:     $rseq
-  NUMA support:     $numa
-  HTM support:      $htm
+  NUMA topology:    $numa
+  AVX2 (non-generic): $avx2
   PGO:              $pgo
   Coverage:         $coverage
   AddressSanitizer: $asan

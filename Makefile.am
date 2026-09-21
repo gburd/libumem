@@ -15,7 +15,6 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/bench_contention \
 		  test/bench/bench_affinity_vs_mutex \
 		  test/integration/introspect_churn \
-		  tools/umemctl \
 		  test/property/prop_alloc_free2 \
 		  test/property/prop_cache \
 		  test/property/prop_fragmentation \
@@ -61,13 +60,6 @@ else
 FREEBSD_SOURCES =
 endif
 
-# Conditionally include per-CPU caching
-if ENABLE_PERCPU_CACHING
-PERCPU_SOURCES = umem_percpu.c umem_percpu.h
-else
-PERCPU_SOURCES =
-endif
-
 # Conditionally include rseq support
 if ENABLE_RSEQ
 RSEQ_SOURCES = umem_rseq.c umem_rseq.h umem_rseq_x86_64.S umem_rseq_aarch64.S
@@ -75,18 +67,22 @@ else
 RSEQ_SOURCES =
 endif
 
-# Conditionally include NUMA support
+# Conditionally include NUMA topology queries (--enable-numa).  This is
+# topology information only; it does not make the allocator NUMA-aware.
+# See umem_numa.h for what this does and does not provide.
 if ENABLE_NUMA
 NUMA_SOURCES = umem_numa.c umem_numa.h umem_hash_partition.c umem_hash_partition.h
 else
 NUMA_SOURCES =
 endif
 
-# HTM (hardware transactional memory) support is currently disabled
-# at source-level; the umem_htm.[ch] files have not been written.
-# Keep the configure flag for forward compatibility but always treat
-# the source list as empty.
-HTM_SOURCES =
+# Per-CPU magazine caching (umem_percpu.[ch]) and HTM (umem_htm.[ch]) used
+# to be wired in here behind --enable-percpu-caching / --enable-htm.  Both
+# options were removed from configure.ac on 2026-09-21 and both sources are
+# quarantined in attic/ (not built, not installed, not distributed).  The
+# percpu flag turned a working build into a compile error; the HTM source
+# list was unconditionally empty while the header advertised a speedup.
+# See attic/README.md.
 
 # Conditionally include SPARC assembly on Solaris
 # The .S extension ensures the C preprocessor runs on the assembly
@@ -160,10 +156,8 @@ libumem_la_SOURCES = init_lib.c \
 			umem_own.h \
 			$(STUB_SOURCES) \
 			$(FREEBSD_SOURCES) \
-			$(PERCPU_SOURCES) \
 			$(RSEQ_SOURCES) \
 			$(NUMA_SOURCES) \
-			$(HTM_SOURCES) \
 			$(SPARC_ASM_SOURCES) \
 			$(X86_ASM_SOURCES)
 
@@ -485,9 +479,13 @@ tools_umem_profile_dump_SOURCES = tools/umem_profile_dump.c
 tools_umem_profile_dump_LDADD =
 tools_umem_profile_dump_LDFLAGS = -lm
 
-# Install the runtime introspection CLI on PATH.  tools/umem is a compiled
+# Install the runtime introspection CLIs on PATH.  tools/umem is a compiled
 # C program (was a bash wrapper); umem_dump_reader remains a python script.
-bin_PROGRAMS = tools/umem
+#
+# umemctl is installed rather than noinst: README.md and docs document it as
+# a command users run against their own processes, and a documented command
+# that only exists in the build tree is not a command.
+bin_PROGRAMS = tools/umem tools/umemctl
 tools_umem_SOURCES = tools/umem.c
 bin_SCRIPTS = tools/umem_dump_reader
 
@@ -500,7 +498,8 @@ dbg_gdb_DATA = tools/gdb/umem_gdb.py
 dbg_lldb_DATA = tools/lldb/umem_lldb.py
 
 man1_MANS = umem.1
-man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3 umem_inspect.3
+man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3 umem_inspect.3 \
+	umem_hooks.3
 man7_MANS = umem_debugging.7
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	$(man1_MANS) $(man3_MANS) $(man7_MANS) \
@@ -509,6 +508,9 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	tools/umem_dump_reader \
 	tools/DEBUGGING.md \
 	examples/palloc_integration.c examples/README.md \
+	examples/umem_palloc.c examples/umem_palloc.h \
+	attic/README.md \
+	test/install/external_consumer.c \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
 	test/tdigest.c test/tdigest.h test/common.c test/common.h \
 	test/bench/bench_framework.c test/bench/bench_framework.h test/bench/allocators.c \
@@ -516,24 +518,20 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	test/bench/verify_profile.sh \
 	test/property/prop_alloc_free.c
 
+# Installed headers.  Every header listed here must be compilable by an
+# external consumer with nothing but the install prefix on its include
+# path -- no "config.h", no umem_impl.h, no other uninstalled header.
+# test/install/external_consumer.c is the check; see the install-check
+# target at the bottom of this file.
+#
+# Deliberately NOT installed, because they include "config.h" (which is a
+# build artifact and is not installed) and/or umem_impl.h (private):
+#   umem_rseq.h, umem_numa.h, umem_impl.h, umem_base.h, vmem_base.h
+# They used to be installed under --enable-rseq / --enable-numa, which
+# produced an install whose own headers did not compile.
 nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h \
 	umem_arena.h umem_own.h \
 	umem_profile.h umem_stacktrace.h umem_inspect.h
-
-if ENABLE_PERCPU_CACHING
-nobase_include_HEADERS += umem_percpu.h
-endif
-
-if ENABLE_RSEQ
-nobase_include_HEADERS += umem_rseq.h
-endif
-
-if ENABLE_NUMA
-nobase_include_HEADERS += umem_numa.h
-endif
-
-# HTM is not implemented; the include line below is intentionally
-# absent.  See the HTM_SOURCES definition near the top.
 
 # Test suite
 # Using simple smoke tests that don't trigger pthread_create/malloc deadlock.
@@ -558,7 +556,13 @@ TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 	test/stress/interpose_regress.sh
 
 TEST_EXTENSIONS = .sh
-SH_LOG_COMPILER = $(SHELL)
+# The .sh tests are '#!/usr/bin/env bash' scripts using bash-only syntax, and
+# they are shipped executable.  Let the kernel honour their shebang: with an
+# empty compiler automake invokes the script itself.  This used to be
+# $(SHELL), which forced them through /bin/sh -- dash on Debian/Ubuntu --
+# where bash-only constructs fail for reasons that have nothing to do with
+# the allocator.
+SH_LOG_COMPILER =
 
 test_test_inspect_SOURCES = test/test_inspect.c
 test_test_inspect_LDADD = libumem.la
@@ -581,6 +585,39 @@ html-local:
 
 clean-local:
 	rm -rf doxygen-out
+	rm -f test/install/external_consumer
+
+# install-check: prove an INSTALLED prefix is usable by an outside program.
+#
+# Installs into a throwaway DESTDIR and compiles + runs
+# test/install/external_consumer.c against nothing but that prefix's
+# include/ and lib/.  This fails if any installed header needs an
+# uninstalled one ("config.h", umem_impl.h, ...), which is exactly what
+# installing umem_rseq.h / umem_numa.h used to do, and also fails if the
+# installed umem(1) cannot run.
+#
+# Run AFTER a successful build:  make install-check
+install-check:
+	@set -e; \
+	d=$$(mktemp -d); \
+	echo "install-check: DESTDIR=$$d"; \
+	$(MAKE) $(AM_MAKEFLAGS) install DESTDIR=$$d >$$d/install.log 2>&1 || \
+	    { echo "install-check: make install FAILED"; tail -30 $$d/install.log; exit 1; }; \
+	inc=$$d$(includedir); lib=$$d$(libdir); bin=$$d$(bindir); \
+	echo "install-check: compiling external consumer against $$inc"; \
+	$(CC) -I$$inc -o $$d/external_consumer \
+	    $(srcdir)/test/install/external_consumer.c \
+	    -L$$lib -lumem -lpthread -lm || \
+	    { echo "install-check: external consumer FAILED to build"; exit 1; }; \
+	LD_LIBRARY_PATH=$$lib $$d/external_consumer; \
+	echo "install-check: running installed umem(1)"; \
+	LD_LIBRARY_PATH=$$lib $$bin/umem --help >/dev/null 2>&1 || \
+	    LD_LIBRARY_PATH=$$lib $$bin/umem --version >/dev/null 2>&1 || \
+	    { echo "install-check: installed umem(1) is not runnable"; exit 1; }; \
+	test -x $$bin/umemctl || \
+	    { echo "install-check: umemctl not installed"; exit 1; }; \
+	echo "install-check: PASS (prefix $$d)"
+.PHONY: install-check
 
 # Coverage targets
 if ENABLE_COVERAGE

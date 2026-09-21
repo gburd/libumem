@@ -28,16 +28,20 @@
  * proves they provide genuine performance benefits.
  *
  * Architecture Support:
- * - x86_64: SSE2 (2 pointers/op), AVX2 (4 pointers/op)
+ * - x86_64: SSE2 (2 pointers/op) by default -- SSE2 is in the x86-64
+ *   baseline, so the default build runs on any x86-64 CPU.
+ *   AVX2 (4 pointers/op) only with --enable-avx2, which makes the whole
+ *   library require an AVX2-capable CPU.  Selection is at COMPILE time;
+ *   there is no runtime dispatch.
  * - ARM64:  NEON (2 pointers/op)
  * - Fallback: Standard C for unsupported platforms
  *
- * Performance Characteristics:
+ * Performance Characteristics (as measured in 2025 on the then-current
+ * benchmark; the referenced analysis document is no longer in the tree, so
+ * treat these as historical figures, not a current claim):
  * - Magazine scanning: SIMD provides 50-163% speedup for sizes >= 8
  * - Magazine initialization: memset outperforms SIMD by 40-50%
  * - Threshold-based selection ensures SIMD overhead never dominates
- *
- * See SIMD_OVERHEAD_ANALYSIS.md for detailed benchmarking results.
  */
 
 #ifndef _UMEM_SIMD_H
@@ -142,15 +146,22 @@ umem_mag_scan_notnull(void **array, int count)
 
 #elif defined(HAVE_SSE2)
 	/*
-	 * SSE2 path: Process 2 pointers (128 bits) at a time
-	 * More widely supported than AVX2
+	 * SSE2 path: Process 2 pointers (128 bits) at a time.
+	 *
+	 * _mm_cmpeq_epi32, not _mm_cmpeq_epi64: the 64-bit compare is
+	 * SSE4.1, and using it here made a build configured for the
+	 * x86-64 SSE2 baseline emit an instruction that baseline cannot
+	 * execute (SIGILL on pre-Penryn hardware).  A 32-bit lane compare
+	 * is equivalent for this test: a 64-bit pointer is zero exactly
+	 * when both of its 32-bit halves are zero, so "all bytes of the
+	 * mask set" means "all pointers NULL" either way.
 	 */
 	__m128i zero = _mm_setzero_si128();
 	int i;
 
 	for (i = 0; i + 2 <= count; i += 2) {
 		__m128i ptrs = _mm_loadu_si128((__m128i *)&array[i]);
-		__m128i cmp = _mm_cmpeq_epi64(ptrs, zero);
+		__m128i cmp = _mm_cmpeq_epi32(ptrs, zero);
 
 		if (_mm_movemask_epi8(cmp) != 0xFFFF) {
 			return 1;
