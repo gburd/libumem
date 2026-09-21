@@ -42,6 +42,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/unit/repro_reclaim_reuse \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
+		  test/bench/probe_reclaim_rss \
 		  tools/umem_profile_dump
 
 libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS) $(SOLARIS_SOCKET_LIBS) -version-info 1:0:0
@@ -501,6 +502,14 @@ test_unit_test_hash_partition_LDFLAGS = -lm
 test_bench_bench_debug_overhead_SOURCES = test/bench/bench_debug_overhead.c
 test_bench_bench_debug_overhead_LDADD = libumem.la
 test_bench_bench_debug_overhead_LDFLAGS = -pthread
+
+# Slab-reclamation retention/RSS observation (P1.4/P1.5).  Reports RSS and
+# per-arena retained bytes at fixed points in one sequence; it is an
+# observation, not a benchmark, and makes no throughput claim.
+test_bench_probe_reclaim_rss_SOURCES = test/bench/probe_reclaim_rss.c
+test_bench_probe_reclaim_rss_LDADD = libumem.la
+test_bench_probe_reclaim_rss_LDFLAGS = -pthread
+test_bench_probe_reclaim_rss_CPPFLAGS = -I$(srcdir)
 
 # Cache RSEQ benchmark
 test_bench_bench_cache_rseq_SOURCES = test/bench/bench_cache_rseq.c test/tdigest.c
