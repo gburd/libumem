@@ -45,12 +45,24 @@ static void update_pass(void)
 int main(void)
 {
 	enum { N = 20000, SZ = 512, SPAN = 64 * 1024 * 1024 };
-	void **p = malloc(N * sizeof(void *));
-	void *base;
+	void **p;
+	void *base, *warm;
 	vmem_t *vmp;
 	umem_cache_t *cp;
 	int i;
 
+	/*
+	 * Force umem initialization BEFORE any vmem_create().  vmem_create
+	 * -> vmem_add -> vmem_populate dereferences vmem_seg_arena, which
+	 * umem_init() creates; calling it first segfaults there, and
+	 * `pagesize` is still 0.  test/unit/test_vmem.c keeps an
+	 * ensure_umem_initialized() helper for the same reason.
+	 */
+	warm = umem_alloc(64, UMEM_DEFAULT);
+	if (warm != NULL)
+		umem_free(warm, 64);
+
+	p = malloc(N * sizeof(void *));
 	if (p == NULL) return 1;
 	if (posix_memalign(&base, pagesize, SPAN) != 0) return 1;
 	vmp = vmem_create("rss_probe", base, SPAN, pagesize,
