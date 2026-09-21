@@ -165,6 +165,9 @@ umem_ptc_bench
 test/test_main
 test/property/prop_*
 test/integration/test_*
+# ...but not their sources (the patterns above match .c files too).
+!test/property/prop_*.c
+!test/integration/test_*.c
 # Benchmark executables (but not .c source files)
 test/bench/bench_main
 test/bench/bench_depot_contention

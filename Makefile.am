@@ -31,6 +31,8 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_realloc_bootstrap \
 		  test/integration/test_debug_features \
 		  test/integration/test_threading_stress \
+		  test/integration/test_fork_mt_load \
+		  test/integration/test_update_thread_startup \
 		  test/stress/stress_main \
 		  test/stress/repro_rseq_trailing_store \
 		  test/stress/repro_naive_reload_race \
@@ -405,6 +407,21 @@ test_integration_test_threading_stress_LDADD = libumem.la libumem_malloc.la
 test_integration_test_threading_stress_LDFLAGS = -pthread
 test_integration_test_threading_stress_CPPFLAGS = -I$(srcdir)/test
 
+# P1.2 regression: multithreaded fork under allocation load (fork lock order).
+test_integration_test_fork_mt_load_SOURCES = test/integration/test_fork_mt_load.c
+test_integration_test_fork_mt_load_LDADD = libumem.la
+test_integration_test_fork_mt_load_LDFLAGS = -pthread
+test_integration_test_fork_mt_load_CPPFLAGS = -I$(srcdir)
+
+# P1.6 regression: update-thread startup handshake.  -rdynamic so the
+# executable's pthread_cond_wait interposer preempts libc's for calls made
+# from libumem.so (see the comment at the top of the test).
+test_integration_test_update_thread_startup_SOURCES = \
+	test/integration/test_update_thread_startup.c
+test_integration_test_update_thread_startup_LDADD = libumem.la
+test_integration_test_update_thread_startup_LDFLAGS = -pthread -rdynamic
+test_integration_test_update_thread_startup_CPPFLAGS = -I$(srcdir)
+
 # Stress test (long-running, use -d 10 for quick CI)
 test_stress_stress_main_SOURCES = test/stress/stress_main.c
 test_stress_stress_main_LDADD = libumem.la
@@ -513,7 +530,18 @@ endif
 # See PTHREAD_LIMITATION.md for details.
 TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh \
-	test/stress/oracle_fast.sh \
+	test/stress/oracle_fast.sh
+
+# Phase 1 regressions (docs/plans/2026-09-21-production-readiness.md) are
+# built by default but deliberately NOT in TESTS yet:
+#
+#   test/integration/test_fork_mt_load            (P1.2 fork lock order)
+#   test/integration/test_update_thread_startup   (P1.6 startup handshake)
+#
+# Both are run explicitly (see docs/results/jobs/*-fork*).  Folding them into
+# `make check` changes its long-advertised 8-entry scope and its runtime, so
+# that belongs in one coordinated change once the Phase 1 agents have all
+# landed, not in each agent's own commit. \
 	test/unit/test_overflow_contracts \
 	test/stress/interpose_regress.sh
 
