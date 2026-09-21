@@ -3,7 +3,279 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Removed (breaking)
+
+- **`--enable-percpu-caching` is gone.** It did not produce a slower or
+  less-tested allocator; it produced a compile error. `umem_percpu.c`
+  indexed a nonexistent `umem_cache_t.cache_percpu`, read a nonexistent
+  `umem_magazine_t.mag_size`, used an undeclared `umem_max_ncpus`, and
+  called five functions that are `static` inside `umem.c`. Verified on EC2
+  before removal:
+  `docs/results/prefix-evidence/2026-09-21-percpu-build-failure.log`. The
+  design was unfinished besides — nothing ever called
+  `umem_init_percpu()`, so even a building version would have allocated
+  nothing; the magazine reload leaked a reference; the free path
+  dereferenced `pc_loaded` without a NULL check. Source quarantined in
+  `attic/` (not built, not installed, not distributed), with each defect
+  recorded in `attic/README.md`.
+
+- **`--enable-htm` is gone.** `HTM_SOURCES` was unconditionally empty, so
+  the flag never added code to the build, while `umem_htm.h` advertised a
+  "5-15% improvement" and `Makefile.am` claimed the files "have not been
+  written" — they were in the tree. The prototype's lock elision is also
+  unsound: `UMEM_HTM_TRY` never adds the fallback lock to the
+  transaction's read set, so a thread holding that lock does not abort a
+  concurrent transaction and both can believe they own the depot.
+  Additionally the depot fast paths are comments,
+  `umem_htm_depot_alloc()` always returns `NULL`, `_xtest()` is read as
+  proof the fallback lock is free (it only proves the caller is in a
+  transaction), and `_xabort()` is called with a runtime value where the
+  instruction requires an immediate. Quarantined in `attic/`.
+
+- **`umem_numa.[ch]`: the unimplemented policy layer is gone; the topology
+  queries remain.** Removed because each was advertised and did not work:
+  `umem_numa_alloc()`/`umem_numa_free()` (alloc fell back to `malloc()`
+  while free unconditionally called `numa_free()` — an allocator mismatch
+  on a reachable path), `umem_numa_get_node()` (documented as the current
+  CPU's node; actually hashed `pthread_self()` into capacity-weighted
+  partitions, an unrelated quantity), `umem_numa_depot_alloc()`/`_free()`
+  (both opened with a `numa_info = NULL; if (numa_info == NULL) return;`
+  placeholder, so the per-node depots were unreachable, and the depot
+  struct's padding expression `64 - (16 + 32 + sizeof(pthread_mutex_t))`
+  is negative on x86-64 glibc — an invalid array bound),
+  `umem_numa_set_policy()`/`_get_policy()` (stored an enum nothing
+  dispatched on), and `umem_numa_stats()` (zeroed the caller's struct and
+  returned). What is left — node count, CPU→node mapping, distance
+  matrix, explicit bind/migrate helpers — is real and is used by tests and
+  benchmarks.
+
+  The separate `HAVE_LIBNUMA` topology code in `umem.c` that fills
+  `umem_cpu_node[]` for the depot's cross-CPU steal is **untouched and
+  live**; it never went through `umem_numa.[ch]`.
+
+- **`UMEM_OPTIONS=numa` is gone.** It was registered behind `#ifdef
+  UMEM_NUMA_AVAILABLE` in `envvar.c` — a macro *defined by* the header the
+  `#ifdef` guarded, so the include never happened and the tunable was
+  never registered on any build. Not repaired but removed:
+  `umem_numa_enabled` is now a detection result, not a policy switch, so
+  letting the environment write to it could only falsify it.
+
+- **`--enable-avx2` replaces automatic AVX2.** Configure used to turn
+  "the compiler accepts `-mavx2`" into a global `-mavx2` for the entire
+  library. Compiler acceptance says nothing about the CPU the binary runs
+  on, so a nominally generic x86-64 build acquired an AVX2 requirement and
+  would `SIGILL` on pre-Haswell hardware at an arbitrary point inside the
+  allocator. The default build now targets the x86-64 SSE2 baseline;
+  `--enable-avx2` opts in and warns that the result is not generic. There
+  is no runtime dispatch — the SIMD helpers are `static inline` in a
+  header consumed library-wide, so dispatch means restructuring them, not
+  a configure change.
+
+### Fixed
+
+- **Weighted hash partitioning assigned every weight to the wrong
+  claimant.** `hash_partitions_create_with_weights()` compacted accepted
+  entries in one pass, then read `weights[i]` from the *original*
+  uncompacted array in the second — so one rejected entry shifted every
+  subsequent weight. `A:0, B:1, C:1` gave B a zero-width interval and C
+  the entire hash space instead of half each; in `umem_numa_init()` that
+  means node weights land on the wrong nodes. Pre-fix control reproduces
+  exactly this (`B` 0/10000 samples, `C` 10000/10000):
+  `docs/results/prefix-evidence/2026-09-21-hash-partition-prefix-control.log`.
+  Three further defects in the same path: nonfinite weights reached the
+  `double`→`uint64_t` conversion (undefined behaviour) and poisoned the
+  normalizing sum; `hash_partitions_alloc()` multiplied capacity by three
+  element sizes unchecked; and `create_with_sizes()` summed intervals then
+  adjusted the last one, so a cumulative overflow or a zero-size entry
+  left `lower_bounds[]` non-increasing and silently broke the binary
+  search in `hash_partitions_get_claimant()`. Regression:
+  `test/unit/test_hash_partition.c`.
+
+- **`umem_simd.h`'s "SSE2 fallback" used an SSE4.1 instruction.**
+  `_mm_cmpeq_epi64` is SSE4.1; a build configured for the SSE2 baseline
+  therefore emitted an instruction that baseline cannot execute. Replaced
+  with `_mm_cmpeq_epi32`, which is equivalent for a
+  pointer-is-zero test.
+
+- **Installed headers required uninstalled ones.** `--enable-rseq` and
+  `--enable-numa` installed `umem_rseq.h` and `umem_numa.h`, both of which
+  open with `#include "config.h"` — a build artifact that is never
+  installed. An external program including them failed to compile with a
+  missing-header error that looked like the user's mistake. Both are now
+  private and not installed. New `make install-check` target installs into
+  a throwaway `DESTDIR` and compiles `test/install/external_consumer.c`
+  against nothing but that prefix, so this cannot regress silently.
+
+- **Malformed `extern "C"` guards** in `umem_rseq.h`, `umem_numa.h`, and
+  `umem_htm.h`: all three opened `extern "C"` *outside* the
+  feature-availability guard and closed it *inside*, so a C++ translation
+  unit on a host without the feature saw an unbalanced brace.
+
+- **A clean `make dist` tarball could not build.**
+  `test/property/prop_palloc.c` `#include`s `examples/umem_palloc.c`,
+  which was in no source list and no `EXTRA_DIST`. Verified fixed by
+  building `prop_palloc` from an extracted tarball on EC2
+  (`docs/results/2026-09-21-release-artifact-verification.log`).
+
+- **`SH_LOG_COMPILER = $(SHELL)`** forced the `#!/usr/bin/env bash` test
+  scripts through `/bin/sh` (dash on Debian/Ubuntu), where bash-only
+  constructs fail for reasons unrelated to the allocator. Now empty, so
+  the scripts run under their own shebang.
+
+- **`umemctl` is installed.** README and `docs/UMEMCTL.md` document it as
+  a command users run; it was `noinst`, so it only ever existed in a build
+  tree.
+
+### Changed — withdrawn and corrected claims
+
+This release withdraws published conclusions that the evidence does not
+support. Details in README.md; the two harness defects are P2.1/P2.2 in
+`docs/plans/2026-09-21-production-readiness.md`.
+
+- **The v2.7.0 fragmentation conclusion is withdrawn, in both
+  directions.** Neither the original "worst-in-field, ~2.3× the next-worst
+  allocator" finding nor the "fixed: 4.19→2.70 / 4.12→2.63, landing in
+  the field's competitive 2.2-2.5 range" claim is supported, because the
+  measurement itself is invalid three ways: the live-bytes denominator
+  accumulated bytes that had already been freed, `peak_rss_bytes` was
+  sampled after cleanup (so it is not a peak), and the workload labelled
+  "192-thread fragmentation" runs on exactly one thread
+  (`bench_main.c` sets `thread_count = 1` for it). Separately, 2.63-2.70
+  is not inside 2.2-2.5. The `umem_max_ncpus` doubling bug that v2.7.0
+  fixed **was real and the fix stands** — it rests on the code, not on
+  this benchmark. What the fix does to fragmentation is currently
+  unmeasured.
+
+- **All 192-thread scaling conclusions are withdrawn.** The operation
+  budget was divided by thread count twice (`matrix.sh` and
+  `bench_main.c` each did it), so those points measured ~52k total
+  operations in ~3.8 ms with >27% coefficient of variation.
+
+- **The v2.7.0 sustained-p999 improvement is retained but narrowed.** The
+  mechanism was identified in the code (a blocking mutex in the depot's
+  cross-CPU steal scan, held while the caller held its own per-CPU lock)
+  and the fix is real. The measurement — 156.7-163.2us → 83.8-92.6us,
+  re-verified at 86,974ns — was taken on x86_64 `c7i.metal-48xl` only,
+  with the budget defect present in the harness, and was not re-measured
+  on aarch64. Reported with that provenance; the exact percentage is
+  provisional. The attribution of the residual gap to the inert rseq
+  reload path is labelled a **hypothesis**, not a finding: nothing has
+  isolated it.
+
+- **The rseq fast path serves zero allocations.** README said rseq's
+  "benefit is limited to fastpath hits". There are no hits. The assembly
+  is registered and runs on every qualifying alloc/free, but
+  `cache_rseq[cpu].rounds` is permanently 0 because the only functions
+  that would populate a per-CPU magazine are the reload paths, and nothing
+  calls them. Entering the code is not the code doing its job.
+
+- **`umem --core` does not work and is documented as such.** It is
+  accepted, exits 0, and prints nothing — indistinguishable from "no
+  leaks found". Verified against a control: the same `findleaks` command
+  on a live process reported 200 outstanding buffers; on that process's
+  own core it produced zero bytes
+  (`docs/results/2026-09-21-core-mode-produces-no-report.log`,
+  reproduce with `scripts/ec2/core_mode_probe.sh`). The cause is
+  structural: `tools/gdb/umem_gdb.py` runs every command by calling
+  `umem_inspect(3)` entry points *inside the target*, and a core has no
+  process to call into. A passive core reader is not implemented. The
+  snapshot (`--dump`) workflow is the supported post-mortem path.
+
+- **`findleaks` reports outstanding allocations, not leaks.**
+  `umem(1)`, `umem_inspect(3)`, and `umem_debugging(7)` all claimed the
+  count "reflects actual leaks". The cached-set subtraction covers the
+  central depot, per-CPU depot arrays, and per-CPU loaded/previous
+  magazines; it does not cover PTC- or rseq-held buffers, and oversize
+  allocations are unaccounted. Now documented as an upper bound.
+
+- **Debug-mode overhead figures are now measured.** README and
+  `umem_debug(3)` published different unsourced numbers (~10/30/50% vs
+  10-20/30-50/50-70%). Measured on `c7i.2xlarge` with
+  `test/bench/bench_debug_overhead`: lite 28%, guards 32%, audit 58%,
+  default 60%. `contents` and `firewall` are marked **not measured**,
+  because that benchmark reports ~0% for both — its 64-byte allocations
+  are below the firewall threshold and do not engage `contents` alone,
+  which is a fact about the benchmark, not the modes.
+  (`docs/results/2026-09-21-debug-mode-overhead-x86_64.log`)
+
+- **Platform "Production" labels removed.** README listed six platforms as
+  Production with no recorded evidence for most. Replaced with an evidence
+  column per platform. CI is Linux x86_64 only; the aarch64 nightly job is
+  validated but **not armed** (repo secrets never added); riscv64 is
+  cross-build-only; illumos/SPARC has no recorded run on hardware. No
+  platform is production-ready at this commit — the 2026-09-21 review
+  found reachable defects in default paths.
+
+- **`make check` scope stated accurately.** It is 8 entries and excludes
+  `test/test_main`, every property test, the concurrency oracle, and the
+  stress suites. README, `test/README.md`, `Makefile.am`, and the flake's
+  `test` app (which printed "All main tests passed (4/4)") all implied
+  otherwise.
+
+- **`test/README.md`** claimed ">90% code coverage" and a ">90% Overall /
+  On track" target table. Neither was measured, and both contradicted the
+  measured 71.2% / 50.3% in README. It also pointed at
+  `../.github/workflows/test.yml`, which has never existed in this
+  repository, and at five other nonexistent documents.
+
+- **`test/bench/README.md`** directed users at `bench_allocators.sh` and a
+  `bench_allocators` target the autotools build does not produce; the
+  maintained driver is `matrix.sh` + `bench_main`, which is what every
+  committed result came from and the only one that records provenance. Its
+  "Adding Allocators" instructions described a compile-time
+  pkg-config/`-DHAVE_*` scheme that this harness replaced with runtime
+  `dlopen`.
+
+- **`flake.nix`** advertised version `1.0.2` (`configure.ac` says 2.7.0)
+  in the derivation and in every generated `.pc` file, copied a
+  `docs/html` that has not existed since Doxygen output moved to
+  `doxygen-out/` (so the doc output was always empty), and patched
+  shebangs on a nonexistent `umem_test4`. `doCheck = false` is now
+  labelled: `nix build` is a compile result, not a correctness result.
+
+- **`umem_cache_create(3)`'s "Depot Striping"** described 16 fixed stripes
+  selected by hashing thread IDs, a compile-time `UMEM_DEPOT_STRIPES = 16`,
+  and per-thread-count speedup percentages. The depot is per-CPU arrays
+  sized to `umem_max_ncpus`, indexed by a cached CPU hint, scanned with a
+  non-blocking trylock; `UMEM_DEPOT_STRIPES` does not exist.
+
+- **`umem_hooks(3)`** said the hook structure "can be freed after this
+  call returns". `umem_hook_unregister()` unlinks under the list lock and
+  returns without waiting for in-flight callbacks, so a concurrent
+  callback can still be inside the structure.
+
+- **`umem_alloc(3)`** (and a `Makefile.am` comment) cited a deleted
+  `PTHREAD_LIMITATION.md` for the claim that `LD_PRELOAD` always uses the
+  bootstrap allocator and gets none of umem's optimizations. Stale:
+  `malloc_interpose.c` hands off to `umem_malloc()` once umem is ready.
+
+- **Experimental headers now state what they are not.** `umem_own.h` is
+  not a memory-safety mechanism (the tracking itself can corrupt memory,
+  so enabling it is not strictly safer than not); `umem_profile.h` is not
+  a monitoring or accounting guarantee (sampled and lossy);
+  `examples/umem_palloc.h` budgets are accounting, **not** enforcement —
+  `UMEM_BUDGET_NOWAIT`/`NOFAIL` express intent that is not reliably
+  honoured.
+
+- **Restored documentation deleted by `ebcb467`.** That "cleanup" commit
+  removed the whole `docs/` results tree, including every document README
+  links to. The nine still referenced are restored from git history.
+
 ## [2.7.0] - 2026-09-10
+
+> **Retrospective correction (2026-09-21).** Two of this release's headline
+> claims do not survive review of the harness that produced them. The
+> fragmentation conclusion (`4.19->2.70` / `4.12->2.63`, "lands in the
+> field's competitive range") is **withdrawn**: that metric is invalid three
+> ways, and 2.63-2.70 is not inside the 2.2-2.5 range it was said to reach.
+> The underlying `umem_max_ncpus` doubling bug was real and its fix stands.
+> The sustained-p999 improvement is **retained but narrowed** to what was
+> measured (x86_64 metal, budget defect present, no aarch64 re-measurement),
+> and its attribution of the residual gap to the inert rseq reload is a
+> hypothesis, not a finding. See the Unreleased section above. The text
+> below is left as written, for provenance.
 
 ### Added
 
