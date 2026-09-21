@@ -40,6 +40,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/stress/repro_calloc_interpose_race \
 		  test/unit/test_overflow_contracts \
 		  test/unit/test_aligned_contracts \
+		  test/unit/test_hash_partition \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
 		  tools/umem_profile_dump
@@ -458,6 +459,17 @@ test_unit_test_overflow_contracts_CPPFLAGS = -I$(srcdir)
 # Like the calloc race, run both with and without LD_PRELOAD.
 test_unit_test_aligned_contracts_SOURCES = test/unit/test_aligned_contracts.c
 test_unit_test_aligned_contracts_CPPFLAGS = -I$(srcdir)
+
+# P4 regression: weighted hash partitioning (umem_hash_partition.c).
+# Compiles the unit directly rather than linking libumem, because
+# umem_hash_partition.c is only part of the library under --enable-numa;
+# this test must still run in a default build.  Not in TESTS for the same
+# reason as the P1.2/P1.6 regressions -- see the comment above TESTS.
+test_unit_test_hash_partition_SOURCES = test/unit/test_hash_partition.c \
+	umem_hash_partition.c umem_hash_partition.h
+test_unit_test_hash_partition_CPPFLAGS = -I$(srcdir)
+test_unit_test_hash_partition_LDADD =
+test_unit_test_hash_partition_LDFLAGS = -lm
 
 # Debug overhead benchmark
 test_bench_bench_debug_overhead_SOURCES = test/bench/bench_debug_overhead.c

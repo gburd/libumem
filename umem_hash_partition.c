@@ -59,6 +59,13 @@ simple_hash(const void *data, size_t len)
 static hash_partitions_t *
 hash_partitions_alloc(size_t capacity)
 {
+	/*
+	 * capacity is bounded by MAX_CLAIMANTS so that the three
+	 * capacity * sizeof(...) products below cannot overflow.
+	 */
+	if (capacity == 0 || capacity > MAX_CLAIMANTS)
+		return (NULL);
+
 	hash_partitions_t *hp = malloc(sizeof (hash_partitions_t));
 	if (!hp)
 		return (NULL);
@@ -141,25 +148,44 @@ hash_partitions_create_with_sizes(const claimant_size_t *sizes,
 	if (!hp)
 		return (NULL);
 
+	/*
+	 * Invariant: lower_bounds[] is strictly increasing, which
+	 * hash_partitions_get_claimant()'s binary search requires.
+	 * Accounting against a remaining-space counter (rather than
+	 * summing afterwards) keeps that true for any input: an interval
+	 * is clamped to what is left, and a zero-width interval is
+	 * dropped instead of duplicating its predecessor's bound.
+	 */
 	uint64_t next_lower_bound = 0;
+	uint64_t remaining = UINT64_MAX_VAL;
 
-	for (size_t i = 0; i < num_sizes; i++) {
-		hp->lower_bounds[i] = next_lower_bound;
-		hp->interval_sizes[i] = sizes[i].size;
-		strncpy(hp->lb_to_c[i], sizes[i].name, MAX_NAME_LEN - 1);
-		hp->lb_to_c[i][MAX_NAME_LEN - 1] = '\0';
-		next_lower_bound += sizes[i].size;
+	for (size_t i = 0; i < num_sizes && remaining > 0; i++) {
+		uint64_t sz = sizes[i].size;
+
+		if (sz == 0)
+			continue;
+		if (sz > remaining)
+			sz = remaining;
+
+		hp->lower_bounds[hp->count] = next_lower_bound;
+		hp->interval_sizes[hp->count] = sz;
+		strncpy(hp->lb_to_c[hp->count], sizes[i].name,
+		    MAX_NAME_LEN - 1);
+		hp->lb_to_c[hp->count][MAX_NAME_LEN - 1] = '\0';
+
+		next_lower_bound += sz;
+		remaining -= sz;
 		hp->count++;
 	}
 
-	/* Adjust last interval */
-	uint64_t sum = 0;
-	for (size_t i = 0; i < hp->count; i++) {
-		sum += hp->interval_sizes[i];
+	if (hp->count == 0) {
+		hash_partitions_free(hp);
+		return (NULL);
 	}
-	if (hp->count > 0) {
-		hp->interval_sizes[hp->count - 1] += (UINT64_MAX_VAL - sum);
-	}
+
+	/* The last claimant covers whatever is left of the hash space. */
+	if (remaining > 0)
+		hp->interval_sizes[hp->count - 1] += remaining;
 
 	return (hp);
 }
@@ -168,6 +194,9 @@ hash_partitions_t *
 hash_partitions_create_with_weights(const claimant_weight_t *weights,
     size_t num_weights, size_t decimal_digits)
 {
+	if (num_weights == 0 || num_weights > MAX_CLAIMANTS)
+		return (NULL);
+
 	claimant_size_t *sizes = malloc(num_weights * sizeof (claimant_size_t));
 	if (!sizes)
 		return (NULL);
@@ -175,29 +204,53 @@ hash_partitions_create_with_weights(const claimant_weight_t *weights,
 	double sum = 0.0;
 	size_t valid_count = 0;
 
-	/* Calculate sum and filter valid entries */
+	/*
+	 * Both passes below apply the SAME acceptance test to the SAME
+	 * (original, uncompacted) index i, so pass 2's output slot j
+	 * tracks pass 1's valid_count entry for entry.  Reading
+	 * weights[j] in pass 2 instead -- as this function used to --
+	 * assigns every weight to the wrong claimant as soon as any
+	 * entry is skipped (A:0,B:1,C:1 gave B a zero-width interval and
+	 * C the entire hash space instead of half each).
+	 *
+	 * isfinite() keeps NaN/infinity out of the float->uint64
+	 * conversion below, where they would be undefined behaviour.
+	 */
+#define	WEIGHT_ACCEPTED(w, nm)	\
+	(isfinite(w) && (w) > 0.0 && strlen(nm) > 0)
+
 	for (size_t i = 0; i < num_weights; i++) {
 		double w = round_f64(weights[i].weight, decimal_digits);
-		if (strlen(weights[i].name) > 0 && w > 0.0) {
-			strncpy(sizes[valid_count].name, weights[i].name,
-			    MAX_NAME_LEN - 1);
-			sizes[valid_count].name[MAX_NAME_LEN - 1] = '\0';
+		if (WEIGHT_ACCEPTED(w, weights[i].name)) {
 			sum += w;
 			valid_count++;
 		}
 	}
 
-	/* Convert weights to sizes */
-	for (size_t i = 0; i < valid_count; i++) {
+	if (valid_count == 0 || !isfinite(sum) || sum <= 0.0) {
+		free(sizes);
+		return (NULL);
+	}
+
+	size_t j = 0;
+	for (size_t i = 0; i < num_weights; i++) {
 		double w = round_f64(weights[i].weight, decimal_digits);
-		if (w == sum) {
-			sizes[i].size = UINT64_MAX_VAL;
+		if (!WEIGHT_ACCEPTED(w, weights[i].name))
+			continue;
+
+		strncpy(sizes[j].name, weights[i].name, MAX_NAME_LEN - 1);
+		sizes[j].name[MAX_NAME_LEN - 1] = '\0';
+
+		if (w >= sum) {
+			sizes[j].size = UINT64_MAX_VAL;
 		} else {
 			double fraction = w / sum;
-			sizes[i].size = (uint64_t)((double)UINT64_MAX_VAL *
+			sizes[j].size = (uint64_t)((double)UINT64_MAX_VAL *
 			    fraction);
 		}
+		j++;
 	}
+#undef	WEIGHT_ACCEPTED
 
 	hash_partitions_t *result = hash_partitions_create_with_sizes(sizes,
 	    valid_count);

@@ -1,0 +1,73 @@
+REGEN_OK
+=== make libumem.la ===
+  266 |         fmp = umem_depot_alloc(cp, &cp->cache_full);
+      |             ^
+umem_percpu.c:275:25: warning: implicit declaration of function 'umem_depot_free'; did you mean 'umem_sbo_free'? [-Wimplicit-function-declaration]
+  275 |                         umem_depot_free(cp, &cp->cache_empty, pc->pc_previous);
+      |                         ^~~~~~~~~~~~~~~
+      |                         umem_sbo_free
+umem_percpu.c:305:15: warning: implicit declaration of function 'umem_slab_alloc'; did you mean 'umem_sbo_alloc'? [-Wimplicit-function-declaration]
+  305 |         buf = umem_slab_alloc(cp, umflag);
+      |               ^~~~~~~~~~~~~~~
+      |               umem_sbo_alloc
+umem_percpu.c:305:13: warning: assignment to 'void *' from 'int' makes pointer from integer without a cast [-Wint-conversion]
+  305 |         buf = umem_slab_alloc(cp, umflag);
+      |             ^
+umem_percpu.c:321:17: warning: implicit declaration of function 'umem_slab_free'; did you mean 'umem_sbo_free'? [-Wimplicit-function-declaration]
+  321 |                 umem_slab_free(cp, buf);
+      |                 ^~~~~~~~~~~~~~
+      |                 umem_sbo_free
+umem_percpu.c: In function 'umem_cache_free_percpu':
+umem_percpu.c:343:21: warning: implicit declaration of function 'umem_cache_free_debug'; did you mean 'umem_cache_free_percpu'? [-Wimplicit-function-declaration]
+  343 |                 if (umem_cache_free_debug(cp, buf) == -1) {
+      |                     ^~~~~~~~~~~~~~~~~~~~~
+      |                     umem_cache_free_percpu
+umem_percpu.c:352:37: error: 'umem_max_ncpus' undeclared (first use in this function)
+  352 |         if (cpu_id < 0 || cpu_id >= umem_max_ncpus) {
+      |                                     ^~~~~~~~~~~~~~
+In file included from umem_percpu.c:35:
+umem_percpu.h:262:17: error: 'umem_cache_t' {aka 'struct umem_cache'} has no member named 'cache_percpu'; did you mean 'cache_cpu'?
+  262 |         (&(cp)->cache_percpu[(cpu_id)])
+      |                 ^~~~~~~~~~~~
+umem_percpu.c:356:14: note: in expansion of macro 'UMEM_PERCPU_CACHE'
+  356 |         pc = UMEM_PERCPU_CACHE(cp, cpu_id);
+      |              ^~~~~~~~~~~~~~~~~
+umem_percpu.c:361:42: error: 'umem_magazine_t' {aka 'struct umem_magazine'} has no member named 'mag_size'
+  361 |         if (pc->pc_rounds < pc->pc_loaded->mag_size) {
+      |                                          ^~
+In file included from umem_percpu.c:35:
+umem_percpu.c: In function 'umem_cache_free_percpu_slowpath':
+umem_percpu.h:262:17: error: 'umem_cache_t' {aka 'struct umem_cache'} has no member named 'cache_percpu'; did you mean 'cache_cpu'?
+  262 |         (&(cp)->cache_percpu[(cpu_id)])
+      |                 ^~~~~~~~~~~~
+umem_percpu.c:384:35: note: in expansion of macro 'UMEM_PERCPU_CACHE'
+  384 |         umem_percpu_cache_t *pc = UMEM_PERCPU_CACHE(cp, cpu_id);
+      |                                   ^~~~~~~~~~~~~~~~~
+umem_percpu.c:406:50: error: 'umem_magazine_t' {aka 'struct umem_magazine'} has no member named 'mag_size'
+  406 |                 if (pc->pc_rounds < pc->pc_loaded->mag_size) {
+      |                                                  ^~
+umem_percpu.c:416:13: warning: assignment to 'umem_magazine_t *' {aka 'struct umem_magazine *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+  416 |         emp = umem_depot_alloc(cp, &cp->cache_empty);
+      |             ^
+umem_percpu.c: In function 'umem_percpu_stats':
+umem_percpu.c:504:37: error: 'umem_max_ncpus' undeclared (first use in this function)
+  504 |         if (cpu_id < 0 || cpu_id >= umem_max_ncpus) {
+      |                                     ^~~~~~~~~~~~~~
+In file included from umem_percpu.c:35:
+umem_percpu.h:262:17: error: 'umem_cache_t' {aka 'struct umem_cache'} has no member named 'cache_percpu'; did you mean 'cache_cpu'?
+  262 |         (&(cp)->cache_percpu[(cpu_id)])
+      |                 ^~~~~~~~~~~~
+umem_percpu.c:508:14: note: in expansion of macro 'UMEM_PERCPU_CACHE'
+  508 |         pc = UMEM_PERCPU_CACHE(cp, cpu_id);
+      |              ^~~~~~~~~~~~~~~~~
+umem_percpu.c: In function 'umem_percpu_dump':
+umem_percpu.c:562:29: error: 'umem_max_ncpus' undeclared (first use in this function)
+  562 |         for (cpu = 0; cpu < umem_max_ncpus; cpu++) {
+      |                             ^~~~~~~~~~~~~~
+make: *** [Makefile:2514: umem_percpu.lo] Error 1
+make: *** Waiting for unfinished jobs....
+rm -f stamp-h1
+touch config.h.in
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -mavx2 -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_inspect.lo -MD -MP -MF .deps/umem_inspect.Tpo -c umem_inspect.c -o umem_inspect.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -mavx2 -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT sm.lo -MD -MP -MF .deps/sm.Tpo -c sm.c -o sm.o >/dev/null 2>&1
+make exit: 2
