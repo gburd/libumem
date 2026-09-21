@@ -1637,9 +1637,19 @@ umem_slab_alloc(umem_cache_t *cp, int umflag)
 
 	/*
 	 * Reactivate a slab that was idle (DIRTY or CLEAN).
-	 * CLEAN slabs had their pages advised away; the kernel will
-	 * zero-fill on first access, which is fine -- the constructor
-	 * will reinitialize the buffer contents.
+	 *
+	 * Nothing has to be rebuilt here, and that is an invariant the
+	 * reclaim side maintains, not an accident: a CLEAN slab only ever
+	 * had pages discarded if the cache keeps no allocator metadata
+	 * inside its buffer region (no embedded bufctls, no buftags/free
+	 * pattern).  See umem_slab_keeps_metadata().  A zero-filled page is
+	 * therefore indistinguishable from an untouched one to every reader
+	 * below this point.  It is NOT sufficient to rely on the
+	 * constructor: umem_cache_alloc_debug() validates bt_bxstat and the
+	 * free pattern before the constructor runs.
+	 *
+	 * slab_state is read and written only under cache_lock, which this
+	 * path holds.
 	 */
 	if (sp->slab_state != SLAB_ACTIVE) {
 		sp->slab_state = SLAB_ACTIVE;
@@ -3869,13 +3879,71 @@ umem_hash_rescale(umem_cache_t *cp)
 }
 
 /*
+ * True if a discarded page of cp's buffer region would take allocator
+ * metadata with it.
+ *
+ * MADV_DONTNEED (and MEM_RESET / MADV_FREE) make the next touch see a
+ * zero-filled page.  Two kinds of metadata live INSIDE the buffer region
+ * and are built exactly once, by umem_slab_create(); nothing rebuilds them
+ * when umem_slab_alloc() reactivates an idle slab:
+ *
+ *  - Embedded bufctls (every cache without UMF_HASH).  The slab freelist
+ *    links bc_next sit at buf + cache_bufctl in each chunk, i.e. spread
+ *    over every page of the buffer region.  umem_slab_alloc() follows
+ *    them, so a zeroed page truncates the freelist and breaks the
+ *    slab_refcnt/slab_chunks invariant.  (Single-page slabs -- the default
+ *    arena case, quantum == PAGESIZE -- never reach madvise anyway,
+ *    because the range below the metadata page is empty.  Multi-page
+ *    non-hash slabs, which a caller-supplied arena with quantum >
+ *    PAGESIZE produces, do.)
+ *
+ *  - In-buffer buftags and the UMEM_FREE_PATTERN (UMF_BUFTAG, i.e.
+ *    UMF_DEADBEEF or UMF_REDZONE).  umem_cache_alloc_debug() validates
+ *    bt_bxstat == (bt_bufctl ^ UMEM_BUFTAG_FREE) and the free pattern
+ *    BEFORE running the constructor, so a zeroed page makes a correct
+ *    allocation report heap corruption -- and no constructor can repair
+ *    it, because validation runs first.
+ *
+ * Discarding either is a correctness bug, not a space/time trade, so such
+ * slabs keep their pages.  They still advance DIRTY -> CLEAN and are
+ * destroyed outright after umem_reclaim_delay * 2, which returns the whole
+ * span to the arena.
+ *
+ * ponytail: this gives up page reclamation for multi-page non-hash slabs
+ * (only reachable through a caller-supplied arena with quantum > PAGESIZE)
+ * and for debug builds.  Default-arena non-hash slabs are one page and
+ * never had any page to discard, so nothing regresses there; hash caches
+ * without buftags -- which is where the large multi-page slabs live -- keep
+ * reclaiming.  Upgrade path if the retained case ever matters: rebuild the
+ * in-buffer metadata on reactivation (walk the chunks re-linking bc_next,
+ * re-stamping bt_bufctl/bt_bxstat/bt_redzone and UMEM_FREE_PATTERN) instead
+ * of excluding the slab, and only then discard its pages.
+ */
+static int
+umem_slab_keeps_metadata(umem_cache_t *cp)
+{
+	return (!(cp->cache_flags & UMF_HASH) ||
+	    (cp->cache_flags & UMF_BUFTAG) != 0);
+}
+
+/*
  * Release physical pages backing an empty slab via madvise.
  * The virtual address range remains valid so the slab can be reused;
  * the kernel will supply zero-filled pages on next access.
+ *
+ * Advises only; the caller publishes the resulting SLAB_CLEAN state under
+ * cp->cache_lock (see umem_cache_reclaim_pages()).
  */
 static void
 umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
 {
+	/*
+	 * Slabs whose in-buffer metadata the allocator reads again after
+	 * reactivation are never discarded.  See umem_slab_keeps_metadata().
+	 */
+	if (umem_slab_keeps_metadata(cp))
+		return;
+
 	/*
 	 * MADV_DONTNEED / MADV_FREE act on whole pages: the kernel discards
 	 * every page the range touches (empirically it discards the start
@@ -3898,15 +3966,11 @@ umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
 	 * correctness over reclaiming a partial page that shares metadata.
 	 */
 	uintptr_t start = P2ROUNDUP((uintptr_t)sp->slab_base, PAGESIZE);
-	uintptr_t limit = (unlikely(cp->cache_flags & UMF_HASH)) ?
-	    P2END((uintptr_t)sp->slab_base, cp->cache_slabsize) :
-	    (uintptr_t)sp;
+	uintptr_t limit = P2END((uintptr_t)sp->slab_base, cp->cache_slabsize);
 	uintptr_t end = P2ALIGN(limit, PAGESIZE);
 
-	if (end <= start) {
-		sp->slab_state = SLAB_CLEAN;
+	if (end <= start)
 		return;
-	}
 
 	size_t reclaim_size = (size_t)(end - start);
 	void *reclaim_base = (void *)start;
@@ -3919,7 +3983,6 @@ umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
 #else
 	(void) madvise(reclaim_base, reclaim_size, MADV_DONTNEED);
 #endif
-	sp->slab_state = SLAB_CLEAN;
 }
 
 /*
@@ -3931,6 +3994,12 @@ umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
  *
  * Must be called with cp->cache_lock held.  Drops and reacquires
  * the lock around madvise and slab destroy calls.
+ *
+ * Serialized per cache by umem_cache_lock: every caller reaches here
+ * through umem_cache_applyall(umem_cache_update), which holds
+ * umem_cache_lock across the whole walk.  That is also what keeps
+ * umem_cache_destroy() (which takes umem_cache_lock to unlink the cache)
+ * from overlapping a reclaim pass on the same cache.
  */
 static void
 umem_cache_reclaim_pages(umem_cache_t *cp)
@@ -3997,11 +4066,8 @@ umem_cache_reclaim_pages(umem_cache_t *cp)
 	 */
 	(void) mutex_unlock(&cp->cache_lock);
 
-	while (reclaim_list != NULL) {
-		sp = reclaim_list;
-		reclaim_list = sp->slab_reclaim_next;
-		umem_slab_reclaim(cp, sp);	/* madvise; sets SLAB_CLEAN */
-	}
+	for (sp = reclaim_list; sp != NULL; sp = sp->slab_reclaim_next)
+		umem_slab_reclaim(cp, sp);	/* advise only, no state write */
 
 	while (destroy_list != NULL) {
 		sp = destroy_list;
@@ -4010,6 +4076,102 @@ umem_cache_reclaim_pages(umem_cache_t *cp)
 	}
 
 	(void) mutex_lock(&cp->cache_lock);
+
+	/*
+	 * INVARIANT: slab_state is read and written only under
+	 * cp->cache_lock.  umem_slab_alloc() and umem_slab_free() read it
+	 * under that lock, so publishing SLAB_CLEAN from umem_slab_reclaim()
+	 * without the lock (as this code used to do, both on the madvise path
+	 * and on the nothing-to-advise path) was a data race: a mutex
+	 * serializes a reader only against writers that also take it.
+	 *
+	 * The RECLAIMING -> CLEAN transition is therefore made here, after
+	 * retaking the lock.  Nothing else can have touched these slabs while
+	 * it was dropped: they have slab_refcnt == 0 so no free can target
+	 * them, and umem_slab_alloc() skips SLAB_RECLAIMING.
+	 */
+	while (reclaim_list != NULL) {
+		sp = reclaim_list;
+		reclaim_list = sp->slab_reclaim_next;
+		ASSERT(sp->slab_state == SLAB_RECLAIMING);
+		ASSERT(sp->slab_refcnt == 0);
+		sp->slab_state = SLAB_CLEAN;
+	}
+}
+
+/*
+ * Destroy every empty slab the cache still holds, returning their backing
+ * spans to the arena (and, for a UMF_HASH cache, their external slab and
+ * bufctl metadata to the internal caches).
+ *
+ * Needed because background reclamation retains empty slabs: since
+ * umem_reclaim_enabled defaults on, umem_slab_free()'s last-object path
+ * marks the slab SLAB_DIRTY and leaves it linked for the update thread
+ * instead of destroying it.  umem_cache_destroy() used to only log a
+ * nonzero cache_buftotal and then free the cache descriptor, so those
+ * retained slabs' spans and metadata stayed allocated forever with
+ * slab_cache pointing at freed memory.  create/alloc/free/destroy on a
+ * UMC_NOMAGAZINE cache leaked one slab per cache, no delay needed.
+ *
+ * Must be called with no locks held, after the magazine layer has been
+ * purged (so every cached buffer has already returned to its slab) and
+ * after the cache is off umem_cache_lock's list (so no update pass can be
+ * walking its slabs).  Slabs with outstanding allocations are left alone
+ * and reported: their buffers are still in the caller's hands, and freeing
+ * the span under a live buffer would be worse than leaking it.
+ */
+static void
+umem_cache_drain_slabs(umem_cache_t *cp)
+{
+	umem_slab_t *nullsp = &cp->cache_nullslab;
+	umem_slab_t *sp, *next;
+	umem_slab_t *destroy_list = NULL;
+	long outstanding = 0;
+
+	ASSERT(cp->cache_next == NULL);		/* off the global cache list */
+
+	(void) mutex_lock(&cp->cache_lock);
+
+	/*
+	 * The slab list threaded through cache_nullslab holds every slab,
+	 * not just the ones with free buffers (cache_freelist is only where
+	 * the free-buffer portion starts), so this walk sees them all.
+	 * Collect the empty ones under the lock and destroy them after
+	 * dropping it, the same pattern umem_cache_reclaim_pages() uses.
+	 */
+	for (sp = nullsp->slab_next; sp != nullsp; sp = next) {
+		next = sp->slab_next;
+
+		ASSERT(sp->slab_cache == cp);
+		ASSERT(sp->slab_state != SLAB_RECLAIMING);
+
+		if (sp->slab_refcnt != 0) {
+			outstanding += sp->slab_refcnt;
+			continue;
+		}
+
+		sp->slab_next->slab_prev = sp->slab_prev;
+		sp->slab_prev->slab_next = sp->slab_next;
+		if (sp == cp->cache_freelist)
+			cp->cache_freelist = sp->slab_next;
+		cp->cache_slab_destroy++;
+		cp->cache_buftotal -= sp->slab_chunks;
+		sp->slab_reclaim_next = destroy_list;
+		destroy_list = sp;
+	}
+
+	(void) mutex_unlock(&cp->cache_lock);
+
+	while (destroy_list != NULL) {
+		sp = destroy_list;
+		destroy_list = sp->slab_reclaim_next;
+		umem_slab_destroy(cp, sp);
+	}
+
+	if (outstanding != 0)
+		log_message("umem_cache_destroy: '%s' (%p) has %ld "
+		    "outstanding buffer(s); their slabs are leaked\n",
+		    cp->cache_name, (void *)cp, outstanding);
 }
 
 /*
@@ -4638,7 +4800,43 @@ umem_cache_destroy(umem_cache_t *cp)
 
 	umem_remove_updates(cp);
 
+#ifdef UMEM_RSEQ_AVAILABLE
+	/*
+	 * Return the rounds held in the rseq per-CPU loaded magazines to the
+	 * slab layer BEFORE draining slabs, so those buffers stop pinning
+	 * their slabs.  Destroy each magazine with its own round count:
+	 * handing it to the depot as "full" (rounds > 0) or "empty" instead,
+	 * as this code used to, mislabels a partially filled magazine, and
+	 * after the purge below nothing reaps the depot anyway, so the
+	 * magazine and its rounds were simply abandoned.
+	 */
+	if (cp->cache_rseq != NULL) {
+		int ncpus = umem_rseq_get_ncpus();
+		int i;
+		for (i = 0; i < ncpus; i++) {
+			umem_rseq_cache_t *rc = &cp->cache_rseq[i];
+			umem_magazine_t *mag =
+			    (umem_magazine_t *)rc->loaded_mag;
+			int rounds = rc->rounds;
+
+			rc->loaded_mag = NULL;
+			rc->rounds = 0;
+			if (mag != NULL)
+				umem_magazine_destroy(cp, mag, rounds);
+		}
+	}
+#endif
+
 	umem_cache_magazine_purge(cp);
+
+	/*
+	 * Every cached buffer has now returned to the slab layer, so the
+	 * retained empty slabs background reclamation left behind can be
+	 * destroyed.  This must happen before the cache descriptor is freed:
+	 * umem_slab_destroy() reads cache_arena, cache_slabsize, cache_flags
+	 * and cache_bufctl_cache out of it.
+	 */
+	umem_cache_drain_slabs(cp);
 
 	(void) mutex_lock(&cp->cache_lock);
 	if (cp->cache_buftotal != 0)
@@ -4657,19 +4855,8 @@ umem_cache_destroy(umem_cache_t *cp)
 #ifdef UMEM_RSEQ_AVAILABLE
 	if (cp->cache_rseq != NULL) {
 		int ncpus = umem_rseq_get_ncpus();
-		int i;
-		for (i = 0; i < ncpus; i++) {
-			umem_rseq_cache_t *rc = &cp->cache_rseq[i];
-			umem_magazine_t *mag;
-			mag = (umem_magazine_t *)rc->loaded_mag;
-			if (mag != NULL) {
-				if (rc->rounds > 0)
-					umem_depot_free(cp, &cp->cache_full, mag);
-				else
-					umem_depot_free(cp, &cp->cache_empty, mag);
-			}
-		}
-		(void) munmap(cp->cache_rseq, ncpus * sizeof (umem_rseq_cache_t));
+		(void) munmap(cp->cache_rseq,
+		    ncpus * sizeof (umem_rseq_cache_t));
 		cp->cache_rseq = NULL;
 	}
 #endif
