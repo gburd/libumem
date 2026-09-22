@@ -347,6 +347,175 @@ Quarantine or remove, and stop advertising as supported:
 Documentation must match code: no "production" labels without recorded
 evidence, no claims of features that have no production caller.
 
+## Phase 5 — Security hardening (blocking for privileged or exposed use)
+
+**Origin:** the 2026-09-22 adversarial security audit of tag `v3.0.0`, performed
+after the release. Three reviewers were dispatched under instructions to
+distrust the release notes and the coordinator's own claims; two died on content
+filters and one was stopped, so every finding below was verified directly
+against source at `d22bf03` with file:line. The audit also disproved two of the
+coordinator's own prior claims (see P5.5 and the note under P5.1).
+
+**Why this is a separate phase, not a patch:** Phases 1-4 were about
+*correctness* — does the allocator do what it says under normal use. This phase
+is about *hostility* — what happens when the environment, the filesystem, or
+the allocation pattern is chosen by an attacker. libumem ships
+`libumem_malloc.so` as an `LD_PRELOAD` drop-in, so it can land in setuid
+binaries, root daemons, and network-facing servers. It was never hardened for
+any of those.
+
+**Threat positions used throughout.** A finding is only meaningful against a
+stated attacker: (A) setuid/setgid target, (B) root daemon, (C) attacker
+controls the environment but not the code, (D) attacker controls allocation
+patterns and buffer contents but not the environment.
+
+### P5.1 `execlp("addr2line")` — PATH-resolved exec at startup (CRITICAL)
+`umem_stacktrace.c:159, :211`; reached from `umem.c:5747` via
+`umem_stacktrace_init()`
+
+`execlp` resolves through **`PATH`**, and the fork/exec sits on the
+unconditional `umem_init()` path. The only gate is
+`UMEM_STACKTRACE_ADDR2LINE` at `umem_stacktrace.c:354`, whose `getenv` has **no
+`issetugid()` check**. The library's three existing privilege checks
+(`misc.c:116`, `vmem_sbrk.c:314`, `umem.c:5552`) guard output, the sbrk backend,
+and `umem_mtbf` — none guards this.
+
+Attacker positions **A, B, C**: a setuid binary *linked* against libumem runs
+whatever `addr2line` the attacker's `PATH` names, as the elevated user, before
+`main()`. glibc's `AT_SECURE` blocks `LD_PRELOAD`, not linkage.
+
+Compounding: `-e /proc/self/exe` at `:212` names *addr2line itself* after exec,
+not the target binary, so the feature cannot work as written — it is attack
+surface with no benefit. **Preference: delete the fallback.** If it is kept, it
+needs an absolute path and an `issetugid()` gate.
+
+### P5.2 No environment hardening for privileged processes (HIGH)
+`envvar.c` (no `issetugid`/`AT_SECURE` anywhere in the file — verified by grep)
+
+`UMEM_OPTIONS`/`UMEM_DEBUG`/`UMEM_LOGGING` are parsed with zero privilege
+gating. The single post-parse mitigation is `umem.c:5552` zeroing `umem_mtbf`.
+Attacker-supplied options with side effects include `profile=record:/path`
+(creates/truncates a file, P5.3), `introspect=1` (opens the control socket,
+P5.6/P5.7), `backend=sbrk` (gated, but only at `vmem_sbrk.c:314`, after
+parsing), and debug toggles that change memory-safety behaviour.
+
+glibc ignores `MALLOC_*` tunables under `AT_SECURE`; libumem has no equivalent.
+
+Required: one `umem_secure_mode()` helper —
+`issetugid() || getauxval(AT_SECURE)` — consulted **before** option parsing,
+disabling every file, socket, and exec side effect. No such helper exists today
+(verified). This one change also closes P5.3, P5.6, and P5.7.
+
+### P5.3 File writers follow symlinks (HIGH)
+`umem_profile.c:437`; `umem_inspect.c:2071, :2172`
+
+`open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644)` and `fopen(path, "wb"/"w")`, with
+**no `O_EXCL` and no `O_NOFOLLOW` anywhere in the library's writers** (the only
+`O_EXCL` in the tree is `examples/umem_palloc.c:514`). Positions **A, B, C**:
+combined with P5.2 this is arbitrary-file truncation as the target's UID; even
+without it, a predictable snapshot path in a shared directory is a symlink
+target.
+
+### P5.4 Freelist links live inside freed user buffers, unmangled (HIGH)
+`umem.c:4829` (`cache_bufctl = chunksize - UMEM_ALIGN`);
+`umem_impl.h:303` (`UMEM_BUFCTL`); `umem.c` ~1747 (write), ~1656 (follow)
+
+For non-HASH caches — the default for small objects — `umem_bufctl_t` sits at
+the **tail of the user buffer**, and `bc_next` is the freelist link.
+`umem_slab_free()` writes `bcp->bc_next = sp->slab_head` into it; the next
+`umem_slab_alloc()` follows that pointer and returns it as a fresh allocation.
+
+There is **no pointer mangling**. glibc has had safe-linking since 2.32. A
+one-buffer overflow into an adjacent freed buffer's tail therefore yields an
+arbitrary-address allocation — position **D**, and **worse than glibc for the
+most common heap-bug class**.
+
+`umem_slab_free()` does validate `sp->slab_cache == cp` and
+`UMEM_SLAB_MEMBER()`, so a fully bogus pointer is caught; the `bc_next` chain
+itself is trusted.
+
+Fix: XOR-mangle `bc_next` with a per-process secret and the storing address, as
+glibc does. This touches the allocation hot path, so it needs before/after
+throughput on both architectures — which is why it is scheduled separately from
+the rest of this phase.
+
+### P5.5 `errno` erasure fix was incomplete (MEDIUM)
+`vmem_mmap.c` — `vmem_mmap_alloc()` still does `errno = old_errno` on its
+failure path (verified: the assignment before `return (NULL)`)
+
+The v3.0.0 work fixed this in `vmem_mmap_top_alloc()` only and the release notes
+claim "failure paths now leave errno alone." That is **false for the sibling
+function**. This is the coordinator's own error: a symptom fixed at one call
+site, which is precisely what AGENTS.md §7 forbids. Fix both, and correct the
+CHANGELOG claim.
+
+### P5.6 Introspection socket: predictable path and an unlink TOCTOU (MEDIUM)
+`umem_introspect.c:907` (path), `:975–990` (reclaim sequence)
+
+The path is `/tmp/umem.<pid>.sock` — predictable. The A1–A3 hardening is
+genuine and was verified (`umask(077)` around `bind` at `:969`, `chmod 0600` at
+`:999`, `SO_PEERCRED` at `:939`, conditional unlink rather than unconditional).
+
+But the reclaim sequence is `stat` → probe `connect` → `unlink` → `bind`. An
+attacker who creates the path first (the pid is predictable, and the target has
+not bound yet) can swap in a symlink between the `stat` and the `unlink`, making
+the target unlink an attacker-chosen file. Use `$XDG_RUNTIME_DIR` or a private
+directory; never a predictable name in a sticky shared directory.
+
+### P5.7 `SO_PEERCRED` accepts the real uid (MEDIUM)
+`umem_introspect.c:941`: `cred.uid == getuid() || == geteuid() || == 0`
+
+For a setuid target, real uid is the unprivileged invoker, so this **grants that
+invoker control of the privileged process** — including `whatis`/`bufctl` reads
+at chosen addresses and the break/continue primitive, which parks allocating
+threads and is therefore a DoS against the host process. Should be `geteuid()`
+only.
+
+### P5.8 Interposer `free()` decodes a foreign pointer's header (MEDIUM)
+`malloc.c:387` (`process_free`); `umem_impl.h:663` (`UMEM_MALLOC_DECODE`)
+
+For a non-bootstrap pointer, `process_free` reads `buf[-1]` and decodes it. A
+foreign pointer means an 8-byte read before an arbitrary address. The magic
+check usually rejects it, but the magic is a **fixed constant** and therefore
+forgeable, and the interposer sets `umem_abort = 0` ("log and continue"), so a
+forged header that passes proceeds to free memory libumem does not own. glibc
+would abort; this continues into silent corruption. Position **D**.
+
+### P5.9 `getpcstack` frame walk lacks stack bounds (MEDIUM, debug-only)
+`getpcstack.c:83–100`
+
+Validates alignment, a 16 MiB ceiling, and monotonically increasing frames, then
+dereferences `fp[0]`/`fp[1]`. Under `UMEM_DEBUG=audit`, a corrupted chain — or
+simply a caller compiled without frame pointers, which is the `-O2` default —
+makes the allocator **read** arbitrary addresses. Read-only: no write path was
+found. Crash or info-leak, not code execution.
+
+### P5.10 Minor / verified-good (INFO)
+
+- `_umem_free(buf, 0)`: `(size-1)>>3` underflows to `SIZE_MAX>>3`, which fails
+  the `index <` bound and falls through to the oversize path — safe **by
+  accident**. Deserves an explicit check.
+- **Verified sound, do not "fix":** the gdb argument whitelist
+  (`tools/umem.c:159`) is correctly applied to all five interpolated inputs
+  (`:179`, `:487–493`), rejecting control characters and `"\$` and backtick. The
+  LLDB helper has no equivalent, but `tools/umem.c` only ever generates gdb
+  command files, so LLDB is not reachable through that path.
+
+### Phase 5 exit criteria
+
+1. P5.1, P5.2, P5.3, P5.5, P5.6, P5.7 fixed, each with a regression that
+   demonstrates the pre-fix exposure and passes after, on x86_64 and aarch64.
+   These are the v3.0.1 set.
+2. P5.4 fixed with before/after throughput on both architectures, since it is on
+   the hot path. This is v3.1.0, deliberately not bundled with the above.
+3. P5.8, P5.9, P5.10 fixed or explicitly documented as accepted risk with the
+   reasoning recorded.
+4. README states plainly which deployments are supported and which are not.
+   "Not for privileged or network-facing use" is the current honest answer and
+   must stay until 1 and 2 are done.
+5. No security fix lands without its regression. A hardening change that cannot
+   be shown to close the hole it claims to close is not a fix.
+
 ## Exit criteria
 
 **Verified 2026-09-22 at `4ba7d00`** by `scripts/ec2/exit_criteria_gate.sh`,

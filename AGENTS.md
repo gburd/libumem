@@ -108,10 +108,46 @@ is not a diagnosis.
   what lifecycle transitions are legal. Not narration, not confidence.
 - If a comment claims something the code does not do, that is a bug. Several
   exist today (fork lock order, "flush all bins").
-- Fix root causes at the shared function, not per caller.
+- Fix root causes at the shared function, not per caller. **And then grep for
+  siblings.** Fixing one function and claiming the class is closed is the most
+  common failure here: the v3.0.0 `errno` fix landed in
+  `vmem_mmap_top_alloc()` while `vmem_mmap_alloc()` kept the identical defect,
+  and the release notes said "failure paths now leave errno alone." Before
+  claiming a defect class is fixed, search for the same pattern and state what
+  you found.
 - Mark deliberate shortcuts with `ponytail:` naming the ceiling and upgrade
   path.
 - Do not ship unsound code to hit a number. Document honestly instead.
+
+## 7a. Security rules
+
+libumem ships `libumem_malloc.so` as an `LD_PRELOAD` drop-in, so it can be
+loaded into setuid binaries, root daemons, and network-facing servers. Assume
+all three.
+
+- **State the attacker position.** A security finding means nothing without
+  one. Use: (A) setuid/setgid target, (B) root daemon, (C) attacker controls the
+  environment but not the code, (D) attacker controls allocation patterns and
+  buffer contents but not the environment. "Could be bad" is not a finding.
+- **Never add a file, socket, or exec side effect that an environment variable
+  can trigger**, without gating it on privilege. `execlp` and any other
+  `PATH`-resolving exec are forbidden in library code: use an absolute path or
+  do not do it.
+- **File writers get `O_EXCL`/`O_NOFOLLOW`** or an explanation of why the path
+  cannot be attacker-influenced. No library writer in this tree had either as
+  of v3.0.0.
+- **Sockets do not go in shared directories under predictable names**, and
+  `stat`-then-act on a filesystem path is a TOCTOU unless you can say why not.
+- **Peer authorization uses `geteuid()`**, not `getuid()`: for a setuid target
+  the real uid is the unprivileged invoker.
+- **Compare against glibc.** "Same as glibc" is acceptable; "worse than glibc"
+  is a finding that needs a decision. libumem's unmangled in-buffer freelist
+  links are currently worse (P5.4).
+- **A hardening change needs a regression that demonstrates the exposure it
+  closes.** Security fixes are exactly where an unverified claim is most
+  dangerous, so the pre-fix demonstration rule applies with no exceptions.
+- Correctness work and hardening work are different disciplines. Passing the
+  correctness gate says nothing about hostile input.
 
 ## 8. `docs/` is durable
 
@@ -153,13 +189,22 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - If you break the shared build, fix it or report it immediately. Everyone
   else is blocked until you do.
 
-## 10. Current state: not production-ready
+## 10. Current state: v3.0.0, with a security phase open
 
-The 2026-09-21 review found reachable defects in default paths (interposer
-`calloc` ownership, fork lock inversion, PTC teardown loss, cache destruction
-with retained slabs) and measurement defects that invalidate several
-published performance conclusions. See
-`docs/plans/2026-09-21-production-readiness.md`.
+The correctness work is done: the ten reachable defects the 2026-09-21 review
+found in default paths are fixed, each with a demonstrated pre-fix failure on
+both architectures, and the measurement machinery that hid them is repaired.
 
-Do not add performance features or make readiness claims until those gates
-pass.
+**What is NOT done is security hardening.** The 2026-09-22 audit of `v3.0.0`
+found one Critical and three High issues, including a `PATH`-resolved
+`execlp("addr2line")` on the unconditional init path with no privilege gate.
+See Phase 5 in `docs/plans/2026-09-21-production-readiness.md`.
+
+Until Phase 5's exit criteria are met:
+
+- libumem is **not** for privileged (setuid/root) or network-facing use.
+- Do not soften the README's status banner.
+- Do not add performance features.
+
+The known ~5 GB Linux heap ceiling also remains open, with an honest record of
+a failed fix attempt.
