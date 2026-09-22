@@ -23,8 +23,13 @@
 #   * FULL provenance, including the commit sha (which used to be recorded as
 #     "unknown" because run-remote.sh excludes .git) and a digest of every
 #     binary involved.
-#   * frag honours the thread count; its ratio is peak RSS / live bytes at the
-#     same instant.  Older files' frag column is a different, wrong quantity.
+#   * frag honours the thread count, and its ratio is RSS / live bytes sampled
+#     together at the LIVE-SET PEAK -- not at the worst observed ratio, which
+#     just finds the smallest denominator (it once reported 505x while implied
+#     RSS was flat at ~1.1GB across every thread count).  The PAIR
+#     (rss_at_live_peak, live_bytes_at_peak) plus vmhwm is emitted, because a
+#     lone quotient cannot separate allocator overhead from RSS that was
+#     already high.  Older files' frag column is a different, wrong quantity.
 #
 # Emits docs/results/<date>-<instance>-<arch>/sustained.toml.
 # Run under scripts/ec2/job.sh; prefer verify-isolated.sh so the sha is known.
@@ -218,9 +223,10 @@ emit_windows() {
     IFS=',' read -ra f <<< "$row"
     # Field order from bench_print_csv_header (0-based):
     #  0 allocator 1 workload 2 threads 3 total_ops 4 ops_per_thread
-    #  5 elapsed_sec 6 ops_per_sec 7..13 latency 14 peak_rss_bytes
-    # 15 allocated_bytes 16 live_bytes_at_peak 17 frag 18/19 cpu
-    # 20 ops_cov 21 runs 22 unstable 23 ops_floor_raised
+    #  5 elapsed_sec 6 ops_per_sec 7..13 latency 14 rss_at_live_peak
+    # 15 vmhwm_bytes 16 allocated_bytes 17 live_bytes_at_peak
+    # 18 live_bytes_median 19 frag 20 frag_median 21 frag_samples
+    # 22/23 cpu 24 ops_cov 25 runs 26 unstable 27 ops_floor_raised
     {
         echo ""
         echo "[[window]]"
@@ -240,19 +246,23 @@ emit_windows() {
         echo "lat_p999 = ${f[11]}"
         echo "lat_max = ${f[12]}"
         echo "lat_mean = ${f[13]}"
-        echo "peak_rss_bytes = ${f[14]}"
-        echo "allocated_bytes = ${f[15]}"
-        echo "live_bytes_at_peak = ${f[16]}"
-        if [[ -n "${f[17]:-}" ]]; then
-            echo "frag = ${f[17]}"
+        echo "rss_at_live_peak = ${f[14]}"
+        echo "vmhwm_bytes = ${f[15]}"
+        echo "allocated_bytes = ${f[16]}"
+        echo "live_bytes_at_peak = ${f[17]}"
+        echo "live_bytes_median = ${f[18]}"
+        echo "frag_samples = ${f[21]}"
+        if [[ -n "${f[19]:-}" ]]; then
+            echo "frag = ${f[19]}"
+            echo "frag_median = ${f[20]}"
         else
-            echo "# frag: undefined for this workload (holds no live set)"
+            echo "# frag: undefined here (no live set, or too few samples)"
         fi
-        echo "ops_floor_raised = $([[ "${f[23]:-0}" == "1" ]] && echo true || echo false)"
+        echo "ops_floor_raised = $([[ "${f[27]:-0}" == "1" ]] && echo true || echo false)"
     } >> "$OUT"
-    printf '  %-10s %-18s w=%-2s mops=%8.3f p99=%9s p999=%10s rss=%s\n' \
+    printf '  %-10s %-18s w=%-2s mops=%8.3f p99=%9s p999=%10s rss@peak=%s vmhwm=%s\n' \
         "$a" "$label" "$WINDOW_INDEX" \
-        "$(awk "BEGIN{print ${f[6]}/1e6}")" "${f[10]}" "${f[11]}" "${f[14]}"
+        "$(awk "BEGIN{print ${f[6]}/1e6}")" "${f[10]}" "${f[11]}" "${f[14]}" "${f[15]}"
 }
 
 echo "sustained load: allocators=${ALLOCS[*]} threads=$THREADS"

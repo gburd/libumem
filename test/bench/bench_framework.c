@@ -28,23 +28,51 @@ size_t bench_get_rss_bytes(void) {
     return 0;
 }
 
-/* Read VmRSS from /proc/self/status (more accurate current RSS) */
-size_t bench_get_vmrss_bytes(void) {
 #ifdef __linux__
+/* Read one "Name:  <n> kB" field from /proc/self/status, in bytes. */
+static size_t bench_read_status_field(const char *name) {
     FILE *f = fopen("/proc/self/status", "r");
     if (!f) return 0;
     char line[256];
-    size_t rss = 0;
+    size_t len = strlen(name);
+    size_t val = 0;
     while (fgets(line, sizeof(line), f)) {
-        if (strncmp(line, "VmRSS:", 6) == 0) {
-            char *p = line + 6;
+        if (strncmp(line, name, len) == 0) {
+            char *p = line + len;
             while (*p == ' ' || *p == '\t') p++;
-            rss = (size_t)strtoull(p, NULL, 10) * 1024;
+            val = (size_t)strtoull(p, NULL, 10) * 1024;
             break;
         }
     }
     fclose(f);
-    return rss;
+    return val;
+}
+#endif
+
+/* Read VmRSS from /proc/self/status (more accurate current RSS) */
+size_t bench_get_vmrss_bytes(void) {
+#ifdef __linux__
+    return bench_read_status_field("VmRSS:");
+#else
+    return bench_get_rss_bytes();
+#endif
+}
+
+/*
+ * VmHWM: the process's RSS high-water mark.
+ *
+ * Reported alongside the fragmentation pair because RSS is near-monotonic
+ * within a process: RSS at the live-set peak carries every earlier transient
+ * that grew RSS and never returned it -- including RSS grown legitimately for
+ * an earlier phase, and (in this multi-allocator harness) RSS from loading
+ * other allocator libraries.  A reader comparing RSS-at-live-peak against
+ * VmHWM can tell "the allocator holds 2x the live set" apart from "RSS was
+ * already high before this phase".  A single ratio cannot distinguish those,
+ * and this metric has already misled twice.
+ */
+size_t bench_get_vmhwm_bytes(void) {
+#ifdef __linux__
+    return bench_read_status_field("VmHWM:");
 #else
     return bench_get_rss_bytes();
 #endif
@@ -123,8 +151,16 @@ void bench_print_stats(const bench_stats_t *stats) {
     if (stats->has_fragmentation) {
         printf("  Live at peak: %.2f MB\n",
                stats->live_bytes_at_peak / (1024.0 * 1024.0));
-        printf("  Fragmentation: %.2f (peak RSS / live bytes at that instant)\n",
-               stats->fragmentation_ratio);
+        printf("  VmHWM:        %.2f MB (process RSS high-water mark)\n",
+               stats->max_rss_bytes / (1024.0 * 1024.0));
+        printf("  Live median:  %.2f MB over %zu samples\n",
+               stats->frag_live_median / (1024.0 * 1024.0),
+               stats->frag_samples);
+        printf("  Fragmentation: %.2f at the live-set peak, %.2f median\n",
+               stats->fragmentation_ratio, stats->frag_ratio_median);
+        printf("    (RSS and live bytes sampled together; report the PAIR --\n"
+               "     a lone ratio cannot separate allocator overhead from\n"
+               "     RSS that was already high.)\n");
     } else {
         printf("  Fragmentation: n/a (this workload holds no live set; a"
                " ratio against cumulative traffic is meaningless)\n");
@@ -141,8 +177,18 @@ void bench_print_stats(const bench_stats_t *stats) {
  * other (P2.1/P2.2):
  *   total_ops        operations completed, summed over ALL threads
  *   ops_per_thread   total_ops / threads, as actually run
- *   peak_rss_bytes   peak RSS during the run where sampled
- *   live_bytes_at_peak  simultaneously-live allocated bytes at that instant
+ *   rss_at_live_peak RSS observed at the live-set peak
+ *   vmhwm_bytes      process RSS high-water mark (VmHWM).  Compare against
+ *                    rss_at_live_peak to tell real overhead from RSS that was
+ *                    already high before this phase -- RSS is near-monotonic,
+ *                    so the ratio's numerator carries history its denominator
+ *                    does not.
+ *   live_bytes_at_peak  live bytes at that same instant (the denominator)
+ *   live_bytes_median   median of the sampled live series (it MOVES: threads
+ *                    desynchronise at high counts)
+ *   frag_median      median of the sampled rss/live series
+ *   frag_samples     samples behind the two summaries; < 8 => frag columns are
+ *                    left empty, because that is a single-sample observation
  *   frag             peak_rss_bytes / live_bytes_at_peak, or EMPTY when the
  *                    workload does not define one (see has_fragmentation)
  *   ops_floor_raised 1 if the per-thread budget was raised to the floor
@@ -150,7 +196,8 @@ void bench_print_stats(const bench_stats_t *stats) {
 void bench_print_csv_header(void) {
     printf("allocator,workload,threads,total_ops,ops_per_thread,elapsed_sec,ops_per_sec,");
     printf("lat_min,lat_p50,lat_p90,lat_p99,lat_p999,lat_max,lat_mean,");
-    printf("peak_rss_bytes,allocated_bytes,live_bytes_at_peak,frag,");
+    printf("rss_at_live_peak,vmhwm_bytes,allocated_bytes,live_bytes_at_peak,");
+    printf("live_bytes_median,frag,frag_median,frag_samples,");
     printf("cpu_user_ms,cpu_sys_ms,ops_cov,runs,unstable,ops_floor_raised\n");
 }
 
@@ -164,14 +211,18 @@ void bench_print_csv_row(const bench_stats_t *stats) {
     printf("%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,",
            stats->latency_min, stats->latency_p50, stats->latency_p90,
            stats->latency_p99, stats->latency_p999, stats->latency_max, stats->latency_mean);
-    printf("%zu,%zu,%zu,", stats->peak_rss_bytes, stats->bytes_allocated,
-           stats->live_bytes_at_peak);
+    printf("%zu,%zu,%zu,%zu,%zu,", stats->peak_rss_bytes, stats->max_rss_bytes,
+           stats->bytes_allocated, stats->live_bytes_at_peak,
+           stats->frag_live_median);
     /* Empty, not 0 and not 1.0: an undefined ratio must not look like a
-     * measured one. */
+     * measured one.  Both the live-peak ratio and the median of the ratio
+     * series are emitted -- one number cannot show whether the pair is
+     * "holds 2x the live set" or "RSS was already high". */
     if (stats->has_fragmentation)
-        printf("%.4f,", stats->fragmentation_ratio);
+        printf("%.4f,%.4f,%zu,", stats->fragmentation_ratio,
+               stats->frag_ratio_median, stats->frag_samples);
     else
-        printf(",");
+        printf(",,%zu,", stats->frag_samples);
     printf("%.1f,%.1f,%.4f,%d,%d,%d\n",
            stats->cpu_usage.user_ms, stats->cpu_usage.sys_ms,
            stats->ops_cov, stats->runs_measured, stats->unstable,
@@ -269,6 +320,7 @@ void workload_single_thread(allocator_ops_t *ops, bench_stats_t *stats, void *co
      * peak_rss / CUMULATIVE bytes allocated, which falls towards zero the
      * longer the run and is not a fragmentation measure at all. */
     stats->peak_rss_bytes = bench_get_rss_bytes();
+    stats->max_rss_bytes = stats->peak_rss_bytes;
     stats->current_rss_bytes = bench_get_vmrss_bytes();
     stats->live_bytes_at_peak = 0;
     stats->peak_live_bytes = 0;
@@ -442,6 +494,7 @@ void workload_multi_thread(allocator_ops_t *ops, bench_stats_t *stats, void *con
     /* Memory.  Like single-thread, every buffer is freed immediately, so
      * there is no live set and NO fragmentation ratio is defined. */
     stats->peak_rss_bytes = bench_get_rss_bytes();
+    stats->max_rss_bytes = stats->peak_rss_bytes;
     stats->current_rss_bytes = bench_get_vmrss_bytes();
     stats->live_bytes_at_peak = 0;
     stats->peak_live_bytes = 0;
@@ -738,6 +791,7 @@ void workload_producer_consumer(allocator_ops_t *ops,
      * run's length, and is not measured here.  NO fragmentation ratio is
      * defined (it used to be RSS / cumulative traffic). */
     stats->peak_rss_bytes = bench_get_vmrss_bytes();
+    stats->max_rss_bytes = stats->peak_rss_bytes;
     stats->current_rss_bytes = stats->peak_rss_bytes;
     stats->live_bytes_at_peak = 0;
     stats->peak_live_bytes = 0;
@@ -778,11 +832,26 @@ cleanup:
  *   Each thread owns a private live pool that GROWS with the requested work
  *   (pool capacity is derived from the per-thread budget), allocates in
  *   batches, frees a random ~50% of its own pool each round, and after every
- *   round samples (RSS, live bytes) TOGETHER.  peak_rss_bytes and
- *   live_bytes_at_peak are the pair from the sample with the highest ratio,
- *   so the reported fragmentation is a ratio of two quantities measured at
- *   the same moment, and the RSS reported alongside it is the one that
- *   produced it.
+ *   round samples (RSS, live bytes) TOGETHER.
+ *
+ * WHICH SAMPLE IS REPORTED, AND WHY NOT THE WORST RATIO
+ *   The first version of this fix reported the sample with the highest
+ *   rss/live RATIO.  That selection rule is itself biased and was caught by
+ *   re-measurement: process RSS is near-monotonic (freeing rarely returns RSS
+ *   to the OS), so maximising rss/live simply finds the sample where live
+ *   bytes happened to dip LOWEST.  At high thread counts the threads
+ *   desynchronise -- some in their free phase while others allocate -- so
+ *   aggregate live bytes dip hard at some sample and the rule homes straight
+ *   in on that dip.  Measured at 192 threads it produced a ratio of 505 while
+ *   the implied RSS (ratio x live) stayed flat at ~1.1GB across every thread
+ *   count: the ratio was tracking the denominator, not allocator overhead.
+ *
+ *   So the reported pair is the one at the LIVE-SET PEAK: the largest live
+ *   byte count observed, and the RSS observed at that same instant.  That is a
+ *   defined quantity -- "process RSS while the program was holding the most
+ *   memory" -- and its denominator is the largest, not the luckiest, so it
+ *   cannot be inflated by a sampling dip.  peak_rss_bytes is also reported
+ *   separately as the maximum RSS seen at any sample, for reference.
  *
  *   Live bytes are summed across threads via an atomic, because RSS is a
  *   process-wide quantity: pairing process RSS with one thread's live bytes
@@ -791,6 +860,8 @@ cleanup:
  *   The requested thread count is honoured.  cfg->thread_count == 1 still
  *   runs single-threaded.
  */
+struct frag_series;
+
 typedef struct {
     int thread_id;
     allocator_ops_t *ops;
@@ -801,32 +872,66 @@ typedef struct {
     size_t bytes_allocated;           /* cumulative traffic, this thread */
     uint64_t operations;
     int failed;                       /* an allocation returned NULL */
-    /* Shared, process-wide live-byte accounting + peak sampling. */
+    /* Shared, process-wide live-byte accounting + the sample series. */
     atomic_size_t *live_bytes;
     pthread_mutex_t *peak_lock;
-    double *peak_frag;
-    size_t *peak_rss;
-    size_t *peak_live;
-    size_t *max_live;
+    struct frag_series *series;
     pthread_barrier_t *start_barrier;
 } frag_context_t;
 
-/* Sample (RSS, live bytes) as a pair and keep the pair with the worst ratio.
- * Called between rounds, when the live set is at its local maximum. */
+/*
+ * The (RSS, live) sample series.
+ *
+ * Aggregate live bytes is a MOVING quantity, not a fixed one: at high thread
+ * counts the threads desynchronise -- some in their free phase while others
+ * allocate -- so any single sample is one draw from a noisy series.  An
+ * earlier version of this code reported the single sample with the worst
+ * rss/live ratio, which reliably found the deepest live-bytes dip and
+ * reported a 505x "fragmentation" at 192 threads while the implied RSS stayed
+ * flat at ~1.1GB across every thread count.
+ *
+ * So the series is retained and summarised: the pair at the live-set peak
+ * (max live, and the RSS at that instant), plus the MEDIAN of the live series
+ * and the median ratio, plus the count of samples.  A single sample never
+ * becomes the headline again.
+ */
+#define FRAG_MAX_SAMPLES 4096
+struct frag_series {
+    size_t live[FRAG_MAX_SAMPLES];
+    size_t rss[FRAG_MAX_SAMPLES];
+    size_t n;
+    size_t dropped;                   /* samples past the array's end */
+};
+
+/*
+ * Sample (RSS, live bytes) as a pair.  Both are read as close together as
+ * possible under the lock so the pair describes one instant.
+ */
 static void frag_sample(frag_context_t *ctx) {
     size_t live = atomic_load(ctx->live_bytes);
     if (live == 0) return;
-    size_t rss = bench_get_vmrss_bytes();
-    double frag = (double)rss / (double)live;
 
     pthread_mutex_lock(ctx->peak_lock);
-    if (live > *ctx->max_live) *ctx->max_live = live;
-    if (frag > *ctx->peak_frag) {
-        *ctx->peak_frag = frag;
-        *ctx->peak_rss = rss;      /* the RSS that produced this ratio */
-        *ctx->peak_live = live;    /* ...and the live bytes at that instant */
+    /* Re-read live inside the lock, with RSS, so the two cannot straddle
+     * another thread's batch. */
+    live = atomic_load(ctx->live_bytes);
+    size_t rss = bench_get_vmrss_bytes();
+    struct frag_series *sr = ctx->series;
+    if (live > 0) {
+        if (sr->n < FRAG_MAX_SAMPLES) {
+            sr->live[sr->n] = live;
+            sr->rss[sr->n] = rss;
+            sr->n++;
+        } else {
+            sr->dropped++;
+        }
     }
     pthread_mutex_unlock(ctx->peak_lock);
+}
+
+static int cmp_size(const void *a, const void *b) {
+    size_t x = *(const size_t *)a, y = *(const size_t *)b;
+    return (x < y) ? -1 : (x > y) ? 1 : 0;
 }
 
 static void *frag_worker(void *arg) {
@@ -957,8 +1062,11 @@ void workload_fragmentation(allocator_ops_t *ops,
     atomic_size_t live_bytes;
     atomic_init(&live_bytes, (size_t)0);
     pthread_mutex_t peak_lock = PTHREAD_MUTEX_INITIALIZER;
-    double peak_frag = 0;
-    size_t peak_rss = 0, peak_live = 0, max_live = 0;
+    struct frag_series *series = calloc(1, sizeof(*series));
+    if (!series) {
+        fprintf(stderr, "bench: frag sample series allocation failed\n");
+        return;
+    }
 
     frag_context_t *ctxs = calloc((size_t)nthreads, sizeof(*ctxs));
     pthread_t *threads = calloc((size_t)nthreads, sizeof(*threads));
@@ -979,10 +1087,7 @@ void workload_fragmentation(allocator_ops_t *ops,
         ctxs[i].pool_cap = pool_cap;
         ctxs[i].live_bytes = &live_bytes;
         ctxs[i].peak_lock = &peak_lock;
-        ctxs[i].peak_frag = &peak_frag;
-        ctxs[i].peak_rss = &peak_rss;
-        ctxs[i].peak_live = &peak_live;
-        ctxs[i].max_live = &max_live;
+        ctxs[i].series = series;
         ctxs[i].start_barrier = &start_barrier;
         if (td_init(100.0, &ctxs[i].hist) != 0) {
             fprintf(stderr, "bench: frag tdigest init failed (thread %d)\n", i);
@@ -1061,15 +1166,66 @@ void workload_fragmentation(allocator_ops_t *ops,
         td_free(combined);
     }
 
-    /* The peak pair, measured together during the run -- NOT post-cleanup
-     * RSS, and NOT a ratio against cumulative traffic. */
-    stats->peak_rss_bytes = peak_rss;
+    /*
+     * Summarise the (RSS, live) series.  Report the PAIR, not just a quotient:
+     * a single ratio cannot distinguish "the allocator holds 2x the live set"
+     * from "RSS was already high from an earlier phase", because RSS is
+     * near-monotonic and its numerator carries history the denominator does
+     * not.  peak_rss_bytes/live_bytes_at_peak give the pair at the live-set
+     * peak; frag_live_median/frag_ratio_median summarise the series so one
+     * noisy sample cannot become a headline; max_rss_bytes is VmHWM, the
+     * process's own high-water mark, as the outer bound on the numerator.
+     */
+    size_t peak_live = 0, rss_at_peak_live = 0;
+    double ratio_median = 0.0;
+    size_t live_median = 0;
+    if (series->n > 0) {
+        for (size_t i = 0; i < series->n; i++) {
+            if (series->live[i] > peak_live) {
+                peak_live = series->live[i];
+                rss_at_peak_live = series->rss[i];
+            }
+        }
+        size_t *lv = calloc(series->n, sizeof(*lv));
+        double *rt = calloc(series->n, sizeof(*rt));
+        if (lv && rt) {
+            for (size_t i = 0; i < series->n; i++) {
+                lv[i] = series->live[i];
+                rt[i] = (double)series->rss[i] / (double)series->live[i];
+            }
+            qsort(lv, series->n, sizeof(*lv), cmp_size);
+            live_median = lv[series->n / 2];
+            /* median of the ratio series, sorted independently */
+            for (size_t i = 0; i + 1 < series->n; i++)
+                for (size_t j = 0; j + 1 < series->n - i; j++)
+                    if (rt[j] > rt[j + 1]) {
+                        double t = rt[j]; rt[j] = rt[j + 1]; rt[j + 1] = t;
+                    }
+            ratio_median = rt[series->n / 2];
+        }
+        free(lv); free(rt);
+    }
+
+    stats->peak_rss_bytes = rss_at_peak_live;
     stats->current_rss_bytes = bench_get_vmrss_bytes();
     stats->live_bytes_at_peak = peak_live;
-    stats->peak_live_bytes = max_live;
-    stats->fragmentation_ratio = peak_frag;
-    /* Only defined if we actually sampled a live set. */
-    stats->has_fragmentation = (peak_live > 0 && peak_rss > 0) ? 1 : 0;
+    stats->peak_live_bytes = peak_live;
+    stats->max_rss_bytes = bench_get_vmhwm_bytes();   /* VmHWM */
+    stats->frag_live_median = live_median;
+    stats->frag_ratio_median = ratio_median;
+    stats->frag_samples = series->n;
+    stats->fragmentation_ratio = (peak_live > 0) ?
+        ((double)rss_at_peak_live / (double)peak_live) : 0.0;
+    /* Only defined if we actually sampled a live set.  A handful of samples is
+     * a single-sample observation dressed up as a series: say so by refusing
+     * to call it defined below 8 samples. */
+    stats->has_fragmentation =
+        (peak_live > 0 && rss_at_peak_live > 0 && series->n >= 8) ? 1 : 0;
+    if (series->dropped > 0) {
+        fprintf(stderr, "bench: frag sample series full; %zu samples dropped "
+                "(summary covers the first %zu)\n", series->dropped, series->n);
+    }
+    free(series);
 
     for (int i = 0; i < nthreads; i++)
         if (ctxs[i].hist != NULL) td_free(ctxs[i].hist);

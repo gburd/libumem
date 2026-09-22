@@ -38,6 +38,20 @@
  *   peak_rss/live_at_peak exactly (it was previously peak_frag computed from
  *   one pair while peak_rss_bytes held a different, later sample).
  *
+ * P2.2 the ratio must not be selected by maximising itself
+ *   The FIRST attempt at this fix reported the sample with the worst rss/live
+ *   ratio.  RSS is near-monotonic, so that rule finds the sample with the
+ *   smallest DENOMINATOR, not the most overhead; at 192 threads it reported a
+ *   ratio of 505 while implied RSS stayed flat at ~1.1GB across every thread
+ *   count.  Guarded here by requiring the reported denominator to be the
+ *   MAXIMUM of the live series (live_bytes_at_peak == peak_live_bytes, and
+ *   >= the series median), so a dip cannot be selected.
+ *
+ * P2.2 a single sample is not a distribution
+ *   Aggregate live bytes MOVES (threads desynchronise at high counts), so the
+ *   summary must rest on a series, and the series size must be reported.  A
+ *   run with fewer than 8 samples must not claim a defined ratio.
+ *
  * P2.2 undefined ratios are absent, not zero
  *   single/multi/prodcons hold no live set, so has_fragmentation must be 0 and
  *   no ratio may be reported.  Pre-fix they reported RSS / CUMULATIVE
@@ -238,6 +252,31 @@ test_frag_live_bytes(void)
 	CHECK(st.peak_live_bytes <= ceiling,
 	    "peak_live_bytes=%zu exceeds the live ceiling %zu",
 	    st.peak_live_bytes, ceiling);
+
+	/*
+	 * The denominator must be the live-set PEAK, not whichever sample
+	 * happened to dip lowest.  If these differ, the reporting rule is
+	 * selecting on the ratio again.
+	 */
+	CHECK(st.live_bytes_at_peak == st.peak_live_bytes,
+	    "live_bytes_at_peak=%zu != peak_live_bytes=%zu: the reported pair "
+	    "is not the one at the live-set peak",
+	    st.live_bytes_at_peak, st.peak_live_bytes);
+	CHECK(st.frag_samples >= 8,
+	    "only %zu (RSS,live) samples: a summary this thin is a "
+	    "single-sample observation, not a distribution", st.frag_samples);
+	CHECK(st.frag_live_median > 0 &&
+	    st.live_bytes_at_peak >= st.frag_live_median,
+	    "the live-set peak (%zu) must be >= the live series median (%zu)",
+	    st.live_bytes_at_peak, st.frag_live_median);
+	/* VmHWM bounds any RSS sample taken during the run. */
+	CHECK(st.max_rss_bytes >= st.peak_rss_bytes,
+	    "VmHWM (%zu) is below the RSS sampled at the live peak (%zu), "
+	    "which is impossible -- one of them is not what it claims",
+	    st.max_rss_bytes, st.peak_rss_bytes);
+	printf("   samples=%zu live_median=%zu vmhwm=%zu frag_median=%.4f\n",
+	    st.frag_samples, st.frag_live_median, st.max_rss_bytes,
+	    st.frag_ratio_median);
 
 	/* The reported ratio must be exactly the pair that was sampled
 	 * together -- not a ratio from one sample against RSS from another. */

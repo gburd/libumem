@@ -335,9 +335,15 @@ alloc_identity() {
     echo "#   total_ops           operations completed, summed over ALL threads"
     echo "#   ops_per_thread      total_ops / threads, as actually run"
     echo "#   threads             threads that RAN (may differ from requested)"
-    echo "#   frag                peak_rss_bytes / live_bytes_at_peak, both"
-    echo "#                       sampled at the SAME instant.  Absent for"
-    echo "#                       workloads that hold no live set."
+    echo "#   frag                rss_at_live_peak / live_bytes_at_peak, both"
+    echo "#                       sampled at the SAME instant, at the LIVE-SET"
+    echo "#                       PEAK (not at the worst ratio: maximising the"
+    echo "#                       ratio finds the smallest denominator, which"
+    echo "#                       once reported 505x while implied RSS was flat"
+    echo "#                       at ~1.1GB).  frag_median summarises the"
+    echo "#                       sampled series.  Absent for workloads with no"
+    echo "#                       live set, or too few samples.  Read the PAIR"
+    echo "#                       and vmhwm, never the quotient alone."
     echo "#   ops_floor_raised    true => the per-thread budget was below the"
     echo "#                       minimum and was raised; the point ran MORE"
     echo "#                       work than -n asked for."
@@ -353,12 +359,21 @@ alloc_identity() {
 #  0 allocator  1 workload  2 threads  3 total_ops  4 ops_per_thread
 #  5 elapsed_sec  6 ops_per_sec
 #  7 lat_min  8 p50  9 p90  10 p99  11 p999  12 max  13 mean
-# 14 peak_rss_bytes  15 allocated_bytes  16 live_bytes_at_peak  17 frag
-# 18 cpu_user  19 cpu_sys  20 ops_cov  21 runs  22 unstable  23 ops_floor_raised
+# 14 rss_at_live_peak  15 vmhwm_bytes  16 allocated_bytes
+# 17 live_bytes_at_peak  18 live_bytes_median  19 frag  20 frag_median
+# 21 frag_samples  22 cpu_user  23 cpu_sys  24 ops_cov  25 runs
+# 26 unstable  27 ops_floor_raised
 #
-# frag (17) is EMPTY for workloads that define no fragmentation ratio
-# (single/multi/prodcons hold no live set).  Emit it only when present rather
-# than writing 0.0, so an undefined value cannot be read as a measured one.
+# frag/frag_median are EMPTY for workloads that define no fragmentation ratio
+# (single/multi/prodcons hold no live set) and for series too thin to summarise.
+# Emit them only when present rather than writing 0.0, so an undefined value
+# cannot be read as a measured one.
+#
+# The fragmentation PAIR is emitted, never a lone quotient: RSS is
+# near-monotonic, so the ratio's numerator carries history its denominator does
+# not, and rss_at_live_peak vs vmhwm is what lets a reader tell "holds 2x the
+# live set" from "RSS was already high".  live_bytes_median/frag_median show
+# whether the peak sample is representative of a moving series.
 emit_point() {
     # $1=workload label $2=threads-requested  reads one CSV row on stdin
     local wl="$1" treq="$2" row
@@ -386,19 +401,24 @@ emit_point() {
         echo "lat_p999 = ${f[11]}"
         echo "lat_max = ${f[12]}"
         echo "lat_mean = ${f[13]}"
-        echo "peak_rss_bytes = ${f[14]}"
-        echo "allocated_bytes = ${f[15]}"
-        echo "live_bytes_at_peak = ${f[16]}"
-        if [[ -n "${f[17]:-}" ]]; then
-            echo "frag = ${f[17]}"
-            echo "frag_definition = \"peak_rss_bytes / live_bytes_at_peak, sampled together\""
+        echo "rss_at_live_peak = ${f[14]}"
+        echo "vmhwm_bytes = ${f[15]}"
+        echo "allocated_bytes = ${f[16]}"
+        echo "live_bytes_at_peak = ${f[17]}"
+        echo "live_bytes_median = ${f[18]}"
+        echo "frag_samples = ${f[21]}"
+        if [[ -n "${f[19]:-}" ]]; then
+            echo "frag = ${f[19]}"
+            echo "frag_median = ${f[20]}"
+            echo "frag_definition = \"rss_at_live_peak / live_bytes_at_peak, sampled together at the live-set peak; frag_median is the median of the sampled rss/live series. Report the PAIR (rss_at_live_peak, live_bytes_at_peak) and vmhwm, not the quotient alone.\""
         else
-            echo "# frag: undefined for this workload (holds no live set)"
+            echo "# frag: undefined here (workload holds no live set, or too"
+            echo "#       few samples to summarise -- see frag_samples)"
         fi
-        echo "ops_cov = ${f[20]}"
-        echo "runs = ${f[21]}"
-        echo "unstable = $([[ "${f[22]}" == "1" ]] && echo true || echo false)"
-        echo "ops_floor_raised = $([[ "${f[23]:-0}" == "1" ]] && echo true || echo false)"
+        echo "ops_cov = ${f[24]}"
+        echo "runs = ${f[25]}"
+        echo "unstable = $([[ "${f[26]}" == "1" ]] && echo true || echo false)"
+        echo "ops_floor_raised = $([[ "${f[27]:-0}" == "1" ]] && echo true || echo false)"
     } >> "$MATRIX"
 }
 

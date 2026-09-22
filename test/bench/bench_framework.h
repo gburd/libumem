@@ -51,29 +51,51 @@ typedef struct bench_stats {
 
     /* Memory.
      *
-     * peak_rss_bytes is the largest RSS observed DURING the run for the
-     * workloads that sample it (fragmentation), not the RSS left over after
-     * cleanup -- reading it after the final free reported a post-teardown
-     * number and called it a peak.
+     * peak_rss_bytes is the RSS observed at the live-set peak DURING the run
+     * for the workloads that sample it (fragmentation), not the RSS left over
+     * after cleanup -- reading it after the final free reported a
+     * post-teardown number and called it a peak.
      *
      * live_bytes_at_peak is the simultaneously-live allocated byte count at
-     * the moment peak_rss_bytes was observed.  fragmentation_ratio is
-     * peak_rss_bytes / live_bytes_at_peak, i.e. a ratio of two quantities
-     * measured at the SAME instant.  It is only defined for workloads that
-     * hold a live set; see has_fragmentation.
+     * that same instant.  fragmentation_ratio is peak_rss_bytes /
+     * live_bytes_at_peak, i.e. a ratio of two quantities measured at the SAME
+     * instant.  It is only defined for workloads that hold a live set; see
+     * has_fragmentation.
+     *
+     * The reported sample is the one at the LIVE-SET PEAK -- the largest live
+     * byte count seen, with the RSS observed at that instant -- and NOT the
+     * sample with the worst ratio.  Maximising the ratio finds the sample with
+     * the smallest denominator, not the most overhead: RSS is near-monotonic
+     * (freeing rarely returns it), so at high thread counts a momentary dip in
+     * aggregate live bytes yields an enormous ratio that says nothing about
+     * the allocator.  Measured at 192 threads that rule reported 505 while the
+     * implied RSS stayed flat at ~1.1GB across every thread count.
+     * max_rss_bytes carries the largest RSS seen at any sample, for reference.
      *
      * has_fragmentation = 0 means this workload does not define a
      * fragmentation number and none is reported.  The allocate-and-
      * immediately-free workloads (single/multi/prodcons) never hold a
      * meaningful live set, and dividing RSS by CUMULATIVE allocation
      * traffic -- which is what they used to do -- yields a figure that
-     * tends to zero the longer the run, so it is not reported at all. */
-    size_t peak_rss_bytes;
+     * tends to zero the longer you run, so it is not reported at all. */
+    size_t peak_rss_bytes;        /* RSS at the live-set peak, where sampled */
     size_t current_rss_bytes;
     size_t bytes_allocated;       /* cumulative traffic, not live bytes */
     size_t bytes_freed;
     size_t live_bytes_at_peak;    /* live bytes when peak_rss was sampled */
     size_t peak_live_bytes;       /* max simultaneously-live bytes */
+    size_t max_rss_bytes;         /* VmHWM: process RSS high-water mark */
+    /* The live series is a MOVING quantity (threads desynchronise at high
+     * counts, so some free while others allocate).  These summarise it so a
+     * single noisy sample cannot become the headline number:
+     *   frag_live_median   median of the sampled live-byte series
+     *   frag_ratio_median  median of the sampled rss/live series
+     *   frag_samples       how many samples that summary rests on
+     * has_fragmentation requires at least 8 samples: fewer is a single-sample
+     * observation, and calling it a distribution would repeat the mistake. */
+    size_t frag_live_median;
+    double frag_ratio_median;
+    size_t frag_samples;
     double fragmentation_ratio;   /* peak RSS / live bytes at that instant */
     int has_fragmentation;        /* 0 => undefined for this workload */
 
@@ -159,6 +181,12 @@ size_t bench_get_rss_bytes(void);
 
 /* Read VmRSS from /proc/self/status (Linux only, returns bytes) */
 size_t bench_get_vmrss_bytes(void);
+
+/* Read VmHWM (RSS high-water mark) from /proc/self/status, in bytes.
+ * Reported alongside the fragmentation pair: RSS is near-monotonic, so the
+ * ratio's numerator carries history its denominator does not, and a reader
+ * needs the high-water mark to tell real overhead from inherited RSS. */
+size_t bench_get_vmhwm_bytes(void);
 
 /* CPU usage measurement */
 bench_cpu_usage_t bench_get_cpu_usage(void);
