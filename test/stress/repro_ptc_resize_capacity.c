@@ -231,10 +231,17 @@ check_own_ptc(int bin)
 		int cap = true_capacity(mag->loaded);
 		if (mag->magsize != cap || !legal_magsize(cap) ||
 		    mag->rounds < 0 || mag->rounds > cap) {
-			fprintf(stderr, "CAPACITY DESYNC (loaded): recorded "
-			    "magsize=%d true=%d rounds=%d\n",
-			    mag->magsize, cap, mag->rounds);
-			atomic_fetch_add(&fail_capacity, 1);
+			/*
+			 * Report the first few only.  Pre-fix this fires
+			 * millions of times (measured: 3,133,215 in one run,
+			 * 200MB of log); the counter carries the quantity, the
+			 * samples carry the diagnosis.
+			 */
+			if (atomic_fetch_add(&fail_capacity, 1) < 20) {
+				fprintf(stderr, "CAPACITY DESYNC (loaded): "
+				    "recorded magsize=%d true=%d rounds=%d\n",
+				    mag->magsize, cap, mag->rounds);
+			}
 		}
 	}
 	if (mag->previous != NULL) {
@@ -242,10 +249,11 @@ check_own_ptc(int bin)
 		int rec = recorded_pcap(mag);
 		if (rec != cap || !legal_magsize(cap) ||
 		    mag->prounds < 0 || mag->prounds > cap) {
-			fprintf(stderr, "CAPACITY DESYNC (previous): recorded "
-			    "capacity=%d true=%d prounds=%d\n",
-			    rec, cap, mag->prounds);
-			atomic_fetch_add(&fail_capacity, 1);
+			if (atomic_fetch_add(&fail_capacity, 1) < 20) {
+				fprintf(stderr, "CAPACITY DESYNC (previous): "
+				    "recorded capacity=%d true=%d prounds=%d\n",
+				    rec, cap, mag->prounds);
+			}
 		}
 	}
 }

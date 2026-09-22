@@ -1,0 +1,36 @@
+BUILD_DONE
+=== PREFIX-P1.3b gated probe, 96t ===
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=74
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=66
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=89
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=13
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=109
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=72
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=12
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=108
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=45
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=35
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=244
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=93
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=24
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=120
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=15
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=111
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=79
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=82
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=33
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=50
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=9
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=1
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=97
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=23
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=119
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=105
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=185
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=217
+[... 3,133,000 more desync lines elided ...]
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=32
+CAPACITY DESYNC (loaded): recorded magsize=255 true=127 rounds=32
+timeout: the monitored command dumped core
+bash: line 1: 108435 Segmentation fault      timeout 400 ./test/stress/repro_ptc_resize_capacity_probe 96
+b_rc=139
