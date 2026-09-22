@@ -2653,22 +2653,17 @@ static void
 umem_ptc_mag_return(umem_cache_t *cp, umem_maglist_t *mlp,
     umem_magazine_t *mp, int rounds)
 {
-	int cap = umem_mag_capacity(mp);
-
-	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
-		umem_mag_drain(cp, mp, rounds, cap);
+	/* PREFIX: the P1.3c defect -- the shell is freed with the objects still
+	   inside it, and the caller's full/empty choice is honoured regardless
+	   of the count. */
+	(void) rounds;
+	if (UMEM_MAGAZINE_VALID(cp, mp)) {
+		umem_depot_free(cp, mlp, mp);
+	} else {
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
 		UMEM_PTC_PROBE_SHELL_FREE(mp);
 		_umem_cache_free(umem_mag_source_cache(mp), mp);
-		return;
 	}
-
-	if (mlp != &cp->cache_full || rounds != cap) {
-		umem_mag_drain(cp, mp, rounds, cap);
-		mlp = &cp->cache_empty;
-	}
-
-	umem_depot_free(cp, mlp, mp);
 }
 
 /*
@@ -2681,22 +2676,17 @@ static void
 umem_ptc_mag_return_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
     umem_magazine_t *mp, int rounds)
 {
-	int cap = umem_mag_capacity(mp);
-
-	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
-		umem_mag_drain(cp, mp, rounds, cap);
+	/* PREFIX: the P1.3c defect -- the shell is freed with the objects still
+	   inside it, and the caller's full/empty choice is honoured regardless
+	   of the count. */
+	(void) rounds;
+	if (UMEM_MAGAZINE_VALID(cp, mp)) {
+		umem_depot_free_trylock(cp, mlp, mp);
+	} else {
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
 		UMEM_PTC_PROBE_SHELL_FREE(mp);
 		_umem_cache_free(umem_mag_source_cache(mp), mp);
-		return;
 	}
-
-	if (mlp != &cp->cache_full || rounds != cap) {
-		umem_mag_drain(cp, mp, rounds, cap);
-		mlp = &cp->cache_empty;
-	}
-
-	umem_depot_free_trylock(cp, mlp, mp);
 }
 
 /*
