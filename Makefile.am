@@ -464,6 +464,24 @@ test_integration_test_ptc_thread_exit_drain_LDFLAGS = -pthread
 test_integration_test_ptc_thread_exit_drain_CPPFLAGS = -I$(srcdir)
 test_integration_test_fork_mt_load_CPPFLAGS = -I$(srcdir)
 
+# P1.3b regression: a PTC magazine must never be used with a capacity that is
+# not its own.  Needs many threads and a real magazine resize, so it is run
+# explicitly rather than from TESTS (see the header comment in the source).
+noinst_PROGRAMS += test/stress/repro_ptc_resize_capacity
+test_stress_repro_ptc_resize_capacity_SOURCES = \
+	test/stress/repro_ptc_resize_capacity.c
+test_stress_repro_ptc_resize_capacity_LDADD = libumem.la
+test_stress_repro_ptc_resize_capacity_LDFLAGS = -pthread
+test_stress_repro_ptc_resize_capacity_CPPFLAGS = -I$(srcdir)
+
+# P1.3c regression: a magtype change must not discard populated magazines.
+noinst_PROGRAMS += test/integration/test_ptc_resize_no_loss
+test_integration_test_ptc_resize_no_loss_SOURCES = \
+	test/integration/test_ptc_resize_no_loss.c
+test_integration_test_ptc_resize_no_loss_LDADD = libumem.la
+test_integration_test_ptc_resize_no_loss_LDFLAGS = -pthread
+test_integration_test_ptc_resize_no_loss_CPPFLAGS = -I$(srcdir)
+
 # P1.6 regression: update-thread startup handshake.  -rdynamic so the
 # executable's pthread_cond_wait interposer preempts libc's for calls made
 # from libumem.so (see the comment at the top of the test).
@@ -689,6 +707,8 @@ TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 #   test/integration/test_fork_mt_load            (P1.2 fork lock order)
 #   test/integration/test_update_thread_startup   (P1.6 startup handshake)
 #   test/stress/repro_interpose_fork              (interposer fork handling)
+#   test/stress/repro_ptc_resize_capacity         (P1.3b capacity/resize race)
+#   test/integration/test_ptc_resize_no_loss      (P1.3c populated discard)
 TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_aligned_contracts \
 	test/unit/test_hash_partition \
