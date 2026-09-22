@@ -58,7 +58,7 @@ test_vmem_sbrk_basic_alloc(const MunitParameter params[], void* data)
 	munit_assert_not_null(arena);
 
 	/* Allocate a small amount */
-	void *ptr = alloc_func(arena, 4096, VM_SLEEP);
+	void *ptr = alloc_func(arena, 4096, VM_NOSLEEP);
 	munit_assert_not_null(ptr);
 
 	/* Free it */
@@ -79,7 +79,7 @@ test_vmem_sbrk_large_alloc(const MunitParameter params[], void* data)
 
 	/* Allocate larger than minalloc */
 	size_t size = vmem_sbrk_minalloc * 2;
-	void *ptr = alloc_func(arena, size, VM_SLEEP);
+	void *ptr = alloc_func(arena, size, VM_NOSLEEP);
 	munit_assert_not_null(ptr);
 
 	free_func(arena, ptr, size);
@@ -102,7 +102,7 @@ test_vmem_sbrk_multiple_allocs(const MunitParameter params[], void* data)
 
 	/* Allocate multiple blocks */
 	for (int i = 0; i < 10; i++) {
-		ptrs[i] = alloc_func(arena, sizes[i], VM_SLEEP);
+		ptrs[i] = alloc_func(arena, sizes[i], VM_NOSLEEP);
 		munit_assert_not_null(ptrs[i]);
 	}
 
@@ -169,7 +169,7 @@ test_vmem_sbrk_heap_growth(const MunitParameter params[], void* data)
 	size_t size = vmem_sbrk_minalloc;
 
 	for (int i = 0; i < 5; i++) {
-		ptrs[i] = alloc_func(arena, size, VM_SLEEP);
+		ptrs[i] = alloc_func(arena, size, VM_NOSLEEP);
 		munit_assert_not_null(ptrs[i]);
 		size += vmem_sbrk_minalloc;
 	}
@@ -194,15 +194,15 @@ test_vmem_sbrk_interleaved(const MunitParameter params[], void* data)
 	vmem_t *arena = vmem_sbrk_arena(&alloc_func, &free_func);
 	munit_assert_not_null(arena);
 
-	void *ptr1 = alloc_func(arena, 8192, VM_SLEEP);
+	void *ptr1 = alloc_func(arena, 8192, VM_NOSLEEP);
 	munit_assert_not_null(ptr1);
 
-	void *ptr2 = alloc_func(arena, 16384, VM_SLEEP);
+	void *ptr2 = alloc_func(arena, 16384, VM_NOSLEEP);
 	munit_assert_not_null(ptr2);
 
 	free_func(arena, ptr1, 8192);
 
-	void *ptr3 = alloc_func(arena, 8192, VM_SLEEP);
+	void *ptr3 = alloc_func(arena, 8192, VM_NOSLEEP);
 	munit_assert_not_null(ptr3);
 
 	free_func(arena, ptr2, 16384);
@@ -223,7 +223,7 @@ test_vmem_sbrk_alignment(const MunitParameter params[], void* data)
 
 	/* Allocate several blocks and check alignment */
 	for (int i = 0; i < 10; i++) {
-		void *ptr = alloc_func(arena, 4096, VM_SLEEP);
+		void *ptr = alloc_func(arena, 4096, VM_NOSLEEP);
 		munit_assert_not_null(ptr);
 
 		/* Check alignment to at least pagesize */
@@ -303,7 +303,7 @@ test_vmem_sbrk_errno_preservation(const MunitParameter params[], void* data)
 	errno = ENOENT;
 
 	/* Successful allocation should preserve errno */
-	void *ptr = alloc_func(arena, 4096, VM_SLEEP);
+	void *ptr = alloc_func(arena, 4096, VM_NOSLEEP);
 	munit_assert_not_null(ptr);
 	munit_assert_int(errno, ==, ENOENT);
 
@@ -412,7 +412,7 @@ test_vmem_sbrk_mixed_pattern(const MunitParameter params[], void* data)
 		if (active[idx] == NULL) {
 			/* Allocate */
 			active_sizes[idx] = (munit_rand_int_range(1, 8) * 4096);
-			active[idx] = alloc_func(arena, active_sizes[idx], VM_SLEEP);
+			active[idx] = alloc_func(arena, active_sizes[idx], VM_NOSLEEP);
 			munit_assert_not_null(active[idx]);
 		} else {
 			/* Free */

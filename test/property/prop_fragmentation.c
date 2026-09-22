@@ -85,8 +85,17 @@ static QCC_TestStatus prop_coalescing_works(QCC_GenValue **vals, int len, QCC_St
         return QCC_NOTHING;
     }
 
+    /*
+     * VM_NOSLEEP, not VM_SLEEP.  vmem.c's header says plainly: "Since VM_SLEEP
+     * allocations can hold locks (in vmem_populate()) for possibly infinite
+     * amounts of time, they are not supported in this version of vmem."  Every
+     * library call site passes VM_NOSLEEP (UMEM_VMFLAGS is hardcoded to it), so
+     * only tests ever asked for VM_SLEEP -- and when this arena exhausted its
+     * segment structures, vmem_populate()'s ASSERT(vmflag & VM_NOSLEEP) aborted
+     * the process.  That was this test's bug, not the allocator's.
+     */
     vmem_t *arena = vmem_create("test_arena", base, 64 * 1024, 8,
-                                NULL, NULL, NULL, 0, VM_SLEEP);
+                                NULL, NULL, NULL, 0, VM_NOSLEEP);
     if (!arena) {
         free(base);
         return QCC_NOTHING;
@@ -95,7 +104,7 @@ static QCC_TestStatus prop_coalescing_works(QCC_GenValue **vals, int len, QCC_St
     /* Allocate 8 adjacent 8KB blocks */
     void *blocks[8];
     for (int i = 0; i < 8; i++) {
-        blocks[i] = vmem_alloc(arena, 8 * 1024, VM_SLEEP | VM_BESTFIT);
+        blocks[i] = vmem_alloc(arena, 8 * 1024, VM_NOSLEEP | VM_BESTFIT);
         if (!blocks[i]) {
             /* Clean up allocated blocks */
             for (int j = 0; j < i; j++) {

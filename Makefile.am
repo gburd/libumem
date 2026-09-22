@@ -771,7 +771,18 @@ TESTS += test/unit/test_overflow_contracts \
 	test/bench/test_bench_accounting \
 	test/bench/check_budget.sh \
 	test/integration/test_ptc_thread_exit_drain_probe \
-	test/integration/test_ptc_resize_no_loss_probe
+	test/integration/test_ptc_resize_no_loss_probe \
+	test/integration/test_heap_ceiling
+
+# The heap-ceiling regression (docs/results/2026-09-22-umem-heap-ceiling-vma.md)
+# allocates past the old ~5GB vm.max_map_count ceiling.  It SKIPs (77) when the
+# kernel's limit has been raised far above the default, since then it cannot
+# distinguish the fix from a permissive kernel.
+noinst_PROGRAMS += test/integration/test_heap_ceiling
+test_integration_test_heap_ceiling_SOURCES = \
+	test/integration/test_heap_ceiling.c
+test_integration_test_heap_ceiling_LDADD = libumem.la
+test_integration_test_heap_ceiling_CPPFLAGS = -I$(srcdir)
 
 # NOTE which PTC variants are gated above: the _probe ones, which use exact
 # in-library counters (objects still in a bin when the PTC is freed; objects
