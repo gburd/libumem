@@ -125,7 +125,15 @@ l1_free(void *ptr, void *arg)
 	(void) ptr; (void) arg;
 }
 
-/* Hammer track_alloc on whatever hook is currently published. */
+/* Hammer track_alloc on whatever hook is currently published.
+ *
+ * Counts only calls that ACTUALLY entered the callback.  It used to increment
+ * unconditionally, but umem_hook_track_alloc() returns NULL without calling
+ * anything when hook_hold() declines (the hook is not active), so the counter
+ * measured attempts rather than tracked calls.  The vacuity check downstream
+ * then could not tell "the race was lost every round" from "tracking ran" --
+ * and on x86_64 the threads did lose it every round, so the test reported a
+ * contract failure when the real problem was its own window being too narrow. */
 static void *
 l1_tracker(void *unused)
 {
@@ -134,8 +142,8 @@ l1_tracker(void *unused)
 		struct owned_hook *oh = l1_current;
 		if (oh == NULL)
 			continue;
-		(void) umem_hook_track_alloc(&oh->hook, 64);
-		__sync_fetch_and_add(&l1_track_calls, 1);
+		if (umem_hook_track_alloc(&oh->hook, 64) != NULL)
+			__sync_fetch_and_add(&l1_track_calls, 1);
 	}
 	return (NULL);
 }
@@ -168,8 +176,23 @@ test_unregister_drains(void)
 
 		CHECK(umem_hook_register(&oh->hook) == 0, "register");
 		l1_current = oh;
-		/* Let the tracker threads get inside the callback. */
-		sched_yield();
+		/*
+		 * Let the tracker threads actually get inside the callback.
+		 * A single sched_yield() is not enough: on a multi-core box the
+		 * publish/unpublish window closed before any tracker won the
+		 * hook_hold() race, every round, so l1_track_calls stayed 0 and
+		 * the test failed its own vacuity check (observed on x86_64,
+		 * while aarch64 happened to win the race). Wait until tracking
+		 * is demonstrably happening, with a bounded spin so a genuinely
+		 * broken build still terminates.
+		 */
+		{
+			unsigned long before = l1_track_calls;
+			int spins = 0;
+
+			while (l1_track_calls == before && spins++ < 100000)
+				sched_yield();
+		}
 
 		umem_hook_unregister(&oh->hook);
 		l1_current = NULL;
