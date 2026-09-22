@@ -31,13 +31,26 @@ bad()  { printf 'FAIL: %s\n' "$*" >&2; fail=$((fail + 1)); }
 
 # ---------------------------------------------------------------------------
 # Prerequisite: the channel must be compiled in.
+#
+# NOTE the grep pattern.  When introspection is OFF, config.h contains the line
+#
+#     /* #undef UMEM_INTROSPECT */
+#
+# so a plain `grep -q UMEM_INTROSPECT` MATCHES in a default build.  This test
+# then skipped its own skip, ran against a library with no channel compiled in,
+# and reported a hard FAIL ("target never created ...sock") that looked like a
+# real introspection defect.  Match the actual #define.
+#
+# tools/umemctl and introspect_churn are built unconditionally, so their
+# presence proves nothing about the library -- config.h is the authority.
 # ---------------------------------------------------------------------------
-if [[ ! -x $CTL || -z $CHURN ]]; then
-	echo "SKIP: umemctl/introspect_churn not built (need --enable-introspect)"
+if ! grep -qE '^[[:space:]]*#[[:space:]]*define[[:space:]]+UMEM_INTROSPECT[[:space:]]+1' \
+    "$ROOT/config.h" 2>/dev/null; then
+	echo "SKIP: built without --enable-introspect (no channel to test)"
 	exit 77
 fi
-if ! grep -q "UMEM_INTROSPECT" "$ROOT/config.h" 2>/dev/null; then
-	echo "SKIP: config.h has no UMEM_INTROSPECT (need --enable-introspect)"
+if [[ ! -x $CTL || -z $CHURN ]]; then
+	echo "SKIP: umemctl/introspect_churn not built"
 	exit 77
 fi
 
