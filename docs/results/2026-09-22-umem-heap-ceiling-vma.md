@@ -129,3 +129,91 @@ export AWS_PROFILE=hotdog
 #   grep VmPeak /proc/<pid>/status ; wc -l < /proc/<pid>/maps
 ./scripts/ec2/terminate.sh intel-hi@heap
 ```
+
+## 2026-09-22 follow-up: three wrong hypotheses, and where the cause actually is
+
+An attempt to fix this failed. Recording it in full, because the measurements
+narrow the search considerably and the next person should not repeat them.
+
+**Headline number:** VMAs at a fixed 2 GB of 4 KiB allocations —
+
+| Build | VMAs at 2 GB |
+|---|---:|
+| before the attempted fixes | 16,283 |
+| after all three | 16,487 |
+
+No improvement. All three were reverted (`553d42e`).
+
+### What was tried, and why each was wrong
+
+1. **Raise `CHUNKSIZE` to 64 KiB** (matching Solaris, per the original analysis
+   above). Measured 9.3 VMAs/MB afterwards against 8.01 before. The span
+   **count**, not their size or the heap quantum, is what consumes VMAs — so the
+   quantum was never the binding constraint. The original hypothesis in this
+   document was wrong.
+
+2. **Over-map and trim for alignment.** Raising the quantum broke
+   `_vmem_extend_alloc()`'s alignment assertion, because `mmap()` only promises
+   page alignment. Over-mapping and trimming both ends fixed the assertion and
+   made the ceiling *worse*: the trimmed tail leaves an unmapped hole between
+   reservations, so spans can never merge — 4,593 mappings each separated by a
+   64 KiB gap.
+
+3. **`mprotect()` instead of a `MAP_FIXED` `mmap()`, plus large contiguous
+   reservations.** The mechanism here is real, and isolated cleanly:
+
+   | Operation | VMAs |
+   |---|---:|
+   | 64 MiB reserved `PROT_NONE` | 24 |
+   | 64 contiguous 128 KiB spans `mprotect`ed RW | 25 (they merge) |
+   | `MADV_DONTNEED` on alternating spans | 25 (no change) |
+   | `mprotect(PROT_NONE)` on those too | **88** |
+
+   So a replacement mapping cannot merge, and a protection change on free splits
+   what did merge. Both true — and both irrelevant here.
+
+### Where the cause actually is
+
+`strace` on 60,000 4 KiB allocations:
+
+```
+64,275 mprotect   <-- one per ALLOCATION
+   259 mmap
+     2 munmap
+```
+
+with 64,270 of those `mprotect` calls being **exactly 4096 bytes**. The slab
+layer requests one page-sized span per 4 KiB object from `umem_va_arena`, so the
+mapping is split upstream of anything `vmem_mmap.c` chooses. No change to the
+mmap backend can fix that; the fix belongs in span sizing — `umem_va_arena`'s
+quantum and `qcache_max`, or the slab layer's decision to take a fresh span per
+object at this size class.
+
+`umem_va_arena` is created with a `pagesize` quantum and `8 * pagesize`
+`qcache_max` (`umem.c`, near the `vmem_create("umem_va", ...)` call). A 4 KiB
+object's slab is one page, which is why every such allocation reaches the
+source. Raising the va-arena quantum, or making the slab layer batch spans for
+small size classes, is the direction — with this document's VMA-at-2 GB
+measurement as the before/after check.
+
+### What was kept from the attempt
+
+Two fixes that stand on their own evidence:
+
+- **`errno` is no longer erased over a genuine `mmap()` failure.** Measured
+  directly: `FIRST FAILURE at 8269MB (errno=0 Success)` became
+  `(errno=12 Cannot allocate memory)`. This is the defect that made the ceiling
+  look like a performance problem rather than an allocation failure.
+- **`vmem_populate()` reports an unsupported `VM_SLEEP` instead of aborting.**
+  The assertion crashed the process with no indication the caller's flags were at
+  fault, and vanished entirely under `NDEBUG`, continuing into a path the code
+  says is not allowed.
+
+### Status
+
+`test/integration/test_heap_ceiling` measures this on every `make check` run and
+reports **SKIP** with the live numbers (failure point, VMAs vs limit). Flip its
+two `rc = 77` returns to `rc = 1` when span sizing is fixed — that is what the
+test is for.
+
+Workaround unchanged: raise `vm.max_map_count`.

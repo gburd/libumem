@@ -380,17 +380,34 @@ complete:
 - Two PTC regressions returning 3 for INCONCLUSIVE, which automake reads as
   FAIL; a correct "I could not open the window" reddened the suite.
 
-### Known-open at the gate, and disclosed rather than hidden
+### Resolved since the first gate run
 
-- **`prop_fragmentation` aborts** on `ASSERT(vmflag & VM_NOSLEEP)` at
-  `vmem.c:603`. Confirmed pre-existing (identical `rc=134` at `ebcb467`); it
-  went unnoticed because the test is built but not in `TESTS`, so `make check`
-  never ran it on any commit or release. The gate labels it
-  KNOWN-PREEXISTING rather than counting it as a pass or a new failure.
-  `docs/results/2026-09-22-prop-fragmentation-vmem-abort.md`
-- **The ~5 GB Linux heap ceiling** (`vm.max_map_count`), unassigned pending its
-  own regression. This is what still blocks calling libumem
-  production-ready for general use, and it now leads the README's limitations.
+- **`prop_fragmentation`'s abort is fixed**, and the gate no longer exempts
+  anything. It needed three fixes, each a separate defect: `vmem_populate()`
+  aborted on an unsupported `VM_SLEEP` instead of reporting it; the test itself
+  passed `VM_SLEEP` (11 sites across two files, against a flag `vmem.c`'s own
+  header documents as unsupported); and it freed every allocation with
+  `umem_free(ptr, 0)` under a comment claiming the size was tracked internally.
+  The last one only became reachable once the `QCC_getValue()` fix made the
+  property execute at all. All property tests now pass on both architectures.
+
+### Known-open at the gate, measured on every run rather than hidden
+
+- **The ~5 GB Linux heap ceiling** (`vm.max_map_count`). Still open, and an
+  attempt to fix it **failed** — three hypotheses, none of them the cause,
+  all reverted (`553d42e`). The failure narrowed it usefully: `strace` shows
+  64,275 `mprotect` calls, 64,270 of them exactly 4096 bytes, for 60,000
+  allocations. The slab layer takes one page-sized span per 4 KiB object from
+  `umem_va_arena`, so the mapping is split **upstream of the mmap backend** and
+  no change there can help. The fix belongs in span sizing (the va-arena's
+  quantum/`qcache_max`, or batching spans for small size classes). Two
+  independently-proven fixes were kept from the attempt: `errno` is no longer
+  erased over a real `mmap()` failure (`errno=0 Success` became `errno=12
+  ENOMEM`), and unsupported-flag misuse is reported rather than aborted.
+  `test/integration/test_heap_ceiling` measures it every run and reports SKIP
+  with live numbers; flip its two `rc = 77` returns to `rc = 1` when span sizing
+  is fixed. This is what still blocks calling libumem production-ready for
+  general use, and it leads the README's limitations.
   `docs/results/2026-09-22-umem-heap-ceiling-vma.md`
 - The four Phase 3 items listed under "Still open after Phase 3" below.
 
