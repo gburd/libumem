@@ -496,12 +496,25 @@ test_stress_repro_ptc_resize_capacity_probe_CPPFLAGS = \
 	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 
 # P1.3c regression: a magtype change must not discard populated magazines.
+# Two builds, for the same reason as P1.3b above: the _probe variant links a
+# libumem with -DUMEM_PTC_RESIZE_PROBE, which counts objects still inside a
+# magazine at the instant its shell is freed -- an exact oracle.  The plain
+# variant has only the statistical outstanding-buffer comparison, which has been
+# seen to straddle its own margin.
 noinst_PROGRAMS += test/integration/test_ptc_resize_no_loss
 test_integration_test_ptc_resize_no_loss_SOURCES = \
 	test/integration/test_ptc_resize_no_loss.c
 test_integration_test_ptc_resize_no_loss_LDADD = libumem.la
 test_integration_test_ptc_resize_no_loss_LDFLAGS = -pthread
 test_integration_test_ptc_resize_no_loss_CPPFLAGS = -I$(srcdir)
+
+noinst_PROGRAMS += test/integration/test_ptc_resize_no_loss_probe
+test_integration_test_ptc_resize_no_loss_probe_SOURCES = \
+	test/integration/test_ptc_resize_no_loss.c
+test_integration_test_ptc_resize_no_loss_probe_LDADD = libumem_ptcprobe.la
+test_integration_test_ptc_resize_no_loss_probe_LDFLAGS = -pthread
+test_integration_test_ptc_resize_no_loss_probe_CPPFLAGS = \
+	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 
 # P1.6 regression: update-thread startup handshake.  -rdynamic so the
 # executable's pthread_cond_wait interposer preempts libc's for calls made

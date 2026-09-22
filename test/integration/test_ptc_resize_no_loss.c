@@ -48,7 +48,24 @@
  *   to its FLOOR by reaping until it stops falling: retention is released by
  *   reaping, loss is not.
  *
- * THE CONTROL: AN IDENTICAL ROUND WITH NO RESIZE IN IT
+ * THE PRIMARY ORACLE: AN EXACT LEDGER AT THE POINT OF LOSS
+ *   Built with -DUMEM_PTC_RESIZE_PROBE, the library counts, at the one instant
+ *   loss can occur, how many objects are still in a magazine when its shell is
+ *   freed back to the magtype cache.  Anything there has just lost its only
+ *   reference while the slab layer goes on counting it as allocated.  That is the
+ *   defect, counted exactly, with no statistics in it:
+ *
+ *       pre-fix:  objects_lost > 0  (the magazine was discarded populated)
+ *       post-fix: objects_lost == 0 (it was drained first)
+ *
+ *   It is an observation of BEHAVIOUR, not of struct layout, so the same counter
+ *   is meaningful in both builds and directly comparable between them.
+ *
+ *   The outstanding-buffer comparison below is kept as a corroborating signal,
+ *   with the caveat recorded there that it is statistical and has been seen to
+ *   straddle its own margin.
+ *
+ * THE CORROBORATING SIGNAL: AN IDENTICAL ROUND WITH NO RESIZE IN IT
  *   An absolute bound on the floor cannot work.  The magazine, depot, and slab
  *   layers all legitimately retain freed objects, and per-CPU loaded magazines
  *   are not reachable by umem_reap() at all, so a PTC-free allocator leaves
@@ -82,7 +99,14 @@
  *   the right direction: umem_cache_magazine_resize() PURGES every per-CPU
  *   magazine, which RELEASES objects the control round is still holding, so a
  *   correct allocator makes round 2's floor come out at or below round 1's.
- *   Any excess is loss.
+ *
+ *   NOT A SOUND ORACLE ON ITS OWN, and measurement says so: on a FIXED build the
+ *   test-minus-control difference came out -242, -88, +104 on one box and +340,
+ *   +616 on another -- straddling the 512 margin, because ordinary retention in
+ *   per-CPU magazines is not reachable by umem_reap() and varies with machine
+ *   width.  It is reported, and it gates the result only in a build without the
+ *   ledger, where it is the only signal available; where the ledger exists, the
+ *   ledger decides.
  *
  * FORCING THE CHANGE WHILE A THREAD HOLDS A FULL MAGAZINE
  *   The threads fill their PTC bin and then their PTC magazine and PARK, still
@@ -360,6 +384,10 @@ run_round(const char *label, umem_cache_t *cp, int want_resize,
 int
 main(void)
 {
+#ifdef UMEM_PTC_RESIZE_PROBE
+	extern volatile long umem_ptc_probe_shell_frees;
+	extern volatile long umem_ptc_probe_objects_lost;
+#endif
 	umem_cache_t *cp;
 	long floor_control, floor_test, margin;
 	int c_from, c_to, t_from, t_to;
@@ -424,6 +452,42 @@ main(void)
 	printf("floor: control(no resize)=%ld test(resize %d->%d)=%ld "
 	    "margin=%ld\n", floor_control, t_from, t_to, floor_test, margin);
 
+#ifdef UMEM_PTC_RESIZE_PROBE
+	/*
+	 * The exact ledger decides.  Counted in the library at the instant a
+	 * magazine shell is freed: any object still inside it at that point has
+	 * lost its only reference.
+	 */
+	printf("ledger: magazine shells freed=%ld OBJECTS STILL INSIDE THEM "
+	    "WHEN FREED=%ld\n", umem_ptc_probe_shell_frees,
+	    umem_ptc_probe_objects_lost);
+
+	if (umem_ptc_probe_shell_frees == 0) {
+		printf("RESULT: INCONCLUSIVE (no magazine shell was freed on a "
+		    "magtype mismatch, so the path under test never ran)\n");
+		return (3);
+	}
+	if (umem_ptc_probe_objects_lost != 0) {
+		printf("RESULT: FAIL (%ld objects were still inside magazines "
+		    "whose shells were freed -- every one lost its only "
+		    "reference while the slab layer went on counting it as "
+		    "allocated)\n", umem_ptc_probe_objects_lost);
+		return (1);
+	}
+	printf("RESULT: PASS (%ld magazine shells were freed across the %d -> "
+	    "%d resize with %d threads holding populated magazines, and every "
+	    "one was empty when freed; corroborating floor delta %+ld against "
+	    "a %ld margin)\n", umem_ptc_probe_shell_frees, t_from, t_to,
+	    NTHREADS, floor_test - floor_control, margin);
+	return (0);
+#else
+	/*
+	 * Without the ledger the statistical comparison is the only signal.  It
+	 * has been seen to straddle this margin on a fixed build (see the header),
+	 * so a verdict from this path is weaker than one from the ledger build.
+	 */
+	printf("note: built WITHOUT -DUMEM_PTC_RESIZE_PROBE, so the exact ledger "
+	    "is unavailable and only the statistical comparison is left\n");
 	if (floor_test > floor_control + margin) {
 		printf("RESULT: FAIL (the round with a magazine resize leaves "
 		    "%ld more buffers permanently outstanding than the "
@@ -438,4 +502,5 @@ main(void)
 	    "workload without a resize; populated magazines are drained, not "
 	    "discarded)\n", t_from, t_to, NTHREADS);
 	return (0);
+#endif
 }

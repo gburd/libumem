@@ -2125,6 +2125,20 @@ volatile int umem_ptc_probe_gate = 0;		/* 1 = park arrivals here */
 volatile long umem_ptc_probe_inwindow = 0;	/* threads parked right now */
 volatile long umem_ptc_probe_refills = 0;	/* magazines loaded */
 volatile long umem_ptc_probe_desyncs = 0;	/* capacity != magazine's own */
+/*
+ * P1.3c ledger.  Counted at the ONE instant loss can occur: a magazine shell
+ * being freed back to its magtype cache.  Anything still sitting in its rounds
+ * at that moment has just lost its only reference, while the slab layer goes on
+ * counting it as allocated.
+ *
+ * This is an observation of behaviour, not of structure, so it is meaningful in
+ * both builds and exactly comparable between them: pre-fix the count is the
+ * number of objects destroyed, post-fix it is zero because the magazine was
+ * drained first.  Exact and deterministic -- no statistics, unlike counting
+ * outstanding buffers, where ordinary retention swamps the signal.
+ */
+volatile long umem_ptc_probe_shell_frees = 0;
+volatile long umem_ptc_probe_objects_lost = 0;
 
 static void
 umem_ptc_resize_probe(void)
@@ -2167,11 +2181,34 @@ umem_ptc_probe_observe(umem_magazine_t *mp, int recorded)
 	if (recorded != umem_mag_capacity(mp))
 		(void) atomic_add_64((uint64_t *)&umem_ptc_probe_desyncs, 1);
 }
+
+/*
+ * Count the objects still in `mp` as its shell is freed.  See the ledger
+ * comment above.  Observation only: frees nothing, changes no decision.
+ */
+static void
+umem_ptc_probe_shell_free(umem_magazine_t *mp)
+{
+	int cap = umem_mag_capacity(mp);
+	long live = 0;
+	int r;
+
+	for (r = 0; r < cap; r++) {
+		if (mp->mag_round[r] != NULL)
+			live++;
+	}
+	(void) atomic_add_64((uint64_t *)&umem_ptc_probe_shell_frees, 1);
+	if (live != 0)
+		(void) atomic_add_64((uint64_t *)&umem_ptc_probe_objects_lost,
+		    (uint64_t)live);
+}
 #define	UMEM_PTC_RESIZE_PROBE_POINT()	umem_ptc_resize_probe()
 #define	UMEM_PTC_PROBE_OBSERVE(mp, cap)	umem_ptc_probe_observe((mp), (cap))
+#define	UMEM_PTC_PROBE_SHELL_FREE(mp)	umem_ptc_probe_shell_free(mp)
 #else
 #define	UMEM_PTC_RESIZE_PROBE_POINT()	((void)0)
 #define	UMEM_PTC_PROBE_OBSERVE(mp, cap)	((void)0)
+#define	UMEM_PTC_PROBE_SHELL_FREE(mp)	((void)0)
 #endif
 
 /*
@@ -2621,6 +2658,7 @@ umem_ptc_mag_return(umem_cache_t *cp, umem_maglist_t *mlp,
 	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
 		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
+		UMEM_PTC_PROBE_SHELL_FREE(mp);
 		_umem_cache_free(umem_mag_source_cache(mp), mp);
 		return;
 	}
@@ -2648,6 +2686,7 @@ umem_ptc_mag_return_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
 	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
 		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
+		UMEM_PTC_PROBE_SHELL_FREE(mp);
 		_umem_cache_free(umem_mag_source_cache(mp), mp);
 		return;
 	}
