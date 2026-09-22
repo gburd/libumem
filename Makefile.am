@@ -41,6 +41,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/unit/test_hash_partition \
 		  test/unit/test_lifecycle_churn \
 		  test/unit/test_hook_contracts \
+		  test/unit/test_inspect_contracts \
 		  test/unit/repro_reclaim_destroy \
 		  test/unit/repro_reclaim_reuse \
 		  test/bench/bench_debug_overhead \
@@ -539,6 +540,14 @@ test_unit_test_hook_contracts_LDADD = libumem.la
 test_unit_test_hook_contracts_LDFLAGS = -pthread
 test_unit_test_hook_contracts_CPPFLAGS = -I$(srcdir)
 
+# Phase 3 items 1/2/7: umem_inspect cache-lifetime and snapshot contracts
+# (inspection concurrent with cache destroy churn; walker callbacks may
+# allocate; whatis distinguishes CACHED from held).
+test_unit_test_inspect_contracts_SOURCES = test/unit/test_inspect_contracts.c
+test_unit_test_inspect_contracts_LDADD = libumem.la
+test_unit_test_inspect_contracts_LDFLAGS = -pthread
+test_unit_test_inspect_contracts_CPPFLAGS = -I$(srcdir)
+
 # P4 regression: weighted hash partitioning (umem_hash_partition.c).
 # Compiles the unit directly rather than linking libumem, because
 # umem_hash_partition.c is only part of the library under --enable-numa;
@@ -661,6 +670,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_aligned_contracts \
 	test/unit/test_hash_partition \
 	test/unit/test_hook_contracts \
+	test/unit/test_inspect_contracts \
 	test/stress/interpose_regress.sh \
 	test/stress/oracle_control.sh \
 	test/unit/test_lifecycle_churn \
