@@ -88,11 +88,25 @@ typedef struct umem_hook {
 	uint64_t peak_bytes;		/* Peak memory usage */
 
 	/* Internal use -- do not touch; all fields below are owned by the
-	 * registry lock inside umem_hooks.c. */
+	 * registry lock inside umem_hooks.c.
+	 *
+	 * ABI NOTE: these are deliberately sized to fit the 8 bytes that
+	 * `int hook_active` plus its tail padding already occupied, so
+	 * sizeof(umem_hook_t) stays 120 on LP64.  umem_hook_t is
+	 * CALLER-allocated (see umem_hook_register()), so growing it would break
+	 * every application compiled against an older header -- the library
+	 * would write past the end of their struct.  Measured: adding two
+	 * naturally-aligned 32-bit fields took it 120 -> 128.
+	 *
+	 * If a future change genuinely needs more space here, that is a soname
+	 * bump (libumem.so.1 -> .so.2), which also invalidates the documented
+	 * illumos `LD_PRELOAD=.../libumem_malloc.so.1` recipes in README.md.
+	 * Prefer packing. */
 	struct umem_hook *hook_next;	/* Next in hook list */
 	struct umem_hook *hook_prev;	/* Previous in hook list */
-	int hook_active;		/* Hook is active */
-	int hook_refcnt;		/* In-flight track_/walk callers (L1) */
+	uint8_t hook_active;		/* Hook is active (0/1) */
+	uint8_t hook_pad_;		/* reserved; keeps the next field aligned */
+	uint16_t hook_refcnt;		/* In-flight track_/walk callers (L1) */
 	uint32_t hook_walk_gen;		/* Last walk that visited this hook */
 } umem_hook_t;
 

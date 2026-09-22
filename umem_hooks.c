@@ -60,6 +60,17 @@ hook_hold(umem_hook_t *hook)
 {
 	if (hook == NULL || !hook->hook_active)
 		return (0);
+	/*
+	 * hook_refcnt is 16-bit so umem_hook_t's size stays ABI-stable (see the
+	 * note in umem_hooks.h).  It counts threads currently inside a callback
+	 * for this hook, so it is bounded by the thread count in practice --
+	 * but refuse rather than wrap, because a wrap to 0 would let
+	 * umem_hook_unregister() free the hook while callers are still in it.
+	 * Declining a hold degrades to "this allocation is not tracked", which
+	 * is the same outcome as an inactive hook.
+	 */
+	if (hook->hook_refcnt == UINT16_MAX)
+		return (0);
 	hook->hook_refcnt++;
 	return (1);
 }
