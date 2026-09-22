@@ -306,6 +306,57 @@ typedef struct umem_buftag {
 #define	UMEM_BUF(cp, bcp)		\
 	((void *)((char *)(bcp) - (cp)->cache_bufctl))
 
+/*
+ * Slab freelist link mangling (P5.4).
+ *
+ * For every cache without UMF_HASH -- the default for small objects -- the
+ * bufctl, and therefore bc_next, sits at cache_bufctl INSIDE THE USER BUFFER
+ * (see UMEM_BUFCTL above and umem_cache_create()'s
+ * cache_bufctl = chunksize - UMEM_ALIGN).  bc_next is the slab freelist link:
+ * umem_slab_free() stores sp->slab_head there and umem_slab_alloc() pops it
+ * back off and hands the result out as the next allocation.  An ordinary
+ * overflow out of a live buffer into the tail of the adjacent FREED one
+ * therefore reaches it, and unmangled that is an attacker-chosen-address
+ * primitive -- worse than glibc, which has mangled these links since 2.32
+ * ("safe-linking").
+ *
+ * The stored form is  ptr ^ umem_link_cookie ^ (&slot >> 12), so the value in
+ * memory depends on WHERE it is stored: overwriting a link with a chosen
+ * address no longer yields that address, and aiming anywhere deliberately
+ * requires knowing both the per-process cookie and the link's own address.
+ * XOR is an involution, so one macro both encodes and decodes, and NULL (the
+ * end of the freelist) round-trips with no special case.
+ *
+ * This covers the SLAB FREELIST use of bc_next only.  The UMF_HASH
+ * allocated-address chain -- built in umem_slab_alloc(), unlinked in
+ * umem_slab_free(), rebuilt by umem_hash_rescale(), walked by umem_error()
+ * and by the inspectors' hash-table walks -- stores plain pointers, because
+ * those bufctls are allocated from cache_bufctl_cache, outside any user
+ * buffer, where a buffer overflow cannot reach them.
+ *
+ * EVERY reader of a slab freelist link must decode.  In-tree readers:
+ * umem.c umem_slab_create() (both the build loop and its failure unwind),
+ * umem_slab_alloc(), umem_slab_free(), umem_slab_destroy();
+ * umem_inspect.c slab_buf_is_free() and collect_freed_cache();
+ * umem_introspect.c is_allocated() (built only under --enable-introspect).
+ *
+ * Building the library with -DUMEM_NO_LINK_MANGLE restores the pre-fix
+ * behaviour in an otherwise identical binary.  That is the control arm for
+ * test/unit/test_freelist_mangle (which must fail against it) and for the
+ * throughput A/B, and it is not a supported configuration.
+ */
+extern uintptr_t umem_link_cookie;
+
+#ifdef	UMEM_NO_LINK_MANGLE
+#define	UMEM_LINK_MANGLE(slotp, val)	((umem_bufctl_t *)(val))
+#else
+#define	UMEM_LINK_MANGLE(slotp, val)					\
+	((umem_bufctl_t *)((uintptr_t)(val) ^ umem_link_cookie ^		\
+	    ((uintptr_t)(slotp) >> 12)))
+#endif
+
+#define	UMEM_LINK_DEMANGLE(slotp, val)	UMEM_LINK_MANGLE(slotp, val)
+
 #define	UMEM_SLAB(cp, buf)		\
 	((umem_slab_t *)P2END((uintptr_t)(buf), (cp)->cache_slabsize) - 1)
 

@@ -1435,6 +1435,115 @@ umem_log_event(umem_log_header_t *lp, umem_cache_t *cp,
 }
 
 /*
+ * Per-process secret XORed into every slab freelist link (P5.4).  See
+ * UMEM_LINK_MANGLE() in umem_impl.h for what it protects and why.
+ *
+ * Zero means "not yet derived".  umem_link_cookie_init() is idempotent by
+ * construction -- every source it mixes is fixed for the life of the process
+ * -- so concurrent callers compute and store the SAME value and the race is
+ * benign, which is why this needs no lock, no CAS and no pthread_once (and
+ * therefore no allocation, which umem_init() cannot tolerate).
+ *
+ * Ordering: the only producer of mangled links is umem_slab_create(), which
+ * calls this before building any, and it publishes the finished slab by
+ * linking it into cache_freelist under cache_lock.  Every other thread
+ * reaches a link only through a slab it found under that same lock, so the
+ * lock already orders the cookie store ahead of any demangle.
+ */
+uintptr_t umem_link_cookie = 0;
+
+#if defined(__has_include)
+#if __has_include(<sys/auxv.h>)
+#include <sys/auxv.h>
+#define	UMEM_HAVE_AUXV	1
+#endif
+#endif
+
+static void
+umem_link_cookie_init(void)
+{
+	uintptr_t c = 0;
+
+	if (likely(umem_link_cookie != 0))
+		return;
+
+#if defined(UMEM_HAVE_AUXV) && defined(AT_RANDOM)
+	{
+		/*
+		 * AT_RANDOM is 16 kernel-supplied random bytes placed in auxv
+		 * at exec time.  Reading it is a pure function of the process
+		 * image: no syscall, no allocation, no file descriptor, and
+		 * the same answer in every thread -- which is what makes this
+		 * initializer idempotent.
+		 */
+		const unsigned long at = getauxval(AT_RANDOM);
+		if (at != 0) {
+			uintptr_t v;
+			bcopy((const void *)(uintptr_t)at, &v, sizeof (v));
+			c = v;
+		}
+	}
+#endif
+
+	/*
+	 * Fallback, and additional mixing: the load address of a static in
+	 * this object (ASLR) and the process id.  Weaker than AT_RANDOM -- it
+	 * is one mapping's worth of entropy, not the kernel's -- but it is
+	 * never worse than the unmangled behaviour this replaces, and it keeps
+	 * platforms without auxv from silently getting cookie 0.
+	 */
+	c ^= (uintptr_t)&umem_link_cookie;
+	c ^= (uintptr_t)getpid() * 0x9e3779b97f4a7c15ULL;
+
+	/*
+	 * Never publish 0: that is the "not yet derived" sentinel, so a
+	 * cookie of 0 would make every later call recompute.  Correct either
+	 * way, but pointless work on the allocation path.
+	 */
+	umem_link_cookie = c | 1;
+}
+
+/*
+ * Validate a demangled slab freelist link before it is dereferenced or
+ * handed out (P5.4).
+ *
+ * The mangling in UMEM_LINK_MANGLE() means an attacker who overwrites a link
+ * with a chosen address gets an unpredictable demangled value, not that
+ * address.  Two cheap structural checks turn "unpredictable" into "reported":
+ *
+ *   - alignment: bufctls are UMEM_ALIGN-aligned, as glibc's safe-linking
+ *     also checks;
+ *   - containment: a slab freelist link points at a bufctl belonging to THIS
+ *     slab, so for a non-hash cache the buffer it names must be inside the
+ *     slab (UMEM_SLAB_MEMBER), and for a hash cache the bufctl itself lives
+ *     outside the buffer region and is only reachable through metadata the
+ *     overflow class cannot touch, so the offset check does not apply.
+ *
+ * NULL is the legal end of the freelist and passes.  Returns nonzero if the
+ * link is usable; the caller reports UMERR_BADADDR and stops otherwise --
+ * deliberately without dereferencing bcp.
+ *
+ * ponytail: structural checks only, not a MAC.  They reject the overwhelming
+ * majority of corrupted links (any non-multiple-of-8 value, and any value
+ * outside one slab-sized window) but cannot distinguish a forged link that
+ * happens to satisfy both from a real one.  Upgrade path if that ever
+ * matters: keep a per-slab bitmap of free chunks and check membership, which
+ * costs a load and a bit test on the same hot path.
+ */
+static int
+umem_slab_link_valid(umem_cache_t *cp, umem_slab_t *sp, umem_bufctl_t *bcp)
+{
+	if (bcp == NULL)
+		return (1);
+	if (P2PHASE((uintptr_t)bcp, UMEM_ALIGN) != 0)
+		return (0);
+	if (!(cp->cache_flags & UMF_HASH) &&
+	    !UMEM_SLAB_MEMBER(sp, UMEM_BUF(cp, bcp)))
+		return (0);
+	return (1);
+}
+
+/*
  * Create a new slab for cache cp.
  */
 static umem_slab_t *
@@ -1448,6 +1557,11 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 	umem_slab_t *sp;
 	umem_bufctl_t *bcp;
 	vmem_t *vmp = cp->cache_arena;
+
+	/*
+	 * Before any mangled link is built.  See umem_link_cookie_init().
+	 */
+	umem_link_cookie_init();
 
 	/*
 	 * Slab coloring: rotate through different offsets to reduce
@@ -1515,7 +1629,7 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 				    cp->cache_verify);
 			}
 		}
-		bcp->bc_next = sp->slab_head;
+		bcp->bc_next = UMEM_LINK_MANGLE(&bcp->bc_next, sp->slab_head);
 		sp->slab_head = bcp;
 		buf += chunksize;
 	}
@@ -1527,7 +1641,7 @@ umem_slab_create(umem_cache_t *cp, int umflag)
 bufctl_alloc_failure:
 
 	while ((bcp = sp->slab_head) != NULL) {
-		sp->slab_head = bcp->bc_next;
+		sp->slab_head = UMEM_LINK_DEMANGLE(&bcp->bc_next, bcp->bc_next);
 		_umem_cache_free(cp->cache_bufctl_cache, bcp);
 	}
 	_umem_cache_free(umem_slab_cache, sp);
@@ -1556,7 +1670,8 @@ umem_slab_destroy(umem_cache_t *cp, umem_slab_t *sp)
 	if (unlikely(cp->cache_flags & UMF_HASH)) {
 		umem_bufctl_t *bcp;
 		while ((bcp = sp->slab_head) != NULL) {
-			sp->slab_head = bcp->bc_next;
+			sp->slab_head =
+			    UMEM_LINK_DEMANGLE(&bcp->bc_next, bcp->bc_next);
 			_umem_cache_free(cp->cache_bufctl_cache, bcp);
 		}
 		_umem_cache_free(umem_slab_cache, sp);
@@ -1570,7 +1685,7 @@ umem_slab_destroy(umem_cache_t *cp, umem_slab_t *sp)
 static void *
 umem_slab_alloc(umem_cache_t *cp, int umflag)
 {
-	umem_bufctl_t *bcp, **hash_bucket;
+	umem_bufctl_t *bcp, *next, **hash_bucket;
 	umem_slab_t *sp;
 	void *buf;
 
@@ -1662,9 +1777,35 @@ umem_slab_alloc(umem_cache_t *cp, int umflag)
 	/*
 	 * If we're taking the last buffer in the slab,
 	 * remove the slab from the cache's freelist.
+	 *
+	 * The link is mangled (P5.4): demangle, then validate before it is
+	 * published as the new slab_head or followed by anyone.  A corrupted
+	 * link -- which for a non-hash cache means an overflow reached a freed
+	 * buffer's tail -- is reported and the allocation fails, rather than
+	 * the allocator handing out an attacker-named address.
 	 */
 	bcp = sp->slab_head;
-	if ((sp->slab_head = bcp->bc_next) == NULL) {
+	next = UMEM_LINK_DEMANGLE(&bcp->bc_next, bcp->bc_next);
+	if (unlikely(!umem_slab_link_valid(cp, sp, next))) {
+		void *badbuf = (cp->cache_flags & UMF_HASH) ?
+		    bcp->bc_addr : UMEM_BUF(cp, bcp);
+		/*
+		 * Truncate the freelist at the corrupted link rather than
+		 * leaving it in place: it is not followable, and leaving it
+		 * would re-report on every subsequent allocation.  The free
+		 * chunks beyond it become unreachable, which is the correct
+		 * trade against following a corrupted chain; refcnt is put
+		 * back because no buffer is handed out, so the slab is still
+		 * destroyed normally once its live buffers are returned.
+		 */
+		sp->slab_head = NULL;
+		cp->cache_freelist = sp->slab_next;
+		sp->slab_refcnt--;
+		(void) mutex_unlock(&cp->cache_lock);
+		umem_error(UMERR_BADADDR, cp, badbuf);
+		return (NULL);
+	}
+	if ((sp->slab_head = next) == NULL) {
 		cp->cache_freelist = sp->slab_next;
 		ASSERT(sp->slab_refcnt == sp->slab_chunks);
 	}
@@ -1753,7 +1894,8 @@ umem_slab_free(umem_cache_t *cp, void *buf)
 		cp->cache_freelist = sp;
 	}
 
-	bcp->bc_next = sp->slab_head;
+	/* Mangled on store; see UMEM_LINK_MANGLE (P5.4). */
+	bcp->bc_next = UMEM_LINK_MANGLE(&bcp->bc_next, sp->slab_head);
 	sp->slab_head = bcp;
 
 	ASSERT(sp->slab_refcnt >= 1);
@@ -5750,8 +5892,15 @@ umem_init(void)
 	 * Initialize allocation profiling if configured via UMEM_OPTIONS
 	 * (profile=record:/path or profile=use:/path) or the UMEM_PROFILE
 	 * environment variable.
+	 *
+	 * P5.2: UMEM_PROFILE is read HERE, not through envvar.c's table, so
+	 * envvar.c's secure-mode filter does not cover it.  Gate it directly:
+	 * record: creates and truncates a caller-named file as this process's
+	 * uid.  umem_profile_spec is already empty in secure mode (the
+	 * "profile" option is marked secure-unsafe), but this second check is
+	 * not redundant -- it is the one that covers the env var.
 	 */
-	{
+	if (!umem_secure_mode()) {
 		const char *profile_env = getenv("UMEM_PROFILE");
 		if (umem_profile_spec[0] != '\0')
 			(void) umem_profile_init(umem_profile_spec);
