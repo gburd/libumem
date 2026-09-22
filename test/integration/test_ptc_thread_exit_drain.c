@@ -162,6 +162,41 @@ main(void)
 	if (w != NULL)
 		umem_free(w, OBJ_SIZE);
 
+#ifdef UMEM_PTC_RESIZE_PROBE
+	/*
+	 * EXACT ORACLE (preferred).  Linked against a libumem built with
+	 * -DUMEM_PTC_RESIZE_PROBE, which counts objects still sitting in a PTC
+	 * bin at the instant the PTC is freed -- objects whose only reference
+	 * is being dropped while the slab layer still counts them allocated.
+	 *
+	 * Pre-fix this is nonzero (the half-flush left a remainder); post-fix
+	 * it is exactly zero.  No statistics, so nothing to straddle: the
+	 * comparison arms below sit on top of ordinary retention, which varies
+	 * run to run and made this test flaky when an unrelated change reduced
+	 * the control arm's retention.
+	 */
+	{
+		extern volatile long umem_ptc_probe_exit_stranded;
+
+		umem_ptc_enabled = 1;
+		umem_ptc_probe_exit_stranded = 0;
+		(void) measure_growth("probe");
+
+		printf("exit_stranded=%ld (objects still in a PTC bin when the "
+		    "PTC was freed)\n", umem_ptc_probe_exit_stranded);
+
+		if (umem_ptc_probe_exit_stranded != 0) {
+			printf("RESULT: FAIL (%ld objects lost at thread exit; "
+			    "the drain is incomplete)\n",
+			    umem_ptc_probe_exit_stranded);
+			return (1);
+		}
+		printf("RESULT: PASS (exact oracle: no object was left in a "
+		    "bin at thread exit)\n");
+		return (0);
+	}
+#endif
+
 	printf("arm 1: PTC enabled (the path under test)\n");
 	umem_ptc_enabled = 1;
 	growth_ptc = measure_growth("ptc");

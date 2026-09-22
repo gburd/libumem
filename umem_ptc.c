@@ -413,6 +413,38 @@ umem_ptc_free(void *ptr, size_t size)
  * which is intentional: the magazine layer is the correct next level in the
  * caching hierarchy (PTC -> magazine -> depot -> slab).
  */
+/*
+ * Exact drain accounting for the P1.3a regression.
+ *
+ * COMPILED OUT unless -DUMEM_PTC_RESIZE_PROBE is passed (see Makefile.am's
+ * libumem_ptcprobe); the default build has neither the counter nor a branch.
+ *
+ * Counts objects that were still in a PTC bin when the PTC was freed at thread
+ * exit -- i.e. objects whose only reference was about to be dropped while the
+ * slab layer still counted them as allocated.  Pre-fix this is nonzero (the
+ * half-flush left a remainder behind); post-fix it is exactly zero.
+ *
+ * This exists because the original regression compared OUTSTANDING BUFFER
+ * COUNTS between a PTC-on and PTC-off arm.  That works, but the signal sits on
+ * top of ordinary magazine/depot/slab retention, which varies run to run: when
+ * an unrelated change reduced the control arm's retention, the comparison
+ * tightened and the test grew flaky without the behaviour under test having
+ * changed at all.  An exact in-library count has no such coupling -- the same
+ * lesson as the P1.3c probe.
+ */
+#ifdef UMEM_PTC_RESIZE_PROBE
+volatile long umem_ptc_probe_exit_stranded = 0;
+#define	UMEM_PTC_PROBE_STRANDED(n)					\
+	do {								\
+		if ((n) > 0)						\
+			(void) __atomic_add_fetch(			\
+			    &umem_ptc_probe_exit_stranded, (long)(n),	\
+			    __ATOMIC_RELAXED);				\
+	} while (0)
+#else
+#define	UMEM_PTC_PROBE_STRANDED(n)	((void)0)
+#endif
+
 static void
 umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 {
@@ -557,7 +589,16 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 		}
 	}
 
-	/* Free the ptc structure itself */
+	/* Free the ptc structure itself.  Anything still in a bin here loses
+	 * its only reference, so count it before it is unreachable. */
+	{
+		int bi;
+		int stranded = 0;
+
+		for (bi = 0; bi < PTC_NBINS; bi++)
+			stranded += ptc->bins[bi].count;
+		UMEM_PTC_PROBE_STRANDED(stranded);
+	}
 	umem_free(ptc, sizeof(umem_ptc_t));
 }
 

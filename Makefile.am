@@ -462,6 +462,22 @@ test_integration_test_ptc_thread_exit_drain_SOURCES = \
 test_integration_test_ptc_thread_exit_drain_LDADD = libumem.la
 test_integration_test_ptc_thread_exit_drain_LDFLAGS = -pthread
 test_integration_test_ptc_thread_exit_drain_CPPFLAGS = -I$(srcdir)
+
+# ...and the exact-oracle variant.  The plain test above compares outstanding
+# buffer counts between a PTC-on and a PTC-off arm, which works but sits on top
+# of ordinary magazine/depot/slab retention: when an unrelated change reduced
+# the CONTROL arm's retention, the comparison tightened and the test straddled
+# its own margin while the behaviour under test had not changed (observed 5/29
+# vs 1/15).  This variant links a libumem with -DUMEM_PTC_RESIZE_PROBE and
+# counts objects still sitting in a PTC bin at the instant the PTC is freed --
+# nonzero pre-fix, exactly zero post-fix, with no statistical coupling.
+noinst_PROGRAMS += test/integration/test_ptc_thread_exit_drain_probe
+test_integration_test_ptc_thread_exit_drain_probe_SOURCES = \
+	test/integration/test_ptc_thread_exit_drain.c
+test_integration_test_ptc_thread_exit_drain_probe_LDADD = libumem_ptcprobe.la
+test_integration_test_ptc_thread_exit_drain_probe_LDFLAGS = -pthread
+test_integration_test_ptc_thread_exit_drain_probe_CPPFLAGS = \
+	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 test_integration_test_fork_mt_load_CPPFLAGS = -I$(srcdir)
 
 # P1.3b regression: a PTC magazine must never be used with a capacity that is
@@ -752,7 +768,18 @@ TESTS += test/unit/test_overflow_contracts \
 	test/stress/oracle_control.sh \
 	test/unit/test_lifecycle_churn \
 	test/bench/test_bench_accounting \
-	test/bench/check_budget.sh
+	test/bench/check_budget.sh \
+	test/integration/test_ptc_thread_exit_drain_probe \
+	test/integration/test_ptc_resize_no_loss_probe
+
+# NOTE which PTC variants are gated above: the _probe ones, which use exact
+# in-library counters (objects still in a bin when the PTC is freed; objects
+# still in a magazine when its shell is freed).  The plain variants compare
+# outstanding-buffer counts against a PTC-off control arm, which sits on top of
+# ordinary magazine/depot/slab retention and has been observed to straddle its
+# own margin when an unrelated change altered the CONTROL arm rather than the
+# behaviour under test.  Keep those buildable and run them by hand; do not gate
+# on a statistic when an exact count is available.
 
 TEST_EXTENSIONS = .sh
 # The .sh tests are '#!/usr/bin/env bash' scripts using bash-only syntax, and
