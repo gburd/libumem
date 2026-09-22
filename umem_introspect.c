@@ -45,8 +45,12 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
+#include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/types.h>
 
@@ -72,32 +76,108 @@ self_rss_kb(void)
 /* ---- option flag, set from envvar.c ---- */
 int umem_introspect_enabled = 0;
 
-/* ---- break engine state (only ever armed via the control channel) ---- */
+/*
+ * ---- break engine ----
+ *
+ * CONTRACT (Phase 3 item 5 of the production-readiness plan):
+ *
+ * B1. ALL predicate state (kind, size, cache name, sequence, leak set) is
+ *     read and written ONLY under brk_lock.  It used to be `volatile`, which
+ *     orders nothing: an allocating thread could read brk_kind while the
+ *     server was still filling in brk_cache, or scan brk_leakset while
+ *     break_disarm() freed it, or while cmd_sig_add() realloc'd it.
+ *
+ * B2. umem_introspect_break_armed is the only field the hot path touches
+ *     without the lock.  It is set LAST when arming and cleared FIRST when
+ *     disarming, so a thread that observes it set will then take brk_lock and
+ *     re-check a fully published predicate -- and a thread that observes it
+ *     clear simply skips the check.  It is therefore a hint, never the
+ *     decision.
+ *
+ * B3. A stopped thread waits for brk_generation to CHANGE from the value it
+ *     sampled under the lock, not for a specific value.  A thread that
+ *     matches after a "continue" has already been processed sees the newer
+ *     generation and returns immediately instead of waiting for an event that
+ *     already happened (the pre-fix code compared against a snapshot taken
+ *     before it had the lock and could strand a thread forever).
+ *
+ * B4. The SERVER THREAD never stops on a predicate.  A server-side allocation
+ *     matching the armed predicate would park the only thread that can
+ *     resume anything -- an unrecoverable self-deadlock.  brk_server_thread
+ *     is checked on the hot path.
+ *
+ * B5. FORK: the child has no server thread, so an armed predicate would stop
+ *     the child with nothing able to resume it.  umem_introspect_fork_child()
+ *     disarms unconditionally and resets the once-control so the child can
+ *     start its own server if it wants one.  Called from umem_fork.c's child
+ *     handler via the same weak-hook pattern as the interposer.
+ */
 volatile int umem_introspect_break_armed = 0;
 
 /* Break predicates. One active predicate at a time. ponytail: single
  * predicate -- chain them only if a real workflow needs AND/OR. */
 enum { BRK_NONE = 0, BRK_SIZE, BRK_CACHE, BRK_SEQ, BRK_LEAKED };
-static int brk_kind = BRK_NONE;
-static size_t brk_size;			/* BRK_SIZE */
-static char brk_cache[UMEM_CACHE_NAMELEN + 1];	/* BRK_CACHE */
-static uint64_t brk_seq;		/* BRK_SEQ target */
-static uint64_t brk_seq_counter;	/* global alloc counter for BRK_SEQ */
 
 /* Leak set: signatures (size + first stack PC) that a prior --learn-leaks
  * run found never freed. Loaded by "sig ..." lines then "break leaked". */
 struct leaksig { size_t size; uintptr_t pc; };
-static struct leaksig *brk_leakset;
-static size_t brk_leakset_n;
 
-/* Condvar the broken thread spins on until "continue". */
+/*
+ * Everything below is protected by brk_lock (B1).  brk_lock is a LEAF lock:
+ * nothing is acquired while it is held, and it is taken from the allocation
+ * path, so it must never be taken while holding an allocator lock.
+ */
 static pthread_mutex_t brk_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t brk_cv = PTHREAD_COND_INITIALIZER;
-static volatile int brk_continue;	/* bumped by "continue" */
-static volatile int brk_stopped;	/* a thread is currently stopped */
 
-/* ================= introspection walks (C mirror of umem_inspect.py) ===== */
+static int brk_kind = BRK_NONE;
+static size_t brk_size;			/* BRK_SIZE */
+static char brk_cache[UMEM_CACHE_NAMELEN + 1];	/* BRK_CACHE */
+static uint64_t brk_seq;		/* BRK_SEQ target */
+static uint64_t brk_seq_counter;	/* alloc counter for BRK_SEQ */
+static struct leaksig *brk_leakset;
+static size_t brk_leakset_n;
+static uint64_t brk_generation;		/* bumped by every "continue" (B3) */
+static int brk_stopped;			/* threads currently stopped */
 
+/* The server thread never stops on its own predicate (B4). */
+static volatile int brk_server_valid;
+static pthread_t brk_server_thread;
+
+/* Set armed only after the predicate is fully published (B2). */
+static void
+break_publish_locked(int armed)
+{
+	if (armed) {
+		umem_introspect_break_armed = 1;
+	} else {
+		umem_introspect_break_armed = 0;
+	}
+}
+
+/* ================= introspection walks (C mirror of umem_inspect.py) =====
+ *
+ * CACHE LIFETIME (Phase 3 item 1).  Every walk below holds umem_cache_lock
+ * for its whole duration.  umem_cache_destroy() unlinks under that lock and
+ * only then destroys the cache's locks and frees the descriptor, so without
+ * it a handler could follow a freed cache_next or read a freed descriptor.
+ * These handlers previously took NO allocator lock at all while walking
+ * caches, slabs, freelists, hash chains and audit records.
+ *
+ * NOTE ON OUTPUT.  fprintf() allocates, so it must not run under an allocator
+ * lock (it would re-enter the allocator under malloc interposition).  Each
+ * handler therefore either collects under the lock and prints after, or --
+ * where the output is per-cache and unbounded -- holds only umem_cache_lock,
+ * which the ALLOCATION path never takes.  umem_cache_lock is taken by
+ * umem_cache_create/destroy and the update thread, so printing under it can
+ * stall cache creation but cannot deadlock against the allocation that stdio
+ * itself performs.
+ *
+ * ponytail: reuse umem_inspect.c's two-phase collector here instead of two
+ * different rules, once the socket protocol is worth a refactor of its own.
+ */
+
+/* Caller holds umem_cache_lock. */
 static umem_cache_t *
 find_cache_by_name(const char *name)
 {
@@ -190,19 +270,25 @@ cmd_stats(FILE *out)
 	uint64_t depot_contention = 0, mag_reloads = 0;
 	int ncaches = 0;
 
+	(void) mutex_lock(&umem_cache_lock);
 	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
 	    cp = cp->cache_next) {
+		(void) mutex_lock(&cp->cache_lock);
 		inuse += cp->cache_slab_alloc - cp->cache_slab_free;
 		total += cp->cache_buftotal;
 		slab_create += cp->cache_slab_create;
 		slab_destroy += cp->cache_slab_destroy;
 		depot_contention += cp->cache_depot_contention;
 		mag_reloads += cp->cache_mag_reloads;
+		(void) mutex_unlock(&cp->cache_lock);
 		ncaches++;
 	}
+	(void) mutex_unlock(&umem_cache_lock);
+
+	/* Printed with no allocator lock held. */
 	fprintf(out, "pid %ld\n", (long)getpid());
 	fprintf(out, "caches %d\n", ncaches);
-	fprintf(out, "bufs_inuse %llu\n", (unsigned long long)inuse);
+	fprintf(out, "bufs_held %llu\n", (unsigned long long)inuse);
 	fprintf(out, "bufs_total %llu\n", (unsigned long long)total);
 	fprintf(out, "slab_create %llu\n", (unsigned long long)slab_create);
 	fprintf(out, "slab_destroy %llu\n", (unsigned long long)slab_destroy);
@@ -218,7 +304,8 @@ cmd_caches(FILE *out)
 {
 	umem_cache_t *cp;
 	fprintf(out, "%-32s %8s %10s %10s %8s\n",
-	    "name", "bufsize", "inuse", "total", "flags");
+	    "name", "bufsize", "held", "total", "flags");
+	(void) mutex_lock(&umem_cache_lock);
 	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
 	    cp = cp->cache_next) {
 		uint64_t inuse = cp->cache_slab_alloc - cp->cache_slab_free;
@@ -228,39 +315,67 @@ cmd_caches(FILE *out)
 		    (unsigned long long)cp->cache_buftotal,
 		    cp->cache_flags);
 	}
+	(void) mutex_unlock(&umem_cache_lock);
 	fprintf(out, ".\n");
 }
 
 static void
 cmd_cache(FILE *out, const char *name)
 {
-	umem_cache_t *cp = find_cache_by_name(name);
+	umem_cache_t *cp;
+	/* Copy every field out under the lock; the cache may be destroyed the
+	 * moment we release it. */
+	struct {
+		char name[UMEM_CACHE_NAMELEN + 1];
+		size_t bufsize, align, chunksize, slabsize;
+		int flags;
+		uint64_t slab_alloc, slab_free, buftotal;
+		uint64_t slab_create, slab_destroy;
+		uint64_t depot_contention, mag_reloads;
+	} c;
+
+	(void) mutex_lock(&umem_cache_lock);
+	cp = find_cache_by_name(name);
 	if (cp == NULL) {
+		(void) mutex_unlock(&umem_cache_lock);
 		fprintf(out, "no such cache: %s\n.\n", name);
 		return;
 	}
-	fprintf(out, "name %s\n", cp->cache_name);
-	fprintf(out, "bufsize %zu\n", cp->cache_bufsize);
-	fprintf(out, "align %zu\n", cp->cache_align);
-	fprintf(out, "chunksize %zu\n", cp->cache_chunksize);
-	fprintf(out, "slabsize %zu\n", cp->cache_slabsize);
-	fprintf(out, "flags 0x%x\n", cp->cache_flags);
-	fprintf(out, "slab_alloc %llu\n",
-	    (unsigned long long)cp->cache_slab_alloc);
-	fprintf(out, "slab_free %llu\n",
-	    (unsigned long long)cp->cache_slab_free);
-	fprintf(out, "inuse %llu\n",
-	    (unsigned long long)(cp->cache_slab_alloc - cp->cache_slab_free));
-	fprintf(out, "buftotal %llu\n",
-	    (unsigned long long)cp->cache_buftotal);
-	fprintf(out, "slab_create %llu\n",
-	    (unsigned long long)cp->cache_slab_create);
+	(void) mutex_lock(&cp->cache_lock);
+	(void) strncpy(c.name, cp->cache_name, sizeof (c.name) - 1);
+	c.name[sizeof (c.name) - 1] = '\0';
+	c.bufsize = cp->cache_bufsize;
+	c.align = cp->cache_align;
+	c.chunksize = cp->cache_chunksize;
+	c.slabsize = cp->cache_slabsize;
+	c.flags = cp->cache_flags;
+	c.slab_alloc = cp->cache_slab_alloc;
+	c.slab_free = cp->cache_slab_free;
+	c.buftotal = cp->cache_buftotal;
+	c.slab_create = cp->cache_slab_create;
+	c.slab_destroy = cp->cache_slab_destroy;
+	c.depot_contention = cp->cache_depot_contention;
+	c.mag_reloads = cp->cache_mag_reloads;
+	(void) mutex_unlock(&cp->cache_lock);
+	(void) mutex_unlock(&umem_cache_lock);
+
+	fprintf(out, "name %s\n", c.name);
+	fprintf(out, "bufsize %zu\n", c.bufsize);
+	fprintf(out, "align %zu\n", c.align);
+	fprintf(out, "chunksize %zu\n", c.chunksize);
+	fprintf(out, "slabsize %zu\n", c.slabsize);
+	fprintf(out, "flags 0x%x\n", c.flags);
+	fprintf(out, "slab_alloc %llu\n", (unsigned long long)c.slab_alloc);
+	fprintf(out, "slab_free %llu\n", (unsigned long long)c.slab_free);
+	fprintf(out, "held %llu\n",
+	    (unsigned long long)(c.slab_alloc - c.slab_free));
+	fprintf(out, "buftotal %llu\n", (unsigned long long)c.buftotal);
+	fprintf(out, "slab_create %llu\n", (unsigned long long)c.slab_create);
 	fprintf(out, "slab_destroy %llu\n",
-	    (unsigned long long)cp->cache_slab_destroy);
+	    (unsigned long long)c.slab_destroy);
 	fprintf(out, "depot_contention %llu\n",
-	    (unsigned long long)cp->cache_depot_contention);
-	fprintf(out, "mag_reloads %llu\n",
-	    (unsigned long long)cp->cache_mag_reloads);
+	    (unsigned long long)c.depot_contention);
+	fprintf(out, "mag_reloads %llu\n", (unsigned long long)c.mag_reloads);
 	fprintf(out, ".\n");
 }
 
@@ -271,51 +386,84 @@ cmd_whatis(FILE *out, uintptr_t addr)
 	size_t best_slabsize = 0;
 	uintptr_t best_base = 0;
 	umem_slab_t *best_slab = NULL;
+	/* Resolved under the lock, printed after it. */
+	char best_name[UMEM_CACHE_NAMELEN + 1];
+	size_t best_bufsize = 0, best_chunksize = 0;
+	uintptr_t buf = 0;
+	int alloc = 0;
 
+	(void) mutex_lock(&umem_cache_lock);
 	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
 	    cp = cp->cache_next) {
 		uintptr_t base;
-		umem_slab_t *sp = slab_of(cp, addr, &base);
-		if (sp == NULL)
+		umem_slab_t *sp;
+
+		(void) mutex_lock(&cp->cache_lock);
+		sp = slab_of(cp, addr, &base);
+		if (sp == NULL) {
+			(void) mutex_unlock(&cp->cache_lock);
 			continue;
-		if (best != NULL && cp->cache_slabsize >= best_slabsize)
+		}
+		if (best != NULL && cp->cache_slabsize >= best_slabsize) {
+			(void) mutex_unlock(&cp->cache_lock);
 			continue;
+		}
 		best = cp;
 		best_slabsize = cp->cache_slabsize;
 		best_base = base;
 		best_slab = sp;
+		best_bufsize = cp->cache_bufsize;
+		best_chunksize = cp->cache_chunksize;
+		(void) strncpy(best_name, cp->cache_name,
+		    sizeof (best_name) - 1);
+		best_name[sizeof (best_name) - 1] = '\0';
+		buf = addr - ((addr - best_base) % best_chunksize);
+		alloc = is_allocated(cp, sp, buf);
+		(void) mutex_unlock(&cp->cache_lock);
 	}
+	(void) mutex_unlock(&umem_cache_lock);
+
 	if (best == NULL) {
 		fprintf(out, "0x%lx: not a umem buffer\n.\n",
 		    (unsigned long)addr);
 		return;
 	}
-	{
-		uintptr_t buf = addr -
-		    ((addr - best_base) % best->cache_chunksize);
-		int alloc = is_allocated(best, best_slab, buf);
-		fprintf(out, "addr 0x%lx\n", (unsigned long)addr);
-		fprintf(out, "cache %s\n", best->cache_name);
-		fprintf(out, "bufsize %zu\n", best->cache_bufsize);
-		fprintf(out, "buffer 0x%lx\n", (unsigned long)buf);
-		fprintf(out, "slab 0x%lx\n", (unsigned long)best_slab);
-		fprintf(out, "state %s\n", alloc ? "allocated" : "free");
-		fprintf(out, ".\n");
-	}
+	fprintf(out, "addr 0x%lx\n", (unsigned long)addr);
+	fprintf(out, "cache %s\n", best_name);
+	fprintf(out, "bufsize %zu\n", best_bufsize);
+	fprintf(out, "buffer 0x%lx\n", (unsigned long)buf);
+	fprintf(out, "slab 0x%lx\n", (unsigned long)best_slab);
+	/*
+	 * "held", not "allocated": this reflects the slab/buftag view, so a
+	 * buffer the application has already freed into a magazine, an rseq
+	 * magazine or a PTC bin still reads held.  Same caveat as HELD in
+	 * umem_status_dump().
+	 */
+	fprintf(out, "state %s\n", alloc ? "held" : "free");
+	fprintf(out, ".\n");
 }
 
-/* Emit every currently-allocated buffer in audit caches, with its stack.
- * cb lets G3's learn-leaks reuse the same walk. */
+/* Emit every currently-held buffer in audit caches, with its stack.
+ * cb lets G3's learn-leaks reuse the same walk.
+ *
+ * Holds umem_cache_lock for the whole walk (cache lifetime) and each cache's
+ * cache_lock while reading its slabs, freelists and hash chains.  The
+ * callback prints, and stdio allocates: that allocation can take cc_lock and
+ * ml_lock, which are BELOW cache_lock in THE ONE TRUE LOCK ORDER, so the
+ * cache_lock is dropped around the callback. */
 static void
 walk_leaks(void (*cb)(umem_bufctl_audit_t *bcap, umem_cache_t *cp, void *arg),
     void *arg)
 {
 	umem_cache_t *cp;
+
+	(void) mutex_lock(&umem_cache_lock);
 	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
 	    cp = cp->cache_next) {
 		umem_slab_t *sp;
 		if (!(cp->cache_flags & UMF_AUDIT))
 			continue;
+		(void) mutex_lock(&cp->cache_lock);
 		for (sp = cp->cache_nullslab.slab_next;
 		    sp != &cp->cache_nullslab; sp = sp->slab_next) {
 			uintptr_t base = (uintptr_t)sp->slab_base;
@@ -326,11 +474,20 @@ walk_leaks(void (*cb)(umem_bufctl_audit_t *bcap, umem_cache_t *cp, void *arg),
 				if (!is_allocated(cp, sp, buf))
 					continue;
 				bcap = audit_bufctl_for(cp, buf);
-				if (bcap != NULL)
-					cb(bcap, cp, arg);
+				if (bcap == NULL)
+					continue;
+				/* Print without cache_lock (stdio allocates);
+				 * umem_cache_lock still pins the cache, and
+				 * the slab cannot be destroyed while it holds
+				 * this held buffer. */
+				(void) mutex_unlock(&cp->cache_lock);
+				cb(bcap, cp, arg);
+				(void) mutex_lock(&cp->cache_lock);
 			}
 		}
+		(void) mutex_unlock(&cp->cache_lock);
 	}
+	(void) mutex_unlock(&umem_cache_lock);
 }
 
 static void
@@ -383,11 +540,16 @@ cmd_learn_leaks(FILE *out)
 
 /* =============================== break engine ============================ */
 
+/* Defined with the server, below; declared here for the fork-child reset. */
+static void introspect_once_reset(void);
+
+/* Caller holds brk_lock.  Frees the leak set, so no thread may be scanning
+ * it -- guaranteed because scanning also happens under brk_lock (B1). */
 static void
-break_disarm(void)
+break_disarm_locked(void)
 {
+	break_publish_locked(0);
 	brk_kind = BRK_NONE;
-	umem_introspect_break_armed = 0;
 	free(brk_leakset);
 	brk_leakset = NULL;
 	brk_leakset_n = 0;
@@ -399,36 +561,57 @@ static void
 cmd_break(FILE *out, char *arg)
 {
 	int keep_leakset = (strcmp(arg, "leaked") == 0);
-	if (!keep_leakset)
-		break_disarm();
-	else
-		brk_kind = BRK_NONE;	/* keep leak set already loaded */
+	int kind = BRK_NONE;
+	size_t size = 0;
+	uint64_t seq = 0;
+	char cname[UMEM_CACHE_NAMELEN + 1];
 
+	cname[0] = '\0';
+
+	/* Parse BEFORE touching shared state, so a bad predicate cannot
+	 * leave a half-armed engine behind. */
 	if (strncmp(arg, "size=", 5) == 0) {
-		brk_kind = BRK_SIZE;
-		brk_size = (size_t)strtoull(arg + 5, NULL, 0);
+		kind = BRK_SIZE;
+		size = (size_t)strtoull(arg + 5, NULL, 0);
 	} else if (strncmp(arg, "cache=", 6) == 0) {
-		brk_kind = BRK_CACHE;
-		strncpy(brk_cache, arg + 6, sizeof (brk_cache) - 1);
-		brk_cache[sizeof (brk_cache) - 1] = '\0';
+		kind = BRK_CACHE;
+		strncpy(cname, arg + 6, sizeof (cname) - 1);
+		cname[sizeof (cname) - 1] = '\0';
 	} else if (strncmp(arg, "seq=", 4) == 0) {
-		brk_kind = BRK_SEQ;
-		brk_seq = strtoull(arg + 4, NULL, 0);
-		brk_seq_counter = 0;
+		kind = BRK_SEQ;
+		seq = strtoull(arg + 4, NULL, 0);
 	} else if (strncmp(arg, "token=", 6) == 0) {
 		/* Token break: stop the next allocation (one-shot), used by
 		 * the recording-token flow (a 'BREAK' marker in a stream). */
-		brk_kind = BRK_SEQ;
-		brk_seq = 1;
-		brk_seq_counter = 0;
+		kind = BRK_SEQ;
+		seq = 1;
 	} else if (strcmp(arg, "leaked") == 0) {
-		brk_kind = BRK_LEAKED;
-		/* leak set already loaded via 'sig' lines before this. */
+		kind = BRK_LEAKED;
 	} else {
 		fprintf(out, "bad predicate: %s\n.\n", arg);
 		return;
 	}
-	umem_introspect_break_armed = 1;
+
+	(void) pthread_mutex_lock(&brk_lock);
+	if (keep_leakset) {
+		/* Keep the already-loaded leak set; just disarm the hot path
+		 * while we swap the predicate in. */
+		break_publish_locked(0);
+		brk_kind = BRK_NONE;
+	} else {
+		break_disarm_locked();
+	}
+
+	brk_size = size;
+	brk_seq = seq;
+	brk_seq_counter = 0;
+	if (kind == BRK_CACHE)
+		memcpy(brk_cache, cname, sizeof (brk_cache));
+	brk_kind = kind;
+	/* Published last (B2). */
+	break_publish_locked(1);
+	(void) pthread_mutex_unlock(&brk_lock);
+
 	fprintf(out, "ok armed\n.\n");
 }
 
@@ -440,31 +623,45 @@ cmd_sig_add(FILE *out, char *arg)
 	uintptr_t pc = 0;
 	char *p;
 	struct leaksig *ns;
+	size_t n;
+
 	if ((p = strstr(arg, "size=")) != NULL)
 		sz = (size_t)strtoull(p + 5, NULL, 0);
 	if ((p = strstr(arg, "pc=")) != NULL)
 		pc = (uintptr_t)strtoull(p + 3, NULL, 0);
+
+	(void) pthread_mutex_lock(&brk_lock);
+	/*
+	 * The realloc happens under brk_lock, so it cannot move the array
+	 * out from under a thread scanning it in break_check (B1).  Pre-fix
+	 * this could realloc while a predicate was live.
+	 */
 	ns = realloc(brk_leakset, (brk_leakset_n + 1) * sizeof (*brk_leakset));
 	if (ns == NULL) {
+		(void) pthread_mutex_unlock(&brk_lock);
 		fprintf(out, "sig oom\n.\n");
 		return;
 	}
 	brk_leakset = ns;
 	brk_leakset[brk_leakset_n].size = sz;
 	brk_leakset[brk_leakset_n].pc = pc;
-	brk_leakset_n++;
-	fprintf(out, "ok sig %zu\n.\n", brk_leakset_n);
+	n = ++brk_leakset_n;
+	(void) pthread_mutex_unlock(&brk_lock);
+
+	fprintf(out, "ok sig %zu\n.\n", n);
 }
 
 static void
 cmd_continue(FILE *out)
 {
 	(void) pthread_mutex_lock(&brk_lock);
-	brk_continue++;
+	brk_generation++;
+	/* Disarm under the SAME lock acquisition as the generation bump, so a
+	 * thread cannot match a predicate that "continue" has already
+	 * retired. */
+	break_disarm_locked();
 	(void) pthread_cond_broadcast(&brk_cv);
 	(void) pthread_mutex_unlock(&brk_lock);
-	/* Also disarm so we don't immediately re-trip. */
-	break_disarm();
 	fprintf(out, "ok continue\n.\n");
 }
 
@@ -472,11 +669,29 @@ cmd_continue(FILE *out)
  * Hot-path hook, called ONLY when umem_introspect_break_armed != 0. Decides
  * whether the current allocation matches an armed predicate and, if so,
  * blocks the allocating thread on the condvar until "continue".
+ *
+ * brk_lock is a leaf lock taken from the allocation path; see B1.
  */
 void
 umem_introspect_break_check(void *buf, size_t size, umem_cache_t *cp)
 {
 	int match = 0;
+	uint64_t my_gen;
+
+	/*
+	 * B4: never stop the server thread.  It is the only thread that can
+	 * process "continue", so parking it is unrecoverable.
+	 */
+	if (brk_server_valid && pthread_equal(pthread_self(), brk_server_thread))
+		return;
+
+	(void) pthread_mutex_lock(&brk_lock);
+
+	/* Re-check under the lock: armed is only a hint (B2). */
+	if (!umem_introspect_break_armed) {
+		(void) pthread_mutex_unlock(&brk_lock);
+		return;
+	}
 
 	switch (brk_kind) {
 	case BRK_SIZE:
@@ -487,7 +702,7 @@ umem_introspect_break_check(void *buf, size_t size, umem_cache_t *cp)
 		    strcmp(cp->cache_name, brk_cache) == 0);
 		break;
 	case BRK_SEQ:
-		match = (__sync_add_and_fetch(&brk_seq_counter, 1) == brk_seq);
+		match = (++brk_seq_counter == brk_seq);
 		break;
 	case BRK_LEAKED: {
 		/* Match on size; the learned set already narrowed to leaked
@@ -505,22 +720,56 @@ umem_introspect_break_check(void *buf, size_t size, umem_cache_t *cp)
 	default:
 		break;
 	}
-	if (!match)
-		return;
 
-	/* Stop this (allocating) thread until a client sends "continue". */
-	(void) pthread_mutex_lock(&brk_lock);
-	{
-		int start = brk_continue;
-		brk_stopped = 1;
-		log_message("umem: BREAK: thread stopped before returning "
-		    "buf=%p size=%zu cache=%s (umemctl continue to resume)\n",
-		    buf, size, cp ? cp->cache_name : "?");
-		while (brk_continue == start)
-			(void) pthread_cond_wait(&brk_cv, &brk_lock);
-		brk_stopped = 0;
+	if (!match) {
+		(void) pthread_mutex_unlock(&brk_lock);
+		return;
 	}
+
+	/*
+	 * Stop until the generation advances (B3).  Sampling the generation
+	 * under the same lock acquisition that decided the match is what
+	 * makes this race-free: a "continue" processed before we got here has
+	 * already disarmed the predicate, so we could not have matched.
+	 */
+	my_gen = brk_generation;
+	brk_stopped++;
+	log_message("umem: BREAK: thread stopped before returning "
+	    "buf=%p size=%zu cache=%s (umemctl continue to resume)\n",
+	    buf, size, cp ? cp->cache_name : "?");
+	while (brk_generation == my_gen)
+		(void) pthread_cond_wait(&brk_cv, &brk_lock);
+	brk_stopped--;
+
 	(void) pthread_mutex_unlock(&brk_lock);
+}
+
+/*
+ * Fork child reset (B5).  Called from umem_fork.c's child handler through a
+ * weak hook, the same mechanism the malloc interposer uses.
+ *
+ * The child inherits an armed predicate and a completed pthread_once, but NOT
+ * the server thread.  Without this, an armed child stops on its next matching
+ * allocation with nothing alive to resume it, and could not even start a new
+ * server because the once-control was already satisfied.
+ *
+ * Runs single-threaded in the child, after umem_fork.c has released the
+ * allocator locks.
+ */
+void
+umem_introspect_fork_child(void)
+{
+	(void) pthread_mutex_init(&brk_lock, NULL);
+	(void) pthread_cond_init(&brk_cv, NULL);
+
+	break_disarm_locked();	/* single-threaded here; no lock needed */
+	brk_generation = 0;
+	brk_seq_counter = 0;
+	brk_stopped = 0;
+	brk_server_valid = 0;
+
+	/* Let the child start its own server thread if it asks to. */
+	introspect_once_reset();
 }
 
 /* =============================== server ================================== */
@@ -536,28 +785,58 @@ snapshot(struct logsnap *s)
 {
 	umem_cache_t *cp;
 	memset(s, 0, sizeof (*s));
+	(void) mutex_lock(&umem_cache_lock);
 	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
 	    cp = cp->cache_next) {
 		s->slab_create += cp->cache_slab_create;
 		s->slab_destroy += cp->cache_slab_destroy;
 		s->inuse += cp->cache_slab_alloc - cp->cache_slab_free;
 	}
+	(void) mutex_unlock(&umem_cache_lock);
 }
 
 /* logtail / record: stream deltas until the client disconnects. The stream
  * is derived by polling counters the allocator already maintains, so it adds
  * no hot-path cost (no alloc/free hook). ponytail: 5 Hz poll -- fine for a
  * log tail; hook slab_create/destroy directly only if sub-poll latency
- * matters. */
+ * matters.
+ *
+ * DISCONNECT DETECTION.  An idle logtail writes nothing, so a vanished client
+ * used to go unnoticed indefinitely -- and because one client owns the server
+ * until it disconnects, that wedged the whole channel.  Each poll now also
+ * checks for EOF on the socket, which is readable-with-zero-bytes once the
+ * peer is gone, so an idle logtail notices a dead client within one tick. */
 static void
 cmd_logtail(FILE *out)
 {
 	struct logsnap prev, cur;
+	int fd = fileno(out);
+
 	snapshot(&prev);
 	fprintf(out, "logtail start pid=%ld\n", (long)getpid());
 	fflush(out);
 	for (;;) {
 		usleep(200 * 1000);	/* ~5 Hz poll */
+
+		/* Client gone?  POLLHUP/POLLERR, or readable-at-EOF. */
+		if (fd >= 0) {
+			struct pollfd pfd;
+			pfd.fd = fd;
+			pfd.events = POLLIN;
+			pfd.revents = 0;
+			if (poll(&pfd, 1, 0) > 0) {
+				if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
+					break;
+				if (pfd.revents & POLLIN) {
+					char c;
+					ssize_t r = recv(fd, &c, 1,
+					    MSG_PEEK | MSG_DONTWAIT);
+					if (r == 0)
+						break;	/* orderly EOF */
+				}
+			}
+		}
+
 		snapshot(&cur);
 		if (cur.slab_create != prev.slab_create)
 			fprintf(out, "slab_create total=%llu (+%llu)\n",
@@ -570,7 +849,7 @@ cmd_logtail(FILE *out)
 			    (unsigned long long)(cur.slab_destroy -
 			    prev.slab_destroy));
 		if (cur.inuse != prev.inuse)
-			fprintf(out, "inuse %llu (%+lld)\n",
+			fprintf(out, "held %llu (%+lld)\n",
 			    (unsigned long long)cur.inuse,
 			    (long long)cur.inuse - (long long)prev.inuse);
 		if (fflush(out) != 0)
@@ -630,33 +909,153 @@ sock_path(char *buf, size_t n)
 	return (buf);
 }
 
+/*
+ * AUTHORIZATION (Phase 3 item 4).
+ *
+ * A1. The socket is created with mode 0600 explicitly, via a umask that is
+ *     set around bind() rather than inherited.  The control channel can arm
+ *     break predicates, i.e. STOP THE TARGET PROCESS, so an inherited 0022
+ *     umask leaving it group/other-readable is a real exposure.
+ *
+ * A2. Every connection's peer credentials are checked with SO_PEERCRED: only
+ *     the same uid, or root, is served.  File permissions alone are not
+ *     enough -- the path may live on a filesystem that ignores them, and the
+ *     socket may be inherited.
+ *
+ * A3. The stale-path unlink is no longer unconditional.  It used to remove
+ *     whatever was at the path before binding, so a second process (or a
+ *     hostile one) could displace a live server's socket, or delete an
+ *     unrelated file if UMEM_INTROSPECT_SOCK pointed at one.  Now a bind is
+ *     attempted first, and the path is only removed if it is a socket that
+ *     nothing is listening on.
+ */
+static int
+peer_is_authorized(int cfd)
+{
+#ifdef SO_PEERCRED
+	struct ucred cred;
+	socklen_t len = sizeof (cred);
+
+	if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred, &len) != 0)
+		return (0);	/* cannot verify -> refuse */
+	if (cred.uid == getuid() || cred.uid == geteuid() || cred.uid == 0)
+		return (1);
+	log_message("umem: introspect: refused connection from uid %ld\n",
+	    (long)cred.uid);
+	return (0);
+#else
+	/*
+	 * No peer-credential primitive on this platform.  The 0600 socket mode
+	 * is then the only control; say so rather than pretending otherwise.
+	 */
+	(void) cfd;
+	return (1);
+#endif
+}
+
+/* Bind, reclaiming only a socket path that nothing is listening on (A3). */
+static int
+bind_control_socket(int lfd, const char *path)
+{
+	struct sockaddr_un addr;
+	mode_t old;
+	int rc;
+
+	memset(&addr, 0, sizeof (addr));
+	addr.sun_family = AF_UNIX;
+	strncpy(addr.sun_path, path, sizeof (addr.sun_path) - 1);
+
+	/* 0600 regardless of the inherited umask (A1). */
+	old = umask(077);
+	rc = bind(lfd, (struct sockaddr *)&addr, sizeof (addr));
+	if (rc < 0 && errno == EADDRINUSE) {
+		/*
+		 * Something is at the path.  Only reclaim it if it is a socket
+		 * with no listener -- i.e. a leftover from a dead process.
+		 */
+		struct stat sb;
+		int probe;
+		if (stat(path, &sb) == 0 && S_ISSOCK(sb.st_mode) &&
+		    (probe = socket(AF_UNIX, SOCK_STREAM, 0)) >= 0) {
+			int live = (connect(probe,
+			    (struct sockaddr *)&addr, sizeof (addr)) == 0);
+			(void) close(probe);
+			if (!live) {
+				(void) unlink(path);
+				rc = bind(lfd, (struct sockaddr *)&addr,
+				    sizeof (addr));
+			} else {
+				log_message("umem: introspect: %s already "
+				    "has a live server; not replacing it\n",
+				    path);
+			}
+		}
+	}
+	(void) umask(old);
+
+	/* Belt and braces: bind() honours the umask, chmod states the intent
+	 * and fixes up any platform that does not. */
+	if (rc == 0)
+		(void) chmod(path, S_IRUSR | S_IWUSR);
+	return (rc);
+}
+
 static void *
 introspect_thread(void *unused)
 {
 	char path[108];
-	struct sockaddr_un addr;
 	int lfd;
 
 	(void) unused;
+
+	/*
+	 * SIGPIPE (Phase 3 item 4).  Responses go out through stdio on a
+	 * socket; a client that disconnects mid-response makes the write raise
+	 * SIGPIPE, whose default action TERMINATES THE TARGET PROCESS.  A
+	 * debugging channel must never be able to kill the program it is
+	 * inspecting.
+	 *
+	 * Blocked per-thread rather than SIG_IGN'd process-wide: the
+	 * disposition is shared state that belongs to the application, and
+	 * libumem must not change it behind the application's back.  Blocking
+	 * is thread-local, so writes here fail with EPIPE while the
+	 * application's own SIGPIPE handling is untouched.
+	 */
+	{
+		sigset_t pipeset;
+		(void) sigemptyset(&pipeset);
+		(void) sigaddset(&pipeset, SIGPIPE);
+		(void) pthread_sigmask(SIG_BLOCK, &pipeset, NULL);
+	}
+
+	/* Record identity so break_check never parks this thread (B4). */
+	brk_server_thread = pthread_self();
+	brk_server_valid = 1;
+
 	sock_path(path, sizeof (path));
-	(void) unlink(path);
 
 	lfd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (lfd < 0)
 		return (NULL);
-	memset(&addr, 0, sizeof (addr));
-	addr.sun_family = AF_UNIX;
-	strncpy(addr.sun_path, path, sizeof (addr.sun_path) - 1);
-	if (bind(lfd, (struct sockaddr *)&addr, sizeof (addr)) < 0 ||
-	    listen(lfd, 4) < 0) {
+	if (bind_control_socket(lfd, path) < 0 || listen(lfd, 4) < 0) {
 		close(lfd);
 		return (NULL);
 	}
-	log_message("umem: introspect socket at %s\n", path);
+	log_message("umem: introspect socket at %s (mode 0600, same-uid "
+	    "peers only)\n", path);
 
-	/* ponytail: single client served at a time; each connection is a
-	 * short request/response or a long stream. Fork a per-client thread
-	 * only if concurrent umemctl sessions become a real need. */
+	/*
+	 * CONCURRENCY LIMIT, stated honestly: ONE CLIENT AT A TIME.  A
+	 * connection is served to completion before the next is accepted, so a
+	 * long-lived stream (logtail/record) blocks every other command
+	 * INCLUDING "continue".  Do not hold a logtail open on the same socket
+	 * you intend to resume a break with -- use a second, sequential
+	 * connection, or stop the logtail first.
+	 *
+	 * ponytail: serial accept loop.  A per-client thread is the upgrade
+	 * path, and needs the break engine's single-predicate model revisited
+	 * first (two clients arming different predicates is undefined today).
+	 */
 	for (;;) {
 		int cfd = accept(lfd, NULL, NULL);
 		FILE *out;
@@ -666,21 +1065,41 @@ introspect_thread(void *unused)
 				continue;
 			break;
 		}
+		if (!peer_is_authorized(cfd)) {
+			close(cfd);
+			continue;
+		}
 		out = fdopen(cfd, "r+");
 		if (out == NULL) {
 			close(cfd);
 			continue;
 		}
-		while (fgets(line, sizeof (line), out) != NULL)
+		while (fgets(line, sizeof (line), out) != NULL) {
 			handle_line(out, line);
+			/* Client vanished mid-conversation: with SIGPIPE
+			 * blocked the write failed with EPIPE instead of
+			 * killing us.  Drop the connection. */
+			if (ferror(out))
+				break;
+		}
 		fclose(out);
 	}
 	close(lfd);
 	(void) unlink(path);
+	brk_server_valid = 0;
 	return (NULL);
 }
 
 static pthread_once_t introspect_once = PTHREAD_ONCE_INIT;
+
+/* Re-arm the once-control in a fork child (B5): the child inherited a
+ * SATISFIED once with no server thread to show for it. */
+static void
+introspect_once_reset(void)
+{
+	static const pthread_once_t fresh = PTHREAD_ONCE_INIT;
+	introspect_once = fresh;
+}
 
 static void
 introspect_launch(void)

@@ -67,6 +67,14 @@ void umem_introspect_start(void);
 void umem_introspect_break_check(void *buf, size_t size,
     struct umem_cache *cp);
 
+/*
+ * Fork child reset.  Called from umem_fork.c's child handler (weak hook, like
+ * the malloc interposer's).  The child inherits an armed break predicate and a
+ * satisfied pthread_once but NOT the server thread, so without this an armed
+ * child can stop on an allocation with nothing alive to resume it.
+ */
+void umem_introspect_fork_child(void);
+
 #else /* !UMEM_INTROSPECT */
 
 #define	umem_introspect_break_armed 0

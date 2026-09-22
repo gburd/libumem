@@ -28,9 +28,13 @@
 
 #include "config.h"
 #include "umem_impl.h"
+#include "umem_base.h"
 #include "umem_inspect.h"
 #include "umem_stacktrace.h"
 #include "misc.h"
+#ifdef UMEM_RSEQ_AVAILABLE
+#include "umem_rseq.h"
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
@@ -141,18 +145,124 @@ umem_inspect_notify(umem_event_t ev, const umem_buffer_info_t *info)
  * Helpers: cache list walking.
  * ------------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------------
+ * CACHE LIFETIME AND SNAPSHOT CONTRACT  (Phase 3 items 1, 2 and 7 of
+ * docs/plans/2026-09-21-production-readiness.md).  Also stated for callers
+ * in umem_inspect.h -- keep the two in agreement.
+ *
+ * C1. CACHE LIFETIME.  umem_cache_lock protects the global cache list
+ *     linkage.  umem_cache_destroy() unlinks a cache under that lock and
+ *     only then destroys its locks and frees the descriptor, so a walker
+ *     that holds umem_cache_lock across the ENTIRE walk cannot follow a
+ *     freed link or lock a freed cache.  Every cache-list walk in this file
+ *     therefore holds umem_cache_lock for its whole duration.  This is the
+ *     same rule umem_cache_applyall() in umem.c relies on.
+ *
+ *     Consequence: inspection blocks umem_cache_create()/umem_cache_destroy()
+ *     while it collects.  It does not block allocation.
+ *
+ * C2. NO ALLOCATION, NO STDIO, NO USER CODE UNDER AN ALLOCATOR LOCK.
+ *     Collection copies into a buffer that was allocated BEFORE any lock was
+ *     taken; formatting, sorting, classification, file I/O and public walker
+ *     callbacks all run with every allocator lock released.  Anything else
+ *     deadlocks under malloc interposition, where a calloc()/fprintf() inside
+ *     the walk re-enters the allocator and blocks on a lock the walk holds.
+ *
+ * C3. WHAT IS CONSISTENT.  Per cache, the collected buffer set is a snapshot
+ *     taken under that cache's locks, so it is internally consistent.  Across
+ *     caches it is NOT one instant: cache A is read before cache B, and
+ *     allocation continues in between.  umem_cache_lock only freezes the set
+ *     of caches, not their contents.
+ *
+ *     Because the destination buffer is sized before the locks are taken, a
+ *     cache that grows past the estimate truncates the snapshot.  Collection
+ *     detects that (it keeps counting past capacity), grows, and retries;
+ *     after UMEM_SNAP_TRIES attempts it reports truncation rather than
+ *     silently under-reporting.
+ *
+ * C4. WHAT MAY BE TORN.  Statistics counters (cache_slab_alloc,
+ *     cache_buftotal, ...) are plain 64-bit fields read under cache_lock,
+ *     which is also what the allocator updates them under, so each is whole;
+ *     but a set of them read across two caches is not a single instant.  The
+ *     rseq per-CPU magazine state (cache_rseq[]) has no mutex at all -- it is
+ *     mutated from rseq critical sections -- so it is read best-effort and
+ *     clamped.  The transaction log is read under lh_lock, which only
+ *     protects chunk rotation; individual records are written under a per-CPU
+ *     clh_lock, so a record can be observed half-written.  Records are
+ *     filtered for plausibility, never trusted.
+ *
+ * C5. DEBUGGER USE.  These functions take allocator mutexes.  Calling them
+ *     from a debugger against a target that was stopped while one of those
+ *     mutexes was held will hang the call.  Retry, or take the snapshot from
+ *     inside the process.
+ * ------------------------------------------------------------------------ */
+
+/* Bounded retries when the buffer population outgrows the pre-sized
+ * snapshot buffer.  ponytail: a fixed retry count with honest truncation
+ * reporting; a quiesce protocol is the upgrade path if truncation is ever
+ * observed in practice. */
+#define	UMEM_SNAP_TRIES		5
+#define	UMEM_SNAP_SLACK		256
+
 typedef void (*cache_visitor_t)(umem_cache_t *cp, void *arg);
 
+/*
+ * Walk the cache list with umem_cache_lock held for the whole walk (C1).
+ * Visitors MUST NOT allocate, do stdio, or call user code (C2).
+ */
 static void
 for_each_cache(cache_visitor_t v, void *arg)
 {
-	umem_cache_t *cp = umem_null_cache.cache_next;
+	umem_cache_t *cp;
 	unsigned safety = 0;
 
+	(void) mutex_lock(&umem_cache_lock);
+	cp = umem_null_cache.cache_next;
 	while (cp != &umem_null_cache && safety++ < 65536) {
 		v(cp, arg);
 		cp = cp->cache_next;
 	}
+	(void) mutex_unlock(&umem_cache_lock);
+}
+
+/*
+ * Take every lock of one cache, in THE ONE TRUE LOCK ORDER documented in
+ * umem_fork.c: per-CPU cc_lock ascending, then the depot maglist locks, then
+ * cache_lock.  Needed by any collection that reads more than one layer --
+ * the cached-buffer set reads per-CPU magazines (cc_lock), depot lists
+ * (ml_lock) and cache_magtype (cache_lock) and previously held only
+ * cache_lock for all three.
+ *
+ * Caller holds umem_cache_lock, which is above all of these.
+ */
+static void
+cache_lock_all(umem_cache_t *cp)
+{
+	int i;
+
+	for (i = 0; i <= (int)cp->cache_cpu_mask; i++)
+		(void) mutex_lock(&cp->cache_cpu[i].cc_lock);
+
+	(void) mutex_lock(&cp->cache_full.ml_lock);
+	for (i = 0; i < cp->cache_depot_ncpus; i++)
+		(void) mutex_lock(&cp->cache_depot_full[i].ml_lock);
+
+	(void) mutex_lock(&cp->cache_lock);
+}
+
+static void
+cache_unlock_all(umem_cache_t *cp)
+{
+	int i;
+
+	(void) mutex_unlock(&cp->cache_lock);
+
+	for (i = cp->cache_depot_ncpus - 1; i >= 0; i--)
+		(void) mutex_unlock(&cp->cache_depot_full[i].ml_lock);
+	(void) mutex_unlock(&cp->cache_full.ml_lock);
+
+	for (i = (int)cp->cache_cpu_mask; i >= 0; i--)
+		(void) mutex_unlock(&cp->cache_cpu[i].cc_lock);
 }
 
 /* Size of a persisted audit record (fixed once umem_stack_depth is
@@ -234,24 +344,82 @@ info_from_bufctl(umem_cache_t *cp, umem_bufctl_t *bcp,
 }
 
 /* ------------------------------------------------------------------------
- * Public walkers.
+ * Two-phase collection: COLLECT under locks into a pre-sized array, then
+ * EMIT with every lock released (contract C2).
+ *
+ * The pre-sizing pass runs under the same locks, so the estimate is a real
+ * count and not a guess; the buffer is allocated between the two passes with
+ * no lock held.
  * ------------------------------------------------------------------------ */
 
-struct walk_ctx {
-	umem_buffer_cb_t cb;
-	void *arg;
-	size_t count;
-	int stop;
+struct snap {
+	umem_buffer_info_t *recs;
+	size_t cap;		/* records the buffer can hold */
+	size_t n;		/* records actually stored */
+	size_t needed;		/* records we would have stored (>= n) */
 };
 
 static void
-walk_allocated_cache(umem_cache_t *cp, void *arg)
+snap_put(struct snap *s, const umem_buffer_info_t *info)
 {
-	struct walk_ctx *ctx = arg;
-	umem_buffer_info_t info;
+	s->needed++;
+	if (s->n < s->cap)
+		s->recs[s->n++] = *info;
+}
 
-	if (ctx->stop)
-		return;
+static void
+snap_free(struct snap *s)
+{
+	free(s->recs);
+	s->recs = NULL;
+	s->cap = s->n = s->needed = 0;
+}
+
+/*
+ * Run `collect` repeatedly, growing the buffer until it holds everything.
+ * `collect` must only call snap_put() and must not allocate (C2).
+ *
+ * Returns 0 on success, -1 if the snapshot is still truncated after
+ * UMEM_SNAP_TRIES attempts (s->n < s->needed tells the caller how much).
+ */
+static int
+snap_collect(struct snap *s, void (*collect)(struct snap *, void *), void *arg)
+{
+	int try;
+
+	memset(s, 0, sizeof (*s));
+
+	for (try = 0; try < UMEM_SNAP_TRIES; try++) {
+		s->n = 0;
+		s->needed = 0;
+		collect(s, arg);
+		if (s->needed <= s->cap)
+			return (0);
+
+		/* Grow past what we just measured and retry, with no lock
+		 * held here -- this is the allocation C2 keeps out of the
+		 * locked region. */
+		size_t want = s->needed + s->needed / 4 + UMEM_SNAP_SLACK;
+		umem_buffer_info_t *nr = realloc(s->recs,
+		    want * sizeof (*nr));
+		if (nr == NULL)
+			break;
+		s->recs = nr;
+		s->cap = want;
+	}
+	return (-1);
+}
+
+/* ------------------------------------------------------------------------
+ * Per-cache collectors.  Every one of these runs with umem_cache_lock held
+ * by for_each_cache() and takes the cache's own locks itself.
+ * ------------------------------------------------------------------------ */
+
+static void
+collect_allocated_cache(umem_cache_t *cp, void *arg)
+{
+	struct snap *s = arg;
+	umem_buffer_info_t info;
 
 	(void) mutex_lock(&cp->cache_lock);
 
@@ -267,13 +435,8 @@ walk_allocated_cache(umem_cache_t *cp, void *arg)
 			unsigned safety = 0;
 			while (bcp != NULL && safety++ < (1u << 24)) {
 				if (info_from_bufctl(cp, bcp, &info,
-				    UMEM_BUF_ALLOCATED)) {
-					ctx->count++;
-					if (ctx->cb(&info, ctx->arg) != 0) {
-						ctx->stop = 1;
-						goto done;
-					}
-				}
+				    UMEM_BUF_ALLOCATED))
+					snap_put(s, &info);
 				bcp = bcp->bc_next;
 			}
 		}
@@ -297,36 +460,20 @@ walk_allocated_cache(umem_cache_t *cp, void *arg)
 				info.cache_name = cp->cache_name;
 				info.slab = sp;
 				info.state = UMEM_BUF_ALLOCATED;
-				ctx->count++;
-				if (ctx->cb(&info, ctx->arg) != 0) {
-					ctx->stop = 1;
-					goto done;
-				}
+				snap_put(s, &info);
 			}
 		}
 	}
 
-done:
 	(void) mutex_unlock(&cp->cache_lock);
 }
 
-size_t
-umem_walk_allocated(umem_buffer_cb_t cb, void *arg)
-{
-	struct walk_ctx ctx = { cb, arg, 0, 0 };
-	for_each_cache(walk_allocated_cache, &ctx);
-	return (ctx.count);
-}
-
 static void
-walk_freed_cache(umem_cache_t *cp, void *arg)
+collect_freed_cache(umem_cache_t *cp, void *arg)
 {
-	struct walk_ctx *ctx = arg;
+	struct snap *s = arg;
 	umem_buffer_info_t info;
 	umem_slab_t *sp;
-
-	if (ctx->stop)
-		return;
 
 	(void) mutex_lock(&cp->cache_lock);
 	for (sp = cp->cache_nullslab.slab_next;
@@ -336,24 +483,86 @@ walk_freed_cache(umem_cache_t *cp, void *arg)
 		unsigned safety = 0;
 		while (bcp != NULL && safety++ < (1u << 20)) {
 			info_from_bufctl(cp, bcp, &info, UMEM_BUF_FREE);
-			ctx->count++;
-			if (ctx->cb(&info, ctx->arg) != 0) {
-				ctx->stop = 1;
-				goto done;
-			}
+			snap_put(s, &info);
 			bcp = bcp->bc_next;
 		}
 	}
-done:
 	(void) mutex_unlock(&cp->cache_lock);
+}
+
+/* Only the caches findleaks reports on: skip allocator bookkeeping
+ * (UMC_NOHASH) and vmem quantum caches (UMC_QCACHE), whose buffers ARE the
+ * slabs of user caches and would double-count. */
+static int
+cache_is_user_visible(const umem_cache_t *cp)
+{
+	return ((cp->cache_cflags & (UMC_NOHASH | UMC_QCACHE)) == 0);
+}
+
+static void
+collect_allocated_user_cache(umem_cache_t *cp, void *arg)
+{
+	if (cache_is_user_visible(cp))
+		collect_allocated_cache(cp, arg);
+}
+
+static void
+collect_allocated_all(struct snap *s, void *arg)
+{
+	(void) arg;
+	for_each_cache(collect_allocated_cache, s);
+}
+
+static void
+collect_allocated_user(struct snap *s, void *arg)
+{
+	(void) arg;
+	for_each_cache(collect_allocated_user_cache, s);
+}
+
+static void
+collect_freed_all(struct snap *s, void *arg)
+{
+	(void) arg;
+	for_each_cache(collect_freed_cache, s);
+}
+
+/* ------------------------------------------------------------------------
+ * Public walkers.
+ *
+ * Contract: the callback runs with NO allocator lock held (C2), against a
+ * snapshot taken earlier.  It may therefore allocate, do I/O, and call back
+ * into libumem.  A nonzero return stops the walk.
+ * ------------------------------------------------------------------------ */
+
+static size_t
+walk_snapshot(void (*collect)(struct snap *, void *),
+    umem_buffer_cb_t cb, void *arg)
+{
+	struct snap s;
+	size_t i;
+
+	(void) snap_collect(&s, collect, NULL);
+	for (i = 0; i < s.n; i++) {
+		if (cb(&s.recs[i], arg) != 0) {
+			i++;
+			break;
+		}
+	}
+	snap_free(&s);
+	return (i);
+}
+
+size_t
+umem_walk_allocated(umem_buffer_cb_t cb, void *arg)
+{
+	return (walk_snapshot(collect_allocated_all, cb, arg));
 }
 
 size_t
 umem_walk_freed(umem_buffer_cb_t cb, void *arg)
 {
-	struct walk_ctx ctx = { cb, arg, 0, 0 };
-	for_each_cache(walk_freed_cache, &ctx);
-	return (ctx.count);
+	return (walk_snapshot(collect_freed_all, cb, arg));
 }
 
 /* ------------------------------------------------------------------------
@@ -364,10 +573,27 @@ umem_walk_freed(umem_buffer_cb_t cb, void *arg)
  * scan the whole chunk in stride and filter by "looks like a valid
  * audit record" (non-NULL addr and cache pointer that matches a known
  * cache).  This is what mdb's ::umem_logs does.
+ *
+ * LOCKING (contract C4).  lh_lock only protects CHUNK ROTATION; records are
+ * written under the per-CPU clh_lock.  Holding lh_lock therefore stops a
+ * chunk being recycled underneath the scan, but an individual record can be
+ * observed half-written.  That is why every field is range-checked and the
+ * record is dropped unless addr, cache and timestamp are all plausible --
+ * torn records are discarded, never trusted.  Taking every clh_lock as well
+ * would give a truly stable log, at the cost of stalling every logging CPU;
+ * the read is diagnostic, so the cheap option with explicit filtering is the
+ * deliberate choice.
+ *
+ * ponytail: filter-and-drop rather than a full log quiesce.  Take the
+ * clh_locks too if a torn record ever matters more than the stall does.
+ *
+ * The cache-list check runs under umem_cache_lock (C1) and the callback runs
+ * with no lock at all (C2).
  * ------------------------------------------------------------------------ */
 
+/* Caller holds umem_cache_lock. */
 static int
-is_known_cache(umem_cache_t *candidate)
+is_known_cache_locked(umem_cache_t *candidate)
 {
 	umem_cache_t *cp = umem_null_cache.cache_next;
 	unsigned safety = 0;
@@ -379,26 +605,31 @@ is_known_cache(umem_cache_t *candidate)
 	return (0);
 }
 
-size_t
-umem_walk_log(umem_buffer_cb_t cb, void *arg)
+static void
+collect_log(struct snap *s, void *arg)
 {
 	umem_log_header_t *lhp = umem_transaction_log;
 	size_t rec_sz = audit_record_size();
-	size_t visited = 0;
 
+	(void) arg;
 	if (lhp == NULL || rec_sz == 0)
-		return (0);
+		return;
 
+	/*
+	 * umem_cache_lock OUTSIDE lh_lock: THE ONE TRUE LOCK ORDER in
+	 * umem_fork.c puts the log headers last.  We need it for the whole
+	 * scan because every record names a cache we have to validate, and
+	 * because a cache must not be freed while we copy its name.
+	 */
+	(void) mutex_lock(&umem_cache_lock);
 	(void) mutex_lock(&lhp->lh_lock);
 
 	size_t chunksize = lhp->lh_chunksize;
 	char *base = lhp->lh_base;
 	int nchunks = lhp->lh_nchunks;
 
-	if (base == NULL || chunksize == 0 || nchunks <= 0) {
-		(void) mutex_unlock(&lhp->lh_lock);
-		return (0);
-	}
+	if (base == NULL || chunksize == 0 || nchunks <= 0)
+		goto out;
 
 	for (int c = 0; c < nchunks; c++) {
 		char *chunk = base + (size_t)c * chunksize;
@@ -409,7 +640,7 @@ umem_walk_log(umem_buffer_cb_t cb, void *arg)
 				continue;
 			if (rec->bc_cache == NULL)
 				continue;
-			if (!is_known_cache(rec->bc_cache))
+			if (!is_known_cache_locked(rec->bc_cache))
 				continue;
 			if (rec->bc_timestamp == 0)
 				continue;
@@ -435,16 +666,19 @@ umem_walk_log(umem_buffer_cb_t cb, void *arg)
 			for (int i = 0; i < info.depth; i++)
 				info.stack[i] = rec->bc_stack[i];
 
-			visited++;
-			if (cb(&info, arg) != 0) {
-				(void) mutex_unlock(&lhp->lh_lock);
-				return (visited);
-			}
+			snap_put(s, &info);
 		}
 	}
 
+out:
 	(void) mutex_unlock(&lhp->lh_lock);
-	return (visited);
+	(void) mutex_unlock(&umem_cache_lock);
+}
+
+size_t
+umem_walk_log(umem_buffer_cb_t cb, void *arg)
+{
+	return (walk_snapshot(collect_log, cb, arg));
 }
 
 /* ------------------------------------------------------------------------
@@ -493,63 +727,91 @@ json_escape(FILE *out, const char *s)
  * (loaded, previous, or depot) is logically free from the user's POV
  * but still appears in the cache's hash table because slab_free has
  * not run on it.  findleaks excludes these from its leak count.
+ *
+ * STORAGE (contract C2).  This is a flat, pre-sized array, not a chained hash
+ * table: it is populated while allocator locks are held, so it must not
+ * allocate.  It reuses the same grow-and-retry protocol as struct snap --
+ * fill up to capacity while counting what was needed, then grow outside the
+ * locks and refill.  The previous version called calloc() per inserted
+ * address with cache_lock held, which deadlocks under malloc interposition.
+ *
+ * Membership is by binary search after one sort, so insertion stays O(1)
+ * under the locks and duplicates are collapsed afterwards.
  * ------------------------------------------------------------------------ */
 
-#define CACHED_BUCKETS	8192
-
 struct cached_set {
-	struct cached_node {
-		void *addr;
-		struct cached_node *next;
-	} *buckets[CACHED_BUCKETS];
-	size_t count;
+	void **addrs;
+	size_t cap;		/* addrs[] capacity */
+	size_t n;		/* addresses stored */
+	size_t needed;		/* addresses we would have stored */
+	int sorted;
 };
 
+/* Append; no allocation, no dedup (dedup happens in cached_set_finish). */
 static void
 cached_set_add(struct cached_set *cs, void *addr)
 {
 	if (addr == NULL)
 		return;
-	size_t b = ((uintptr_t)addr * 11400714819323198485ULL) >> 51;
-	b &= (CACHED_BUCKETS - 1);
-	for (struct cached_node *n = cs->buckets[b]; n != NULL; n = n->next)
-		if (n->addr == addr)
-			return;
-	struct cached_node *n = calloc(1, sizeof (*n));
-	if (n == NULL)
-		return;
-	n->addr = addr;
-	n->next = cs->buckets[b];
-	cs->buckets[b] = n;
-	cs->count++;
+	cs->needed++;
+	if (cs->n < cs->cap)
+		cs->addrs[cs->n++] = addr;
+}
+
+static int
+cached_addr_compare(const void *a, const void *b)
+{
+	uintptr_t ua = (uintptr_t)*(void *const *)a;
+	uintptr_t ub = (uintptr_t)*(void *const *)b;
+	if (ua < ub)
+		return (-1);
+	if (ua > ub)
+		return (1);
+	return (0);
+}
+
+/* Sort + unique.  Called with no lock held, once collection is complete. */
+static void
+cached_set_finish(struct cached_set *cs)
+{
+	if (cs->n > 1) {
+		qsort(cs->addrs, cs->n, sizeof (cs->addrs[0]),
+		    cached_addr_compare);
+		size_t w = 1;
+		for (size_t i = 1; i < cs->n; i++)
+			if (cs->addrs[i] != cs->addrs[w - 1])
+				cs->addrs[w++] = cs->addrs[i];
+		cs->n = w;
+	}
+	cs->sorted = 1;
 }
 
 static int
 cached_set_contains(const struct cached_set *cs, void *addr)
 {
-	if (addr == NULL)
+	size_t lo = 0, hi = cs->n;
+
+	if (addr == NULL || cs->n == 0)
 		return (0);
-	size_t b = ((uintptr_t)addr * 11400714819323198485ULL) >> 51;
-	b &= (CACHED_BUCKETS - 1);
-	for (struct cached_node *n = cs->buckets[b]; n != NULL; n = n->next)
-		if (n->addr == addr)
+	while (lo < hi) {
+		size_t mid = lo + (hi - lo) / 2;
+		if (cs->addrs[mid] == addr)
 			return (1);
+		if ((uintptr_t)cs->addrs[mid] < (uintptr_t)addr)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
 	return (0);
 }
 
 static void
 cached_set_destroy(struct cached_set *cs)
 {
-	for (size_t i = 0; i < CACHED_BUCKETS; i++) {
-		struct cached_node *n = cs->buckets[i];
-		while (n != NULL) {
-			struct cached_node *next = n->next;
-			free(n);
-			n = next;
-		}
-		cs->buckets[i] = NULL;
-	}
-	cs->count = 0;
+	free(cs->addrs);
+	cs->addrs = NULL;
+	cs->cap = cs->n = cs->needed = 0;
+	cs->sorted = 0;
 }
 
 /*
@@ -569,8 +831,29 @@ cached_set_add_maglist(struct cached_set *cs, umem_magazine_t *mp, int cap,
 }
 
 /*
- * Build the cached set for a single cache: depot full mags + per-CPU
- * loaded/previous + per-CPU depot full mags.
+ * Build the cached set for a single cache.
+ *
+ * Covers every retention site reachable from the cache descriptor:
+ *   - the central depot's full magazine list
+ *   - the per-CPU depot stripes' full magazine lists
+ *   - each per-CPU loaded/previous magazine
+ *   - each rseq per-CPU loaded/previous magazine (when rseq is compiled in
+ *     and enabled)
+ *
+ * NOT covered, because they are thread-local with no process-wide registry:
+ * PTC bins and PTC per-thread magazines (umem_ptc.h).  See
+ * cached_set_unaccounted_note(); findleaks reports that gap explicitly rather
+ * than silently counting those buffers as outstanding.
+ *
+ * LOCKING (contract C2/C4).  Takes EVERY lock of the cache in THE ONE TRUE
+ * LOCK ORDER, because it reads three layers governed by three different
+ * locks: per-CPU magazines (cc_lock), depot lists (ml_lock) and
+ * cache_magtype (cache_lock).  It previously held only cache_lock while
+ * reading all three.  The rseq arrays have no lock by construction -- they
+ * are mutated from rseq critical sections -- so they are read best-effort
+ * with clamped counts; a concurrently migrating CPU can make that one read
+ * stale, which can only cause a buffer to be reported outstanding when it is
+ * actually cached, never the reverse.
  */
 static void
 cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
@@ -581,7 +864,7 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 	if (magsize <= 0)
 		return;
 
-	(void) mutex_lock(&cp->cache_lock);
+	cache_lock_all(cp);
 
 	/* Central depot: full magazines hold magsize rounds each. */
 	cached_set_add_maglist(cs, cp->cache_full.ml_list, magsize, 1u << 20);
@@ -614,7 +897,62 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 		}
 	}
 
-	(void) mutex_unlock(&cp->cache_lock);
+#ifdef UMEM_RSEQ_AVAILABLE
+	/*
+	 * rseq per-CPU magazines.  These were previously NOT subtracted, so in
+	 * a default (rseq-enabled) build every buffer parked in an rseq
+	 * magazine was reported as an outstanding allocation.
+	 */
+	if (cp->cache_rseq != NULL && umem_rseq_enabled) {
+		int n = umem_rseq_get_ncpus();
+		for (int i = 0; i < n; i++) {
+			umem_rseq_cache_t *rc = &cp->cache_rseq[i];
+			umem_magazine_t *mp;
+			int cap = rc->magsize;
+			int r;
+
+			if (cap <= 0 || cap > magsize)
+				cap = magsize;
+
+			mp = (umem_magazine_t *)rc->loaded_mag;
+			r = rc->rounds;
+			if (mp != NULL && r > 0) {
+				if (r > cap) r = cap;
+				for (int k = 0; k < r; k++)
+					cached_set_add(cs, mp->mag_round[k]);
+			}
+
+			mp = (umem_magazine_t *)rc->previous_mag;
+			r = rc->prounds;
+			if (mp != NULL && r > 0) {
+				if (r > cap) r = cap;
+				for (int k = 0; k < r; k++)
+					cached_set_add(cs, mp->mag_round[k]);
+			}
+		}
+	}
+#endif
+
+	cache_unlock_all(cp);
+}
+
+/*
+ * True if a retention site exists that cached_set_build_all() cannot
+ * enumerate, so the outstanding count is an upper bound rather than exact.
+ *
+ * Today that is exactly the PTC: bins and per-thread magazines live in
+ * thread-local storage (umem_ptc.h: __thread umem_ptc_t *thread_ptc) with no
+ * process-wide registry, so no other thread can reach them.  Making this
+ * exact requires a PTC registry in umem_ptc.c, which is an allocator change
+ * outside this file.
+ *
+ * ponytail: report the gap instead of guessing at it.  Subtract the PTC
+ * properly once umem_ptc.c publishes its per-thread caches.
+ */
+static int
+cached_set_has_unaccounted(void)
+{
+	return (umem_ptc_enabled != 0);
 }
 
 static void
@@ -623,10 +961,34 @@ cached_set_build_visit(umem_cache_t *cp, void *arg)
 	cached_set_build_cache((struct cached_set *)arg, cp);
 }
 
+/*
+ * Collect the cached set with the same grow-and-retry protocol as snap_*:
+ * fill under the locks while counting, grow outside them, refill.  Ends with
+ * the set sorted and deduplicated so cached_set_contains() works.
+ */
 static void
 cached_set_build_all(struct cached_set *cs)
 {
-	for_each_cache(cached_set_build_visit, cs);
+	int try;
+
+	memset(cs, 0, sizeof (*cs));
+
+	for (try = 0; try < UMEM_SNAP_TRIES; try++) {
+		cs->n = 0;
+		cs->needed = 0;
+		for_each_cache(cached_set_build_visit, cs);
+		if (cs->needed <= cs->cap)
+			break;
+
+		size_t want = cs->needed + cs->needed / 4 + UMEM_SNAP_SLACK;
+		void **na = realloc(cs->addrs, want * sizeof (*na));
+		if (na == NULL)
+			break;
+		cs->addrs = na;
+		cs->cap = want;
+	}
+
+	cached_set_finish(cs);
 }
 
 /* ------------------------------------------------------------------------
@@ -729,41 +1091,29 @@ leak_compare(const void *a, const void *b)
 }
 
 /*
- * Wrapper used by umem_findleaks(): classify only if the buffer is not
- * in the magazine cached set.  arg points to a findleaks_filter_arg.
- */
-struct findleaks_filter_arg {
-	struct leak_state *st;
-	struct cached_set *cs;
-	size_t *skipped;
-};
-
-static int
-leak_classify_filtered(const umem_buffer_info_t *info, void *arg)
-{
-	struct findleaks_filter_arg *ctx = arg;
-	if (cached_set_contains(ctx->cs, info->addr)) {
-		(*ctx->skipped)++;
-		return (0);
-	}
-	return (leak_classify(info, ctx->st));
-}
-
-/*
- * If we found cached buffers (skipped from the leak count), tell the
- * user how many -- a useful diagnostic when the count is unexpectedly
- * low or high.
+ * Tell the user what the count does and does not include.  The subtraction is
+ * only as good as the set of retention sites we can enumerate, and the honest
+ * framing is "outstanding allocations", not "leaks": a buffer the application
+ * legitimately still owns is outstanding too.
  */
 static void
 findleaks_emit_cache_note(FILE *out, umem_inspect_format_t fmt,
-    size_t cached_skipped)
+    size_t cached_skipped, int unaccounted)
 {
-	if (cached_skipped == 0 || fmt != UMEM_FMT_TEXT)
+	if (fmt != UMEM_FMT_TEXT)
 		return;
-	(void) fprintf(out,
-	    "(skipped %zu buffer%s currently sitting in magazines / per-CPU "
-	    "caches)\n\n",
-	    cached_skipped, cached_skipped == 1 ? "" : "s");
+	if (cached_skipped != 0)
+		(void) fprintf(out,
+		    "(subtracted %zu buffer%s resident in magazines / per-CPU "
+		    "caches / rseq magazines)\n",
+		    cached_skipped, cached_skipped == 1 ? "" : "s");
+	if (unaccounted)
+		(void) fputs(
+		    "(the per-thread cache is enabled: buffers retained in "
+		    "another thread's PTC bins or per-thread magazines cannot "
+		    "be enumerated and are counted as outstanding.  Run with "
+		    "UMEM_OPTIONS=ptc=0 for an exact count.)\n", out);
+	(void) fputc('\n', out);
 }
 
 size_t
@@ -771,6 +1121,9 @@ umem_findleaks(FILE *out, umem_inspect_format_t fmt, unsigned max_classes)
 {
 	struct leak_state st;
 	struct cached_set cs;
+	struct snap snap;
+	int truncated;
+	int unaccounted;
 
 	if (out == NULL)
 		out = stderr;
@@ -779,42 +1132,42 @@ umem_findleaks(FILE *out, umem_inspect_format_t fmt, unsigned max_classes)
 
 	(void) umem_stacktrace_init();
 	memset(&st, 0, sizeof (st));
-	memset(&cs, 0, sizeof (cs));
 
-	/* Build the magazine cached-buffer set so we can subtract
-	 * still-cached buffers from the leak count.  Without this,
-	 * any free() that landed in a magazine would look like a
-	 * leak. */
+	/*
+	 * Phase 1 (under locks): build the cached-buffer set so still-cached
+	 * buffers can be subtracted.  Without this, any free() that landed in
+	 * a magazine would look outstanding.
+	 */
 	cached_set_build_all(&cs);
+	unaccounted = cached_set_has_unaccounted();
 
-	/* Walk user-visible caches only.  Three kinds get skipped:
-	 *   - UMC_NOHASH: pure allocator bookkeeping (umem_slab_cache,
-	 *     umem_bufctl_*_cache, umem_magazine_*).
-	 *   - UMC_QCACHE: quantum caches backing a vmem arena.  Their
-	 *     buffers double-count with user allocations (the qcache
-	 *     buffer IS a user cache's slab).
-	 * Caller can get the full walk by calling umem_walk_allocated()
-	 * directly. */
-	size_t visited = 0;
+	/*
+	 * Phase 2 (under locks): snapshot the allocated buffers of every
+	 * user-visible cache.  Allocator-internal caches (UMC_NOHASH) and
+	 * vmem quantum caches (UMC_QCACHE, whose buffers ARE user caches'
+	 * slabs) are excluded; umem_walk_allocated() gives the full walk.
+	 *
+	 * This used to walk the cache list WITHOUT umem_cache_lock, so a
+	 * concurrent umem_cache_destroy() could free a cache out from under
+	 * the walk.  collect_allocated_user() holds it for the whole walk (C1).
+	 */
+	truncated = (snap_collect(&snap, collect_allocated_user, NULL) != 0);
+
+	/*
+	 * Phase 3 (NO locks held): classify.  leak_classify() calloc()s a
+	 * class per distinct stack, which is exactly the allocation that must
+	 * not happen inside the walk (C2).
+	 */
+	size_t visited = snap.n;
 	size_t cached_skipped = 0;
-	{
-		umem_cache_t *cp = umem_null_cache.cache_next;
-		unsigned safety = 0;
-		while (cp != &umem_null_cache && safety++ < 65536) {
-			if ((cp->cache_cflags & (UMC_NOHASH | UMC_QCACHE)) == 0) {
-				struct findleaks_filter_arg ctx_arg = {
-				    &st, &cs, &cached_skipped
-				};
-				struct walk_ctx ctx = {
-				    leak_classify_filtered,
-				    &ctx_arg, 0, 0,
-				};
-				walk_allocated_cache(cp, &ctx);
-				visited += ctx.count;
-			}
-			cp = cp->cache_next;
+	for (size_t i = 0; i < snap.n; i++) {
+		if (cached_set_contains(&cs, snap.recs[i].addr)) {
+			cached_skipped++;
+			continue;
 		}
+		(void) leak_classify(&snap.recs[i], &st);
 	}
+	snap_free(&snap);
 
 	/* Flatten into an array and sort. */
 	struct leak_class **arr = calloc(st.nclasses, sizeof (*arr));
@@ -841,9 +1194,11 @@ umem_findleaks(FILE *out, umem_inspect_format_t fmt, unsigned max_classes)
 		(void) fprintf(out,
 		    "{\"version\":%d,\"total_buffers\":%zu,"
 		    "\"total_bytes\":%zu,\"cached_skipped\":%zu,"
+		    "\"ptc_unaccounted\":%s,\"truncated\":%s,"
 		    "\"classes\":[",
 		    UMEM_INSPECT_VERSION, st.total_count, st.total_bytes,
-		    cached_skipped);
+		    cached_skipped, unaccounted ? "true" : "false",
+		    truncated ? "true" : "false");
 		for (size_t i = 0; i < shown; i++) {
 			struct leak_class *lc = arr[i];
 			(void) fprintf(out, "%s{\"count\":%zu,\"bytes\":%zu,"
@@ -862,13 +1217,26 @@ umem_findleaks(FILE *out, umem_inspect_format_t fmt, unsigned max_classes)
 		}
 		(void) fputs("]}\n", out);
 	} else {
+		/*
+		 * "outstanding allocations", not "leaks": every buffer here is
+		 * one the allocator has handed out and not got back, which
+		 * includes memory the application legitimately still owns.
+		 * Grouping by stack is what makes it useful -- a class that
+		 * grows across successive reports is the signal.
+		 */
 		(void) fprintf(out,
-		    "findleaks: %zu allocated buffer%s (%zu bytes) in %zu "
-		    "distinct leak class%s\n",
+		    "findleaks: %zu outstanding allocation%s (%zu bytes) in "
+		    "%zu distinct stack class%s\n",
 		    st.total_count, st.total_count == 1 ? "" : "s",
 		    st.total_bytes, st.nclasses,
 		    st.nclasses == 1 ? "" : "es");
-		findleaks_emit_cache_note(out, fmt, cached_skipped);
+		findleaks_emit_cache_note(out, fmt, cached_skipped,
+		    unaccounted);
+		if (truncated)
+			(void) fputs(
+			    "warning: the allocation set grew faster than it "
+			    "could be snapshotted; report is INCOMPLETE\n\n",
+			    out);
 
 		if (st.total_count == 0)
 			goto cleanup;
@@ -1058,77 +1426,158 @@ umem_log_dump(FILE *out, umem_inspect_format_t fmt, unsigned max_records)
 
 /* ------------------------------------------------------------------------
  * status_dump: ::umastat.
+ *
+ * Collect every cache's counters under its cache_lock (and umem_cache_lock
+ * for the list), then format with no lock held (C2).  This used to fprintf
+ * directly from the visitor, i.e. run stdio -- which allocates -- under both
+ * locks.
  * ------------------------------------------------------------------------ */
 
-struct status_ctx {
-	FILE *out;
-	umem_inspect_format_t fmt;
-	int first;
+struct status_rec {
+	char name[UMEM_CACHE_NAMELEN + 1];
+	size_t bufsize;
+	uint64_t inuse;		/* handed out by the SLAB layer; see below */
+	uint64_t total;
+	uint64_t mem;
+	uint64_t alloc_ops;
+	uint64_t alloc_fail;
+	uint64_t depot_contention;
+	int flags;
 };
+
+struct status_ctx {
+	struct status_rec *recs;
+	size_t cap;
+	size_t n;
+	size_t needed;
+};
+
+/*
+ * Sum the per-CPU cc_alloc counters, which is what cache_alloc_ops is
+ * supposed to hold.  cache_alloc_ops itself is only refreshed inside the
+ * optional umem_magazine_tuning branch of umem_cache_update(), so reading the
+ * field directly reports zero in a default build and a stale value otherwise.
+ * Recomputing here makes the ALLOCS column mean what its header says.
+ *
+ * Caller holds cache_lock; cc_alloc is a plain counter written under cc_lock,
+ * so the sum is approximate by construction (C4) -- it is a monotonically
+ * increasing statistic, not an invariant.
+ */
+static uint64_t
+cache_alloc_ops_now(umem_cache_t *cp)
+{
+	uint64_t allocs = 0;
+	uint32_t ci;
+
+	for (ci = 0; ci <= cp->cache_cpu_mask; ci++) {
+		umem_cpu_cache_t *tc = (umem_cpu_cache_t *)((char *)cp +
+		    umem_cpus[ci].cpu_cache_offset);
+		allocs += tc->cc_alloc;
+	}
+	return (allocs);
+}
 
 static void
 status_visit(umem_cache_t *cp, void *arg)
 {
 	struct status_ctx *ctx = arg;
-	FILE *out = ctx->out;
+	struct status_rec r;
 
+	ctx->needed++;
+	if (ctx->n >= ctx->cap)
+		return;
+
+	memset(&r, 0, sizeof (r));
 	(void) mutex_lock(&cp->cache_lock);
-	uint64_t inuse = cp->cache_slab_alloc - cp->cache_slab_free;
-	uint64_t total = cp->cache_buftotal;
-	uint64_t mem = (cp->cache_slab_create - cp->cache_slab_destroy)
+	(void) strncpy(r.name, cp->cache_name, sizeof (r.name) - 1);
+	r.bufsize = cp->cache_bufsize;
+	r.inuse = cp->cache_slab_alloc - cp->cache_slab_free;
+	r.total = cp->cache_buftotal;
+	r.mem = (cp->cache_slab_create - cp->cache_slab_destroy)
 	    * cp->cache_slabsize;
+	r.alloc_ops = cache_alloc_ops_now(cp);
+	r.alloc_fail = cp->cache_alloc_fail;
+	r.depot_contention = cp->cache_depot_contention;
+	r.flags = cp->cache_flags;
 	(void) mutex_unlock(&cp->cache_lock);
 
-	if (ctx->fmt == UMEM_FMT_JSON) {
-		(void) fprintf(out,
-		    "%s{\"name\":", ctx->first ? "" : ",");
-		json_escape(out, cp->cache_name);
-		(void) fprintf(out,
-		    ",\"bufsize\":%zu,\"inuse\":%" PRIu64
-		    ",\"total\":%" PRIu64 ",\"memory\":%" PRIu64
-		    ",\"alloc_ops\":%" PRIu64 ",\"alloc_fail\":%" PRIu64
-		    ",\"depot_contention\":%" PRIu64 ",\"flags\":%d}",
-		    cp->cache_bufsize, inuse, total, mem,
-		    cp->cache_alloc_ops, cp->cache_alloc_fail,
-		    cp->cache_depot_contention, cp->cache_flags);
-		ctx->first = 0;
-	} else {
-		(void) fprintf(out,
-		    "%-24.24s %8zu %8" PRIu64 " %8" PRIu64 " %12" PRIu64
-		    " %10" PRIu64 " %6" PRIu64 "\n",
-		    cp->cache_name, cp->cache_bufsize, inuse, total, mem,
-		    cp->cache_alloc_ops, cp->cache_alloc_fail);
-	}
+	ctx->recs[ctx->n++] = r;
 }
 
 void
 umem_status_dump(FILE *out, umem_inspect_format_t fmt)
 {
+	struct status_ctx ctx;
+	int try;
+
 	if (out == NULL)
 		out = stderr;
-	struct status_ctx ctx = { out, fmt, 1 };
+	memset(&ctx, 0, sizeof (ctx));
 
+	/* Phase 1: collect under the locks, growing outside them. */
+	for (try = 0; try < UMEM_SNAP_TRIES; try++) {
+		ctx.n = 0;
+		ctx.needed = 0;
+		for_each_cache(status_visit, &ctx);
+		if (ctx.needed <= ctx.cap)
+			break;
+		struct status_rec *nr = realloc(ctx.recs,
+		    (ctx.needed + 16) * sizeof (*nr));
+		if (nr == NULL)
+			break;
+		ctx.recs = nr;
+		ctx.cap = ctx.needed + 16;
+	}
+
+	/* Phase 2: emit with no lock held. */
 	if (fmt == UMEM_FMT_JSON) {
 		(void) fputs("{\"caches\":[", out);
-		for_each_cache(status_visit, &ctx);
+		for (size_t i = 0; i < ctx.n; i++) {
+			struct status_rec *r = &ctx.recs[i];
+			(void) fprintf(out, "%s{\"name\":", i ? "," : "");
+			json_escape(out, r->name);
+			(void) fprintf(out,
+			    ",\"bufsize\":%zu,\"inuse\":%" PRIu64
+			    ",\"total\":%" PRIu64 ",\"memory\":%" PRIu64
+			    ",\"alloc_ops\":%" PRIu64
+			    ",\"alloc_fail\":%" PRIu64
+			    ",\"depot_contention\":%" PRIu64
+			    ",\"flags\":%d}",
+			    r->bufsize, r->inuse, r->total, r->mem,
+			    r->alloc_ops, r->alloc_fail,
+			    r->depot_contention, r->flags);
+		}
 		(void) fputs("]}\n", out);
 	} else {
+		/*
+		 * INUSE is cache_slab_alloc - cache_slab_free: buffers the
+		 * SLAB layer has handed upward.  A buffer parked in a
+		 * magazine, an rseq magazine or a PTC bin is free to the
+		 * application but still counted here.  The header says so.
+		 */
 		(void) fprintf(out,
 		    "%-24s %8s %8s %8s %12s %10s %6s\n",
-		    "CACHE", "BUFSIZE", "INUSE", "TOTAL", "MEMORY",
+		    "CACHE", "BUFSIZE", "HELD", "TOTAL", "MEMORY",
 		    "ALLOCS", "FAIL");
 		(void) fprintf(out,
 		    "------------------------ -------- -------- -------- "
 		    "------------ ---------- ------\n");
-		for_each_cache(status_visit, &ctx);
+		for (size_t i = 0; i < ctx.n; i++) {
+			struct status_rec *r = &ctx.recs[i];
+			(void) fprintf(out,
+			    "%-24.24s %8zu %8" PRIu64 " %8" PRIu64
+			    " %12" PRIu64 " %10" PRIu64 " %6" PRIu64 "\n",
+			    r->name, r->bufsize, r->inuse, r->total, r->mem,
+			    r->alloc_ops, r->alloc_fail);
+		}
+		(void) fputs(
+		    "\nHELD = buffers held above the slab layer "
+		    "(includes magazine/PTC-resident buffers that the "
+		    "application has already freed).\n", out);
 	}
-}
 
-/*
- * If we found cached buffers (skipped from the leak count), tell the
- * user how many -- a useful diagnostic when the count is unexpectedly
- * low or high.
- */
+	free(ctx.recs);
+}
 
 /* ------------------------------------------------------------------------
  * whatis: resolve an address to a cache/slab/state.
@@ -1226,20 +1675,52 @@ whatis_visit(umem_cache_t *cp, void *arg)
 int
 umem_whatis(const void *addr, umem_buffer_info_t *out)
 {
+	struct cached_set cs;
+
 	if (addr == NULL || out == NULL) {
 		errno = EINVAL;
 		return (-1);
 	}
 	struct whatis_ctx ctx = { addr, out, {0}, 0, 0 };
 	for_each_cache(whatis_visit, &ctx);
-	if (ctx.found)
-		return (0);
-	if (ctx.have_fallback) {
+	if (!ctx.found) {
+		if (!ctx.have_fallback) {
+			errno = ENOENT;
+			return (-1);
+		}
 		*out = ctx.fallback;
-		return (0);
 	}
-	errno = ENOENT;
-	return (-1);
+
+	/*
+	 * Distinguish CACHED from ALLOCATED.  umem_inspect.h documents
+	 * UMEM_BUF_CACHED ("sitting in a magazine / PTC") and this function
+	 * never returned it: the slab layer still considers a
+	 * magazine-resident buffer handed out, and the freelist check above
+	 * only sees the slab freelist, so a buffer the application has already
+	 * freed was reported ALLOCATED.
+	 *
+	 * The magazine set is enumerable, so check it.  A PTC-resident buffer
+	 * still reports ALLOCATED -- thread-local bins are unreachable from
+	 * here (see cached_set_has_unaccounted()).
+	 */
+	if (out->state == UMEM_BUF_ALLOCATED) {
+		cached_set_build_all(&cs);
+		if (cached_set_contains(&cs, out->addr))
+			out->state = UMEM_BUF_CACHED;
+		cached_set_destroy(&cs);
+	}
+	return (0);
+}
+
+static const char *
+buf_state_name(int state)
+{
+	switch (state) {
+	case UMEM_BUF_ALLOCATED:	return ("ALLOCATED");
+	case UMEM_BUF_FREE:		return ("FREE");
+	case UMEM_BUF_CACHED:		return ("CACHED");
+	default:			return ("UNKNOWN");
+	}
 }
 
 int
@@ -1255,9 +1736,10 @@ umem_bufctl_audit_dump(FILE *out, const void *addr)
 	(void) umem_stacktrace_init();
 	(void) fprintf(out, "%p: %s (%zu byte%s, %s)\n",
 	    info.addr, info.cache_name, info.size,
-	    info.size == 1 ? "" : "s",
-	    info.state == UMEM_BUF_ALLOCATED ? "ALLOCATED" :
-	    info.state == UMEM_BUF_FREE ? "FREE" : "UNKNOWN");
+	    info.size == 1 ? "" : "s", buf_state_name(info.state));
+	if (info.state == UMEM_BUF_CACHED)
+		(void) fputs("  (freed by the application; still resident in "
+		    "a magazine, so the slab layer counts it as held)\n", out);
 	(void) fprintf(out, "  cache=%p slab=%p bufctl=%p\n",
 	    info.cache, info.slab, info.bufctl);
 	if (info.depth > 0) {
@@ -1314,6 +1796,8 @@ walk_dump_cb(const umem_buffer_info_t *info, void *arg)
 		    ? "ALLOC"
 		    : info->state == UMEM_BUF_FREE
 		    ? "FREE "
+		    : info->state == UMEM_BUF_CACHED
+		    ? "CACHD"
 		    : "?";
 		(void) fprintf(ctx->out, "%s %p size=%zu cache=%s\n",
 		    state_s, info->addr, info->size,
@@ -1435,8 +1919,10 @@ struct ump_v2_log_record {
 struct snapshot_state {
 	FILE *fp;
 	umem_cache_t **cache_table;
+	struct ump_v2_cache_summary *cache_summary;
 	size_t cache_count;
 	size_t cache_cap;
+	size_t cache_needed;
 	uint64_t buffers_written;
 	uint64_t logs_written;
 	struct cached_set *cached;
@@ -1470,28 +1956,70 @@ snapshot_collect_cache(umem_cache_t *cp, void *arg)
 	st->cache_table[st->cache_count++] = cp;
 }
 
+/*
+ * Cache-summary collection, two-phase like everything else (C2): the summary
+ * records are filled under the locks into a pre-sized table, then written.
+ * This used to realloc() inside the locked cache walk and fwrite() while
+ * holding cache_lock.
+ */
 static void
-snapshot_write_cache_summary(struct snapshot_state *st, umem_cache_t *cp)
+snapshot_collect_cache(umem_cache_t *cp, void *arg)
 {
-	struct ump_v2_cache_summary cs;
-	memset(&cs, 0, sizeof (cs));
-	strncpy(cs.name, cp->cache_name, sizeof (cs.name) - 1);
+	struct snapshot_state *st = arg;
+	struct ump_v2_cache_summary *cs;
+
+	st->cache_needed++;
+	if (st->cache_count >= st->cache_cap)
+		return;
+
+	st->cache_table[st->cache_count] = cp;
+	cs = &st->cache_summary[st->cache_count];
+	memset(cs, 0, sizeof (*cs));
 
 	(void) mutex_lock(&cp->cache_lock);
-	cs.bufsize = cp->cache_bufsize;
-	cs.inuse = cp->cache_slab_alloc - cp->cache_slab_free;
-	cs.total = cp->cache_buftotal;
-	cs.memory = (cp->cache_slab_create - cp->cache_slab_destroy)
+	(void) strncpy(cs->name, cp->cache_name, sizeof (cs->name) - 1);
+	cs->bufsize = cp->cache_bufsize;
+	cs->inuse = cp->cache_slab_alloc - cp->cache_slab_free;
+	cs->total = cp->cache_buftotal;
+	cs->memory = (cp->cache_slab_create - cp->cache_slab_destroy)
 	    * cp->cache_slabsize;
-	cs.alloc_ops = cp->cache_alloc_ops;
-	cs.alloc_fail = cp->cache_alloc_fail;
-	cs.depot_contention = cp->cache_depot_contention;
-	cs.flags = (uint32_t)cp->cache_flags;
-	cs.cflags = (uint32_t)cp->cache_cflags;
+	cs->alloc_ops = cache_alloc_ops_now(cp);
+	cs->alloc_fail = cp->cache_alloc_fail;
+	cs->depot_contention = cp->cache_depot_contention;
+	cs->flags = (uint32_t)cp->cache_flags;
+	cs->cflags = (uint32_t)cp->cache_cflags;
 	(void) mutex_unlock(&cp->cache_lock);
 
-	if (fwrite(&cs, sizeof (cs), 1, st->fp) != 1)
-		st->err = errno ? errno : EIO;
+	st->cache_count++;
+}
+
+/* Collect all cache summaries, growing between attempts with no lock held. */
+static int
+snapshot_collect_caches(struct snapshot_state *st)
+{
+	int try;
+
+	for (try = 0; try < UMEM_SNAP_TRIES; try++) {
+		st->cache_count = 0;
+		st->cache_needed = 0;
+		for_each_cache(snapshot_collect_cache, st);
+		if (st->cache_needed <= st->cache_cap)
+			return (0);
+
+		size_t want = st->cache_needed + 16;
+		umem_cache_t **nt = realloc(st->cache_table,
+		    want * sizeof (*nt));
+		if (nt == NULL)
+			return (ENOMEM);
+		st->cache_table = nt;
+		struct ump_v2_cache_summary *ns = realloc(st->cache_summary,
+		    want * sizeof (*ns));
+		if (ns == NULL)
+			return (ENOMEM);
+		st->cache_summary = ns;
+		st->cache_cap = want;
+	}
+	return (0);	/* best effort: write what we have */
 }
 
 static void
@@ -1570,16 +2098,20 @@ snapshot_v2_write(const char *path)
 	cached_set_build_all(&cs);
 	st.cached = &cs;
 
-	/* Phase 1: enumerate caches into a stable index. */
-	for_each_cache(snapshot_collect_cache, &st);
+	/* Phase 1: collect the cache summaries (locked) -- the index every
+	 * buffer record refers to. */
+	st.err = snapshot_collect_caches(&st);
 	if (st.err)
 		goto out;
 
-	/* Phase 2: write cache summary table. */
-	for (size_t i = 0; i < st.cache_count && !st.err; i++)
-		snapshot_write_cache_summary(&st, st.cache_table[i]);
-	if (st.err)
-		goto out;
+	/* Phase 2: write the summary table (unlocked). */
+	for (size_t i = 0; i < st.cache_count; i++) {
+		if (fwrite(&st.cache_summary[i],
+		    sizeof (st.cache_summary[i]), 1, st.fp) != 1) {
+			st.err = errno ? errno : EIO;
+			goto out;
+		}
+	}
 
 	/* Phase 3: write all live buffers. */
 	(void) umem_walk_allocated(snapshot_buffer_cb, &st);
@@ -1610,6 +2142,7 @@ out:
 	if (st.fp != NULL)
 		(void) fclose(st.fp);
 	free(st.cache_table);
+	free(st.cache_summary);
 	cached_set_destroy(&cs);
 	if (st.err) {
 		errno = st.err;

@@ -169,6 +169,20 @@ extern void umem_interpose_lockup(void) __attribute__((weak));
 extern void umem_interpose_release(void) __attribute__((weak));
 extern void umem_interpose_release_child(void) __attribute__((weak));
 
+/*
+ * Introspection control channel (umem_introspect.c) child-side reset.
+ *
+ * Weak for the same reason as the interposer hooks: the channel only exists
+ * under --enable-introspect, and the reference resolves to NULL otherwise.
+ *
+ * The child inherits an ARMED break predicate and a satisfied pthread_once,
+ * but not the server thread that would process a "continue" -- so an armed
+ * child would stop on its next matching allocation with nothing able to resume
+ * it.  Child-side only: the parent's predicate and server are both still
+ * valid.
+ */
+extern void umem_introspect_fork_child(void) __attribute__((weak));
+
 static void
 umem_lockup(void)
 {
@@ -291,6 +305,14 @@ umem_do_release(int as_child)
 	if (as_child) {
 		if (umem_interpose_release_child != NULL)
 			umem_interpose_release_child();
+		/*
+		 * Disarm the inherited introspection break predicate.  Runs
+		 * after every allocator lock is released: the reset touches
+		 * only the channel's own state, and doing it here keeps it off
+		 * the locked path entirely.
+		 */
+		if (umem_introspect_fork_child != NULL)
+			umem_introspect_fork_child();
 	} else {
 		if (umem_interpose_release != NULL)
 			umem_interpose_release();
