@@ -58,8 +58,11 @@ trap cleanup EXIT
 
 start_target() {
 	# Deliberately permissive umask: pre-fix this produced a 0666 socket.
+	# UMEM_DEBUG=audit so 'leaks' produces a response far larger than the
+	# socket buffer -- required for the SIGPIPE check below.
 	( umask 000
-	  UMEM_OPTIONS=introspect=1 "$CHURN" 60 >/dev/null 2>&1 &
+	  UMEM_OPTIONS=introspect=1 UMEM_DEBUG=audit \
+	      "$CHURN" 60 >/dev/null 2>&1 &
 	  echo $! > /tmp/.umem-contract-pid )
 	TPID=$(cat /tmp/.umem-contract-pid); rm -f /tmp/.umem-contract-pid
 	for _ in $(seq 1 50); do
@@ -103,34 +106,47 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# item 4 (SIGPIPE): a client that disconnects mid-response must not kill
-# the target.  Ask for a large response and hang up immediately.
+# item 4 (SIGPIPE): a client that disconnects mid-response must not kill the
+# target.
+#
+# The response has to be LARGER THAN THE SOCKET BUFFER, otherwise the server
+# completes its write into the buffer before the client ever hangs up and no
+# SIGPIPE is possible -- the check would pass vacuously even against the
+# pre-fix code.  'leaks' under UMEM_DEBUG=audit emits thousands of records
+# (hundreds of KB), so the server is guaranteed to still be writing.  We also
+# shrink the receive buffer and read nothing, so the server blocks, then abort
+# with RST.
 # ---------------------------------------------------------------------------
-for _ in $(seq 1 25); do
-	# Send a command that produces many lines, then close instantly.
-	timeout 2 python3 - "$SOCK" <<'PY' 2>/dev/null
-import socket, sys
+SIGPIPE_TRIGGERED=0
+for _ in $(seq 1 15); do
+	timeout 5 python3 - "$SOCK" <<'PY' 2>/dev/null
+import socket, struct, sys, time
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
+    # Small receive buffer so the server fills it and blocks in write().
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
     s.connect(sys.argv[1])
-    s.sendall(b"caches\n")
-    # Read one byte so the server is mid-write, then abort hard (RST).
-    s.recv(1)
-    import struct
+    s.sendall(b"leaks\n")
+    # Read a little, then stop reading so the server blocks mid-response.
+    s.recv(256)
+    time.sleep(0.2)
+    # Abort with RST rather than an orderly FIN: the next server write fails.
     s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
 finally:
     s.close()
 PY
+	if ! kill -0 "$TPID" 2>/dev/null; then
+		SIGPIPE_TRIGGERED=1
+		break
+	fi
 done
 
-sleep 0.3
-if kill -0 "$TPID" 2>/dev/null; then
-	note "item 4 target survived 25 mid-response disconnects: ok"
-else
+if [[ $SIGPIPE_TRIGGERED == 1 ]]; then
 	bad "item 4 violated: the target DIED when a client disconnected mid-response (SIGPIPE)"
 	TPID=""
 	exit 1
 fi
+note "item 4 target survived 15 aborted mid-response disconnects: ok"
 
 # The channel must still be usable afterwards.
 if $CTL "$TPID" stats 2>/dev/null | grep -q '^pid '; then
