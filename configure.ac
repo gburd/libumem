@@ -295,8 +295,11 @@ if test "x$HAVE_LIBDW" = "xyes"; then
     LIBS="$LIBS -ldw"
 fi
 
-AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h thread.h sys/frame.h sys/stack.h alloca.h execinfo.h ucontext.h])
-AC_CHECK_FUNCS([issetugid mallinfo mallinfo2 malloc_stats malloc_usable_size backtrace])
+AC_CHECK_HEADERS([atomic.h sys/mman.h sys/sysmacros.h sys/time.h malloc.h thread.h sys/frame.h sys/stack.h alloca.h execinfo.h ucontext.h sys/auxv.h])
+# issetugid + getauxval(AT_SECURE) are the two halves of umem_secure_mode()
+# (misc.c).  Neither subsumes the other and both are optional per platform;
+# the helper degrades to whichever is present.
+AC_CHECK_FUNCS([issetugid getauxval mallinfo mallinfo2 malloc_stats malloc_usable_size backtrace])
 
 # Check for FreeBSD pthread hooks
 AC_MSG_CHECKING([for FreeBSD pthread hooks])

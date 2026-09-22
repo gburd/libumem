@@ -42,6 +42,13 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
+#if HAVE_SYS_AUXV_H
+#include <sys/auxv.h>
+#endif
 
 #if HAVE_SYS_MACHELF_H
 #include <sys/machelf.h>
@@ -118,6 +125,130 @@ umem_error_enter(const char *error_str)
 #endif
 
 	umem_log_enter(error_str);
+}
+
+/*
+ * umem_secure_mode() -- "this process must not be steered by its environment".
+ *
+ * True when the process is running with elevated or otherwise
+ * caller-unverifiable privilege:
+ *
+ *   issetugid()          set-uid/set-gid, or the ids changed since exec.
+ *   getauxval(AT_SECURE)  the loader's own "secure execution required" bit,
+ *                         which also covers file capabilities, MAC transitions,
+ *                         and AT_SECURE binaries that are not setuid.
+ *
+ * Neither subsumes the other, so both are consulted.  On platforms without
+ * getauxval() only issetugid() is used (sol_compat.h supplies an
+ * issetugid() for platforms lacking that too).
+ *
+ * The result is cached: it cannot change for the life of the process (a later
+ * setuid() does not un-taint an exec), and umem_init() consults it before any
+ * allocator machinery is up, so it must not allocate or lock.
+ *
+ * WHAT THIS GATES: every UMEM_* option with a file, socket, or exec side
+ * effect (see envvar.c:umem_env_secure_filter).  Pure tuning options keep
+ * working -- the goal is no side effects, not a crippled allocator.
+ *
+ * umem_secure_mode_force is TEST-ONLY.  It is deliberately NOT settable from
+ * the environment: making it so would hand an attacker the ability to turn
+ * the gate OFF, which is the whole exposure this closes.  Only in-process
+ * code (the regression in test/security/) can set it.
+ */
+int umem_secure_mode_force = -1;	/* test-only: <0 = not forced */
+
+int
+umem_secure_mode(void)
+{
+	static int cached = -1;
+
+	if (umem_secure_mode_force >= 0)
+		return (umem_secure_mode_force != 0);
+
+	if (cached >= 0)
+		return (cached);
+
+	cached = 0;
+#ifndef UMEM_STANDALONE
+	if (issetugid())
+		cached = 1;
+#if HAVE_GETAUXVAL && defined(AT_SECURE)
+	else if (getauxval(AT_SECURE) != 0)
+		cached = 1;
+#endif
+#endif
+	return (cached);
+}
+
+/*
+ * umem_open_write() -- the ONLY way library code creates a file whose path
+ * came from outside (UMEM_OPTIONS=profile=record:/path, a snapshot path from
+ * a debugger or the control channel).  P5.3.
+ *
+ * Before this existed, the writers were
+ *   open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644)   (umem_profile.c)
+ *   fopen(path, "wb") / fopen(path, "w")         (umem_inspect.c)
+ * with no O_EXCL and no O_NOFOLLOW anywhere in the library, so a symlink at
+ * `path` truncated whatever it pointed at, as the target's uid.
+ *
+ * WHAT IS CHECKED, and why in this order:
+ *
+ *   O_NOFOLLOW     the final component must not be a symlink.  This is the
+ *                  symlink-truncation hole itself.
+ *   no O_TRUNC     truncation happens AFTER the checks below, via
+ *                  ftruncate() on the fd.  Passing O_TRUNC here would
+ *                  destroy a hardlinked victim before we looked at it.
+ *   S_ISREG        no fifos (open() would have blocked), no devices.
+ *   st_nlink == 1  a second link means someone else also names this inode,
+ *                  which is the hardlink version of the same attack.
+ *   st_uid == euid we must own it.  geteuid(), NOT getuid(): for a setuid
+ *                  target the real uid is the unprivileged invoker
+ *                  (AGENTS.md 7a).
+ *
+ * Every check is on the returned fd, so there is no window between checking
+ * and acting -- unlike stat()-then-open().
+ *
+ * NOT closed by this: a symlink in a LEADING directory component of an
+ * attacker-writable path.  Refusing that needs openat() walking each
+ * component, and the residual risk is bounded by the caller choosing the
+ * path.  In secure mode (setugid/AT_SECURE) these writers are unreachable
+ * anyway: the options that carry a path are filtered in envvar.c before
+ * parsing.
+ *
+ * Mode is 0600, not the old 0644: a profile or snapshot contains heap
+ * addresses and cache names.
+ *
+ * Returns an fd, or -1 with errno set.
+ */
+int
+umem_open_write(const char *path)
+{
+	struct stat st;
+	int fd, oerrno;
+
+	fd = open(path, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+	if (fd < 0)
+		return (-1);
+
+	if (fstat(fd, &st) != 0)
+		goto reject;
+
+	if (!S_ISREG(st.st_mode) || st.st_nlink != 1 ||
+	    st.st_uid != geteuid()) {
+		errno = EPERM;
+		goto reject;
+	}
+
+	if (ftruncate(fd, 0) != 0)
+		goto reject;
+
+	return (fd);
+
+reject:
+	oerrno = errno;
+	(void) close(fd);
+	errno = oerrno;
+	return (-1);
 }
 
 int

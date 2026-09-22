@@ -72,6 +72,27 @@ void debug_printf(const char *format, ...);
 void log_message(const char *format, ...);
 
 /*
+ * Non-zero when the process must not let its environment steer it:
+ * issetugid() || getauxval(AT_SECURE).  Consulted before option parsing to
+ * suppress every option with a file, socket, or exec side effect.  Cheap
+ * (cached), allocation-free, callable before umem is initialized.
+ *
+ * umem_secure_mode_force is TEST-ONLY and is not settable from the
+ * environment; see misc.c.
+ */
+int umem_secure_mode(void);
+extern int umem_secure_mode_force;
+
+/*
+ * Create/open a file for writing that the caller named from outside the
+ * library (profile path, snapshot path).  O_NOFOLLOW, regular-file-only,
+ * single-link-only, must be owned by geteuid(); truncates via ftruncate()
+ * on the fd after those checks.  Mode 0600.  Returns an fd or -1/errno.
+ * See misc.c for what it does and does not close.
+ */
+int umem_open_write(const char *path);
+
+/*
  * returns the index of the (high/low) bit + 1
  */
 int highbit(ulong_t) __attribute__ ((pure));

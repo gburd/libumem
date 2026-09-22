@@ -103,7 +103,25 @@ typedef struct umem_env_item {
 	uint_t *item_uint_target; /* the variable to hold the integer */
 	size_t *item_size_target;
 	arg_process_t *item_special; /* callback for special handling */
+	/*
+	 * P5.2: non-zero if honouring this option has a file, socket, exec,
+	 * brk, or information-disclosure side effect.  Such options are
+	 * IGNORED when umem_secure_mode() is true (misc.c), i.e. under
+	 * issetugid() or AT_SECURE, because then the environment is chosen by
+	 * a less-privileged party than the process.  Pure tuning options must
+	 * NOT be marked: the goal is no side effects, not a crippled
+	 * allocator.  Last field so existing positional initializers keep
+	 * meaning what they say (unmarked == 0 == safe).
+	 */
+	int item_secure_unsafe;
 } umem_env_item_t;
+
+/*
+ * Count of options dropped by the secure-mode filter, reported once at the
+ * end of parsing.  Not per-option: a privileged process should not let an
+ * untrusted environment control how much it writes to its own log.
+ */
+static uint_t umem_env_secure_ignored;
 
 #ifndef UMEM_STANDALONE
 static arg_process_t umem_backend_process;
@@ -144,7 +162,11 @@ static umem_env_item_t umem_options_items[] = {
 	{ "backend",		"Evolving",	ITEM_SPECIAL,
 		"=sbrk for sbrk(2), =mmap for mmap(2)",
 		NULL, 0, NULL, NULL,
-		&umem_backend_process
+		&umem_backend_process,
+		/* secure-unsafe: sbrk(2) grows the process's own brk region,
+		 * which vmem_sbrk.c already refuses to page-tune under
+		 * issetugid() -- but only AFTER parsing.  Refuse earlier. */
+		1
 	},
 	{ "allocator",		"Evolving",	ITEM_SPECIAL,
 		"=best, =first, =next, or =instant",
@@ -229,13 +251,19 @@ static umem_env_item_t umem_options_items[] = {
 	{ "profile",		"Evolving",	ITEM_SPECIAL,
 		"=record:/path or =use:/path for allocation profiling",
 		NULL, 0, NULL,
-		NULL,				&umem_profile_process
+		NULL,				&umem_profile_process,
+		/* secure-unsafe: record: creates/truncates a caller-named file
+		 * as this process's uid; use: reads one. */
+		1
 	},
 #ifdef UMEM_INTROSPECT
 	{ "introspect",		"Evolving",	ITEM_UINT,
 		"Enable the in-process introspection control channel "
 		    "(umemctl). 1=enable, 0=disable (default).",
-		NULL, 0, (uint_t *)&umem_introspect_enabled
+		NULL, 0, (uint_t *)&umem_introspect_enabled, NULL, NULL,
+		/* secure-unsafe: binds a unix socket and hands a peer read
+		 * access to arbitrary addresses in this process. */
+		1
 	},
 #endif
 	{ NULL, "-- end of UMEM_OPTIONS --",	ITEM_INVALID }
@@ -266,7 +294,12 @@ static umem_env_item_t umem_debug_items[] = {
 	},
 	{ "verbose",		"Unstable",	ITEM_FLAG,
 		"Enables writing error messages to stderr",
-		&umem_output,	1
+		&umem_output,	1, NULL, NULL, NULL,
+		/* secure-unsafe: writes allocator internals (addresses, sizes,
+		 * cache names) to fd 2, which the invoker of a setuid target
+		 * chooses.  misc.c already refuses this write under
+		 * issetugid(); do not even set the flag. */
+		1
 	},
 
 	{ "nosignal",	"Private",	ITEM_FLAG,
@@ -291,12 +324,20 @@ static umem_env_item_t umem_debug_items[] = {
 	{ "noabort",		"Private",	ITEM_CLEARFLAG,
 		"umem will not abort when a recoverable error occurs "
 		    "(i.e. double frees, certain kinds of corruption)",
-		&umem_abort,	1
+		&umem_abort,	1, NULL, NULL, NULL,
+		/* secure-unsafe: turns detected corruption into continued
+		 * execution.  An attacker who can set the environment of a
+		 * privileged target must not be able to disarm its abort. */
+		1
 	},
 	{ "mtbf",		"Private",	ITEM_UINT,
 		"=mtbf, the mean time between injected failures.  Works best "
 		    "if prime.\n",
-		NULL, 0,	&umem_mtbf
+		NULL, 0,	&umem_mtbf, NULL, NULL,
+		/* secure-unsafe: injected allocation failures are a DoS knob.
+		 * umem.c also zeroes umem_mtbf post-parse under issetugid();
+		 * this refuses it earlier and also under AT_SECURE. */
+		1
 	},
 	{ "random",		"Private",	ITEM_FLAG,
 		"randomize flags on a per-cache basis",
@@ -304,7 +345,10 @@ static umem_env_item_t umem_debug_items[] = {
 	},
 	{ "allverbose",		"Private",	ITEM_FLAG,
 		"Enables writing all logged messages to stderr",
-		&umem_output,	2
+		&umem_output,	2, NULL, NULL, NULL,
+		/* secure-unsafe: same disclosure as "verbose", and this level
+		 * is what makes log_message() write to fd 2 at all. */
+		1
 	},
 	{ "checknull",		"Private",	ITEM_FLAG,
 		"Abort if an allocation would return null",
@@ -632,6 +676,20 @@ process_item(const umem_env_item_t *item, const char *item_arg)
 	int arg_required = 0;
 	arg_process_t *processor;
 
+	/*
+	 * P5.2: in secure mode the environment is chosen by a party less
+	 * privileged than this process, so any option with a file, socket,
+	 * exec, or disclosure side effect is dropped here -- BEFORE its
+	 * argument is parsed and before item_flag_target is touched.  Doing
+	 * it at the single point every option flows through is what makes
+	 * this cover options added later: a new one only becomes reachable
+	 * in secure mode if someone leaves item_secure_unsafe clear.
+	 */
+	if (item->item_secure_unsafe && umem_secure_mode()) {
+		umem_env_secure_ignored++;
+		return (1);
+	}
+
 	switch (item->item_type) {
 	case ITEM_FLAG:
 	case ITEM_CLEARFLAG:
@@ -902,5 +960,19 @@ umem_process_envvars(void)
 
 			umem_process_value(cur_env->env_item_list, value, end);
 		}
+	}
+
+	/*
+	 * Report once, not per option (see umem_env_secure_ignored).  This
+	 * goes through log_message(), which only reaches stderr when
+	 * umem_output > 1 -- and "allverbose"/"verbose" are themselves
+	 * secure-unsafe, so in secure mode this lands in the in-memory error
+	 * log where a debugger can find it and an attacker cannot aim it.
+	 * That is deliberate: the warning must not become the disclosure.
+	 */
+	if (umem_env_secure_ignored != 0) {
+		log_message("secure mode (setugid/AT_SECURE): ignored %u "
+		    "UMEM_* option(s) with file, socket, exec or disclosure "
+		    "side effects\n", umem_env_secure_ignored);
 	}
 }
