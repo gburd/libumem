@@ -39,13 +39,10 @@ for p in test/property/.libs/prop_alloc_free2 test/property/.libs/prop_cache tes
   LD_LIBRARY_PATH=.libs timeout 180 "$p" >/tmp/p.log 2>&1
   rc=$?
   echo "$(basename $p) rc=$rc"
-  if [ $rc -ne 0 ]; then
-    if [ "$(basename $p)" = "prop_fragmentation" ]; then
-      echo "  KNOWN-PREEXISTING: vmem VM_NOSLEEP abort, docs/results/2026-09-22-prop-fragmentation-vmem-abort.md"
-    else
-      note_fail "$(basename $p) rc=$rc"
-    fi
-  fi
+  # No allowances here.  Every property test must pass; if one starts failing,
+  # that is a gate failure, not a footnote.  (prop_fragmentation used to be
+  # exempted for a vmem abort -- that was fixed, so the exemption is gone.)
+  [ $rc -ne 0 ] && note_fail "$(basename $p) rc=$rc"
 done
 
 r "4. concurrency oracle"
