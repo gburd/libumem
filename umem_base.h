@@ -108,14 +108,6 @@ extern size_t umem_ptc_size;
 extern uint32_t umem_reclaim_enabled;
 extern uint32_t umem_reclaim_delay;
 
-/*
- * Quantum for the mmap heap's parent arena, in bytes; 0 means use the built-in
- * default (64 KiB).  Settable via UMEM_OPTIONS=chunksize=<bytes>.  A page-sized
- * quantum exhausts vm.max_map_count at roughly 5 GB of heap on Linux -- see
- * vmem_mmap.c and docs/results/2026-09-22-umem-heap-ceiling-vma.md.  Only
- * consulted on platforms without MAP_ALIGN.
- */
-extern size_t umem_mmap_chunksize;
 
 extern uint32_t umem_flags;
 

@@ -596,12 +596,6 @@ size_t umem_ptc_size = 1048576;	/* size of per-thread cache (in bytes) */
 
 uint32_t umem_reclaim_enabled = 1;  /* background page reclamation via madvise */
 uint32_t umem_reclaim_delay = 30;   /* seconds before reclaiming dirty slabs */
-/*
- * mmap-heap parent-arena quantum override; 0 = built-in default (64 KiB).
- * See vmem_mmap.c: a page-sized quantum burns a kernel VMA per ~76 KiB of heap
- * and hits vm.max_map_count at ~5 GB on Linux.
- */
-size_t umem_mmap_chunksize = 0;
 
 uint_t umem_flags = 0;
 
