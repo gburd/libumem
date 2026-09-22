@@ -2100,6 +2100,20 @@ umem_mag_capacity(umem_magazine_t *mp)
 #ifdef UMEM_PTC_RESIZE_PROBE
 #include <time.h>
 volatile long umem_ptc_resize_probe_ns = 0;
+/*
+ * Observation counters for the P1.3b window, read by
+ * test/stress/repro_ptc_resize_capacity.c.  Sampling the PTC state from the
+ * owning thread LATER cannot be relied on to see a desync (the magazine may be
+ * replaced first), so the check is made here, at the instant the capacity is
+ * recorded -- the only point where "the magazine and its capacity are one
+ * decision" is either true or false.
+ *
+ * probe_refills also lets the test prove the path was exercised at all: a run
+ * where no magazine was ever loaded proves nothing, and must not be reported as
+ * a pass.
+ */
+volatile long umem_ptc_probe_refills = 0;
+volatile long umem_ptc_probe_desyncs = 0;
 
 static void
 umem_ptc_resize_probe(void)
@@ -2113,9 +2127,23 @@ umem_ptc_resize_probe(void)
 	ts.tv_nsec = ns % 1000000000L;
 	(void) nanosleep(&ts, NULL);
 }
+
+/*
+ * Record whether the capacity just written for `mp` is in fact that magazine's
+ * own capacity.  Observation only: changes no decision.
+ */
+static void
+umem_ptc_probe_observe(umem_magazine_t *mp, int recorded)
+{
+	(void) atomic_add_64((uint64_t *)&umem_ptc_probe_refills, 1);
+	if (recorded != umem_mag_capacity(mp))
+		(void) atomic_add_64((uint64_t *)&umem_ptc_probe_desyncs, 1);
+}
 #define	UMEM_PTC_RESIZE_PROBE_POINT()	umem_ptc_resize_probe()
+#define	UMEM_PTC_PROBE_OBSERVE(mp, cap)	umem_ptc_probe_observe((mp), (cap))
 #else
 #define	UMEM_PTC_RESIZE_PROBE_POINT()	((void)0)
+#define	UMEM_PTC_PROBE_OBSERVE(mp, cap)	((void)0)
 #endif
 
 /*
@@ -3556,6 +3584,8 @@ umem_alloc_retry:
 					    mag->magsize =
 						umem_mag_capacity(fmp);
 					    mag->rounds = mag->magsize;
+					    UMEM_PTC_PROBE_OBSERVE(fmp,
+						mag->magsize);
 					    umem_ptc_mag_check(mag);
 					    mag->rounds--;
 					    buf = mag->loaded->
@@ -3748,6 +3778,8 @@ _umem_free(void *buf, size_t size)
 						mag->magsize =
 						    umem_mag_capacity(emp);
 						mag->rounds = 0;
+						UMEM_PTC_PROBE_OBSERVE(emp,
+						    mag->magsize);
 						umem_ptc_mag_check(mag);
 						mag->loaded->
 						    mag_round[mag->rounds] =

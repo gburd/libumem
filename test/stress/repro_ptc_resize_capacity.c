@@ -403,6 +403,8 @@ main(int argc, char **argv)
 	extern uint_t umem_depot_contention;
 #ifdef UMEM_PTC_RESIZE_PROBE
 	extern volatile long umem_ptc_resize_probe_ns;
+	extern volatile long umem_ptc_probe_refills;
+	extern volatile long umem_ptc_probe_desyncs;
 #endif
 	pthread_t *th;
 	umem_cache_t *cp;
@@ -501,6 +503,19 @@ main(int argc, char **argv)
 	magsize_now = cp->cache_magtype->mt_magsize;
 	printf("threads=%d magsize %d -> %d  ptc_checks=%ld\n", nthreads,
 	    magsize_start, magsize_now, (long)atomic_load(&checks));
+#ifdef UMEM_PTC_RESIZE_PROBE
+	/*
+	 * In-library observation, made at the instant the capacity is recorded.
+	 * Sampling the PTC from the owning thread afterwards cannot be relied on
+	 * to see a desync -- the magazine may be replaced before the next sample
+	 * -- so this is the authoritative count, and refills proves the path ran.
+	 */
+	printf("in-library observation: magazine loads=%ld capacity desyncs "
+	    "AT THE MOMENT OF RECORDING=%ld\n",
+	    umem_ptc_probe_refills, umem_ptc_probe_desyncs);
+	if (umem_ptc_probe_desyncs != 0)
+		atomic_fetch_add(&fail_capacity, umem_ptc_probe_desyncs);
+#endif
 	printf("failures: capacity_desync=%ld aliased_buffer=%ld "
 	    "bad_alloc=%ld\n", (long)atomic_load(&fail_capacity),
 	    (long)atomic_load(&fail_alias), (long)atomic_load(&fail_null));
@@ -511,6 +526,13 @@ main(int argc, char **argv)
 		    "thread count or the run time)\n");
 		return (3);
 	}
+#ifdef UMEM_PTC_RESIZE_PROBE
+	if (umem_ptc_probe_refills == 0) {
+		printf("RESULT: INCONCLUSIVE (no PTC magazine was ever loaded "
+		    "from the depot, so the path under test never ran)\n");
+		return (3);
+	}
+#endif
 #ifndef UMEM_PTC_RESIZE_PROBE
 	if (atomic_load(&fail_capacity) == 0 && atomic_load(&fail_alias) == 0 &&
 	    atomic_load(&fail_null) == 0) {
