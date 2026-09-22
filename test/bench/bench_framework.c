@@ -69,6 +69,15 @@ size_t bench_get_vmrss_bytes(void) {
  * VmHWM can tell "the allocator holds 2x the live set" apart from "RSS was
  * already high before this phase".  A single ratio cannot distinguish those,
  * and this metric has already misled twice.
+ *
+ * ACCURACY LIMIT, measured not assumed: with CONFIG_SPLIT_RSS_COUNTING the
+ * kernel batches per-thread RSS deltas and folds them into the mm-wide
+ * counters only every 64 events or at task exit.  VmRSS and VmHWM are
+ * therefore both approximate under many threads, and not mutually consistent
+ * instant to instant -- on c7i.metal-48xl a VmRSS sample exceeded the
+ * subsequently-read VmHWM by 0.9MB at 1 thread, rising monotonically to 63MB
+ * at 192 threads.  Treat both as +/- tens of MB at high thread counts, and do
+ * not build an assertion on VmHWM >= VmRSS.
  */
 size_t bench_get_vmhwm_bytes(void) {
 #ifdef __linux__

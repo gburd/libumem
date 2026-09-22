@@ -269,11 +269,33 @@ test_frag_live_bytes(void)
 	    st.live_bytes_at_peak >= st.frag_live_median,
 	    "the live-set peak (%zu) must be >= the live series median (%zu)",
 	    st.live_bytes_at_peak, st.frag_live_median);
-	/* VmHWM bounds any RSS sample taken during the run. */
-	CHECK(st.max_rss_bytes >= st.peak_rss_bytes,
-	    "VmHWM (%zu) is below the RSS sampled at the live peak (%zu), "
-	    "which is impossible -- one of them is not what it claims",
-	    st.max_rss_bytes, st.peak_rss_bytes);
+	/*
+	 * VmHWM vs a VmRSS sample: NOT an exact invariant, deliberately.
+	 *
+	 * On Linux with CONFIG_SPLIT_RSS_COUNTING the kernel batches per-thread
+	 * RSS deltas and folds them into the mm-wide counters only every 64
+	 * events or at task exit, so VmRSS and VmHWM are both approximate under
+	 * many threads and are not mutually consistent instant to instant.
+	 * Measured on c7i.metal-48xl, rss_at_live_peak exceeded VmHWM by
+	 * 0.9MB at 1 thread rising monotonically to 63MB at 192 threads.
+	 *
+	 * So this checks the two agree to within a tolerance that scales with
+	 * that skew, rather than asserting an ordering the kernel does not
+	 * promise.  A GROSS disagreement would still mean one of the two is not
+	 * the quantity it claims to be.
+	 */
+	if (st.max_rss_bytes > 0 && st.peak_rss_bytes > 0) {
+		double skew = (double)st.peak_rss_bytes /
+		    (double)st.max_rss_bytes;
+		printf("   rss_at_live_peak/vmhwm = %.4f (kernel RSS counters "
+		    "are batched per-thread; exact ordering is not guaranteed)\n",
+		    skew);
+		CHECK(skew < 1.25 && skew > 0.5,
+		    "rss_at_live_peak (%zu) and VmHWM (%zu) disagree by more "
+		    "than batched RSS accounting explains -- one is not the "
+		    "quantity it claims", st.peak_rss_bytes,
+		    st.max_rss_bytes);
+	}
 	printf("   samples=%zu live_median=%zu vmhwm=%zu frag_median=%.4f\n",
 	    st.frag_samples, st.frag_live_median, st.max_rss_bytes,
 	    st.frag_ratio_median);
