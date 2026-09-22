@@ -24,16 +24,27 @@
 #      which touches a sentinel file, then run an allocating program with the
 #      trigger env var set (UMEM_STACKTRACE_ADDR2LINE=1) under UMEM_DEBUG=audit
 #      so the stack-trace machinery is live.  The sentinel must NOT appear.
-#      This is the actual exposure.
+#
+#      READ THIS BEFORE TRUSTING ARM A: it is only non-vacuous on a build
+#      WITHOUT libdw.  umem_stacktrace_init() tries init_libdw() first and
+#      returns as soon as it succeeds, so on a box with elfutils installed the
+#      pre-fix code never reached the execlp at all -- verified: against
+#      v3.0.0 on a libdw build this arm passes.  It is not useless, because a
+#      build without elfutils is an ordinary deployment (elfutils-devel is not
+#      a runtime dependency) and that is exactly the configuration where the
+#      exec fired; the pre-fix demonstration was run that way
+#      (ac_cv_lib_dw_dwfl_begin=no) and the sentinel DID appear.  This script
+#      prints which case it is in so a green result cannot be misread.
 #
 #   B. STRUCTURE.  No PATH-resolving exec symbol (execlp/execvp/execvpe/
-#      system/popen) may be undefined-referenced by libumem.so at all.  (A)
-#      alone would pass if some future code path merely failed to reach the
-#      exec on this run; (B) fails if the call is reintroduced anywhere,
-#      including on a path this script does not exercise.
+#      system/popen) may be undefined-referenced by libumem.so at all.  This
+#      is the arm that bites unconditionally: it fails against v3.0.0 on ANY
+#      build, libdw or not, and it fails if the call is reintroduced on a path
+#      this script does not exercise.
 #
-# PRE-FIX DEMONSTRATION: run against v3.0.0 (d22bf03), (A) creates the
-# sentinel and (B) finds execlp in the dynamic symbol table.  Both fail.
+# PRE-FIX DEMONSTRATION (both verified against d22bf03 = v3.0.0, x86_64):
+#   B always: nm shows `U execlp@GLIBC_2.2.5`.
+#   A with libdw disabled: sentinel created, "HOSTILE addr2line ran: --version".
 #
 # Exit: 0 all pass, 1 any fail, 77 prerequisites missing (a missing
 # prerequisite is a SKIP, never a silent pass -- AGENTS.md 6).
@@ -107,7 +118,18 @@ fi
 if [[ -e $SENTINEL ]]; then
 	fail "library EXECUTED the hostile addr2line: $(cat "$SENTINEL")"
 else
-	pass "no hostile addr2line execution (sentinel absent)"
+	# Say which case this is, so the pass is not over-read.  grep, not a
+	# compiled-in define: this script must work against any build tree.
+	if grep -qs '^#define HAVE_LIBDW 1' "$ROOT/config.h"; then
+		pass "no hostile addr2line execution (sentinel absent) -- NOTE:" \
+		     "this build has libdw, which pre-fix also short-circuited" \
+		     "before the exec, so arm A is WEAK here; arm B below is the" \
+		     "binding one"
+	else
+		pass "no hostile addr2line execution (sentinel absent) -- build" \
+		     "has no libdw, i.e. exactly the pre-fix configuration that" \
+		     "DID exec; this arm is meaningful"
+	fi
 fi
 
 # --------------------------------------------------------------- B: structure
@@ -118,9 +140,12 @@ if ! command -v nm >/dev/null 2>&1; then
 fi
 
 # Undefined ('U') references only: a defined local symbol containing these
-# letters is not a call out to the libc PATH resolvers.
+# letters is not a call out to the libc PATH resolvers.  Strip the @GLIBC_x.y
+# version suffix first -- without that, `nm` prints "execlp@GLIBC_2.2.5" and an
+# anchored match silently finds nothing.  (This bug made the check pass against
+# v3.0.0 on its first run; the symbol was there all along.)
 BAD=$(nm -D --undefined-only "$LIB" 2>/dev/null | \
-	awk '{print $NF}' | \
+	awk '{print $NF}' | sed 's/@.*//' | \
 	grep -E '^(execlp|execvp|execvpe|system|popen)$' | sort -u || true)
 
 if [[ -n $BAD ]]; then
