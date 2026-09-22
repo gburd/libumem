@@ -172,6 +172,12 @@ void umem_ptc_mag_flush_all(umem_ptc_t *ptc);
  * Flush a bin to the magazine layer
  */
 void umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size);
+/*
+ * Drain a bin completely.  Only correct at thread exit, where the bin is about
+ * to be freed and anything left behind would lose its only reference while the
+ * slab layer still counted it as allocated.
+ */
+void umem_ptc_bin_flush_all(umem_ptc_bin_t *bin, size_t size);
 
 /*
  * Refill a bin from the magazine layer

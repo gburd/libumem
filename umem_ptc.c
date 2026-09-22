@@ -293,7 +293,18 @@ umem_ptc_get(void)
 	/* Store in TLS and pthread-specific data */
 	thread_ptc = ptc;
 	if (ptc_key_initialized) {
-		(void) pthread_setspecific(ptc_key, ptc);
+		/*
+		 * If this fails there is no destructor for this thread, so its
+		 * cached objects would be lost at exit rather than drained.
+		 * Rather than cache silently-unreclaimable objects, decline to
+		 * use a PTC on this thread: the caller falls back to the
+		 * magazine layer, which is slower but loses nothing.
+		 */
+		if (pthread_setspecific(ptc_key, ptc) != 0) {
+			thread_ptc = NULL;
+			umem_free(ptc, sizeof(umem_ptc_t));
+			return (NULL);
+		}
 	}
 
 	return (ptc);
@@ -389,16 +400,21 @@ umem_ptc_free(void *ptr, size_t size)
 
 /*
  * Flush cached objects from a bin to the magazine layer.
- * Uses batch free to take cc_lock once instead of per-object.
  *
- * Objects flushed here enter the per-CPU magazine via umem_cache_free_batch(),
- * which is intentional: the magazine layer is the correct next level in
- * the caching hierarchy (PTC -> magazine -> depot -> slab). This means
- * flushed objects may be re-cached in magazines rather than immediately
- * reaching the depot, but that is the desired behavior for warm reuse.
+ * `all` selects the policy:
+ *   0 -- flush about half, the steady-state behaviour when a bin overflows:
+ *        keep some objects for reuse so the thread does not immediately have
+ *        to refill.
+ *   1 -- flush EVERY object.  Required at thread exit: the bin is about to be
+ *        freed, so anything left behind loses its only reference while the
+ *        slab layer still counts it as allocated.
+ *
+ * Objects flushed here enter the per-CPU magazine via _umem_cache_free(),
+ * which is intentional: the magazine layer is the correct next level in the
+ * caching hierarchy (PTC -> magazine -> depot -> slab).
  */
-void
-umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
+static void
+umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 {
 	int i;
 	int flush_count;
@@ -409,10 +425,13 @@ umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
 		return;
 	}
 
-	/* Flush half the bin */
-	flush_count = bin->count / 2;
-	if (flush_count == 0) {
+	if (all) {
 		flush_count = bin->count;
+	} else {
+		flush_count = bin->count / 2;
+		if (flush_count == 0) {
+			flush_count = bin->count;
+		}
 	}
 
 	/* Look up the appropriate cache */
@@ -426,6 +445,21 @@ umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
 		ptr = bin->slots[--bin->count];
 		_umem_cache_free(cp, ptr);
 	}
+}
+
+void
+umem_ptc_bin_flush(umem_ptc_bin_t *bin, size_t size)
+{
+	umem_ptc_bin_flush_impl(bin, size, 0);
+}
+
+/*
+ * Flush a bin completely.  Used only by umem_ptc_destroy().
+ */
+void
+umem_ptc_bin_flush_all(umem_ptc_bin_t *bin, size_t size)
+{
+	umem_ptc_bin_flush_impl(bin, size, 1);
 }
 
 /*
@@ -482,19 +516,43 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 	/* Flush all per-thread magazines back to depot first */
 	umem_ptc_mag_flush_all(ptc);
 
-	/* Flush all bins back to magazine layer */
+	/*
+	 * Drain every bin COMPLETELY.
+	 *
+	 * This used to call umem_ptc_bin_flush(), which deliberately flushes
+	 * only half a bin, exactly once per bin -- and then freed the PTC
+	 * below.  Everything still in a bin at that point lost its only
+	 * reference while the slab layer went on counting it as allocated, so
+	 * a thread exiting with 128 cached objects permanently leaked 64 of
+	 * them.  Thread churn made that cumulative.  (The old comment here
+	 * claimed "Flush all bins", which the code did not do.)
+	 *
+	 * The yield accounting was also wrong: it added bin->count AFTER the
+	 * flush, i.e. the remainder rather than the number flushed.
+	 */
 	{
 		int flushed = 0;
 		for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
+			int n;
+
 			bin = &ptc->bins[bin_idx];
-			if (bin->count > 0) {
-				umem_ptc_bin_flush(bin,
-				    umem_ptc_bin_size(bin_idx));
-				flushed += bin->count;
-				if (flushed >= 64) {
-					sched_yield();
-					flushed = 0;
-				}
+			if (bin->count == 0)
+				continue;
+
+			n = bin->count;
+			umem_ptc_bin_flush_all(bin,
+			    umem_ptc_bin_size(bin_idx));
+			ASSERT(bin->count == 0);
+
+			/*
+			 * Returning a large number of objects can hold cc_lock
+			 * for a while; yield periodically so an exiting thread
+			 * does not stall the others.
+			 */
+			flushed += n;
+			if (flushed >= 64) {
+				sched_yield();
+				flushed = 0;
 			}
 		}
 	}
