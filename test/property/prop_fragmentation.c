@@ -54,10 +54,20 @@ static QCC_TestStatus prop_no_unbounded_fragmentation(QCC_GenValue **vals, int l
     size_t rss_growth = (after.ru_maxrss - before.ru_maxrss);
 #endif
 
-    /* Clean up */
+    /*
+     * Clean up.  umem_free() requires the ORIGINAL size -- it is not tracked
+     * internally, despite what the comment here used to claim.  Passing 0
+     * aborted with "vmem_hash_delete(...): bad free".  That went unseen because
+     * the QCC_getValue() misuse above meant this property never executed a
+     * single case; fixing that extraction exposed this.
+     *
+     * The size is recomputed from the index with the same formula used to
+     * allocate, so the two cannot drift.
+     */
     for (size_t i = 0; i < num_allocs; i++) {
         if (ptrs[i]) {
-            umem_free(ptrs[i], 0);  /* Size tracked internally */
+            size_t size = ((i * 7919) % 1009) + 16;
+            umem_free(ptrs[i], size);
         }
     }
     free(ptrs);
