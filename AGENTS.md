@@ -169,6 +169,13 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - **Never `git add -A`, `git add .`, or `git commit -a`.** Add your own paths
   explicitly. An `git add -A` swept another agent's half-finished header into
   an unrelated commit and produced a broken-build sha on `master`.
+- **On a file another agent is also editing, `git add <path>` is NOT enough
+  either** — it stages the whole file, including their uncommitted hunks. This
+  happened on `umem.c`: an agent staged only its own path and still swept a
+  second agent's in-flight `umem_secure_mode()` gate into its commit, briefly
+  breaking the build. On a contended file use `git add -p`, or stage an explicit
+  blob, and check `git diff --cached` before committing. If you discover you
+  swept someone else's work, commit a correction on top — do not reset or amend.
 - **Never `git reset`** (soft or hard), and never `git checkout -- .`. Another
   agent's commit can be HEAD at any moment; a `git reset --soft HEAD~1`
   removed someone else's commit from the branch (recovered from reflog). To
