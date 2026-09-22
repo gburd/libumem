@@ -86,6 +86,12 @@ can see it. A caller gets NULL with a stale, unrelated `errno`. That is why this
 presented for years as "umem is slower on this workload" rather than "umem
 could not get memory": nothing in the failure path told anyone why.
 
+**This function is not the only one that does it (P5.5, 2026-09-22).** Its
+caller `vmem_mmap_alloc()` has the identical pattern, and one of its two
+erasures sits on this same exhaustion path, so fixing `top_alloc` alone changes
+nothing that an ordinary caller can observe. See the correction under "What was
+kept from the attempt".
+
 ## Why this went unseen
 
 The benchmark harness counted allocation failures as **nothing at all** —
@@ -115,7 +121,10 @@ the Phase 2 workstream's file, and a core address-space change landing without
 a dedicated test is exactly the pattern this plan exists to stop.
 
 Separately and independently worth fixing: stop restoring `errno` over a
-genuine failure in `vmem_mmap_top_alloc()`.
+genuine failure in `vmem_mmap_top_alloc()` **and in its caller
+`vmem_mmap_alloc()`, which undoes it** — see the P5.5 correction under "What was
+kept from the attempt" below. Fixing only the former, as v3.0.0 did, leaves the
+caller seeing a stale `errno`.
 
 ## Reproducing
 
@@ -198,12 +207,49 @@ measurement as the before/after check.
 
 ### What was kept from the attempt
 
-Two fixes that stand on their own evidence:
+Two fixes that stand on their own evidence — with one of them since found to
+have been **insufficient, on evidence that no longer reproduces**; see the
+correction under the first bullet:
 
 - **`errno` is no longer erased over a genuine `mmap()` failure.** Measured
   directly: `FIRST FAILURE at 8269MB (errno=0 Success)` became
   `(errno=12 Cannot allocate memory)`. This is the defect that made the ceiling
   look like a performance problem rather than an allocation failure.
+
+  **Correction (2026-09-22, P5.5). This entry overstated what was achieved: the
+  fix behind the measurement was insufficient at the caller.** The change was
+  made in `vmem_mmap_top_alloc()` only. Its caller `vmem_mmap_alloc()` ends with
+  an unconditional `errno = old_errno` that is also reached with `ret == NULL` —
+  which is this very exhaustion path, since `mmap_heap` uses `vmem_mmap_alloc`
+  with `mmap_top` (`vmem_mmap_top_alloc`) as its source. So `top_alloc`
+  preserved the `ENOMEM` and its caller wiped it one frame up, and **an ordinary
+  `umem_alloc()` caller still received a stale `errno` after this "fix"**.
+
+  Measured on every surviving tree that contains the fix — isolated builds, a
+  caller that sets `errno = EDOM` as a sentinel and then allocates under a
+  256 MB `RLIMIT_AS` cap (`c7i.2xlarge` x86_64, `c7g.2xlarge` aarch64):
+
+  | tree | `top_alloc` fix | caller-visible `errno` at first failure |
+  |---|---|---|
+  | `553d42e` (quantum reverted, errno kept) | present | `33` — the sentinel, restored |
+  | `d22bf03` (v3.0.0) | present | `33` — the sentinel, restored |
+  | `d22bf03`, chunks 4096 / 65536 / 131072 | present | `33` in all three |
+
+  4096 B is the size this document's own ceiling measurement used (the slab
+  path), so the result is not an artifact of probing a different arena.
+
+  **Where the `errno=12` above came from is now unattributable.** It does not
+  reproduce from an ordinary caller on any tree that still exists. `dd658b1`,
+  the commit that made the errno change, also raised the mmap-heap quantum in
+  the same commit, and that tree aborts under this probe, so it cannot be
+  re-measured either. The honest status: the `errno=0 → errno=12` transition is
+  **unattributed**, not confirmed, and it should not have been recorded as proof
+  that the defect was closed. It is left visible above rather than deleted,
+  because the claim is part of the record.
+
+  Fixed properly in v3.0.1 (`errno` restored only when `ret != NULL`), with
+  `test/security/test_errno_preserved.c` asserting it **from the caller's side** —
+  the side that matters, and the side that was never checked.
 - **`vmem_populate()` reports an unsupported `VM_SLEEP` instead of aborting.**
   The assertion crashed the process with no indication the caller's flags were at
   fault, and vanished entirely under `NDEBUG`, continuing into a path the code

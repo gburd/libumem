@@ -217,6 +217,16 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 		 * not get memory".
 		 * See docs/results/2026-09-22-umem-heap-ceiling-vma.md.
 		 *
+		 * AND FIXING IT HERE WAS NOT ENOUGH (P5.5).  vmem_mmap_alloc()
+		 * above is this function's caller on the exhaustion path
+		 * (mmap_heap imports from mmap_top), and it restored errno
+		 * unconditionally on the way out, undoing this one frame up.
+		 * Measured at d22bf03 and 553d42e, both of which contain the
+		 * comment you are reading: a caller still saw its own pre-call
+		 * errno.  Preserving errno in a callee means nothing if a caller
+		 * overwrites it -- check the whole chain, not the frame with the
+		 * syscall in it.
+		 *
 		 * The ASSERT is also gone: VM_SLEEP is a caller error, and
 		 * aborting the process is the wrong way to report one (and
 		 * under NDEBUG it vanished and execution continued anyway).

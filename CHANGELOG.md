@@ -178,17 +178,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   paths**, erasing the real `ENOMEM`, which is why this presented for years as
   "libumem is slower on this workload".
 
-  **Correction (2026-09-22, P5.5).** The release notes for this version said the
-  `errno` erasure was fixed and that "failure paths now leave `errno` alone".
-  That was **false**: the fix landed in `vmem_mmap_top_alloc()` only, and its
-  sibling `vmem_mmap_alloc()` in the same file kept the identical
-  `errno = old_errno` on its failure path, so a caller of the mmap backend's
-  span allocator still got `NULL` with a stale `errno`. This is exactly the
-  symptom-at-one-call-site failure AGENTS.md &sect;7 forbids, committed by the
-  coordinator who wrote that rule. The sibling is fixed in v3.0.1; the false
-  claim is recorded here rather than quietly patched, because the claim is
-  itself the finding. A sweep of `vmem_*.c` / `umem_*.c` for the same pattern is
-  recorded in the v3.0.1 notes.
+  **Correction (2026-09-22, P5.5). The fix announced above did not work.** These
+  release notes said the `errno` erasure was fixed and that "failure paths now
+  leave `errno` alone". Both halves of that are wrong, and the second is worse
+  than a missed sibling:
+
+  1. The fix landed in `vmem_mmap_top_alloc()` only. Its sibling
+     `vmem_mmap_alloc()`, in the same file, kept the identical
+     `errno = old_errno` on its `MAP_FIXED` failure branch.
+  2. `vmem_mmap_alloc()`'s *final* `errno = old_errno` is also reached with
+     `ret == NULL`, whenever `vmem_alloc(src, ...)` fails — which is the
+     address-space-exhaustion path. The chain is structural, not incidental:
+     `vmem_mmap_arena()` builds `mmap_top` from `vmem_mmap_top_alloc` and
+     `mmap_heap` from `vmem_mmap_alloc` with `mmap_top` as its source, so on
+     exhaustion `vmem_mmap_alloc` → `vmem_alloc(mmap_top)` →
+     `vmem_mmap_top_alloc` → `mmap()` sets `ENOMEM`, `top_alloc` preserves it,
+     **and then `vmem_mmap_alloc` wipes it one frame up.**
+
+  So this was not a partial fix. **It was ineffective for the exact measured
+  case it was written for:** the `FIRST FAILURE at 8269MB (errno=0 Success)`
+  that motivated it still showed a stale `errno` at the `umem_alloc()` caller,
+  because the frame above the patched function undid the patch. Verified against
+  the tags themselves rather than reasoned about: isolated builds of `d22bf03`
+  and `553d42e`, both confirmed by grep to contain the `top_alloc` fix, with a
+  caller that sets `errno = EDOM` and allocates under a 256 MB `RLIMIT_AS` cap,
+  report `errno=33` — the sentinel, restored — at the first failure, on x86_64
+  and aarch64 and at chunk sizes 4096 / 65536 / 131072. Post-fix the same probe
+  reports `errno=12 ENOMEM`.
+
+  Related correction in `docs/results/2026-09-22-umem-heap-ceiling-vma.md`: the
+  `errno=0 → errno=12` measurement that document cites as proof this defect was
+  closed does not reproduce from an ordinary caller on any surviving tree, so it
+  is recorded there as unattributed rather than confirmed.
+
+  Fixed in v3.0.1 by restoring `errno` only when `ret != NULL`. This is
+  recorded here rather than quietly patched because the false claim is itself
+  the finding: it is the symptom-fixed-at-one-call-site failure AGENTS.md §7
+  forbids, committed by the author of that rule, and the claim in these notes
+  is what stopped anyone looking further. A sweep for the same pattern across
+  `vmem_*.c` is in the v3.0.1 notes.
 
   Workaround today: raise `vm.max_map_count`. The fix changes address-space
   layout and is deliberately unassigned until it has its own regression driving

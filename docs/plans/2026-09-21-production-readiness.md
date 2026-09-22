@@ -439,15 +439,81 @@ glibc does. This touches the allocation hot path, so it needs before/after
 throughput on both architectures — which is why it is scheduled separately from
 the rest of this phase.
 
-### P5.5 `errno` erasure fix was incomplete (MEDIUM)
-`vmem_mmap.c` — `vmem_mmap_alloc()` still does `errno = old_errno` on its
-failure path (verified: the assignment before `return (NULL)`)
+### P5.5 `errno` erasure fix was not merely incomplete — it was ineffective (MEDIUM)
+`vmem_mmap.c` — `vmem_mmap_alloc()` erases `errno` on failure **twice**, and
+the second erasure sits on the exhaustion path the v3.0.0 fix was written for
 
 The v3.0.0 work fixed this in `vmem_mmap_top_alloc()` only and the release notes
-claim "failure paths now leave errno alone." That is **false for the sibling
-function**. This is the coordinator's own error: a symptom fixed at one call
-site, which is precisely what AGENTS.md §7 forbids. Fix both, and correct the
-CHANGELOG claim.
+claim "failure paths now leave errno alone." That is **false for the sibling**.
+This is the coordinator's own error: a symptom fixed at one call site, which is
+precisely what AGENTS.md §7 forbids. Fix both, and correct the CHANGELOG claim.
+
+**Corrected 2026-09-22 after verification: the original entry (one erasure, in
+the `MAP_FIXED` failure branch) understated it. There are two, and the one not
+originally found is the one that matters.**
+
+```c
+static void *
+vmem_mmap_alloc(vmem_t *src, size_t size, int vmflags)
+{
+        int old_errno = errno;
+        ret = vmem_alloc(src, size, vmflags);          /* (2) fails here */
+        if (ret != NULL && mmap(...) == MAP_FAILED) {
+                ...
+                errno = old_errno;                     /* (1) reported */
+                return (NULL);
+        }
+        errno = old_errno;                             /* (2) NOT reported */
+        return (ret);                                  /*     reached with NULL */
+}
+```
+
+1. The `MAP_FIXED` failure branch restores `errno` — the erasure originally
+   reported.
+2. The function's **final** `errno = old_errno` is also reached with
+   `ret == NULL`, whenever `vmem_alloc(src, ...)` fails. That is the
+   address-space-exhaustion path, and the call chain is structural rather than
+   incidental: `vmem_mmap_arena()` builds
+   `vmem_init("mmap_top", CHUNKSIZE, vmem_mmap_top_alloc, ...)` with
+   `"mmap_heap"` using `vmem_mmap_alloc` and `mmap_top` as its source. So on
+   exhaustion the chain is
+   `vmem_mmap_alloc` → `vmem_alloc(src=mmap_top)` → `vmem_mmap_top_alloc` →
+   `mmap()` fails and sets `ENOMEM`; `top_alloc` preserves it (the v3.0.0 fix);
+   and `vmem_mmap_alloc`'s final unconditional restore wipes it one frame up.
+
+**Therefore the v3.0.0 fix was not incomplete across siblings, it was
+ineffective for the measured case it was written for.** The
+`FIRST FAILURE at 8269MB (errno=0 Success)` in
+`docs/results/2026-09-22-umem-heap-ceiling-vma.md` still read a stale `errno` at
+the `umem_alloc()` caller after that fix, because the frame above undid it.
+
+**Verified, not argued.** Isolated builds; a caller sets `errno = EDOM` as a
+sentinel, then allocates under a 256 MB `RLIMIT_AS` cap so the backend `mmap()`
+genuinely fails. Every tree that contains the v3.0.0 `top_alloc` fix (confirmed
+by grep before measuring) still hands the caller its own sentinel back:
+
+| tree | chunk | caller-visible `errno` |
+|---|---|---|
+| `d22bf03` (v3.0.0), `c7i.2xlarge` | 4096 | `33` — sentinel restored |
+| `d22bf03` | 65536 | `33` — sentinel restored |
+| `d22bf03` | 131072 | `33` — sentinel restored |
+| `553d42e` (quantum reverted, errno kept), `c7g.2xlarge` | 4096 | `33` — sentinel restored |
+
+4096 B is the size the ceiling measurement itself used, so this is not an
+artifact of hitting a different arena. Post-fix the same probe reports
+`errno=12 (ENOMEM)`.
+
+A side finding, recorded in the results doc: the `errno=0 → errno=12`
+improvement that the heap-ceiling document cites as proof this defect was closed
+**does not reproduce from an ordinary caller on any surviving tree**, and the
+commit that produced it (`dd658b1`) also raised the mmap-heap quantum and now
+aborts under the probe. That number is unattributed rather than confirmed.
+
+Fix: restore `errno` only when `ret != NULL`. A successful allocation must not
+perturb it; a failed one must not erase the reason. `RLIMIT_AS` is the right
+forcing mechanism for the regression — the same kernel refusal as the
+`vm.max_map_count` ceiling, reachable without an 8 GB heap or a sysctl, so it
+runs deterministically anywhere (`test/security/test_errno_preserved.c`).
 
 ### P5.6 Introspection socket: predictable path and an unlink TOCTOU (MEDIUM)
 `umem_introspect.c:907` (path), `:975–990` (reclaim sequence)
