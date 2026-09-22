@@ -234,12 +234,6 @@ Enable the per-CPU transaction log of size
 permitted).  Required for
 .B umem log
 to return any records.  ~5% allocation overhead.
-.TP
-.B UMEM_STACKTRACE_ADDR2LINE=1
-Opt-in to forking
-.BR addr2line (1)
-for source-line resolution in stack traces.  Off by default because
-the fork interferes with debugger expression evaluation.
 .SH FILES
 .TP
 .I tools/gdb/umem_gdb.py

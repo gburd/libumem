@@ -278,12 +278,23 @@ and
 .B UMC_QCACHE
 caches by default to keep the report focused on user allocations.
 .SS Debugger expression evaluation aborts on fork
-The default stack-trace formatter does not fork.  Source-line
-resolution via
+The stack-trace formatter does not fork.  Source-line resolution comes
+from
+.BR libdw (3)
+when the build found elfutils, and otherwise degrades to function+offset
+from
+.BR dladdr (3).
+An
 .BR addr2line (1)
-is opt-in via
-.BR UMEM_STACKTRACE_ADDR2LINE=1
-because the fork interferes with debugger inferior calls.
+fallback and its
+.B UMEM_STACKTRACE_ADDR2LINE
+switch were removed: the exec resolved through
+.BR PATH
+on the allocator's startup path, and it passed
+.B -e /proc/self/exe
+which after the exec names
+.BR addr2line
+itself, so it never resolved a source line.
 .SH COMPARISON TO OTHER LEAK DETECTORS
 .TS
 l l l .

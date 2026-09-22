@@ -72,8 +72,9 @@ def _evaluate(debugger, expr):
     opts.SetTryAllThreads(True)
     opts.SetTimeoutInMicroSeconds(60 * 1000 * 1000)  # 60s
     opts.SetUnwindOnError(True)
-    # Don't trap on fork() inside the inferior -- the addr2line
-    # fallback used by umem_stacktrace forks a helper process.
+    # Don't trap on fork() inside the inferior.  libumem's own stack-trace
+    # formatter no longer forks (the addr2line fallback was removed in
+    # P5.1), but inferior calls can still reach library code that does.
     if hasattr(opts, "SetStopOthers"):
         opts.SetStopOthers(False)
     return target.EvaluateExpression(expr, opts)

@@ -38,10 +38,19 @@ extern "C" {
  *   #0  0x7f3a2b1045a2 in umem_cache_free_debug+0x42 () at umem.c:1782
  *   #1  0x55a3001012f4 in my_function+0x18 () at myapp.c:42
  *
- * Three-tier symbol resolution:
+ * Two-tier symbol resolution:
  *   1. libdw (best): file + line via DWARF debug info
- *   2. addr2line (fallback): fork addr2line for file + line
- *   3. dladdr only (minimum): function + offset, no file:line
+ *   2. dladdr only (minimum): function + offset, no file:line
+ *
+ * A third tier forked addr2line(1) through PATH until P5.1 deleted it: it
+ * passed -e /proc/self/exe, which names addr2line itself after the exec, so
+ * it never resolved anything, and the PATH-resolved exec sat on the
+ * unconditional umem_init() path.  See umem_stacktrace.c.
+ */
+
+/*
+ * Returns the resolver tier in use: 0 = dladdr, 2 = libdw.  1 is retired
+ * (addr2line) and is never returned.
  */
 
 void umem_stacktrace_print(uintptr_t *pcs, int depth,
