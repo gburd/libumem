@@ -2,24 +2,66 @@
 
 Benchmark suite for comparing libumem against other memory allocators.
 
-> **Known-invalid measurements (2026-09-21).** Two defects in this harness
-> invalidate results previously published from it. Fix them, or account for
-> them, before trusting a number:
+> **Harness defects P2.1/P2.2 are FIXED as of 2026-09-22.** Read this before
+> comparing any new number against an older one: the fix changed both the
+> arithmetic and the output format, so old and new results are not comparable.
 >
-> 1. **The operation budget is divided by thread count twice** — once in
+> What was wrong, and what it means for previously published data:
+>
+> 1. **The operation budget was divided by thread count twice** — once in
 >    `matrix.sh` (`ops=$(( OPERATIONS / t ))`) and again in `bench_main.c`
->    (`.operation_count = operation_count / thread_count`). High-thread-count
->    points therefore run a small fraction of the intended work: 192-thread
->    points measured ~52k total operations in ~3.8 ms with >27% CoV.
-> 2. **The fragmentation metric is wrong three ways**: the live-bytes
->    denominator in `bench_framework.c` accumulates bytes that were already
->    freed; `peak_rss_bytes` is sampled after cleanup, so it is not a peak;
->    and the `frag` workload runs on **one** thread regardless of `-t`
->    (`bench_main.c` sets `thread_count = 1` for it), so results labelled
->    "192-thread fragmentation" are single-threaded.
+>    (`.operation_count = operation_count / thread_count`). Aggregate work
+>    therefore fell as 1/threads², and the 192-thread points used to claim a
+>    scaling cliff measured ~52k total operations in ~3.8 ms with >27% CoV.
+>    Now `-n` is a **total** budget, divided exactly once, with a minimum of
+>    `BENCH_MIN_OPS_PER_THREAD` (100k) operations per thread; a point below
+>    that floor is raised and flagged `ops_floor_raised`. `bench_allocators.sh`
+>    and `bench_contention.c` had the same bug and are fixed too.
+> 2. **The fragmentation metric was wrong four ways**: the live-bytes
+>    denominator accumulated bytes that had already been freed;
+>    `peak_rss_bytes` was sampled *after* cleanup so it was not a peak and did
+>    not correspond to the ratio; the pool was capped at 4096 objects so a
+>    longer run did not grow its working set; and the `frag` workload ran on
+>    one thread regardless of `-t` while being reported as 192-thread. Now
+>    fragmentation is `peak_rss_bytes / live_bytes_at_peak` with both sampled
+>    **at the same instant**, the pool grows with the budget, and the workload
+>    honours `-t`.
+> 3. **`single`/`multi`/`prodcons` no longer report a fragmentation number at
+>    all.** They divided RSS by *cumulative* allocation traffic, which falls
+>    towards zero the longer the run. They hold no live set, so the ratio is
+>    undefined and the CSV column is left **empty** — not `0`, not `1.0`.
+>
+> Conclusions withdrawn on the strength of these defects (192-thread scaling,
+> all fragmentation findings) have **not** been restored. They require
+> re-measurement under the protocol below, not a recomputation.
 >
 > Tracked as P2.1/P2.2 in
 > [`../../docs/plans/2026-09-21-production-readiness.md`](../../docs/plans/2026-09-21-production-readiness.md).
+> The regressions are `test/bench/test_bench_accounting` (the arithmetic) and
+> `test/bench/check_budget.sh` (end-to-end, because the published defect was a
+> *composition* of two locally-defensible divisions).
+
+## Re-measurement protocol
+
+A number from this harness is citable only with all of these:
+
+- **A work floor.** Never accept a point with `ops_floor_raised = true` as a
+  measurement of the budget you asked for; raise `-n` instead.
+- **Matched protocols.** Same warm-up count, window count, thread count and
+  duration target for every allocator compared.
+- **Alternating A/B, not batched.** `matrix.sh` alternates allocators at the
+  innermost loop so compared points are adjacent in time; batching one
+  allocator's whole sweep lets slow drift (thermal, neighbour noise) appear as
+  a difference between allocators.
+- **Per-window, not whole-run, for sustained loads.** `bench_main -A` emits one
+  CSV row per measured window, each with its own percentiles and its own
+  RSS/live-bytes pair. A single whole-run p999 cannot show a tail degrading and
+  a single whole-run RSS cannot show fragmentation growing.
+- **Full provenance.** Commit sha, configure flags, instance type, allocator
+  library paths and digests, binary digests. `matrix.sh`/`sustained_load.sh`
+  record these; pass `LIBUMEM_SHA=<sha>` or run under
+  `scripts/ec2/verify-isolated.sh`, because `run-remote.sh` excludes `.git` and
+  the sha would otherwise be recorded as `unknown`.
 
 ## Which driver to use
 
@@ -112,7 +154,8 @@ Options:
   -a ALLOCATOR  Test specific allocator (libc,umem,jemalloc,tcmalloc,mimalloc,snmalloc,scudo,rpmalloc,all)
   -w WORKLOAD   Run specific workload (single,multi,prodcons,frag,all)
   -t THREADS    Thread count for multithreaded workloads (default: CPU count)
-  -n COUNT      Operation count (default: 1000000)
+  -n TOTAL_OPS  TOTAL operations across ALL threads (default: 1000000);
+                divided by the thread count once, with a 100k/thread floor
   -s MIN:MAX    Size range in bytes (default: 16:1024)
   -r RUNS       Measured runs; report median + CoV (default: 1)
   -W WARMUPS    Warm-up runs to discard before measuring (default: 0)
@@ -126,7 +169,7 @@ Options:
 Usage: ./bench_allocators.sh [OPTIONS] [ALLOCATORS...]
 
 OPTIONS:
-    -n COUNT        Number of operations (default: 10000000)
+    -n COUNT        TOTAL operations across all threads (default: 10000000)
     -t THREADS      Comma-separated thread counts (default: 1,2,4,8,16)
     -s SIZES        Comma-separated size ranges (default: 16:64,64:256,...)
     -o DIR          Output directory (default: results)
@@ -176,13 +219,18 @@ Separate threads for allocation (producers) and deallocation (consumers). Tests 
 
 ### Fragmentation (`frag`)
 
-Allocates various sizes with specific free patterns to measure memory fragmentation over time.
+Builds a live working set, then churns it: allocate a batch into a live pool,
+sample RSS and live bytes together, free a random ~50% of the pool to create
+holes, repeat. The pool's capacity grows with `-n`, so a longer run holds a
+**larger** working set rather than cycling a fixed one for longer.
 
 **Use case**: Long-running applications with varied allocation patterns
 
-**Single-threaded regardless of `-t`**: `bench_main.c` hardcodes
-`thread_count = 1` for this workload. A result labelled with any other thread
-count is mislabelled.
+**Honours `-t`.** Each thread owns a private live pool; live bytes are summed
+across threads because RSS is process-wide, so the reported ratio pairs
+process RSS with process-wide live bytes. Before 2026-09-22 `bench_main.c`
+hard-coded `thread_count = 1` here, so every result labelled "192-thread
+fragmentation" was single-threaded.
 
 ## Metrics
 
@@ -206,16 +254,33 @@ Lower is better for all latency metrics.
 
 ### Memory
 
-- **RSS (Resident Set Size)**: Physical memory used by process
-- **Allocated**: Total bytes requested by benchmark
-- **Fragmentation**: RSS / Allocated ratio
-  - 1.0 = perfect (no overhead)
-  - Higher = more fragmentation/overhead
+- **peak_rss_bytes**: for the `frag` workload, the largest RSS observed
+  *during* the run; for the others, process RSS at the end. Never
+  post-cleanup RSS presented as a peak.
+- **allocated_bytes**: *cumulative* bytes requested over the whole run. This is
+  traffic, not a live-set size, and must never be used as a denominator for
+  memory overhead.
+- **live_bytes_at_peak**: bytes simultaneously live at the instant
+  `peak_rss_bytes` was sampled.
+- **frag**: `peak_rss_bytes / live_bytes_at_peak`, both sampled at the **same
+  instant**. 1.0 means the allocator's RSS equals the bytes the program was
+  actually holding; higher means more overhead.
+  - **Only the `frag` workload defines this.** `single`, `multi` and
+    `prodcons` free every buffer immediately, hold no live set, and report an
+    **empty** `frag` column. An empty value means undefined, and must not be
+    read, plotted, or averaged as zero.
 
-**Do not use the fragmentation ratio as reported.** See the warning at the
-top of this file: the denominator includes freed bytes, the "peak" RSS is
-sampled after cleanup, and the `frag` workload ignores the thread count.
-All three have to be fixed before this number means anything.
+### Operation counts
+
+- **total_ops**: operations completed, summed over **all** threads.
+- **ops_per_thread**: `total_ops / threads`, as actually run.
+- **threads**: threads that actually ran — which may differ from
+  `threads_requested`. `prodcons` forces at least one producer and one
+  consumer, so `-t 1` honestly runs 2. A difference between the two is
+  information, not an error.
+- **ops_floor_raised**: `true` means the per-thread share of `-n` was below
+  `BENCH_MIN_OPS_PER_THREAD` and was raised to it, so the point ran **more**
+  work than requested. Do not cite such a point as a measurement of `-n`.
 
 ## Output
 
@@ -227,7 +292,7 @@ Allocator: umem
 Workload:  single-thread
 ========================================
 Throughput: 5423156.32 ops/sec (1.84 s total)
-Operations: 10000000
+Operations: 10000000 total across 1 thread
 
 Latency (ns):
   min:  42
@@ -294,7 +359,8 @@ plt.show()
 
 1. **High throughput**: >1M ops/sec for single-threaded, >500K ops/sec/thread for multi-threaded
 2. **Low p99 latency**: <500ns for small allocations (<1KB)
-3. **Low fragmentation**: <1.5 for mixed workloads
+3. **Low fragmentation**: <1.5 for the `frag` workload (peak RSS / live
+   bytes at that instant; the other workloads do not define it)
 4. **Linear scaling**: 2x threads = 2x throughput (up to core count)
 
 These are rules of thumb for reading a run, not thresholds this project
