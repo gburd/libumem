@@ -57,11 +57,19 @@ Phase 1 is complete as listed. Two caveats a reader should carry forward:
   window). The defect and the fix are both real -- pre-fix the same run produces
   3.1M capacity desyncs and a SIGSEGV -- but nothing here establishes that this
   occurs at any particular rate in production.
-- **P1.3a's regression has a marginal oracle on x86_64.** It fails ~17% of runs
-  post-fix versus ~7% at baseline, with the PTC arm under test unchanged
-  (151 -> 147) and the *control* arm having dropped (196 -> 66), which tightens
-  its fixed margin. Not a P1.3a regression, but its threshold needs replacing
-  with an exact oracle. Details in `2026-09-22-p1.3bc-magazine-resize.md`.
+- **P1.3a's statistical oracle was replaced with an exact one (resolved).** Its
+  original check compared outstanding-buffer growth between a PTC-on arm and a
+  PTC-off control against a fixed margin. When the P1.3b/c fixes reduced the
+  *control* arm's retention (196 -> 66) while the arm under test barely moved
+  (151 -> 147), the comparison tightened and the test began failing ~17% of
+  runs without the behaviour under test having changed -- the yardstick moved,
+  not the code. Replaced by `umem_ptc_probe_exit_stranded`, which counts
+  objects still in a PTC bin at the instant the PTC is freed: a surgically
+  reverted build reports **2304 stranded and FAILs**, the fix reports **0 and
+  PASSes**, on x86_64 and aarch64. The two `_probe` variants are what `make
+  check` gates; the statistical variants remain buildable for manual use.
+  Lesson recorded: do not gate on a statistic when an exact count is
+  obtainable.
 
 ### P1.1 Interposer `calloc` storage ownership and concurrency
 `malloc_interpose.c:189, 443–479`
