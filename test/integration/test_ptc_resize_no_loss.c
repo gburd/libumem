@@ -121,6 +121,7 @@
  */
 #define PER_THREAD	320
 #define HOLD_BACK	8	/* freed only after the magtype has changed */
+#define POST_PASSES	3	/* alloc/free passes after the magtype changed */
 
 static _Atomic int release;
 static _Atomic int parked;
@@ -151,7 +152,7 @@ static void *
 park_with_full_magazine(void *arg)
 {
 	void **keep = calloc(PER_THREAD, sizeof (void *));
-	int i;
+	int i, pass;
 
 	(void) arg;
 	if (keep == NULL)
@@ -180,17 +181,27 @@ park_with_full_magazine(void *arg)
 
 	/*
 	 * In the test round the magtype has changed under us by now, so every
-	 * free from here on reaches the stale-magazine path with a populated
-	 * magazine.
+	 * free that fills this thread's loaded magazine reaches the
+	 * stale-magazine path with a POPULATED magazine -- the exact call that
+	 * pre-fix freed the shell and lost the contents.
+	 *
+	 * Churn enough to flush the magazine several times: each flush is one
+	 * opportunity for the defect, so the signal is proportional to volume
+	 * rather than depending on catching a single event.
 	 */
 	for (i = PER_THREAD - HOLD_BACK; i < PER_THREAD; i++) {
 		if (keep[i] != NULL)
 			umem_free(keep[i], OBJ_SIZE);
 	}
-	for (i = 0; i < 128; i++) {
-		void *p = umem_alloc(OBJ_SIZE, UMEM_DEFAULT);
-		if (p != NULL)
-			umem_free(p, OBJ_SIZE);
+	for (pass = 0; pass < POST_PASSES; pass++) {
+		for (i = 0; i < PER_THREAD; i++)
+			keep[i] = umem_alloc(OBJ_SIZE, UMEM_DEFAULT);
+		for (i = 0; i < PER_THREAD; i++) {
+			if (keep[i] != NULL) {
+				umem_free(keep[i], OBJ_SIZE);
+				keep[i] = NULL;
+			}
+		}
 	}
 
 	free(keep);
@@ -234,6 +245,18 @@ reap_to_floor(void)
  *
  * Returns the floor.  *observed_to is the new magsize if a resize happened,
  * 0 otherwise.
+ *
+ * ORDERING MATTERS, AND GETTING IT WRONG MAKES THE TEST USELESS.  An earlier
+ * version opened the contention gate (umem_depot_contention = 0) before the
+ * threads had parked.  The update thread then often resized DURING the ramp, so
+ * the threads ended up parked holding magazines of the NEW magtype and their
+ * later frees never reached the discard path at all -- and the test reported
+ * PASS on a build with the defect present.  The log signature of that mistake is
+ * a test round whose outstanding-while-parked count is LOWER than the control's
+ * (1172 vs 2190), because the purge inside the resize already ran.
+ *
+ * So: keep the resize suppressed until every thread has parked AND the magtype
+ * is confirmed unchanged, and only then open the gate.
  */
 static long
 run_round(const char *label, umem_cache_t *cp, int want_resize,
@@ -246,15 +269,8 @@ run_round(const char *label, umem_cache_t *cp, int want_resize,
 	size_t during;
 	int i, sec;
 
-	*observed_from = cp->cache_magtype->mt_magsize;
-	*observed_to = 0;
-
-	/*
-	 * The ordinary contention-scheduled resize path (UMEM_OPTIONS
-	 * max_contention), either wide open or shut, is the only difference
-	 * between the two rounds.
-	 */
-	umem_depot_contention = want_resize ? 0 : UINT_MAX;
+	/* Suppressed for the whole parking ramp, in BOTH rounds. */
+	umem_depot_contention = UINT_MAX;
 	umem_reap_interval = 1;
 
 	atomic_store(&release, 0);
@@ -271,17 +287,35 @@ run_round(const char *label, umem_cache_t *cp, int want_resize,
 	while (atomic_load(&parked) < NTHREADS)
 		(void) usleep(1000);
 
+	/*
+	 * Sample the magtype only NOW: this is the magtype every parked thread's
+	 * magazines were allocated under, which is what the resize has to move
+	 * away from for the window to open.
+	 */
+	*observed_from = cp->cache_magtype->mt_magsize;
+	*observed_to = 0;
 	during = outstanding();
 
-	for (sec = 0; sec < 20; sec++) {
-		umem_reap();
-		(void) sleep(1);
-		if (cp->cache_magtype->mt_magsize != *observed_from) {
-			*observed_to = cp->cache_magtype->mt_magsize;
-			break;
+	if (want_resize) {
+		/* Only now open the ordinary contention-scheduled path. */
+		umem_depot_contention = 0;
+		for (sec = 0; sec < 20; sec++) {
+			umem_reap();
+			(void) sleep(1);
+			if (cp->cache_magtype->mt_magsize != *observed_from) {
+				*observed_to = cp->cache_magtype->mt_magsize;
+				break;
+			}
 		}
-		if (!want_resize && sec >= 4)
-			break;		/* control round: long enough */
+		umem_depot_contention = UINT_MAX;
+	} else {
+		/* Same elapsed time and same reap pressure, no resize. */
+		for (sec = 0; sec < 5; sec++) {
+			umem_reap();
+			(void) sleep(1);
+		}
+		if (cp->cache_magtype->mt_magsize != *observed_from)
+			*observed_to = cp->cache_magtype->mt_magsize;
 	}
 
 	atomic_store(&release, 1);

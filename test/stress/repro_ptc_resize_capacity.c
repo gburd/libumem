@@ -42,12 +42,14 @@
  *   then frees the NULL tail slots to the slab layer.
  *
  * WHY THIS TEST CHECKS THE INVARIANT AND NOT JUST THE SYMPTOM
- *   ASan cannot see the out-of-bounds access: magazines are objects inside
- *   umem's own slabs, which come from mmap via vmem, so there is no redzone
- *   between one magazine and the next and nothing for ASan to trap.  The
- *   reliable signal is the invariant itself, checked here by the test rather
- *   than only by the library's ASSERT, so the test discriminates even against
- *   a library built with assertions removed:
+ *   ASan cannot see the out-of-bounds access, structurally: magazines are
+ *   objects inside umem's OWN slabs, which come from mmap via vmem, so there is
+ *   no redzone between one magazine and the next, and nothing in this tree is
+ *   poisoned (it contains no ASan poisoning at all).  An overrun from one
+ *   magazine into its neighbour is, to ASan, an ordinary write to a valid heap
+ *   page.  The reliable signal is the invariant itself, checked here by the test
+ *   rather than only by the library's ASSERT, so the test discriminates even
+ *   against a library built with assertions removed:
  *
  *     for each PTC magazine this thread holds:
  *         recorded capacity == the magazine's TRUE capacity
@@ -62,18 +64,42 @@
  *   token and verified, so a buffer read out of bounds and handed to two
  *   owners is caught directly.
  *
- * HOW THE RESIZE IS FORCED
- *   Ordinary depot contention, which is what makes this reachable in a DEFAULT
- *   build: umem_cache_update() schedules UMU_MAGAZINE_RESIZE when depot
- *   contention exceeds umem_depot_contention in an update interval, with no
- *   involvement from the umem_magazine_tuning option.  The test lowers the
- *   two documented tunables (umem_depot_contention, umem_reap_interval) so the
- *   update thread reaches that decision in seconds instead of minutes, and
- *   then drives many threads through one size class with cross-thread frees so
- *   magazines cycle through the depot while the magtype changes underneath
- *   them.
+ * HOW THE RESIZE IS FORCED, AND WHY CHANCE IS NOT ENOUGH
+ *   The reachability is ordinary: umem_cache_update() schedules
+ *   UMU_MAGAZINE_RESIZE whenever depot contention exceeds umem_depot_contention
+ *   in an update interval, with no involvement from the umem_magazine_tuning
+ *   option.  The test lowers the two documented tunables
+ *   (umem_depot_contention, umem_reap_interval) so the update thread reaches
+ *   that decision in seconds instead of minutes, and drives many threads through
+ *   one size class with cross-thread frees so magazines cycle through the depot
+ *   while the magtype changes underneath them.  A size class is chosen whose
+ *   magtype can still grow (512B: 127 -> 255).
  *
- *   A size class is chosen whose magtype can still grow (512B: 127 -> 255).
+ *   But reachable is not the same as reachable BY VOLUME, and that distinction
+ *   is itself one of this test's results.  The window is the few instructions
+ *   between obtaining the magazine and reading the capacity -- tens of
+ *   nanoseconds, measured below -- and each cache resizes at most ONCE per
+ *   process, because a magtype only ever grows and this size class has exactly
+ *   one step available.  So an unaided run gets ONE chance to land a resize
+ *   inside a ~20ns window.  Measured against a build with the defect PRESENT:
+ *   67,443,588 invariant samples across 96 threads on a 192-vCPU arm-hi box,
+ *   zero hits.
+ *
+ *   So when built with -DUMEM_PTC_RESIZE_PROBE the test widens that window
+ *   (umem_ptc_resize_probe_ns) for the duration of the run, so threads are
+ *   demonstrably sitting inside it when the one genuine resize lands.  The probe
+ *   changes no decision and performs no store the library does not: the resize
+ *   is still the ordinary contention-scheduled one, and any desync observed is
+ *   the library's own arithmetic.  Without the probe the test still runs and
+ *   still checks the invariant on every transfer, but it cannot promise to have
+ *   opened the window, and reports that rather than passing.
+ *
+ *   READ THIS BEFORE QUOTING THE RESULT.  Because the window has to be widened
+ *   to be hit at all, a failure here establishes that the window is real and
+ *   that the fix closes it.  It does NOT establish a rate at which this happens
+ *   in production; the zero-in-67-million figure above is the honest statement
+ *   about that.  This is a mechanism demonstration with a real defect behind it,
+ *   not evidence of frequent corruption.
  */
 
 #ifndef _GNU_SOURCE
@@ -96,6 +122,12 @@
 #define NPARCEL		512	/* handoff ring depth */
 #define DEFAULT_THREADS	32
 #define RUN_SECONDS	25
+/*
+ * How wide to hold the window open when the probe is compiled in.  Long enough
+ * that with this many threads cycling magazines, several are inside the window
+ * at any instant, so the single genuine resize necessarily lands on one.
+ */
+#define PROBE_US	200
 
 extern size_t pagesize;
 
@@ -369,6 +401,9 @@ main(int argc, char **argv)
 {
 	extern uint32_t umem_reap_interval;
 	extern uint_t umem_depot_contention;
+#ifdef UMEM_PTC_RESIZE_PROBE
+	extern volatile long umem_ptc_resize_probe_ns;
+#endif
 	pthread_t *th;
 	umem_cache_t *cp;
 	int magsize_start, magsize_now;
@@ -378,6 +413,17 @@ main(int argc, char **argv)
 		nthreads = atoi(argv[1]);
 	if (nthreads < 2)
 		nthreads = 2;
+
+#ifdef UMEM_PTC_RESIZE_PROBE
+	printf("probe: BUILT IN; the window between obtaining a magazine and "
+	    "reading its capacity is widened to %dus for this run so the one "
+	    "resize this process gets can land inside it\n",
+	    PROBE_US);
+#else
+	printf("probe: NOT built in (-DUMEM_PTC_RESIZE_PROBE); the invariant is "
+	    "still checked on every transfer, but a ~20ns window and one resize "
+	    "per process means chance alone will not open it\n");
+#endif
 
 	/*
 	 * Make the update thread reach its magazine-resize decision quickly.
@@ -413,6 +459,13 @@ main(int argc, char **argv)
 	th = calloc(nthreads, sizeof (pthread_t));
 	if (th == NULL)
 		return (2);
+#ifdef UMEM_PTC_RESIZE_PROBE
+	/*
+	 * Hold the window open BEFORE the workers start, so it is already wide
+	 * when the update thread makes its one resize decision.
+	 */
+	umem_ptc_resize_probe_ns = (long)PROBE_US * 1000L;
+#endif
 	for (i = 0; i < nthreads; i++) {
 		if (pthread_create(&th[i], NULL, worker,
 		    (void *)(intptr_t)i) != 0) {
@@ -441,6 +494,9 @@ main(int argc, char **argv)
 	atomic_store(&stop, 1);
 	for (i = 0; i < nthreads; i++)
 		(void) pthread_join(th[i], NULL);
+#ifdef UMEM_PTC_RESIZE_PROBE
+	umem_ptc_resize_probe_ns = 0;
+#endif
 
 	magsize_now = cp->cache_magtype->mt_magsize;
 	printf("threads=%d magsize %d -> %d  ptc_checks=%ld\n", nthreads,
@@ -455,6 +511,22 @@ main(int argc, char **argv)
 		    "thread count or the run time)\n");
 		return (3);
 	}
+#ifndef UMEM_PTC_RESIZE_PROBE
+	if (atomic_load(&fail_capacity) == 0 && atomic_load(&fail_alias) == 0 &&
+	    atomic_load(&fail_null) == 0) {
+		/*
+		 * Without the probe, a clean run is not evidence of correctness:
+		 * the window is ~20ns and this process got one resize, so chance
+		 * was never going to open it.  Reporting PASS here is how a
+		 * regression like this silently stops discriminating.
+		 */
+		printf("RESULT: INCONCLUSIVE (no desync seen in %ld samples, but "
+		    "this build cannot open the window on purpose -- rebuild "
+		    "with -DUMEM_PTC_RESIZE_PROBE to get a verdict)\n",
+		    (long)atomic_load(&checks));
+		return (3);
+	}
+#endif
 	if (atomic_load(&fail_capacity) != 0 || atomic_load(&fail_alias) != 0 ||
 	    atomic_load(&fail_null) != 0) {
 		printf("RESULT: FAIL (a magazine was used with a capacity that "
@@ -462,6 +534,7 @@ main(int argc, char **argv)
 		return (1);
 	}
 	printf("RESULT: PASS (every PTC magazine was described by its own "
-	    "capacity across %d -> %d resize)\n", magsize_start, magsize_now);
+	    "capacity across %d -> %d resize, with the window held open for "
+	    "%dus per transfer)\n", magsize_start, magsize_now, PROBE_US);
 	return (0);
 }

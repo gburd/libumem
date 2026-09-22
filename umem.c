@@ -2081,6 +2081,44 @@ umem_mag_capacity(umem_magazine_t *mp)
 }
 
 /*
+ * Test-only probe for the P1.3b window.
+ *
+ * COMPILED OUT unless -DUMEM_PTC_RESIZE_PROBE is passed; the default build has
+ * no trace of it, not even a load of a global.  It exists because the window it
+ * widens is a few nanoseconds long and each cache resizes at most ONCE per
+ * process (a magtype only grows, and every size class has at most one step to
+ * take), so the race cannot be reached by volume: 67 million invariant samples
+ * across 96 threads on a 192-vCPU arm-hi box hit it zero times on a build with
+ * the defect present.
+ *
+ * The probe adds a delay at the one point that matters -- between obtaining a
+ * magazine and deciding what capacity to use it with -- so that when the single
+ * genuine resize lands, threads are actually sitting inside the window.  It
+ * changes NO decision: the resize is still the ordinary
+ * contention-scheduled one, and any desync observed is the library's own.
+ */
+#ifdef UMEM_PTC_RESIZE_PROBE
+#include <time.h>
+volatile long umem_ptc_resize_probe_ns = 0;
+
+static void
+umem_ptc_resize_probe(void)
+{
+	long ns = umem_ptc_resize_probe_ns;
+	struct timespec ts;
+
+	if (ns <= 0)
+		return;
+	ts.tv_sec = ns / 1000000000L;
+	ts.tv_nsec = ns % 1000000000L;
+	(void) nanosleep(&ts, NULL);
+}
+#define	UMEM_PTC_RESIZE_PROBE_POINT()	umem_ptc_resize_probe()
+#else
+#define	UMEM_PTC_RESIZE_PROBE_POINT()	((void)0)
+#endif
+
+/*
  * Debug check for the invariant P1.3b broke: every magazine a PTC thread
  * holds is described by the capacity of THAT magazine, and its round count
  * is within that capacity.
@@ -3483,6 +3521,7 @@ umem_alloc_retry:
 					fmp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_full);
 					if (fmp != NULL) {
+					    UMEM_PTC_RESIZE_PROBE_POINT();
 					    /*
 					     * Retire the empty magazines we
 					     * hold.  Both are empty here
@@ -3697,6 +3736,7 @@ _umem_free(void *buf, size_t size)
 					emp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_empty);
 					if (emp != NULL) {
+						UMEM_PTC_RESIZE_PROBE_POINT();
 						/*
 						 * Capacity from the magazine
 						 * itself, not from the

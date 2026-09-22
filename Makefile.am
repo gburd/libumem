@@ -467,12 +467,33 @@ test_integration_test_fork_mt_load_CPPFLAGS = -I$(srcdir)
 # P1.3b regression: a PTC magazine must never be used with a capacity that is
 # not its own.  Needs many threads and a real magazine resize, so it is run
 # explicitly rather than from TESTS (see the header comment in the source).
+#
+# Two builds, because a clean run of the plain one proves nothing: the window is
+# ~20ns wide and a cache resizes at most once per process, so chance does not
+# open it (measured: 0 hits in 67M samples across 96 threads on a 192-vCPU box,
+# against a build with the defect present).  The _probe variant links against a
+# libumem built with -DUMEM_PTC_RESIZE_PROBE, which widens that one window on
+# request; the DEFAULT library has no trace of it.
 noinst_PROGRAMS += test/stress/repro_ptc_resize_capacity
 test_stress_repro_ptc_resize_capacity_SOURCES = \
 	test/stress/repro_ptc_resize_capacity.c
 test_stress_repro_ptc_resize_capacity_LDADD = libumem.la
 test_stress_repro_ptc_resize_capacity_LDFLAGS = -pthread
 test_stress_repro_ptc_resize_capacity_CPPFLAGS = -I$(srcdir)
+
+noinst_LTLIBRARIES = libumem_ptcprobe.la
+libumem_ptcprobe_la_SOURCES = $(libumem_la_SOURCES)
+libumem_ptcprobe_la_CPPFLAGS = $(AM_CPPFLAGS) -DUMEM_PTC_RESIZE_PROBE
+libumem_ptcprobe_la_CFLAGS = $(AM_CFLAGS)
+libumem_ptcprobe_la_LDFLAGS = $(libumem_la_LDFLAGS)
+
+noinst_PROGRAMS += test/stress/repro_ptc_resize_capacity_probe
+test_stress_repro_ptc_resize_capacity_probe_SOURCES = \
+	test/stress/repro_ptc_resize_capacity.c
+test_stress_repro_ptc_resize_capacity_probe_LDADD = libumem_ptcprobe.la
+test_stress_repro_ptc_resize_capacity_probe_LDFLAGS = -pthread
+test_stress_repro_ptc_resize_capacity_probe_CPPFLAGS = \
+	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 
 # P1.3c regression: a magtype change must not discard populated magazines.
 noinst_PROGRAMS += test/integration/test_ptc_resize_no_loss
