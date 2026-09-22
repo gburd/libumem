@@ -976,7 +976,9 @@ static void *frag_worker(void *arg) {
     if (!pool || !pool_sz) {
         fprintf(stderr, "bench: frag pool allocation failed (cap %zu)\n",
                 ctx->pool_cap);
-        ctx->failed = 1;
+        /* The driver's own allocation failed, so this thread does no work.
+         * Counted as a failure so the run cannot report as clean. */
+        ctx->failures++;
         free(pool); free(pool_sz);
         if (ctx->start_barrier) pthread_barrier_wait(ctx->start_barrier);
         return NULL;
