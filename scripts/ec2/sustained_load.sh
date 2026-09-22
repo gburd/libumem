@@ -18,8 +18,11 @@
 #     allocator's windows and then all of the next lets slow drift (thermal,
 #     neighbour noise) land differently on each and appear as a difference
 #     between allocators.  Windows now interleave: A,B,A,B,...
-#   * MATCHED protocols.  Every allocator gets the same warm-up count, the
-#     same window count, the same duration target, and the same thread count.
+#   * MATCHED protocols.  Every allocator gets the same warm-up count, window
+#     count, thread count, AND THE SAME OPERATION BUDGET.  Equalising
+#     wall-clock instead (calibrating each allocator separately) hands them
+#     different amounts of work and destroys the comparison -- see the note at
+#     calibrate().  Equal work with unequal duration is the honest form.
 #   * FULL provenance, including the commit sha (which used to be recorded as
 #     "unknown" because run-remote.sh excludes .git) and a digest of every
 #     binary involved.
@@ -178,8 +181,21 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
     done
 } > "$OUT"
 
-# Calibrate the per-window operation budget, per (allocator, workload), so a
-# window takes roughly DURATION seconds.  -n is a TOTAL budget across threads
+# Calibrate the per-window operation budget PER WORKLOAD -- deliberately NOT
+# per (allocator, workload).
+#
+# Calibrating per allocator gives each one a DIFFERENT amount of work, chosen
+# so that each takes ~DURATION seconds.  That equalises wall-clock and thereby
+# destroys the comparison: the throughput columns then differ because the
+# budgets differ, not because the allocators do.  Observed on the first
+# 192-thread run: frag calibration handed libc 36,540,723 ops and umem
+# 14,909,682, and umem's window ran 113s against libc's 8.5s.  Nothing in
+# those two rows could be compared.
+#
+# So: calibrate on the SLOWEST allocator (so no window is absurdly short) and
+# give every allocator that same budget.  Windows then differ in DURATION,
+# which is the honest outcome -- equal work, unequal time -- and Mops/s is
+# comparable across allocators.  -n is a TOTAL budget across threads
 # (bench_main divides by the thread count itself; passing a pre-divided value
 # was the P2.1 double division).
 declare -A TARGET_N
@@ -197,15 +213,15 @@ calibrate() {
     else
         n=$((calib_n * 20))
     fi
-    TARGET_N["$a/$w"]="$n"
-    echo "  calibrate $a $w: total_n=$n (~${DURATION}s/window, from ${sec}s @ $calib_n)"
+    CALIB_N="$n"
+    echo "  calibrate $a $w: would need total_n=$n (~${DURATION}s/window, from ${sec}s @ $calib_n)"
 }
 
 emit_windows() {
     # $1=allocator $2=workload $3=min $4=max $5=label
     local a="$1" w="$2" min="$3" max="$4" label="$5"
     local pre; pre="$(preload_of "$a" || true)"
-    local n="${TARGET_N["$a/$w"]}"
+    local n="${TARGET_N["$w"]}"
     local out rc
     set +e
     # -A: one CSV row per measured window, each with its own percentiles/RSS.
@@ -269,9 +285,22 @@ echo "sustained load: allocators=${ALLOCS[*]} threads=$THREADS"
 echo "  windows=$WINDOWS x ~${DURATION}s each, interleaved; warmups=$WARMUPS"
 echo "  sha=$GIT_SHA ($SHA_SRC) -> $OUT"
 
-for a in "${ALLOCS[@]}"; do
-    calibrate "$a" prodcons 64 256
-    calibrate "$a" frag 16 4096
+# One budget per workload: the largest requirement across allocators, i.e. the
+# slowest allocator's.  Every allocator then does identical work.
+for w in prodcons frag; do
+    case "$w" in
+        prodcons) mn=64; mx=256 ;;
+        frag)     mn=16; mx=4096 ;;
+    esac
+    best=0
+    for a in "${ALLOCS[@]}"; do
+        calibrate "$a" "$w" "$mn" "$mx"
+        # Smallest n = slowest allocator (it needs fewer ops for DURATION).
+        if [[ $best -eq 0 ]] || (( CALIB_N < best )); then best="$CALIB_N"; fi
+    done
+    TARGET_N["$w"]="$best"
+    echo "  -> $w: ALL allocators get total_n=$best (matched work; windows will"
+    echo "     differ in duration, which is the honest result)"
 done
 
 # Matched warm-up: every allocator gets the same number of discarded windows
@@ -281,9 +310,9 @@ for (( wu = 0; wu < WARMUPS; wu++ )); do
         echo "  warmup window $wu: $a (discarded)"
         pre="$(preload_of "$a" || true)"
         LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w prodcons -t "$THREADS" \
-            -n "${TARGET_N["$a/prodcons"]}" -s 64:256 -c >/dev/null 2>>"$LOG" || true
+            -n "${TARGET_N["prodcons"]}" -s 64:256 -c >/dev/null 2>>"$LOG" || true
         LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w frag -t "$THREADS" \
-            -n "${TARGET_N["$a/frag"]}" -s 16:4096 -c >/dev/null 2>>"$LOG" || true
+            -n "${TARGET_N["frag"]}" -s 16:4096 -c >/dev/null 2>>"$LOG" || true
     done
 done
 
