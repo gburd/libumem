@@ -31,6 +31,7 @@
 #include "umem_base.h"
 #include "umem_inspect.h"
 #include "umem_stacktrace.h"
+#include "umem_ptc.h"
 #include "misc.h"
 #ifdef UMEM_RSEQ_AVAILABLE
 #include "umem_rseq.h"
@@ -1936,24 +1937,6 @@ snapshot_cache_idx(struct snapshot_state *st, umem_cache_t *cp)
 		if (st->cache_table[i] == cp)
 			return (i);
 	return ((uint64_t)-1);
-}
-
-static void
-snapshot_collect_cache(umem_cache_t *cp, void *arg)
-{
-	struct snapshot_state *st = arg;
-	if (st->cache_count == st->cache_cap) {
-		size_t ncap = st->cache_cap == 0 ? 64 : st->cache_cap * 2;
-		umem_cache_t **n = realloc(st->cache_table,
-		    ncap * sizeof (*n));
-		if (n == NULL) {
-			st->err = ENOMEM;
-			return;
-		}
-		st->cache_table = n;
-		st->cache_cap = ncap;
-	}
-	st->cache_table[st->cache_count++] = cp;
 }
 
 /*
