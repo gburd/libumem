@@ -43,6 +43,9 @@ fi
 
 export LD_LIBRARY_PATH=$ROOT/.libs
 SOCK=$(mktemp -u /tmp/umem-contract-XXXXXX.sock)
+# umemctl and the B5 helper both resolve the socket from this variable; without
+# it they would look for /tmp/umem.<pid>.sock and silently talk to nothing.
+export UMEM_INTROSPECT_SOCK=$SOCK
 TPID=""
 
 cleanup() {
@@ -56,8 +59,7 @@ trap cleanup EXIT
 start_target() {
 	# Deliberately permissive umask: pre-fix this produced a 0666 socket.
 	( umask 000
-	  UMEM_OPTIONS=introspect=1 UMEM_INTROSPECT_SOCK=$SOCK \
-	      "$CHURN" 60 >/dev/null 2>&1 &
+	  UMEM_OPTIONS=introspect=1 "$CHURN" 60 >/dev/null 2>&1 &
 	  echo $! > /tmp/.umem-contract-pid )
 	TPID=$(cat /tmp/.umem-contract-pid); rm -f /tmp/.umem-contract-pid
 	for _ in $(seq 1 50); do
@@ -138,11 +140,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# B3/B4: arm a predicate, confirm it stops a thread, and that 'continue'
-# releases it.  The server thread itself must never stop (B4) -- if it did,
-# this 'continue' could never be processed and the command would hang.
+# B3/B4: arm a predicate the workload actually hits, confirm it stops a thread,
+# and that 'continue' releases it.  The server thread itself must never stop
+# (B4) -- if it did, this 'continue' could never be processed and the command
+# would hang, so the timeout is the real assertion.
+#
+# introspect_churn allocates 32 bytes on every iteration, so size=32 is
+# guaranteed to match promptly.
 # ---------------------------------------------------------------------------
-$CTL "$TPID" break size=4096 >/dev/null 2>&1
+$CTL "$TPID" break size=32 >/dev/null 2>&1
 sleep 0.5
 if timeout 10 "$CTL" "$TPID" continue 2>/dev/null | grep -q 'ok continue'; then
 	note "B3/B4 armed, then resumed via continue: ok"
@@ -172,16 +178,19 @@ rm -f "$SOCK"
 # ---------------------------------------------------------------------------
 HELPER=$ROOT/test/integration/test_introspect_fork
 if [[ -x $HELPER ]]; then
-	if timeout 30 "$HELPER"; then
-		note "B5 fork child did not inherit the armed predicate: ok"
-	else
-		rc=$?
-		if [[ $rc == 124 ]]; then
-			bad "B5 violated: the fork child HUNG on an inherited armed predicate"
-		else
-			bad "B5 helper failed (rc=$rc)"
-		fi
-	fi
+	# The helper runs its OWN control channel on its own socket, so it can
+	# arm a predicate and then fork.
+	FSOCK=$(mktemp -u /tmp/umem-fork-XXXXXX.sock)
+	out=$(UMEM_OPTIONS=introspect=1 UMEM_INTROSPECT_SOCK=$FSOCK \
+	    timeout 30 "$HELPER" 2>&1)
+	rc=$?
+	rm -f "$FSOCK"
+	case $rc in
+	0)   note "B5 fork child did not inherit the armed predicate: ok" ;;
+	77)  echo "  (B5 skipped: $out)" ;;
+	124) bad "B5 violated: the fork child HUNG on an inherited armed predicate" ;;
+	*)   bad "B5 helper failed (rc=$rc): $out" ;;
+	esac
 else
 	echo "  (B5 helper not built; skipping that clause)"
 fi

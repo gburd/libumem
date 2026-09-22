@@ -18,6 +18,8 @@
  * predicate to inherit and the test reports SKIP (automake status 77).
  */
 
+#include "config.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,16 +81,28 @@ main(void)
 		printf("SKIP: UMEM_INTROSPECT_SOCK not set\n");
 		return (77);
 	}
+	if (getenv("UMEM_OPTIONS") == NULL) {
+		printf("SKIP: run with UMEM_OPTIONS=introspect=1 so this "
+		    "process has its own control channel\n");
+		return (77);
+	}
 
-	/* Touch the allocator so the channel and the library are up. */
+	/* Touch the allocator so the library initialises and the channel's
+	 * server thread starts. */
 	void *warm = umem_alloc(4096, UMEM_DEFAULT);
 	if (warm != NULL)
 		umem_free(warm, 4096);
 
+	/* Give the lazily-spawned server thread a moment to bind. */
+	for (int i = 0; i < 50; i++) {
+		if (access(sock, F_OK) == 0)
+			break;
+		usleep(100 * 1000);
+	}
+
 	/*
-	 * Arm a predicate that the child is guaranteed to hit.  The PARENT
-	 * deliberately stays armed across the fork: that is the condition
-	 * under test.
+	 * Arm a predicate that the child is guaranteed to hit.  THIS process
+	 * stays armed across the fork: that is the condition under test.
 	 */
 	if (ctl(sock, "break size=4096\n") != 0) {
 		printf("SKIP: could not reach the control socket at %s (%s)\n",
