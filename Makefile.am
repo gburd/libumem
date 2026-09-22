@@ -38,6 +38,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/unit/test_overflow_contracts \
 		  test/unit/test_aligned_contracts \
 		  test/unit/test_hash_partition \
+		  test/unit/test_lifecycle_churn \
 		  test/unit/repro_reclaim_destroy \
 		  test/unit/repro_reclaim_reuse \
 		  test/bench/bench_debug_overhead \
@@ -505,6 +506,17 @@ test_unit_test_overflow_contracts_CPPFLAGS = -I$(srcdir)
 test_unit_test_aligned_contracts_SOURCES = test/unit/test_aligned_contracts.c
 test_unit_test_aligned_contracts_CPPFLAGS = -I$(srcdir)
 
+# P2.7 lifecycle coverage: thread churn, cache create/destroy churn, and
+# cross-thread free, at a small deterministic scale for `make check`.  The
+# stress-scale runs and the cases that need a controlled environment
+# (LD_PRELOAD, UMEM_OPTIONS) are in test/stress/lifecycle_stress.sh, which
+# reuses test_fork_mt_load and repro_reclaim_reuse rather than duplicating
+# them.
+test_unit_test_lifecycle_churn_SOURCES = test/unit/test_lifecycle_churn.c
+test_unit_test_lifecycle_churn_LDADD = libumem.la
+test_unit_test_lifecycle_churn_LDFLAGS = -pthread
+test_unit_test_lifecycle_churn_CPPFLAGS = -I$(srcdir)
+
 # P4 regression: weighted hash partitioning (umem_hash_partition.c).
 # Compiles the unit directly rather than linking libumem, because
 # umem_hash_partition.c is only part of the library under --enable-numa;
@@ -563,6 +575,7 @@ man7_MANS = umem_debugging.7
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	$(man1_MANS) $(man3_MANS) $(man7_MANS) \
 	scripts/run-coverage.sh scripts/run-sanitizers.sh \
+	test/stress/lifecycle_stress.sh \
 	tools/gdb/umem_gdb.py tools/lldb/umem_lldb.py \
 	tools/umem_dump_reader \
 	tools/DEBUGGING.md \
@@ -624,7 +637,9 @@ TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_aligned_contracts \
 	test/unit/test_hash_partition \
-	test/stress/interpose_regress.sh
+	test/stress/interpose_regress.sh \
+	test/stress/oracle_control.sh \
+	test/unit/test_lifecycle_churn
 
 TEST_EXTENSIONS = .sh
 # The .sh tests are '#!/usr/bin/env bash' scripts using bash-only syntax, and
@@ -644,6 +659,7 @@ test_test_inspect_live_LDADD = libumem.la
 dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/stress/oracle_fast.sh \
+	test/stress/oracle_control.sh \
 	test/stress/interpose_regress.sh
 
 # Generated API documentation goes to doxygen-out/, NOT docs/.
