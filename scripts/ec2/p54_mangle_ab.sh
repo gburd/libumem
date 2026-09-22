@@ -28,6 +28,18 @@ RUNS="${RUNS:-5}"
 WARM="${WARM:-1}"
 OPS="${OPS:-40000000}"
 
+# Resolve the real soname rather than hard-coding one.  scripts/ec2/d2_ab.sh
+# hard-codes libumem.so.0.0.0, which stopped existing at the 1:0:0
+# version-info bump -- so it silently copies nothing and measures whatever
+# library happens to be there.  Fail loudly instead.
+#
+# Each arm gets its OWN directory with its own soname symlinks, and the run
+# points LD_LIBRARY_PATH at that directory.  Overwriting one shared
+# .libs/libumem.so.* in place (what d2_ab.sh does) means the file under test
+# depends on which build ran last, and a failed cp leaves the previous arm's
+# library in place while the log says otherwise.
+SONAME=""
+
 build_arm() {  # $1 = mangle|nomangle
 	local arm="$1" extra=""
 	[ "$arm" = nomangle ] && extra="-DUMEM_NO_LINK_MANGLE"
@@ -36,23 +48,30 @@ build_arm() {  # $1 = mangle|nomangle
 	make -j"$NCPU" >/dev/null 2>&1
 	make -j"$NCPU" test/bench/bench_main >/dev/null 2>&1
 	[ -x test/bench/.libs/bench_main ] || return 1
-	cp .libs/libumem.so.0.0.0 "/tmp/libumem_$arm.so" || return 1
+	local solib
+	solib="$(ls .libs/libumem.so.*.*.* 2>/dev/null | head -1)"
+	[ -n "$solib" ] || { log "  no .libs/libumem.so.*.*.* after building $arm"; return 1; }
+	# The soname the binaries actually ask the loader for.
+	SONAME="$(objdump -p "$solib" | awk '/SONAME/{print $2}')"
+	[ -n "$SONAME" ] || { log "  no SONAME in $solib"; return 1; }
+	rm -rf "/tmp/lib_$arm" && mkdir -p "/tmp/lib_$arm" || return 1
+	cp "$solib" "/tmp/lib_$arm/$SONAME" || return 1
 	cp test/bench/.libs/bench_main "/tmp/bench_main_$arm" || return 1
 	# Prove the arms really differ: the mangling symbol is referenced only
 	# by the mangling build.  A silently identical pair would make the
 	# whole measurement meaningless and is exactly the kind of thing that
 	# reads as "0% cost".
 	local n
-	n=$(nm -D "/tmp/libumem_$arm.so" 2>/dev/null | grep -c umem_link_cookie)
-	log "  built $arm: umem_link_cookie symbol refs=$n  sha256=$(sha256sum "/tmp/libumem_$arm.so" | cut -c1-16)"
+	n=$(nm -D "/tmp/lib_$arm/$SONAME" 2>/dev/null | grep -c umem_link_cookie)
+	log "  built $arm: umem_link_cookie symbol refs=$n  soname=$SONAME  sha256=$(sha256sum "/tmp/lib_$arm/$SONAME" | cut -c1-16)"
 	return 0
 }
 
 run_one() {  # $1=arm $2=workload $3=threads $4=size -> one CSV row
 	local arm="$1" w="$2" t="$3" s="$4" last=$(( $3 - 1 ))
 	(( last >= NCPU )) && last=$((NCPU-1))
-	cp "/tmp/libumem_$arm.so" .libs/libumem.so.0.0.0
-	numactl --physcpubind=0-"$last" --localalloc -- \
+	LD_LIBRARY_PATH="/tmp/lib_$arm" \
+	    numactl --physcpubind=0-"$last" --localalloc -- \
 	    "/tmp/bench_main_$arm" -a umem -w "$w" -t "$t" -n "$OPS" \
 	    -s "$s" -r "$RUNS" -W "$WARM" -c 2>/dev/null | grep "^umem," | tail -1
 }
@@ -74,6 +93,19 @@ log ""
 log "## builds"
 build_arm nomangle || { log "nomangle build FAILED"; exit 1; }
 build_arm mangle   || { log "mangle build FAILED"; exit 1; }
+
+# The two arms must not be byte-identical: if they are, CPPFLAGS never reached
+# the compile and the whole A/B is measuring one library against itself, which
+# would read as a reassuring 0% cost.
+if cmp -s "/tmp/lib_nomangle/$SONAME" "/tmp/lib_mangle/$SONAME"; then
+	log "FATAL: the two arms are byte-identical -- -DUMEM_NO_LINK_MANGLE did"
+	log "       not reach the compile, so no comparison is possible."
+	exit 1
+fi
+# And each binary must resolve to its OWN arm's library.
+for a in nomangle mangle; do
+	log "  $a resolves: $(LD_LIBRARY_PATH=/tmp/lib_$a ldd /tmp/bench_main_$a | grep umem | tr -s ' ')"
+done
 log ""
 
 printf 'arm,' >> "$OUT"
