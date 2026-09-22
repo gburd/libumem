@@ -5,16 +5,19 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status: not production-ready for general use at this commit, and one
-> specific reason dominates.** The ten reachable correctness and lifetime
-> defects the 2026-09-21 design review found in *default* code paths have since
-> been fixed, each with a regression that fails before the fix and passes after,
-> on x86_64 and aarch64. What remains is a hard **~5 GB heap ceiling on Linux**
-> (`vm.max_map_count` exhaustion — see "Where libumem does not win" below), plus
-> several diagnostic features whose contracts are now documented honestly rather
-> than optimistically. Several performance conclusions previously published in
-> this file were **withdrawn**, because the harness that produced them was
-> measuring the wrong thing. Work, evidence, and exit criteria:
+> **Status (v3.0.0): suitable for heaps under ~5 GB on Linux; not yet for
+> general-purpose use above that.** The ten reachable correctness and lifetime
+> defects the 2026-09-21 design review found in *default* code paths are fixed,
+> each with a regression that fails before the fix and passes after, on x86_64
+> and aarch64. The remaining blocker is a hard **~5 GB heap ceiling on Linux**
+> (`vm.max_map_count` exhaustion — see "Where libumem does not win" below);
+> raising `vm.max_map_count` works around it today. An attempt to fix it
+> properly **failed**, and that failure is documented along with the measurements
+> that narrow it to slab/va-arena span sizing. Several diagnostic features now
+> have contracts that are documented honestly rather than optimistically, and
+> several performance conclusions previously published in this file were
+> **withdrawn** because the harness that produced them was measuring the wrong
+> thing. Work, evidence, and exit criteria:
 > [`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
 > Claims below are qualified by what has actually been measured; where
 > something is unknown, it says so.

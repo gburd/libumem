@@ -3,7 +3,21 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [3.0.0] - 2026-09-22
+
+### Compatibility
+
+- **No API or ABI break.** `umem_hook_t` is caller-allocated, and the
+  unregister-drain work below grew it from 120 to 128 bytes on LP64 — which would
+  have made an application compiled against the v2.7.0 header allocate a struct
+  too small for the library to write into. The new fields were packed into the
+  padding that `int hook_active` already occupied, so `sizeof(umem_hook_t)` is
+  back to 120 (verified by compiling the v2.7.0 and current headers
+  side by side). The soname stays `libumem.so.1`, which also keeps the documented
+  illumos `LD_PRELOAD=.../libumem_malloc.so.1` dual-ABI recipes working.
+- **The major version bump is for the removed build options below**, not for a
+  source or binary incompatibility: code that compiled and linked against v2.7.0
+  still does.
 
 ### Removed (breaking)
 
@@ -173,6 +187,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   sustained-fragmentation *throughput* numbers**, independently of the
   fragmentation-ratio defect: those runs were failing roughly two in five
   allocations with nothing in the output disclosing it.
+
+### Fixed — test and release machinery that was reporting false results
+
+These were found by an exit-criteria gate (`scripts/ec2/exit_criteria_gate.sh`)
+that deliberately runs what `make check` does not. Each one had been producing a
+wrong answer, in some cases for the entire life of the test:
+
+- **The property tests had never tested anything.** `QCC_getValue()` yields the
+  generated value's *address* and must be dereferenced — its own doc comment says
+  `int a = *QCC_getValue(vals, 0, int*)` — but six call sites cast it to `long`.
+  So the value under test was a pointer address, every range check rejected it,
+  and the driver reported "Gave up after 0 tests!" with a nonzero exit. Flagged
+  in the 2026-09-21 review and never fixed, invisible because these binaries are
+  built but were not in `TESTS`.
+- **`prop_fragmentation` aborted**, and fixing the extraction above is what
+  exposed it. Three separate defects: `vmem_populate()` *asserted* on an
+  unsupported `VM_SLEEP` (aborting the process with no hint the caller's flags
+  were at fault, and vanishing entirely under `NDEBUG` to continue into a path
+  the code says is not allowed); the tests themselves passed `VM_SLEEP` at 11
+  sites, against a flag `vmem.c`'s own header documents as unsupported; and it
+  freed every allocation with `umem_free(ptr, 0)` under a comment claiming the
+  size was tracked internally. It is not. All property tests now pass on both
+  architectures.
+- **A clean source tarball could not pass its own `make check`.**
+  `oracle_control.sh` compiles `test/stress/oracle_null_shim.c` at runtime — the
+  deliberately-broken allocator that proves the concurrency oracle discriminates
+  — but that source was in no `_SOURCES` and no `EXTRA_DIST`, so it was absent
+  from the distribution and the test failed there while passing in-tree.
+- **Four regressions were silently dropped from `TESTS`** by a comment line
+  ending in a backslash: GNU make continues a *comment* across
+  backslash-newline, so it swallowed the next two lines. `make check` reported a
+  green 8/8 while four committed regressions never ran.
+- **A nondeterministic assertion made `--disable-rseq` unable to pass**
+  `make check` at all (12/12 failures), and produced ~17% false reds in default
+  builds, which agents then attributed to their own changes.
+- **`INCONCLUSIVE` was reported as exit 3**, which automake reads as FAIL, so two
+  PTC regressions correctly refusing to claim a pass on an unopened race window
+  reddened the whole suite. Now 77 (SKIP).
+- **`test_hook_contracts` failed its own vacuity guard** — correctly. It counted
+  `umem_hook_track_alloc()` *attempts* rather than calls that entered the
+  callback, and its publish/unpublish window was one `sched_yield()`, so on
+  x86_64 the tracker threads lost the race every round.
 
 ### Fixed — supporting components
 

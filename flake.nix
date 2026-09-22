@@ -43,7 +43,11 @@
           # Must match AC_INIT in configure.ac.  It read "1.0.2" from
           # 2.0.0 through 2.7.0, so the flake and its generated .pc files
           # advertised a version this tree has not been for years.
-          version = "2.7.0";
+          #
+          # Nix cannot read configure.ac at eval time without IFD, so this stays
+          # a literal -- but the configurePhase below asserts they agree, so a
+          # mismatch fails the build instead of shipping a wrong version again.
+          version = "3.0.0";
 
           src = lib.cleanSource ./.;
 
@@ -61,6 +65,16 @@
           enableParallelBuilding = true;
 
           preConfigure = ''
+            # Fail loudly if flake.nix's `version` has drifted from AC_INIT.
+            # The literal above cannot be derived from configure.ac at eval time
+            # without import-from-derivation, so this is the guard instead: the
+            # flake shipped version 1.0.2 for four releases before anyone
+            # noticed, and the .pc files it generates inherit it.
+            acver=$(sed -n 's/^AC_INIT(\[umem\], \[\([^]]*\)\].*/\1/p' configure.ac)
+            if [ "$acver" != "${finalAttrs.version}" ]; then
+              echo "flake.nix version (${finalAttrs.version}) != configure.ac AC_INIT ($acver)" >&2
+              exit 1
+            fi
             ./autogen.sh
           '';
 
