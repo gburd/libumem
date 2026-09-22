@@ -1,0 +1,137 @@
+=== P1.7 OVERFLOW CONTRACTS (pre-fix) ===
+overflow-contracts: arena offset, arena page round, bootstrap header
+FAIL: umem_arena_alloc(arena, 18446744073709551600) returned 0x7f37dde0c020; an allocation larger than the arena must fail
+      (test/unit/test_overflow_contracts.c:108: bad == NULL)
+FAIL: umem_arena_alloc(arena, 18446744073709551599) returned 0x7f37dde0c010; an allocation larger than the arena must fail
+      (test/unit/test_overflow_contracts.c:108: bad == NULL)
+FAIL: arena available changed across failed allocations: 65504 -> 65536 (the bump pointer moved)
+      (test/unit/test_overflow_contracts.c:114: avail_after == avail_before)
+FAIL: overlapping arena allocations: [0x7f37dde0c000,+32) and [0x7f37dde0c000,+32)
+      (test/unit/test_overflow_contracts.c:125: p2 >= p1 + 32 || p2 + 32 <= p1)
+FAIL: first arena allocation clobbered at byte 0 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 1 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 2 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 3 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 4 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 5 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 6 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 7 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 8 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 9 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 10 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 11 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 12 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 13 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 14 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 15 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 16 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 17 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 18 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 19 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 20 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 21 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 22 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 23 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 24 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 25 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 26 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 27 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 28 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 29 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 30 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: first arena allocation clobbered at byte 31 (0xa5)
+      (test/unit/test_overflow_contracts.c:130: p1[i] == 0x5a)
+FAIL: bootstrap_malloc(18446744073709551615) returned 0x7f37dde1b010; the header addition wrapped and mapped an undersized region
+      (test/unit/test_overflow_contracts.c:176: bad == NULL)
+FAIL: bootstrap_malloc(18446744073709551614) returned 0x7f37dde1b010; the header addition wrapped and mapped an undersized region
+      (test/unit/test_overflow_contracts.c:176: bad == NULL)
+FAIL: bootstrap_malloc(18446744073709551607) returned 0x7f37dde1b010; the header addition wrapped and mapped an undersized region
+      (test/unit/test_overflow_contracts.c:176: bad == NULL)
+FAIL (39 failures)
+exit=1
+=== P1.1/P1.7 INTERPOSE REGRESS (pre-fix) ===
+== calloc race (control, no preload) ==
+calloc-interpose-race: threads=16 iters=2000
+  allocs=32000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== calloc race (LD_PRELOAD interposer) ==
+calloc-interpose-race: threads=16 iters=20000
+cannot allocate memory for thread-local data: ABORT
+FAIL: calloc race (LD_PRELOAD interposer) exited 127
+== aligned contracts (control, no preload) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn
+FAIL: aligned_alloc(3, 16) succeeded; 3 is not a power of two
+      (test/unit/test_aligned_contracts.c:189: aligned_alloc(3, 16) == NULL)
+FAIL: aligned_alloc(0, 16) succeeded
+      (test/unit/test_aligned_contracts.c:191: aligned_alloc(0, 16) == NULL)
+FAIL (2 failures)
+FAIL: aligned contracts (control, no preload) exited 1
+== aligned contracts (LD_PRELOAD interposer) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn
+FAIL: posix_memalign(align=1) returned 0, want EINVAL(22)
+      (test/unit/test_aligned_contracts.c:97: rc == EINVAL)
+FAIL: posix_memalign(align=2) returned 0, want EINVAL(22)
+      (test/unit/test_aligned_contracts.c:97: rc == EINVAL)
+FAIL: posix_memalign(align=4) returned 0, want EINVAL(22)
+      (test/unit/test_aligned_contracts.c:97: rc == EINVAL)
+FAIL: posix_memalign(size=0) returned 22
+      (test/unit/test_aligned_contracts.c:133: rc == 0 || rc == ENOMEM)
+FAIL: realloc(aligned_alloc(8,24)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(16,48)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(32,96)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(64,192)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(128,384)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(256,768)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(512,1536)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(1024,3072)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(2048,6144)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: realloc(aligned_alloc(4096,12288)) failed
+      (test/unit/test_aligned_contracts.c:172: q != NULL)
+FAIL: aligned_alloc(3, 16) succeeded; 3 is not a power of two
+      (test/unit/test_aligned_contracts.c:189: aligned_alloc(3, 16) == NULL)
+FAIL: aligned_alloc(0, 16) succeeded
+      (test/unit/test_aligned_contracts.c:191: aligned_alloc(0, 16) == NULL)
+FAIL (16 failures)
+FAIL: aligned contracts (LD_PRELOAD interposer) exited 1
+FAIL: interposer regressions
+exit=1

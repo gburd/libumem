@@ -1,0 +1,40 @@
+=== PRE-FIX, overlap oracle (churn skipped so the pthread_create abort does not mask it) ===
+--- threads=4 ---
+calloc-interpose-race: threads=4 iters=5000
+FAIL(overlap): [0x7f45c9c870e0,+48) owner=2 overlaps live [0x7f45c9c870e0,+48) owner=2
+FAIL(overlap): [0x7f45c9c870e0,+1500) owner=2 overlaps live [0x7f45c9c870e0,+48) owner=2
+FAIL(overlap): [0x7f45c9c870e0,+1500) owner=2 overlaps live [0x7f45c9c870e0,+48) owner=2
+FAIL(overlap): [0x7f45c9c870e0,+256) owner=2 overlaps live [0x7f45c9c870e0,+48) owner=2
+FAIL(overlap): [0x7f45c9c870e0,+256) owner=2 overlaps live [0x7f45c9c870e0,+48) owner=2
+FAIL(overlap): [0x7f45c9c870e0,+256) owner=2 overlaps live [0x7f45c9c870e0,+1500) owner=2
+FAIL(overlap): [0x7f45c9c870e0,+1500) owner=2 overlaps live [0x7f45c9c870e0,+48) owner=2
+FAIL(overlap): [0x7f45c9c870e0,+1500) owner=2 overlaps live [0x7f45c9c870e0,+48) owner=2
+bash: line 1: 54877 Segmentation fault      (core dumped) LD_PRELOAD=$P $B --threads=$T --iters=5000 --no-churn 2>&1
+     54878 Done                    | tail -16
+--- threads=8 ---
+calloc-interpose-race: threads=8 iters=5000
+FAIL(overlap): [0x7f3d2fd350e0,+8) owner=0 overlaps live [0x7f3d2fd350e0,+1500) owner=0
+FAIL(overlap): [0x7f3d2fd350e0,+16) owner=0 overlaps live [0x7f3d2fd350e0,+1500) owner=0
+FAIL(overlap): [0x7f3d2fd350e0,+16) owner=0 overlaps live [0x7f3d2fd350e0,+8) owner=0
+FAIL(overlap): [0x7f3d2fd350e0,+24) owner=0 overlaps live [0x7f3d2fd350e0,+1500) owner=0
+FAIL(overlap): [0x7f3d2fd350e0,+24) owner=0 overlaps live [0x7f3d2fd350e0,+8) owner=0
+FAIL(overlap): [0x7f3d2fd350e0,+130) owner=0 overlaps live [0x7f3d2fd350e0,+1500) owner=0
+FAIL(overlap): [0x7f3d2fd350e0,+130) owner=0 overlaps live [0x7f3d2fd350e0,+8) owner=0
+FAIL(overlap): [0x7f3d2fd350e0,+130) owner=0 overlaps live [0x7f3d2fd350e0,+24) owner=0
+bash: line 1: 54888 Segmentation fault      (core dumped) LD_PRELOAD=$P $B --threads=$T --iters=5000 --no-churn 2>&1
+     54889 Done                    | tail -16
+--- threads=16 ---
+calloc-interpose-race: threads=16 iters=5000
+FAIL(overlap): [0x7f5c10d910e0,+700) owner=1 overlaps live [0x7f5c10d910e0,+1500) owner=0
+FAIL(overlap): [0x7f5c10d910e0,+48) owner=2 overlaps live [0x7f5c10d910e0,+1500) owner=0
+FAIL(overlap): [0x7f5c10d910e0,+48) owner=2 overlaps live [0x7f5c10d910e0,+700) owner=1
+FAIL(overlap): [0x7f5c10d910e0,+48) owner=2 overlaps live [0x7f5c10d910e0,+1500) owner=0
+FAIL(overlap): [0x7f5c10d910e0,+48) owner=2 overlaps live [0x7f5c10d910e0,+700) owner=1
+FAIL(overlap): [0x7f5c10d910e0,+48) owner=2 overlaps live [0x7f5c10d910e0,+48) owner=2
+FAIL(overlap): [0x7f5c10d910e0,+16) owner=4 overlaps live [0x7f5c10d910e0,+1500) owner=0
+FAIL(overlap): [0x7f5c10d910e0,+16) owner=4 overlaps live [0x7f5c10d910e0,+700) owner=1
+bash: line 1: 54911 Segmentation fault      (core dumped) LD_PRELOAD=$P $B --threads=$T --iters=5000 --no-churn 2>&1
+     54912 Done                    | tail -16
+=== PRE-FIX, with thread churn ===
+calloc-interpose-race: threads=8 iters=3000
+cannot allocate memory for thread-local data: ABORT

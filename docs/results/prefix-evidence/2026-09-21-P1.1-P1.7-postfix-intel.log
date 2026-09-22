@@ -1,0 +1,74 @@
+=== tree=libumem-fix mode=plain arch=x86_64 commit-marker=ff67fc858072 ===
+--- calloc must not call itself ---
+clean
+--- P1.7a,b overflow contracts ---
+overflow-contracts: arena offset, arena page round, bootstrap header
+PASS (0 failures)
+rc=0
+--- P1.1 + P1.7c,e interposer regressions ---
+== calloc race (control, no preload) ==
+calloc-interpose-race: threads=16 iters=2000
+  allocs=32000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== calloc race (LD_PRELOAD interposer) ==
+calloc-interpose-race: threads=16 iters=20000
+  allocs=320000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== aligned contracts (control, no preload) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [control]
+  info: system aligned_alloc(3,16)=non-NULL, (0,16)=non-NULL (C11 leaves this undefined; not required of the control allocator)
+PASS (0 failures)
+== aligned contracts (LD_PRELOAD interposer) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [strict]
+PASS (0 failures)
+PASS: interposer regressions
+rc=0
+--- P1.1 sustained: 32 threads x 60k ---
+calloc-interpose-race: threads=32 iters=60000
+  allocs=1920000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+rc=0
+--- make check ---
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/stress/oracle_fast.sh
+PASS: test/unit/test_overflow_contracts
+PASS: test/stress/interpose_regress.sh
+# TOTAL: 10
+# PASS:  10
+# SKIP:  0
+# FAIL:  0
+# ERROR: 0
+--- test_main --no-fork (OK/FAIL/SKIP totals) ---
+tm_rc=0
+OK=417 FAIL=0 SKIP=10 ERROR=0
+
+==================
+All tests passed!
+--- concurrency oracle ---
+  churn            400000 ops      1.1 Mops/s  ok
+
+Result: PASS (no cross-thread aliasing or corruption)
+rc=0
+=== END libumem-fix plain ===
+
+=== tree=libumem-fix mode=asan arch=x86_64 commit-marker=ff67fc858072 ===
+--- ASan: concurrent calloc regression under LD_PRELOAD ---
+calloc-interpose-race: threads=16 iters=20000
+  allocs=320000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+asan_race_rc=0
+--- ASan: overflow contracts ---
+overflow-contracts: arena offset, arena page round, bootstrap header
+PASS (0 failures)
+asan_overflow_rc=0
+--- ASan: aligned contracts under LD_PRELOAD ---
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [strict]
+PASS (0 failures)
+asan_aligned_rc=0
+=== END libumem-fix asan ===
