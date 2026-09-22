@@ -599,17 +599,23 @@ TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh \
 	test/stress/oracle_fast.sh
 
-# Phase 1 regressions (docs/plans/2026-09-21-production-readiness.md) are
-# built by default but deliberately NOT in TESTS yet:
+# Phase 1 regressions (docs/plans/2026-09-21-production-readiness.md).
 #
+# NOTE: this block previously ended with a trailing backslash.  GNU make
+# continues a COMMENT across backslash-newline, so it silently swallowed the
+# next two lines and dropped test_overflow_contracts and interpose_regress.sh
+# out of TESTS entirely -- `make check` then reported a green 8/8 while two
+# committed regressions never ran.  Never end a comment line here with a
+# backslash.
+#
+# Run explicitly rather than from TESTS (long-running, or need a controlled
+# environment):
 #   test/integration/test_fork_mt_load            (P1.2 fork lock order)
 #   test/integration/test_update_thread_startup   (P1.6 startup handshake)
-#
-# Both are run explicitly (see docs/results/jobs/*-fork*).  Folding them into
-# `make check` changes its long-advertised 8-entry scope and its runtime, so
-# that belongs in one coordinated change once the Phase 1 agents have all
-# landed, not in each agent's own commit. \
-	test/unit/test_overflow_contracts \
+#   test/stress/repro_interpose_fork              (interposer fork handling)
+TESTS += test/unit/test_overflow_contracts \
+	test/unit/test_aligned_contracts \
+	test/unit/test_hash_partition \
 	test/stress/interpose_regress.sh
 
 TEST_EXTENSIONS = .sh

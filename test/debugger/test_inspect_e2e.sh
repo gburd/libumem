@@ -90,8 +90,23 @@ d = json.loads(sys.argv[1])
 # = 12 buffers, 8832 bytes total.
 assert d["total_buffers"] == 12, f"expected 12 leaked buffers, got {d['total_buffers']}"
 assert d["total_bytes"] == 8832, f"expected 8832 bytes leaked, got {d['total_bytes']}"
-# 2 cached buffers from churn allocations sitting in magazines.
-assert d["cached_skipped"] == 2, f"expected 2 cached, got {d['cached_skipped']}"
+# Cached buffers from the churn loop sitting in magazines.
+#
+# This is deliberately a RANGE, not an equality.  `cached_skipped` counts
+# churn-loop buffers that are free but still resident in a magazine, which
+# depends on how rounds happen to be distributed between the loaded and
+# previous magazines, whether the update thread flushed in between, and
+# whether the rseq fast path is compiled in.  It is not a property of the
+# allocator being correct.
+#
+# The old `== 2` assertion made this test fail ~17% of runs in a default
+# build and 12/12 under --disable-rseq (measured: see
+# docs/results/2026-09-21-make-check-flaky-inspect-e2e.log), producing false
+# reds that agents then mis-attributed to their own changes.  What this test
+# must actually establish is that the cached-set subtraction RUNS and does
+# not over-subtract: the deliberate leaks below are the deterministic part.
+assert 0 <= d["cached_skipped"] <= 32, \
+    f"cached_skipped out of plausible range: {d['cached_skipped']}"
 # At least one class with cache=umem_alloc_4096
 assert any(c["cache"] == "umem_alloc_4096" for c in d["classes"]), \
     "no umem_alloc_4096 leak class found"
@@ -193,7 +208,8 @@ import json, sys
 d = json.loads(sys.stdin.read())
 assert d["total_buffers"] == 12, "offline buffer count mismatch"
 assert d["total_bytes"] == 8832, "offline byte count mismatch"
-assert d["cached_skipped"] == 2, "offline cached mismatch"
+assert 0 <= d["cached_skipped"] <= 32, \
+    f"offline cached_skipped out of plausible range: {d['cached_skipped']}"
 print("  OK: offline matches live")
 '
 
