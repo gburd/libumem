@@ -1,24 +1,54 @@
 #!/usr/bin/env bash
-# scripts/ec2/sustained_load.sh <allocator> [duration_sec] [threads]
+# scripts/ec2/sustained_load.sh <allocator>[,<allocator>...] [duration_sec] [threads]
 #
 # Runs a SUSTAINED high-thread-count prodcons + frag workload for several
-# minutes to surface tail-latency degradation and fragmentation growth
-# under real duress (not just a quick burst) -- the "punishing load" part
-# of the allocator shootout, distinct from matrix.sh's scaling sweep.
+# minutes to surface tail-latency degradation and fragmentation growth under
+# real duress (not just a quick burst) -- the "punishing load" part of the
+# allocator shootout, distinct from matrix.sh's scaling sweep.
 #
-# Emits one row per workload to docs/results/<date>-<instance>-<arch>/
-# sustained.toml. Run once per allocator on a *-hi role (full core count).
+# WHAT CHANGED 2026-09-22 (P2.1/P2.2/P2.5), and why any older sustained.toml
+# is not comparable to a new one:
+#
+#   * PER-WINDOW rows, not one whole-run aggregate.  A single p999 over a
+#     3-minute run cannot show whether the tail degraded over that run; a
+#     whole-run RSS cannot show fragmentation growing.  Each allocator now
+#     emits one row per window (bench_main -A), each with its own latency
+#     distribution and its own RSS/live-bytes pair.
+#   * ALTERNATING A/B when several allocators are named.  Batching all of one
+#     allocator's windows and then all of the next lets slow drift (thermal,
+#     neighbour noise) land differently on each and appear as a difference
+#     between allocators.  Windows now interleave: A,B,A,B,...
+#   * MATCHED protocols.  Every allocator gets the same warm-up count, the
+#     same window count, the same duration target, and the same thread count.
+#   * FULL provenance, including the commit sha (which used to be recorded as
+#     "unknown" because run-remote.sh excludes .git) and a digest of every
+#     binary involved.
+#   * frag honours the thread count; its ratio is peak RSS / live bytes at the
+#     same instant.  Older files' frag column is a different, wrong quantity.
+#
+# Emits docs/results/<date>-<instance>-<arch>/sustained.toml.
+# Run under scripts/ec2/job.sh; prefer verify-isolated.sh so the sha is known.
 set -euo pipefail
 
-ALLOC="${1:?usage: sustained_load.sh <allocator> [duration_sec=180] [threads=\$(nproc)]}"
+ALLOC_ARG="${1:?usage: sustained_load.sh <alloc>[,<alloc>...] [duration_sec=180] [threads=\$(nproc)]}"
+IFS=',' read -ra ALLOCS <<< "$ALLOC_ARG"
 DURATION="${2:-180}"
 NCPU=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)
 THREADS="${3:-$NCPU}"
+# Windows per allocator.  The run is split into WINDOWS measured segments so
+# the tail and RSS can be read as a time series.
+WINDOWS="${SUSTAINED_WINDOWS:-6}"
+WARMUPS="${SUSTAINED_WARMUPS:-1}"
 BENCH_BIN="${BENCH_BIN:-test/bench/.libs/bench_main}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_ROOT"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}.libs"
 export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
+
+if [[ ! -x $BENCH_BIN ]]; then
+    echo "SKIP: $BENCH_BIN not built -- nothing measured" >&2
+    exit 77
+fi
 
 # Same per-allocator LD_PRELOAD resolution as matrix.sh (see its comment):
 # never global, only for the one allocator under test.
@@ -28,7 +58,9 @@ preload_for() {
     case "$1" in
         scudo) ldconfig -p 2>/dev/null | grep -oE '/[^ ]*scudo[_a-z]*[^ ]*\.so[^ ]*' | head -1 ;;
         jemalloc) ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libjemalloc\.so[^ ]*' | head -1 ;;
+        tcmalloc) ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libtcmalloc(_minimal)?\.so[^ ]*' | head -1 ;;
         mimalloc) ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libmimalloc\.so[^ ]*' | head -1 ;;
+        snmalloc) ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libsnmallocshim\.so[^ ]*' | head -1 ;;
         rpmalloc) ldconfig -p 2>/dev/null | grep -oE '/[^ ]*librpmalloc\.so[^ ]*' | head -1 ;;
         *) : ;;
     esac
@@ -42,11 +74,38 @@ preload_for_musl() {
         *) : ;;
     esac
 }
-PRELOAD=""
-if [[ "$ALLOC" != libc && "$ALLOC" != umem ]]; then
-    if [[ $IS_MUSL -eq 1 ]]; then PRELOAD="$(preload_for_musl "$ALLOC")"
-    elif [[ "$ALLOC" == scudo ]]; then PRELOAD="$(preload_for scudo)"
+preload_of() {
+    local a="$1"
+    [[ $a == libc || $a == umem ]] && return 0
+    if [[ $IS_MUSL -eq 1 ]]; then preload_for_musl "$a"
+    elif [[ $a == scudo ]]; then preload_for scudo
     fi
+}
+
+digest() {
+    [[ -r "$1" ]] || { echo missing; return; }
+    { sha256sum "$1" 2>/dev/null || shasum -a 256 "$1" 2>/dev/null; } | awk '{print $1}'
+}
+
+# P2.5: commit identity.  run-remote.sh excludes .git, so `git rev-parse` in a
+# synced tree has no repository -- which is how published matrices recorded
+# git_sha = "unknown".  Prefer an explicit sha, then verify-isolated.sh's
+# provenance file, then git.
+if [[ -n ${LIBUMEM_SHA:-} ]]; then
+    GIT_SHA="$LIBUMEM_SHA"; SHA_SRC=env
+elif [[ -r ISOLATED_PROVENANCE ]]; then
+    GIT_SHA=$(sed -n 's/^sha=//p' ISOLATED_PROVENANCE | head -1)
+    SHA_SRC=ISOLATED_PROVENANCE
+    [[ -z $GIT_SHA ]] && { GIT_SHA=unknown; SHA_SRC=ISOLATED_PROVENANCE-unparsable; }
+elif GIT_SHA=$(git rev-parse HEAD 2>/dev/null) && [[ -n $GIT_SHA ]]; then
+    SHA_SRC=git
+else
+    GIT_SHA=unknown; SHA_SRC=no-git-dir-and-no-LIBUMEM_SHA
+fi
+if [[ $GIT_SHA == unknown ]]; then
+    echo "WARNING: commit sha unknown ($SHA_SRC).  Pass LIBUMEM_SHA=<sha> or run" >&2
+    echo "         via verify-isolated.sh; results without an identity are not" >&2
+    echo "         citable evidence." >&2
 fi
 
 ARCH=$(uname -m)
@@ -59,72 +118,171 @@ DATE=$(date +%Y-%m-%d)
 OUTDIR="docs/results/${DATE}-${INSTANCE}-${ARCH}"
 mkdir -p "$OUTDIR"
 OUT="$OUTDIR/sustained.toml"
+LOG="$OUTDIR/sustained.log"
+LIBUMEM_SO=$(ls .libs/libumem.so.*.*.* 2>/dev/null | head -1)
+GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown)
 
-# operation count sized so the run takes roughly DURATION seconds --
-# derived empirically per workload below rather than guessed once, since
-# prodcons and frag have very different per-op costs. We estimate with a
-# short calibration run, then scale to hit the target duration.
-calibrate_and_run() {
-    local workload="$1" min="$2" max="$3" label="$4"
-    local calib_n=2000000 calib_start calib_end calib_sec target_n
+{
+    echo "# sustained high-thread-count punishing-load results"
+    echo "# PER-WINDOW rows: one row per measured window per allocator, with"
+    echo "# that window's own latency percentiles and its own RSS/live-bytes"
+    echo "# pair.  Windows for the named allocators INTERLEAVE (A,B,A,B,...)"
+    echo "# so drift over the run does not masquerade as a difference between"
+    echo "# allocators.  Not comparable to sustained.toml files written before"
+    echo "# 2026-09-22: those aggregate a whole run and their frag column is a"
+    echo "# different (and wrong) quantity.  See P2.1/P2.2 in"
+    echo "# docs/plans/2026-09-21-production-readiness.md."
+    echo "captured = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
+    echo "instance_type = \"$INSTANCE\""
+    echo "arch = \"$ARCH\""
+    echo "vcpu = $NCPU"
+    echo "threads = $THREADS"
+    echo "governor = \"$GOV\""
+    echo "duration_target_sec_per_window = $DURATION"
+    echo "windows_per_allocator = $WINDOWS"
+    echo "warmup_windows_discarded = $WARMUPS"
+    echo "allocators = [$(printf '"%s",' "${ALLOCS[@]}" | sed 's/,$//')]"
+    echo "order = \"interleaved\""
+    echo "git_sha = \"$GIT_SHA\""
+    echo "git_sha_source = \"$SHA_SRC\""
+    echo "configure_flags = \"$(sed -n 's/.*\$ \.\/configure//p' config.log 2>/dev/null | head -1 | sed 's/"/\\"/g')\""
+    echo "uname = \"$(uname -a)\""
+    echo "gcc = \"$(gcc --version 2>/dev/null | head -1 || echo n/a)\""
+    echo "libc = \"$({ ldd --version 2>&1 || true; } | head -1)\""
+    echo "bench_bin = \"$BENCH_BIN\""
+    echo "bench_bin_digest = \"$(digest "$BENCH_BIN")\""
+    echo "libumem_so = \"${LIBUMEM_SO:-missing}\""
+    echo "libumem_so_digest = \"$(digest "$LIBUMEM_SO")\""
+    for a in "${ALLOCS[@]}"; do
+        p="$(preload_of "$a" || true)"
+        echo ""
+        echo "[allocator_identity.$a]"
+        if [[ -n ${p:-} ]]; then
+            echo "path = \"$p\""
+            echo "realpath = \"$(readlink -f "$p" 2>/dev/null || echo "$p")\""
+            echo "digest = \"$(digest "$p")\""
+        elif [[ $a == umem ]]; then
+            echo "path = \"${LIBUMEM_SO:-unknown}\""
+            echo "digest = \"$(digest "$LIBUMEM_SO")\""
+        elif [[ $a == libc ]]; then
+            echo "path = \"(process libc)\""
+            echo "version = \"$({ ldd --version 2>&1 || true; } | head -1 | tr -d '"')\""
+        else
+            echo "path = \"dlopen-resolved (see allocators.c)\""
+        fi
+    done
+} > "$OUT"
 
-    calib_start=$(date +%s.%N)
-    LD_PRELOAD="${PRELOAD:-}" "$BENCH_BIN" -a "$ALLOC" -w "$workload" -t "$THREADS" \
-        -n "$calib_n" -s "$min:$max" -c > /tmp/sustained_calib.csv 2>>"$OUTDIR/sustained.log" || true
-    calib_end=$(date +%s.%N)
-    calib_sec=$(awk "BEGIN{print $calib_end-$calib_start}")
-    if awk "BEGIN{exit !($calib_sec>0)}"; then
-        target_n=$(awk "BEGIN{n=int($calib_n*$DURATION/$calib_sec); if(n<$calib_n) n=$calib_n; print n}")
+# Calibrate the per-window operation budget, per (allocator, workload), so a
+# window takes roughly DURATION seconds.  -n is a TOTAL budget across threads
+# (bench_main divides by the thread count itself; passing a pre-divided value
+# was the P2.1 double division).
+declare -A TARGET_N
+calibrate() {
+    local a="$1" w="$2" min="$3" max="$4"
+    local calib_n=2000000 t0 t1 sec n
+    local pre; pre="$(preload_of "$a" || true)"
+    t0=$(date +%s.%N)
+    LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" \
+        -n "$calib_n" -s "$min:$max" -c >/dev/null 2>>"$LOG" || true
+    t1=$(date +%s.%N)
+    sec=$(awk "BEGIN{print $t1-$t0}")
+    if awk "BEGIN{exit !($sec>0.01)}"; then
+        n=$(awk "BEGIN{n=int($calib_n*$DURATION/$sec); if(n<$calib_n) n=$calib_n; print n}")
     else
-        target_n=$((calib_n * 20))
+        n=$((calib_n * 20))
     fi
+    TARGET_N["$a/$w"]="$n"
+    echo "  calibrate $a $w: total_n=$n (~${DURATION}s/window, from ${sec}s @ $calib_n)"
+}
 
-    echo "  $ALLOC $workload sustained: target_n=$target_n (~${DURATION}s, calibrated from ${calib_sec}s @ ${calib_n})"
+emit_windows() {
+    # $1=allocator $2=workload $3=min $4=max $5=label
+    local a="$1" w="$2" min="$3" max="$4" label="$5"
+    local pre; pre="$(preload_of "$a" || true)"
+    local n="${TARGET_N["$a/$w"]}"
     local out rc
     set +e
-    out=$(LD_PRELOAD="${PRELOAD:-}" "$BENCH_BIN" -a "$ALLOC" -w "$workload" -t "$THREADS" \
-        -n "$target_n" -s "$min:$max" -c 2>>"$OUTDIR/sustained.log")
+    # -A: one CSV row per measured window, each with its own percentiles/RSS.
+    out=$(LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" \
+        -n "$n" -s "$min:$max" -r 1 -W 0 -A -c 2>>"$LOG")
     rc=$?
     set -e
     if [[ $rc -ne 0 ]]; then
-        echo "  CRASH: $ALLOC $workload sustained rc=$rc" | tee -a "$OUTDIR/sustained.log"
+        echo "  CRASH: $a $w rc=$rc (window not recorded)" | tee -a "$LOG"
         return
     fi
-    local row; row=$(printf '%s\n' "$out" | grep "^$ALLOC," | tail -1)
-    [[ -z "$row" ]] && return
+    local row
+    row=$(printf '%s\n' "$out" | grep "^$a," | tail -1)
+    [[ -z "$row" ]] && { echo "  (no row: $a $w)" | tee -a "$LOG"; return; }
     IFS=',' read -ra f <<< "$row"
+    # Field order from bench_print_csv_header (0-based):
+    #  0 allocator 1 workload 2 threads 3 total_ops 4 ops_per_thread
+    #  5 elapsed_sec 6 ops_per_sec 7..13 latency 14 peak_rss_bytes
+    # 15 allocated_bytes 16 live_bytes_at_peak 17 frag 18/19 cpu
+    # 20 ops_cov 21 runs 22 unstable 23 ops_floor_raised
     {
         echo ""
-        echo "[[sustained]]"
+        echo "[[window]]"
         echo "allocator = \"${f[0]}\""
         echo "workload = \"$label\""
+        echo "window = $WINDOW_INDEX"
         echo "threads = ${f[2]}"
         echo "size = \"$min:$max\""
-        echo "ops = ${f[3]}"
-        echo "elapsed_sec = ${f[4]}"
-        echo "ops_per_sec = ${f[5]}"
-        echo "lat_min = ${f[6]}"
-        echo "lat_p50 = ${f[7]}"
-        echo "lat_p90 = ${f[8]}"
-        echo "lat_p99 = ${f[9]}"
-        echo "lat_p999 = ${f[10]}"
-        echo "lat_max = ${f[11]}"
-        echo "lat_mean = ${f[12]}"
-        echo "peak_rss_bytes = ${f[13]}"
-        echo "frag = ${f[15]}"
+        echo "total_ops = ${f[3]}"
+        echo "ops_per_thread = ${f[4]}"
+        echo "elapsed_sec = ${f[5]}"
+        echo "ops_per_sec = ${f[6]}"
+        echo "lat_min = ${f[7]}"
+        echo "lat_p50 = ${f[8]}"
+        echo "lat_p90 = ${f[9]}"
+        echo "lat_p99 = ${f[10]}"
+        echo "lat_p999 = ${f[11]}"
+        echo "lat_max = ${f[12]}"
+        echo "lat_mean = ${f[13]}"
+        echo "peak_rss_bytes = ${f[14]}"
+        echo "allocated_bytes = ${f[15]}"
+        echo "live_bytes_at_peak = ${f[16]}"
+        if [[ -n "${f[17]:-}" ]]; then
+            echo "frag = ${f[17]}"
+        else
+            echo "# frag: undefined for this workload (holds no live set)"
+        fi
+        echo "ops_floor_raised = $([[ "${f[23]:-0}" == "1" ]] && echo true || echo false)"
     } >> "$OUT"
+    printf '  %-10s %-18s w=%-2s mops=%8.3f p99=%9s p999=%10s rss=%s\n' \
+        "$a" "$label" "$WINDOW_INDEX" \
+        "$(awk "BEGIN{print ${f[6]}/1e6}")" "${f[10]}" "${f[11]}" "${f[14]}"
 }
 
-if [[ ! -f "$OUT" ]]; then
-    {
-        echo "# sustained high-thread-count punishing-load results"
-        echo "# threads=$THREADS duration_target_sec=$DURATION"
-        echo "instance_type = \"$INSTANCE\""
-        echo "arch = \"$ARCH\""
-    } > "$OUT"
-fi
+echo "sustained load: allocators=${ALLOCS[*]} threads=$THREADS"
+echo "  windows=$WINDOWS x ~${DURATION}s each, interleaved; warmups=$WARMUPS"
+echo "  sha=$GIT_SHA ($SHA_SRC) -> $OUT"
 
-echo "sustained load: $ALLOC threads=$THREADS duration~${DURATION}s -> $OUT"
-calibrate_and_run prodcons 64 256 "prodcons-sustained"
-calibrate_and_run frag 16 4096 "frag-sustained"
-echo "done: $ALLOC"
+for a in "${ALLOCS[@]}"; do
+    calibrate "$a" prodcons 64 256
+    calibrate "$a" frag 16 4096
+done
+
+# Matched warm-up: every allocator gets the same number of discarded windows
+# before any measured window is recorded.
+for (( wu = 0; wu < WARMUPS; wu++ )); do
+    for a in "${ALLOCS[@]}"; do
+        echo "  warmup window $wu: $a (discarded)"
+        pre="$(preload_of "$a" || true)"
+        LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w prodcons -t "$THREADS" \
+            -n "${TARGET_N["$a/prodcons"]}" -s 64:256 -c >/dev/null 2>>"$LOG" || true
+        LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w frag -t "$THREADS" \
+            -n "${TARGET_N["$a/frag"]}" -s 16:4096 -c >/dev/null 2>>"$LOG" || true
+    done
+done
+
+# Interleaved measured windows.
+for (( WINDOW_INDEX = 0; WINDOW_INDEX < WINDOWS; WINDOW_INDEX++ )); do
+    for a in "${ALLOCS[@]}"; do
+        emit_windows "$a" prodcons 64 256 "prodcons-sustained"
+        emit_windows "$a" frag 16 4096 "frag-sustained"
+    done
+done
+
+echo "done: ${ALLOCS[*]} -> $OUT"

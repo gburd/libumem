@@ -89,17 +89,17 @@ int main(int argc, char *argv[])
 	int is_prodcons = !strcmp(workload_name, "prodcons");
 
 	/*
-	 * Divide ops across threads (matches matrix.sh multi semantics);
-	 * workload_producer_consumer divides operation_count across
-	 * producers itself, so pass the raw count for prodcons.
+	 * operation_count is the TOTAL budget; workload_multi_thread and
+	 * workload_producer_consumer each divide it by their own thread count
+	 * (subject to BENCH_MIN_OPS_PER_THREAD).  Do NOT pre-divide here: that
+	 * was the P2.1 double division.
 	 */
 	workload_config_t wl = {
 		.name = is_prodcons ? "producer-consumer" : "multi-thread",
 		.fn = is_prodcons ? workload_producer_consumer :
 		    workload_multi_thread,
 		.thread_count = thread_count,
-		.operation_count = is_prodcons ? operation_count :
-		    operation_count / (uint64_t)thread_count,
+		.operation_count = operation_count,
 		.min_size = min_size,
 		.max_size = max_size,
 		.custom_data = NULL,

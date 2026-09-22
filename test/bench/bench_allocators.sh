@@ -11,7 +11,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Configuration
+# Configuration.
+# OPERATIONS is the TOTAL operation budget per point, across all threads --
+# it is handed to bench_main's -n unchanged (bench_main divides by the thread
+# count exactly once).  See the P2.1 note at the multi-threaded loop.
 OPERATIONS=10000000
 THREAD_COUNTS=(1 2 4 8 16)
 SIZE_RANGES=("16:64" "64:256" "256:1024" "1024:4096")
@@ -29,7 +32,8 @@ Usage: $0 [OPTIONS] [ALLOCATORS...]
 Run comprehensive allocator benchmarks.
 
 OPTIONS:
-    -n COUNT        Number of operations (default: $OPERATIONS)
+    -n COUNT        TOTAL operations across all threads (default: $OPERATIONS).
+                    NOT per-thread; bench_main divides by the thread count.
     -t THREADS      Comma-separated thread counts (default: 1,2,4,8,16)
     -s SIZES        Comma-separated size ranges (default: 16:64,64:256,...)
     -o DIR          Output directory (default: $OUTPUT_DIR)
@@ -216,15 +220,19 @@ for allocator in "${ALLOCATORS[@]}"; do
         fi
     done
 
-    # Multi-threaded workload
+    # Multi-threaded workload.
+    #
+    # -n is the TOTAL operation budget: bench_main divides it by the thread
+    # count itself.  This loop used to pass OPERATIONS/threads, which
+    # bench_main then divided AGAIN, so aggregate work fell as 1/threads^2
+    # (P2.1, the same defect matrix.sh had).  Never pre-divide.
     for threads in "${THREAD_COUNTS[@]}"; do
         for size_range in "${SIZE_RANGES[@]}"; do
             current_run=$((current_run + 1))
-            ops_per_thread=$((OPERATIONS / threads))
-            echo -ne "  [${current_run}/${total_runs}] multi-thread (t=$threads, $size_range)... "
+            echo -ne "  [${current_run}/${total_runs}] multi-thread (t=$threads, $size_range, ${OPERATIONS} total ops)... "
 
             if $(pin_prefix "$threads")$BENCH_BIN -a "$allocator" -w multi -t "$threads" \
-                    -n "$ops_per_thread" -s "$size_range" -r "$RUNS" -W "$WARMUPS" -c \
+                    -n "$OPERATIONS" -s "$size_range" -r "$RUNS" -W "$WARMUPS" -c \
                     >> "$RESULT_FILE" 2>> "$LOG_FILE"; then
                 echo -e "${GREEN}✓${NC}"
             else

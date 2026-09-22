@@ -328,7 +328,7 @@ note_alloc_failure(cfg_t *c, size_t sz)
 {
 	atomic_fetch_add(&c->fails, 1);
 	if (atomic_exchange(&g_alloc_failed, 1) == 0) {
-		fprintf(stderr, "\n*** ORACLE FAILURE (alloc) ***\n"
+		fprintf(stderr, "\n*** ORACLE FAILURE (alloc-returned-NULL) ***\n"
 		    "  umem_alloc(%zu) returned NULL\n"
 		    "  => the allocator did not perform the requested work; "
 		    "absence of corruption proves nothing here.\n\n", sz);
@@ -896,9 +896,12 @@ main(int argc, char **argv)
 		    harness ? "harness error " : "",
 		    thin_stage ? "insufficient work " : "");
 	} else {
-		printf("Result: PASS (no aliasing or corruption, and %llu "
-		    "successful allocations with 0 failures)\n",
-		    total_allocs_ok);
+		/* Never describe a run as having 0 failures when it did not.
+		 * The counts are printed above regardless; this line only
+		 * states the verdict's basis. */
+		printf("Result: PASS (no aliasing or corruption; %llu "
+		    "successful allocations, %llu failures)\n",
+		    total_allocs_ok, total_fails);
 	}
 	return (failed ? 1 : 0);
 }

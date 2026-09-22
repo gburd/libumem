@@ -19,6 +19,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/property/prop_cache \
 		  test/property/prop_fragmentation \
 		  test/bench/bench_main \
+		  test/bench/test_bench_accounting \
 		  test/bench/bench_depot_contention \
 		  test/bench/bench_simd \
 		  test/bench/bench_simd_threshold \
@@ -371,6 +372,18 @@ test_bench_bench_main_SOURCES = test/bench/bench_main.c test/bench/bench_framewo
 test_bench_bench_main_LDADD = libumem.la
 test_bench_bench_main_LDFLAGS = -pthread -lm
 
+# P2.1/P2.2 regressions: the benchmark harness's own accounting.  These are
+# measurement defects, so the check is on the harness, not the allocator -- it
+# uses a mock malloc/free allocator and asserts the arithmetic (total-vs-
+# per-thread budget, the work floor, live-bytes-means-live-bytes, peak RSS
+# paired with the live bytes it was sampled with, no ratio for workloads that
+# hold no live set, honest thread counts).  Fast and deterministic, so it is
+# in TESTS.
+test_bench_test_bench_accounting_SOURCES = test/bench/test_bench_accounting.c \
+				test/bench/bench_framework.c test/tdigest.c
+test_bench_test_bench_accounting_LDADD =
+test_bench_test_bench_accounting_LDFLAGS = -pthread -lm
+
 test_bench_bench_depot_contention_SOURCES = test/bench/bench_depot_contention.c test/tdigest.c
 test_bench_bench_depot_contention_LDADD = libumem.la
 test_bench_bench_depot_contention_LDFLAGS = -pthread -lm
@@ -586,6 +599,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
 	test/tdigest.c test/tdigest.h test/common.c test/common.h \
 	test/bench/bench_framework.c test/bench/bench_framework.h test/bench/allocators.c \
+	test/bench/test_bench_accounting.c \
 	test/bench/bench_profile_test.c test/bench/expected_profile.txt \
 	test/bench/verify_profile.sh \
 	test/property/prop_alloc_free.c
@@ -639,7 +653,8 @@ TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_hash_partition \
 	test/stress/interpose_regress.sh \
 	test/stress/oracle_control.sh \
-	test/unit/test_lifecycle_churn
+	test/unit/test_lifecycle_churn \
+	test/bench/test_bench_accounting
 
 TEST_EXTENSIONS = .sh
 # The .sh tests are '#!/usr/bin/env bash' scripts using bash-only syntax, and

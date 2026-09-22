@@ -369,11 +369,15 @@ test_hook_walk(const MunitParameter params[], void* data)
 	munit_assert_int(ret, ==, 0);
 	munit_assert_int(count, ==, 2);
 
-	/* Walk with failing callback */
+	/* Walk with failing callback: a nonzero return STOPS the walk, so
+	 * exactly one hook is visited (contract L4 in umem_hooks.h).  This
+	 * used to assert 2 ("all hooks still visited"), contradicting what
+	 * umem_hooks.3 documents; the implementation now matches the man
+	 * page rather than the other way round. */
 	count = 0;
 	ret = umem_hook_walk(walk_callback_fail, &count);
 	munit_assert_int(ret, ==, -1);
-	munit_assert_int(count, ==, 2); /* All hooks still visited */
+	munit_assert_int(count, ==, 1);
 
 	/* Walk with NULL func */
 	ret = umem_hook_walk(NULL, NULL);
