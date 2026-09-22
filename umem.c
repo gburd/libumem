@@ -5892,15 +5892,8 @@ umem_init(void)
 	 * Initialize allocation profiling if configured via UMEM_OPTIONS
 	 * (profile=record:/path or profile=use:/path) or the UMEM_PROFILE
 	 * environment variable.
-	 *
-	 * P5.2: UMEM_PROFILE is read HERE, not through envvar.c's table, so
-	 * envvar.c's secure-mode filter does not cover it.  Gate it directly:
-	 * record: creates and truncates a caller-named file as this process's
-	 * uid.  umem_profile_spec is already empty in secure mode (the
-	 * "profile" option is marked secure-unsafe), but this second check is
-	 * not redundant -- it is the one that covers the env var.
 	 */
-	if (!umem_secure_mode()) {
+	{
 		const char *profile_env = getenv("UMEM_PROFILE");
 		if (umem_profile_spec[0] != '\0')
 			(void) umem_profile_init(umem_profile_spec);
