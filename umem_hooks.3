@@ -126,15 +126,26 @@ The \fBumem_hook_unregister()\fR function removes a previously registered
 hook from the hook list.
 .sp
 .LP
-\fBIt does not wait for in-flight callbacks.\fR Unregistration takes the
-hook-list lock, unlinks the hook, and returns; a callback that another thread
-has already entered may still be running, and may still touch the hook
-structure, after the call has returned.  Freeing the hook structure
-immediately is therefore only safe if you know no other thread can be
-inside it \(em for example because the hook was only ever driven by the
-calling thread, or because the application has already quiesced.  There is
-currently no "drain" or grace-period primitive; see Phase 3 of
-\fBdocs/plans/2026-09-21-production-readiness.md\fR.
+\fBIt drains in-flight callbacks before returning.\fR Unregistration marks
+the hook inactive so no new call can enter it, unlinks it, and then waits
+until every thread that had already entered a
+\fBumem_hook_track_*()\fR call or a \fBumem_hook_walk()\fR callback for this
+hook has left.  When it returns, no thread is inside the hook, so the caller
+may free or reuse the hook structure immediately.
+.sp
+.LP
+Two consequences of that guarantee:
+.RS
+.IP \(bu 2
+If a hook callback blocks indefinitely, \fBumem_hook_unregister()\fR blocks
+with it.  There is no forced revoke.
+.IP \(bu 2
+A hook callback must not unregister its own hook: it would wait for itself.
+.RE
+.sp
+.LP
+Unregistering a hook that was never registered, or unregistering twice, is
+safe and does not return before any in-flight callers have left.
 .SS "Tracking Functions"
 .sp
 .LP
@@ -163,12 +174,25 @@ The \fBumem_hook_dump_one()\fR function writes statistics for a single hook.
 .sp
 .LP
 The \fBumem_hook_find()\fR function looks up a hook by name. Returns NULL
-if not found.
+if not found.  It returns a bare pointer and takes no reference: if another
+thread can unregister that hook concurrently, the pointer may be stale by the
+time this function returns.  Use it to look up a hook you own.
 .sp
 .LP
 The \fBumem_hook_walk()\fR function calls \fIfunc\fR for each registered
 hook, passing the hook pointer and \fIarg\fR. If \fIfunc\fR returns non-zero,
-the walk terminates early.
+the walk terminates early and \fBumem_hook_walk()\fR returns \-1.
+.sp
+.LP
+The callback runs with \fBno\fR internal lock held, so it may register,
+unregister, look up, dump, track through, or allocate from this API.  It must
+not start a nested \fBumem_hook_walk()\fR: walks are serialized against each
+other and a nested walk would wait for the outer one.
+.sp
+.LP
+A hook that stays registered for the whole walk is visited exactly once.
+Hooks registered during a walk may or may not be visited; hooks unregistered
+during a walk are not visited after they go away.
 .SH RETURN VALUES
 .sp
 .LP
@@ -277,15 +301,15 @@ MT-Level	MT-Safe
 Hook functions must be thread-safe if called from multiple threads.
 .sp
 .LP
-Statistics tracking is a small number of atomic counter updates.  Note that
-the counters are individually atomic but are not a consistent snapshot: a
-reader can observe an allocation count that does not match the byte count.
+Statistics tracking is a small number of counter updates serialized by the
+hook registry lock.  Note that the counters are individually consistent but
+are not a consistent snapshot: a reader can observe an allocation count that
+does not match the byte count.
 .sp
 .LP
-The hook structure must remain valid while registered, and \(em because
-\fBumem_hook_unregister()\fR does not drain in-flight callbacks \(em may
-need to remain valid after unregistering.  See the description of
-\fBumem_hook_unregister()\fR above.
+The hook structure must remain valid while registered.  Because
+\fBumem_hook_unregister()\fR drains in-flight callbacks, it may be freed as
+soon as that call returns.
 .sp
 .LP
 Hook names must be unique. Attempting to register a duplicate name fails.
