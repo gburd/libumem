@@ -1,0 +1,127 @@
+######## PART 1: RSS/retention observation (default build) ########
+BUILD OK
+--- reclaim mode: default (UMEM_OPTIONS='') ---
+cache: bufsize=512 slabsize=4096 flags=0x220 hash=1 buftag=0 pagesize=4096
+reclaim_enabled=1 reclaim_delay=30 reap_interval=10
+0 baseline                   RSS=5052 kB  arena_alloc=0 B
+1 after alloc                RSS=16260 kB  arena_alloc=10240000 B
+2 after free (retained)      RSS=16260 kB  arena_alloc=10240000 B
+3 after 1 update pass        RSS=16260 kB  arena_alloc=10240000 B
+4 after 8 more passes        RSS=6644 kB  arena_alloc=0 B
+5 after cache destroy        RSS=6632 kB  arena_alloc=0 B
+rc=0
+--- reclaim mode: delay0 (UMEM_OPTIONS='reclaim=1,reclaim_delay=0,reap_interval=1') ---
+cache: bufsize=512 slabsize=4096 flags=0x220 hash=1 buftag=0 pagesize=4096
+reclaim_enabled=1 reclaim_delay=0 reap_interval=1
+0 baseline                   RSS=5052 kB  arena_alloc=0 B
+1 after alloc                RSS=16260 kB  arena_alloc=10240000 B
+2 after free (retained)      RSS=16260 kB  arena_alloc=10240000 B
+3 after 1 update pass        RSS=6260 kB  arena_alloc=10240000 B
+4 after 8 more passes        RSS=6644 kB  arena_alloc=0 B
+5 after cache destroy        RSS=6632 kB  arena_alloc=0 B
+rc=0
+--- reclaim mode: off (UMEM_OPTIONS='reclaim=0') ---
+cache: bufsize=512 slabsize=4096 flags=0x220 hash=1 buftag=0 pagesize=4096
+reclaim_enabled=0 reclaim_delay=30 reap_interval=10
+0 baseline                   RSS=5092 kB  arena_alloc=0 B
+1 after alloc                RSS=16300 kB  arena_alloc=10240000 B
+2 after free (retained)      RSS=16684 kB  arena_alloc=0 B
+3 after 1 update pass        RSS=16684 kB  arena_alloc=0 B
+4 after 8 more passes        RSS=16684 kB  arena_alloc=0 B
+5 after cache destroy        RSS=16672 kB  arena_alloc=0 B
+rc=0
+######## PART 2: TSAN usability ########
+TSAN BUILD OK
+tsan runtime: /usr/lib/gcc/x86_64-amazon-linux/11/libtsan.so.0.0.0
+--- tsan race ---
+rc=0
+tsan_warnings=9
+top reported sites:
+     12 vmem.c:1649
+     11 umem.c:3442
+     11 umem.c:1273
+      8 vmem_mmap.c:208
+      8 vmem_base.c:53
+      8 umem_update_thread.c:204
+      8 umem.c:5346
+      8 umem.c:4422
+      7 vmem.c:1762
+      6 vmem.c:1712
+      6 vmem.c:1543
+      6 umem_update_thread.c:133
+      5 vmem.c:1482
+      5 vmem.c:1156
+      5 vmem.c:1134
+slab_state / reclaim mentions:
+first report:
+WARNING: ThreadSanitizer: data race (pid=148732)
+  Read of size 8 at 0x7f7f8dc7fbf8 by thread T6 (mutexes: write M20):
+    #0 vmem_hash_rescale /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/vmem.c:1649 (libumem.so.1+0x91b25)
+    #1 vmem_update /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/vmem.c:1712 (libumem.so.1+0x91b25)
+    #2 umem_update_thread /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/umem_update_thread.c:133 (libumem.so.1+0x7d83e)
+
+WARNING: ThreadSanitizer: data race (pid=148732)
+  Read of size 4 at 0x7f7f8e2e70e8 by thread T5:
+    #0 umem_reap /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/umem.c:4392 (libumem.so.1+0x8810e)
+    #1 race_reclaim test/unit/repro_reclaim_reuse.c:410 (repro_reclaim_reuse+0x401894)
+
+WARNING: ThreadSanitizer: data race (pid=148732)
+  Read of size 8 at 0x7f7f8e2e7048 by thread T5:
+    #0 umem_reap /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/umem.c:4393 (libumem.so.1+0x8815d)
+    #1 race_reclaim test/unit/repro_reclaim_reuse.c:410 (repro_reclaim_reuse+0x401894)
+
+WARNING: ThreadSanitizer: data race (pid=148732)
+  Write of size 4 at 0x7ffdcdd179d8 by main thread:
+    #0 run_race test/unit/repro_reclaim_reuse.c:453 (repro_reclaim_reuse+0x401549)
+    #1 main test/unit/repro_reclaim_reuse.c:559 (repro_reclaim_reuse+0x401549)
+
+WARNING: ThreadSanitizer: data race (pid=148732)
+  Read of size 8 at 0x7f7f8e2edf18 by thread T6 (mutexes: write M20):
+    #0 vmem_hash_rescale /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/vmem.c:1649 (libumem.so.1+0x91b25)
+    #1 vmem_update /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/vmem.c:1712 (libumem.so.1+0x91b25)
+--- tsan reap_reentry ---
+rc=0
+tsan_warnings=9
+top reported sites:
+     12 vmem.c:1649
+     11 umem.c:3442
+     11 umem.c:1273
+      8 vmem_mmap.c:208
+      8 vmem_base.c:53
+      8 umem_update_thread.c:204
+      8 umem.c:5346
+      8 umem.c:4422
+      7 vmem.c:1762
+      6 vmem.c:1712
+      6 vmem.c:1543
+      6 umem_update_thread.c:133
+      5 vmem.c:1482
+      5 vmem.c:1156
+      5 vmem.c:1134
+slab_state / reclaim mentions:
+first report:
+WARNING: ThreadSanitizer: data race (pid=148752)
+  Read of size 8 at 0x7fbc8b029bf8 by thread T5 (mutexes: write M20):
+    #0 vmem_hash_rescale /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/vmem.c:1649 (libumem.so.1+0x91b25)
+    #1 vmem_update /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/vmem.c:1712 (libumem.so.1+0x91b25)
+    #2 umem_update_thread /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/umem_update_thread.c:133 (libumem.so.1+0x7d83e)
+
+WARNING: ThreadSanitizer: data race (pid=148752)
+  Read of size 4 at 0x7fbc8b2e70e8 by main thread:
+    #0 umem_reap /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/umem.c:4392 (libumem.so.1+0x8810e)
+    #1 run_reap_reentry test/unit/repro_reclaim_reuse.c:516 (repro_reclaim_reuse+0x4013c4)
+    #2 main test/unit/repro_reclaim_reuse.c:561 (repro_reclaim_reuse+0x4013c4)
+
+WARNING: ThreadSanitizer: data race (pid=148752)
+  Read of size 8 at 0x7fbc8b2e7048 by main thread:
+    #0 umem_reap /home/ec2-user/libumem-iso-rsstsan2-45db51d0a352/umem.c:4393 (libumem.so.1+0x8815d)
+    #1 run_reap_reentry test/unit/repro_reclaim_reuse.c:516 (repro_reclaim_reuse+0x4013c4)
+    #2 main test/unit/repro_reclaim_reuse.c:561 (repro_reclaim_reuse+0x4013c4)
+
+WARNING: ThreadSanitizer: data race (pid=148752)
+  Write of size 4 at 0x7ffeeceda248 by main thread:
+    #0 run_reap_reentry test/unit/repro_reclaim_reuse.c:521 (repro_reclaim_reuse+0x4013f8)
+    #1 main test/unit/repro_reclaim_reuse.c:561 (repro_reclaim_reuse+0x4013f8)
+
+WARNING: ThreadSanitizer: data race (pid=148752)
+  Read of size 8 at 0x7fbc8b2edf18 by thread T5 (mutexes: write M20):

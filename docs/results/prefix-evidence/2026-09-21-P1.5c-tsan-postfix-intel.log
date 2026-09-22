@@ -1,0 +1,26 @@
+TSAN BUILD OK (post-fix)
+--- tsan race (30s, reap_interval=0) ---
+rc=0
+tsan_warnings=10
+reports naming umem_slab_reclaim: 0
+reports naming umem_cache_reclaim_pages: 0
+SUMMARY lines (the function each race is attributed to):
+      3 vmem.c:372 in vmem_hash_insert
+      2 vmem.c:1649 in vmem_hash_rescale
+      1 vmem.c:403 in vmem_hash_delete
+      1 umem.c:4393 in umem_reap
+      1 umem.c:4392 in umem_reap
+      1 repro_reclaim_reuse.c:462 in run_race
+      1 libtsan.so.0.0.0+0x7cf19) in __tsan_atomic64_fetch_add
+--- tsan reap_reentry (30s, reap_interval=0) ---
+rc=0
+tsan_warnings=8
+reports naming umem_slab_reclaim: 0
+reports naming umem_cache_reclaim_pages: 0
+SUMMARY lines (the function each race is attributed to):
+      3 vmem.c:372 in vmem_hash_insert
+      1 vmem.c:403 in vmem_hash_delete
+      1 vmem.c:1649 in vmem_hash_rescale
+      1 umem.c:4393 in umem_reap
+      1 umem.c:4392 in umem_reap
+      1 repro_reclaim_reuse.c:530 in run_reap_reentry

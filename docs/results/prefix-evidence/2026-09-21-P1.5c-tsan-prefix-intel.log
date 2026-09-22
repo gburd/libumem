@@ -1,0 +1,68 @@
+pre-fix reclaim restored
+=== verify the revert matches the fix commit's parent for these hunks ===
+3968:		sp->slab_state = SLAB_CLEAN;
+3983:	sp->slab_state = SLAB_CLEAN;
+3962:	uintptr_t limit = (unlikely(cp->cache_flags & UMF_HASH)) ?
+TSAN BUILD OK (pre-fix reclaim)
+--- tsan race, PRE-FIX slab_state publication (long, unthrottled) ---
+rc=0
+tsan_warnings=10
+reports naming umem_slab_reclaim: 1
+reports naming slab_state readers: 11
+--- any report mentioning the reclaim functions ---
+105:    #0 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1613 (libumem.so.1+0x893fd)
+110:    #0 umem_slab_reclaim /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:3968 (libumem.so.1+0x85611)
+111:    #1 umem_cache_reclaim_pages /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:4068 (libumem.so.1+0x85611)
+142:SUMMARY: ThreadSanitizer: data race /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1613 in umem_slab_alloc
+161:    #9 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1596 (libumem.so.1+0x89778)
+168:    #16 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1596 (libumem.so.1+0x89778)
+226:    #7 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1596 (libumem.so.1+0x89778)
+233:    #14 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1596 (libumem.so.1+0x89778)
+289:    #5 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1596 (libumem.so.1+0x89778)
+296:    #12 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1596 (libumem.so.1+0x89778)
+337:    #0 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1600 (libumem.so.1+0x897d3)
+344:    #7 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1623 (libumem.so.1+0x895d0)
+374:SUMMARY: ThreadSanitizer: data race /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1600 in umem_slab_alloc
+--- full report containing umem_slab_reclaim, if any ---
+
+WARNING: ThreadSanitizer: data race (pid=183267)
+  Read of size 4 at 0x7f0cd9e8bff0 by thread T1 (mutexes: write M1876):
+    #0 umem_slab_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1613 (libumem.so.1+0x893fd)
+    #1 _umem_cache_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:2904 (libumem.so.1+0x835b3)
+    #2 race_churn test/unit/repro_reclaim_reuse.c:385 (repro_reclaim_reuse+0x401999)
+
+  Previous write of size 4 at 0x7f0cd9e8bff0 by thread T6 (mutexes: write M63):
+    #0 umem_slab_reclaim /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:3968 (libumem.so.1+0x85611)
+    #1 umem_cache_reclaim_pages /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:4068 (libumem.so.1+0x85611)
+    #2 umem_cache_update /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:4258 (libumem.so.1+0x85611)
+    #3 umem_cache_applyall /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:891 (libumem.so.1+0x81c55)
+    #4 umem_update_thread /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem_update_thread.c:139 (libumem.so.1+0x7d84a)
+
+  Mutex M1876 (0x7f0cda308148) created at:
+    #0 pthread_mutex_init <null> (libtsan.so.0.0.0+0x49863)
+    #1 umem_cache_create /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:4668 (libumem.so.1+0x8b514)
+    #2 run_race test/unit/repro_reclaim_reuse.c:433 (repro_reclaim_reuse+0x4014ef)
+    #3 main test/unit/repro_reclaim_reuse.c:568 (repro_reclaim_reuse+0x4014ef)
+
+  Mutex M63 (0x7f0cdbae7020) created at:
+    #0 pthread_mutex_lock <null> (libtsan.so.0.0.0+0x506fa)
+    #1 umem_cache_create /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:4783 (libumem.so.1+0x8b8ca)
+    #2 umem_cache_init /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:5006 (libumem.so.1+0x8c327)
+    #3 umem_init /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:5480 (libumem.so.1+0x82b31)
+    #4 umem_alloc_retry /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:1273 (libumem.so.1+0x83124)
+    #5 _umem_alloc /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:3442 (libumem.so.1+0x8a80e)
+    #6 main test/unit/repro_reclaim_reuse.c:554 (repro_reclaim_reuse+0x401275)
+
+  Thread T1 (tid=183270, running) created by main thread at:
+    #0 pthread_create <null> (libtsan.so.0.0.0+0x5c205)
+    #1 run_race test/unit/repro_reclaim_reuse.c:443 (repro_reclaim_reuse+0x40154e)
+    #2 main test/unit/repro_reclaim_reuse.c:568 (repro_reclaim_reuse+0x40154e)
+
+  Thread T6 (tid=183275, running) created by thread T5 at:
+    #0 pthread_create <null> (libtsan.so.0.0.0+0x5c205)
+    #1 umem_create_update_thread /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem_update_thread.c:204 (libumem.so.1+0x7da77)
+    #2 umem_reap /home/ec2-user/libumem-iso-tsanbase3-a1296d01d33b/umem.c:4413 (libumem.so.1+0x8834a)
+    #3 race_reclaim test/unit/repro_reclaim_reuse.c:414 (repro_reclaim_reuse+0x4018f4)
+
+=== how many reclaim passes did the run actually get? ===
+reap_interval=0 (limiter off), run=30s

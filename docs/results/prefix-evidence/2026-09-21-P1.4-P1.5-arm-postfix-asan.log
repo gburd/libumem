@@ -1,0 +1,28 @@
+=== ASAN BUILD OK ===
+--- asan P1.4 destroy ---
+ok: reclaim_destroy_nohash: 4096 bytes retained after free, 0 after destroy
+ok: reclaim_destroy_hash: 4096 bytes retained after free, 0 after destroy
+PASS
+rc=0
+--- asan P1.5a hash_guards ---
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=-32, ncpus=8)
+ok: hash+guards slab reused, 1 buffers both passes
+rc=0
+--- asan P1.5b big_quantum ---
+ok: multi-page non-hash slab reused, 254 buffers both passes (slabsize 16384, pagesize 4096)
+rc=0
+--- asan P1.5c race ---
+ok: reclaim raced 4 churn threads for 3s (0 allocation failures)
+rc=0
+--- asan P1.5c reap_reentry ---
+ok: 5 reap-driven update passes under churn completed in 5s (no umem_cache_lock self-deadlock)
+rc=0
+--- asan concurrency oracle ---
+rc=0
+=== libumem concurrency oracle ===
+threads=8  duration(s)=20  size-class=mixed  pattern=all
+  multi        1488083968 ops     74.4 Mops/s  ok
+  prodcons       15269048 ops      0.8 Mops/s  ok
+  churn          18262397 ops      0.9 Mops/s  ok
+
+Result: PASS (no cross-thread aliasing or corruption)

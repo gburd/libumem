@@ -1,0 +1,13 @@
+=== guard removed ===
+1010:	if (!IN_UPDATE())
+1080:	if (!IN_UPDATE())
+1902:	ASSERT(cp->cache_next == NULL || IN_UPDATE());
+3744:	ASSERT(cp->cache_next == NULL || IN_UPDATE());
+3817:	ASSERT(IN_UPDATE());
+3840:	ASSERT(IN_UPDATE());
+=== BUILD OK (no guard) ===
+--- reap_reentry WITHOUT guard (expect hang -> rc=124) ---
+rc=124
+--- race WITHOUT guard ---
+ok: reclaim raced 4 churn threads for 3s (0 allocation failures)
+rc=0
