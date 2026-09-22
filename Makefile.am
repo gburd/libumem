@@ -344,6 +344,18 @@ test_integration_introspect_churn_LDADD = libumem.la
 test_integration_introspect_churn_LDFLAGS = -pthread
 test_integration_introspect_churn_CPPFLAGS = -I$(srcdir)
 
+# Phase 3 item 5 (clause B5): a fork child must not inherit an armed break
+# predicate -- it has no server thread to resume it.  Reports SKIP (77) when
+# built without --enable-introspect, since then there is no predicate to
+# inherit.  Driven by test/debugger/test_introspect_contracts.sh, which
+# provides UMEM_INTROSPECT_SOCK and the timeout that makes a hang a failure.
+noinst_PROGRAMS += test/integration/test_introspect_fork
+test_integration_test_introspect_fork_SOURCES = \
+	test/integration/test_introspect_fork.c
+test_integration_test_introspect_fork_LDADD = libumem.la
+test_integration_test_introspect_fork_LDFLAGS = -pthread
+test_integration_test_introspect_fork_CPPFLAGS = -I$(srcdir)
+
 # umemctl: live-process inspection CLI. Pure AF_UNIX socket client, no
 # libumem linkage; connects to a process running introspect=1.
 tools_umemctl_SOURCES = tools/umemctl.c
@@ -650,6 +662,7 @@ nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h \
 # been re-tested -- do not assume either way without running it.
 TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh \
+	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh
 
 # Phase 1 regressions (docs/plans/2026-09-21-production-readiness.md).
@@ -694,6 +707,7 @@ test_test_inspect_live_LDADD = libumem.la
 
 dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/test_lldb_e2e.sh \
+	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh \
 	test/stress/oracle_control.sh \
 	test/bench/check_budget.sh \
