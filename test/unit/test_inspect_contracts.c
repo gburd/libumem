@@ -338,14 +338,21 @@ test_whatis_reports_cached(void)
 	 *
 	 * With the PTC off (see above) the magazine layer is the only place a
 	 * freed buffer can be, so require nearly all of them to be accounted.
-	 * The residual `allocated` count must be small: if a whole retention
-	 * site is unsubtracted -- as happened when the rseq magazine handling
-	 * was compiled out by a bad include guard -- this is where it shows.
+	 *
+	 * SCOPE, MEASURED -- this does NOT cover the rseq magazines.  A control
+	 * build with the rseq subtraction compiled out scored identically (256
+	 * CACHED, 0 held), because on this hardware rseq serves zero rounds:
+	 * umem_dump_contention reports rseq_enabled=1 asm_safe=1 with
+	 * rseq_alloc=0 rseq_free=0, the pre-existing condition recorded in
+	 * AGENTS.md section 6.  An empty retention site has nothing to
+	 * subtract, so the test cannot distinguish the two builds.  The rseq
+	 * branch in cached_set_build_cache() is therefore compiled and
+	 * reviewed, but NOT covered by a test that fails without it; it becomes
+	 * testable only once rseq actually serves rounds.
 	 */
 	CHECK(cached + freestate >= N - N / 8,
 	    "item 7 violated: too many freed buffers are still reported as "
-	    "held -- a retention site is not being subtracted (magazine, or "
-	    "the rseq magazines if their subtraction was compiled out)");
+	    "held -- the magazine retention site is not being subtracted");
 }
 
 int
