@@ -66,7 +66,23 @@ typedef struct umem_ptc_mag {
 	struct umem_magazine *previous; /* previously loaded magazine */
 	int rounds;                     /* rounds remaining in loaded */
 	int prounds;                    /* rounds remaining in previous */
-	int magsize;                    /* capacity of magazine */
+	/*
+	 * Capacity of each magazine, in rounds.
+	 *
+	 * These MUST be derived from the magazine itself (umem_mag_capacity()
+	 * in umem.c), never from cp->cache_magtype->mt_magsize.  The update
+	 * thread can run umem_cache_magazine_resize() at any point, including
+	 * between obtaining a magazine and reading the cache's magtype, and an
+	 * old 127-round magazine indexed with the new 255-round capacity walks
+	 * off the end of its allocation (P1.3b).
+	 *
+	 * loaded and previous can legitimately be of DIFFERENT magtypes -- a
+	 * resize only has to land between two refills -- so each needs its own
+	 * capacity, and the two travel together with their magazine across the
+	 * loaded/previous swap.
+	 */
+	int magsize;                    /* capacity of loaded */
+	int pmagsize;                   /* capacity of previous */
 	struct umem_cache *cache;       /* owning cache (set on first use) */
 } umem_ptc_mag_t;
 

@@ -2045,6 +2045,63 @@ umem_depot_push(umem_maglist_t *mlp, umem_magazine_t *mp)
 static void umem_depot_destroy_stale(umem_cache_t *, int, umem_magazine_t *);
 
 /*
+ * The cache a magazine shell was actually allocated from.
+ *
+ * A magazine is an object of some umem_magazine_<N> cache, so its own slab
+ * header names its source magtype cache.  This is knowable from the magazine
+ * ALONE, which is the point: cp->cache_magtype can change under us at any
+ * time (umem_cache_magazine_resize, from the update thread), so it is not a
+ * safe way to describe a magazine we are already holding.
+ */
+static inline umem_cache_t *
+umem_mag_source_cache(umem_magazine_t *mp)
+{
+	return (((umem_slab_t *)P2END((uintptr_t)(mp), PAGESIZE) - 1)->
+	    slab_cache);
+}
+
+/*
+ * A magazine's OWN capacity, in rounds.
+ *
+ * umem_cache_init() creates each magtype cache with bufsize
+ * (mt_magsize + 1) * sizeof (void *) -- one slot for mag_next plus magsize
+ * rounds -- so the inverse recovers the true capacity of this magazine,
+ * whatever magtype the cache has moved on to.
+ *
+ * Use this, never cp->cache_magtype->mt_magsize, to bound indexing into a
+ * magazine already in hand (P1.3b): a resize between obtaining the magazine
+ * and reading the cache's current magtype would otherwise index an old
+ * 127-round magazine as if it had 255, past the end of its allocation.
+ */
+static inline int
+umem_mag_capacity(umem_magazine_t *mp)
+{
+	return ((int)(umem_mag_source_cache(mp)->cache_bufsize /
+	    sizeof (void *)) - 1);
+}
+
+/*
+ * Debug check for the invariant P1.3b broke: every magazine a PTC thread
+ * holds is described by the capacity of THAT magazine, and its round count
+ * is within that capacity.
+ *
+ * Placed at the refill/flush points where the state changes -- once per depot
+ * transfer, not once per object -- so it costs nothing measurable, and it
+ * fires exactly when a resize has desynchronized a magazine from the size it
+ * is about to be indexed with.
+ */
+static inline void
+umem_ptc_mag_check(umem_ptc_mag_t *mag)
+{
+	ASSERT(mag->loaded == NULL ||
+	    mag->magsize == umem_mag_capacity(mag->loaded));
+	ASSERT(mag->previous == NULL ||
+	    mag->pmagsize == umem_mag_capacity(mag->previous));
+	ASSERT(mag->rounds >= 0 && mag->rounds <= mag->magsize);
+	ASSERT(mag->prounds >= 0 && mag->prounds <= mag->pmagsize);
+}
+
+/*
  * Non-blocking depot pop for PTC refill path.
  * Returns NULL immediately if the lock is contended or list is empty.
  * Never blocks on a mutex, eliminating p99 latency spikes.
@@ -2415,51 +2472,105 @@ umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp,
 }
 
 /*
- * Return a PTC magazine to the depot, or destroy it if its magtype
- * no longer matches the cache (magazine resize happened while the
- * PTC thread held this magazine).
+ * Drain `rounds` objects out of a magazine back to the cache.
+ * The magazine is left with every drained slot NULL.
+ *
+ * `cap` is the magazine's own capacity (see umem_mag_capacity): rounds is
+ * clamped to it so a stale count can never walk off the end of the shell.
+ */
+static void
+umem_mag_drain(umem_cache_t *cp, umem_magazine_t *mp, int rounds, int cap)
+{
+	int r;
+
+	if (rounds > cap)
+		rounds = cap;
+
+	for (r = 0; r < rounds; r++) {
+		void *buf = mp->mag_round[r];
+		mp->mag_round[r] = NULL;
+		if (buf != NULL)
+			_umem_cache_free(cp, buf);
+	}
+}
+
+/*
+ * Return a PTC magazine holding `rounds` objects to the depot.
+ *
+ * Two invariants are enforced here, at the one shared function every PTC
+ * magazine hand-off goes through, rather than at each call site:
+ *
+ *   1. NOTHING IS DISCARDED WITH OBJECTS STILL IN IT (P1.3c).  If the
+ *      magazine's magtype no longer matches the cache -- a
+ *      umem_cache_magazine_resize() happened while this thread held it --
+ *      the shell cannot go back on a depot list, but the objects inside are
+ *      live and the slab layer still counts them as allocated.  This used to
+ *      free only the shell, so every object in a full magazine (127 or 255
+ *      of them) lost its only reference.  Drain first, then free the shell.
+ *
+ *   2. THE FULL/EMPTY CLASSIFICATION IS THE CALLER'S COUNT, NOT A GUESS.
+ *      The depot's two lists have exact contracts: a magazine on ml_full
+ *      holds capacity rounds (umem_depot_ws_reap destroys those with
+ *      full_rounds == magsize), one on ml_empty holds none (destroyed with
+ *      0).  A partially filled magazine satisfies neither, and pushing one
+ *      onto the empty list -- which the resize paths did with a populated
+ *      `previous` magazine -- loses its contents just as surely as freeing
+ *      the shell.  So a magazine that is not exactly full is drained and
+ *      goes on the empty list.
  */
 static void
 umem_ptc_mag_return(umem_cache_t *cp, umem_maglist_t *mlp,
-    umem_magazine_t *mp)
+    umem_magazine_t *mp, int rounds)
 {
-	if (UMEM_MAGAZINE_VALID(cp, mp)) {
-		umem_depot_free(cp, mlp, mp);
-	} else {
-		umem_cache_t *mag_cache =
-		    ((umem_slab_t *)P2END(
-		    (uintptr_t)(mp), PAGESIZE) - 1)->slab_cache;
+	int cap = umem_mag_capacity(mp);
+
+	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
+		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
-		_umem_cache_free(mag_cache, mp);
+		_umem_cache_free(umem_mag_source_cache(mp), mp);
+		return;
 	}
+
+	if (mlp != &cp->cache_full || rounds != cap) {
+		umem_mag_drain(cp, mp, rounds, cap);
+		mlp = &cp->cache_empty;
+	}
+
+	umem_depot_free(cp, mlp, mp);
 }
 
 /*
  * Non-blocking variant of umem_ptc_mag_return for PTC fast paths.
  * Uses trylock depot access. Falls back to blocking only for stale
  * magazine destruction (rare, only during magazine resize).
+ * Same two invariants; see umem_ptc_mag_return.
  */
 static void
 umem_ptc_mag_return_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
-    umem_magazine_t *mp)
+    umem_magazine_t *mp, int rounds)
 {
-	if (UMEM_MAGAZINE_VALID(cp, mp)) {
-		umem_depot_free_trylock(cp, mlp, mp);
-	} else {
-		umem_cache_t *mag_cache =
-		    ((umem_slab_t *)P2END(
-		    (uintptr_t)(mp), PAGESIZE) - 1)->slab_cache;
+	int cap = umem_mag_capacity(mp);
+
+	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
+		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
-		_umem_cache_free(mag_cache, mp);
+		_umem_cache_free(umem_mag_source_cache(mp), mp);
+		return;
 	}
+
+	if (mlp != &cp->cache_full || rounds != cap) {
+		umem_mag_drain(cp, mp, rounds, cap);
+		mlp = &cp->cache_empty;
+	}
+
+	umem_depot_free_trylock(cp, mlp, mp);
 }
 
 /*
  * Flush all per-thread magazines back to depot.
  * Called from umem_ptc_destroy() at thread exit.
- * For each bin with a loaded/previous magazine, free every cached
- * object back to the slab layer, then return the empty magazine
- * to the depot's empty list.
+ * umem_ptc_mag_return() drains whatever the magazine still holds before it
+ * goes anywhere, so both magazines are simply handed over with their counts.
  */
 void
 umem_ptc_mag_flush_all(umem_ptc_t *ptc)
@@ -2473,34 +2584,18 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 		if (cp == NULL)
 			continue;
 
-		/* Flush objects from loaded magazine */
 		if (mag->loaded != NULL) {
-			int r;
-			for (r = 0; r < mag->rounds; r++) {
-				void *buf = mag->loaded->mag_round[r];
-				mag->loaded->mag_round[r] = NULL;
-				if (buf != NULL)
-					_umem_cache_free(cp, buf);
-			}
-			mag->rounds = 0;
 			umem_ptc_mag_return(cp, &cp->cache_empty,
-			    mag->loaded);
+			    mag->loaded, mag->rounds);
 			mag->loaded = NULL;
+			mag->rounds = 0;
 		}
 
-		/* Flush objects from previous magazine */
 		if (mag->previous != NULL) {
-			int r;
-			for (r = 0; r < mag->prounds; r++) {
-				void *buf = mag->previous->mag_round[r];
-				mag->previous->mag_round[r] = NULL;
-				if (buf != NULL)
-					_umem_cache_free(cp, buf);
-			}
-			mag->prounds = 0;
 			umem_ptc_mag_return(cp, &cp->cache_empty,
-			    mag->previous);
+			    mag->previous, mag->prounds);
 			mag->previous = NULL;
+			mag->prounds = 0;
 		}
 	}
 }
@@ -3369,6 +3464,9 @@ umem_alloc_retry:
 						mag->rounds = mag->prounds;
 						mag->previous = tmp;
 						mag->prounds = tmp_r;
+						tmp_r = mag->magsize;
+						mag->magsize = mag->pmagsize;
+						mag->pmagsize = tmp_r;
 						mag->rounds--;
 						buf = mag->loaded->
 						    mag_round[mag->rounds];
@@ -3385,43 +3483,41 @@ umem_alloc_retry:
 					fmp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_full);
 					if (fmp != NULL) {
-					    int new_magsize =
-						cp->cache_magtype->
-						mt_magsize;
+					    /*
+					     * Retire the empty magazines we
+					     * hold.  Both are empty here
+					     * (rounds == prounds == 0), and
+					     * umem_ptc_mag_return_trylock
+					     * handles a magazine whose
+					     * magtype the cache has since
+					     * moved past.
+					     */
 					    if (mag->loaded != NULL) {
-						if (mag->magsize !=
-						    new_magsize) {
-						    /*
-						     * Magazine resize
-						     * happened; destroy
-						     * stale magazines.
-						     */
+						if (mag->previous != NULL)
 						    umem_ptc_mag_return_trylock(
 							cp,
 							&cp->cache_empty,
-							mag->loaded);
-						    if (mag->previous)
-							umem_ptc_mag_return_trylock(
-							    cp,
-							    &cp->cache_empty,
-							    mag->previous);
-						    mag->previous = NULL;
-						    mag->prounds = 0;
-						} else {
-						    if (mag->previous)
-							umem_ptc_mag_return_trylock(
-							    cp,
-							    &cp->cache_empty,
-							    mag->previous);
-						    mag->previous =
-							mag->loaded;
-						    mag->prounds =
-							mag->rounds;
-						}
+							mag->previous,
+							mag->prounds);
+						mag->previous = mag->loaded;
+						mag->prounds = mag->rounds;
+						mag->pmagsize = mag->magsize;
 					    }
-					    mag->magsize = new_magsize;
+					    /*
+					     * Capacity comes from the magazine
+					     * we just obtained, NOT from
+					     * cp->cache_magtype: a resize
+					     * between the two reads would
+					     * index an old 127-round magazine
+					     * as if it had 255 (P1.3b).  The
+					     * magazine and the capacity it is
+					     * used with are now one decision.
+					     */
 					    mag->loaded = fmp;
-					    mag->rounds = new_magsize;
+					    mag->magsize =
+						umem_mag_capacity(fmp);
+					    mag->rounds = mag->magsize;
+					    umem_ptc_mag_check(mag);
 					    mag->rounds--;
 					    buf = mag->loaded->
 						mag_round[mag->rounds];
@@ -3557,7 +3653,7 @@ _umem_free(void *buf, size_t size)
 					 * previous magazine.
 					 */
 					if (mag->previous != NULL &&
-					    mag->prounds < mag->magsize) {
+					    mag->prounds < mag->pmagsize) {
 						umem_magazine_t *tmp;
 						int tmp_r;
 						tmp = mag->loaded;
@@ -3566,6 +3662,9 @@ _umem_free(void *buf, size_t size)
 						mag->rounds = mag->prounds;
 						mag->previous = tmp;
 						mag->prounds = tmp_r;
+						tmp_r = mag->magsize;
+						mag->magsize = mag->pmagsize;
+						mag->pmagsize = tmp_r;
 						mag->loaded->
 						    mag_round[mag->rounds] =
 						    buf;
@@ -3579,32 +3678,37 @@ _umem_free(void *buf, size_t size)
 					 */
 					{
 					umem_magazine_t *emp;
-					int new_magsize =
-					    cp->cache_magtype->
-					    mt_magsize;
 					if (mag->loaded != NULL) {
+						/*
+						 * Hand over the count with
+						 * the magazine: the callee
+						 * needs it both to honour the
+						 * depot's full-list contract
+						 * and to drain the objects if
+						 * the magazine can no longer
+						 * go on a list at all (P1.3c).
+						 */
 						umem_ptc_mag_return_trylock(cp,
 						    &cp->cache_full,
-						    mag->loaded);
-					}
-					/*
-					 * Magazine resize: destroy
-					 * stale previous magazine.
-					 */
-					if (mag->previous != NULL &&
-					    mag->magsize != new_magsize) {
-						umem_ptc_mag_return_trylock(cp,
-						    &cp->cache_empty,
-						    mag->previous);
-						mag->previous = NULL;
-						mag->prounds = 0;
+						    mag->loaded, mag->rounds);
+						mag->loaded = NULL;
+						mag->rounds = 0;
 					}
 					emp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_empty);
 					if (emp != NULL) {
+						/*
+						 * Capacity from the magazine
+						 * itself, not from the
+						 * cache's current magtype
+						 * (P1.3b) -- see the matching
+						 * comment in _umem_alloc.
+						 */
 						mag->loaded = emp;
+						mag->magsize =
+						    umem_mag_capacity(emp);
 						mag->rounds = 0;
-						mag->magsize = new_magsize;
+						umem_ptc_mag_check(mag);
 						mag->loaded->
 						    mag_round[mag->rounds] =
 						    buf;
@@ -3614,10 +3718,8 @@ _umem_free(void *buf, size_t size)
 					/*
 					 * No empty mag from depot —
 					 * loaded was already donated,
-					 * so clear it and fall through.
+					 * so fall through with none.
 					 */
-					mag->loaded = NULL;
-					mag->rounds = 0;
 					}
 					}
 				}
