@@ -434,7 +434,14 @@ write_profile(const char *path)
 	int fd;
 	uint32_t i;
 
-	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	/*
+	 * P5.3: umem_open_write() instead of
+	 * open(path, O_WRONLY|O_CREAT|O_TRUNC, 0644).  `path` comes from
+	 * UMEM_OPTIONS=profile=record:<path> or $UMEM_PROFILE, i.e. from
+	 * outside, so a symlink here used to truncate its target as this
+	 * process's uid.  See misc.c:umem_open_write.
+	 */
+	fd = umem_open_write(path);
 	if (fd < 0)
 		return -1;
 

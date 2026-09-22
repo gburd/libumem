@@ -293,7 +293,11 @@ cache_has_audit(const umem_cache_t *cp)
 	return ((cp->cache_flags & UMF_AUDIT) != 0);
 }
 
-/* True if buf is on the slab's freelist. */
+/* True if buf is on the slab's freelist.
+ *
+ * Slab freelist links are mangled (P5.4, UMEM_LINK_MANGLE in umem_impl.h):
+ * demangle each link before following it.  Without this the walk dereferences
+ * a mangled value, i.e. a wild address. */
 static int
 slab_buf_is_free(umem_slab_t *sp, void *buf, umem_cache_t *cp)
 {
@@ -309,7 +313,7 @@ slab_buf_is_free(umem_slab_t *sp, void *buf, umem_cache_t *cp)
 			b = (char *)bcp - cp->cache_bufctl;
 		if (b == buf)
 			return (1);
-		bcp = bcp->bc_next;
+		bcp = UMEM_LINK_DEMANGLE(&bcp->bc_next, bcp->bc_next);
 		(void)chunksize;
 	}
 	return (0);
@@ -492,7 +496,8 @@ collect_freed_cache(umem_cache_t *cp, void *arg)
 		while (bcp != NULL && safety++ < (1u << 20)) {
 			info_from_bufctl(cp, bcp, &info, UMEM_BUF_FREE);
 			snap_put(s, &info);
-			bcp = bcp->bc_next;
+			/* Mangled link; see slab_buf_is_free() (P5.4). */
+			bcp = UMEM_LINK_DEMANGLE(&bcp->bc_next, bcp->bc_next);
 		}
 	}
 	(void) mutex_unlock(&cp->cache_lock);
@@ -2068,9 +2073,18 @@ snapshot_v2_write(const char *path)
 	struct snapshot_state st;
 	memset(&st, 0, sizeof (st));
 
-	st.fp = fopen(path, "wb");
-	if (st.fp == NULL)
+	/* P5.3: fdopen(umem_open_write()) rather than fopen(path, "wb"):
+	 * O_NOFOLLOW + regular-file/owner checks on the fd, no O_TRUNC before
+	 * them.  `path` reaches here from a debugger or umemctl, i.e. from
+	 * outside.  See misc.c:umem_open_write. */
+	int sfd = umem_open_write(path);
+	if (sfd < 0)
 		return (-1);
+	st.fp = fdopen(sfd, "wb");
+	if (st.fp == NULL) {
+		(void) close(sfd);
+		return (-1);
+	}
 
 	/* Reserve header space; we'll seek back and write it last. */
 	struct ump_v2_header hdr;
@@ -2169,9 +2183,16 @@ umem_inspect_snapshot(const char *path)
 	if (binary)
 		return (snapshot_v2_write(path));
 
-	FILE *fp = fopen(path, "w");
-	if (fp == NULL)
+	/* P5.3: same as snapshot_v2_write above -- O_NOFOLLOW-checked fd
+	 * instead of fopen(path, "w"). */
+	int tfd = umem_open_write(path);
+	if (tfd < 0)
 		return (-1);
+	FILE *fp = fdopen(tfd, "w");
+	if (fp == NULL) {
+		(void) close(tfd);
+		return (-1);
+	}
 	(void) fprintf(fp,
 	    "# umem_inspect snapshot v%d (text)\n", UMEM_INSPECT_VERSION);
 	(void) fputs("\n# ::umastat\n", fp);
