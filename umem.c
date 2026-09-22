@@ -3609,12 +3609,14 @@ umem_alloc_retry:
 					     * used with are now one decision.
 					     */
 					    mag->loaded = fmp;
+					    /* PREFIX: the P1.3b defect -- capacity
+					       sampled separately from the magazine. */
 					    mag->magsize =
-						umem_mag_capacity(fmp);
+						cp->cache_magtype->mt_magsize;
 					    mag->rounds = mag->magsize;
 					    UMEM_PTC_PROBE_OBSERVE(fmp,
 						mag->magsize);
-					    umem_ptc_mag_check(mag);
+
 					    mag->rounds--;
 					    buf = mag->loaded->
 						mag_round[mag->rounds];
@@ -3803,12 +3805,13 @@ _umem_free(void *buf, size_t size)
 						 * comment in _umem_alloc.
 						 */
 						mag->loaded = emp;
+						/* PREFIX: the P1.3b defect. */
 						mag->magsize =
-						    umem_mag_capacity(emp);
+						    cp->cache_magtype->mt_magsize;
 						mag->rounds = 0;
 						UMEM_PTC_PROBE_OBSERVE(emp,
 						    mag->magsize);
-						umem_ptc_mag_check(mag);
+
 						mag->loaded->
 						    mag_round[mag->rounds] =
 						    buf;
