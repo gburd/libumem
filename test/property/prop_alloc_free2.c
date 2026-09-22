@@ -15,7 +15,7 @@ static QCC_TestStatus prop_nofail_never_null(QCC_GenValue **vals, int len, QCC_S
     if (len < 1) return QCC_FAIL;
 
     /* Get generated size */
-    size_t size = (size_t)QCC_getValue(vals, 0, long);
+    size_t size = (size_t)*QCC_getValue(vals, 0, long *);
 
     /* Skip invalid sizes */
     if (size == 0 || size > 1024 * 1024) {
@@ -38,7 +38,7 @@ static QCC_TestStatus prop_alloc_aligned(QCC_GenValue **vals, int len, QCC_Stamp
 
     if (len < 1) return QCC_FAIL;
 
-    size_t size = (size_t)QCC_getValue(vals, 0, long);
+    size_t size = (size_t)*QCC_getValue(vals, 0, long *);
 
     if (size == 0 || size > 8192) {
         return QCC_NOTHING;
@@ -64,7 +64,7 @@ static QCC_TestStatus prop_zalloc_zeros(QCC_GenValue **vals, int len, QCC_Stamp 
 
     if (len < 1) return QCC_FAIL;
 
-    size_t size = (size_t)QCC_getValue(vals, 0, long);
+    size_t size = (size_t)*QCC_getValue(vals, 0, long *);
 
     if (size == 0 || size > 4096) {
         return QCC_NOTHING;
@@ -94,7 +94,7 @@ static QCC_TestStatus prop_alloc_free_roundtrip(QCC_GenValue **vals, int len, QC
 
     if (len < 1) return QCC_FAIL;
 
-    size_t size = (size_t)QCC_getValue(vals, 0, long);
+    size_t size = (size_t)*QCC_getValue(vals, 0, long *);
 
     if (size == 0 || size > 8192) {
         return QCC_NOTHING;

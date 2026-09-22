@@ -17,7 +17,7 @@ static QCC_TestStatus prop_no_unbounded_fragmentation(QCC_GenValue **vals, int l
 
     if (len < 1) return QCC_FAIL;
 
-    size_t num_allocs = (size_t)QCC_getValue(vals, 0, long);
+    size_t num_allocs = (size_t)*QCC_getValue(vals, 0, long *);
 
     /* Generate reasonable number of allocations */
     if (num_allocs < 100 || num_allocs > 500) {
@@ -139,7 +139,7 @@ static QCC_TestStatus prop_slab_utilization(QCC_GenValue **vals, int len, QCC_St
 
     if (len < 1) return QCC_FAIL;
 
-    size_t obj_size = (size_t)QCC_getValue(vals, 0, long);
+    size_t obj_size = (size_t)*QCC_getValue(vals, 0, long *);
 
     /* Generate reasonable object sizes */
     if (obj_size < 16 || obj_size > 512) {

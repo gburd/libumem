@@ -697,6 +697,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	$(man1_MANS) $(man3_MANS) $(man7_MANS) \
 	scripts/run-coverage.sh scripts/run-sanitizers.sh \
 	test/stress/lifecycle_stress.sh \
+	test/stress/oracle_null_shim.c \
 	tools/gdb/umem_gdb.py tools/lldb/umem_lldb.py \
 	tools/umem_dump_reader \
 	tools/DEBUGGING.md \
