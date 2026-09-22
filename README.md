@@ -5,10 +5,16 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status: not production-ready at this commit.** The 2026-09-21 design
-> review found reachable correctness and lifetime defects in *default* code
-> paths, plus measurement defects that invalidate several performance
-> conclusions previously published in this file. Work and exit criteria:
+> **Status: not production-ready for general use at this commit, and one
+> specific reason dominates.** The ten reachable correctness and lifetime
+> defects the 2026-09-21 design review found in *default* code paths have since
+> been fixed, each with a regression that fails before the fix and passes after,
+> on x86_64 and aarch64. What remains is a hard **~5 GB heap ceiling on Linux**
+> (`vm.max_map_count` exhaustion — see "Where libumem does not win" below), plus
+> several diagnostic features whose contracts are now documented honestly rather
+> than optimistically. Several performance conclusions previously published in
+> this file were **withdrawn**, because the harness that produced them was
+> measuring the wrong thing. Work, evidence, and exit criteria:
 > [`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
 > Claims below are qualified by what has actually been measured; where
 > something is unknown, it says so.
@@ -190,6 +196,30 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 
 Where libumem **does not win**:
 
+- **Heap size on Linux: a hard ~5 GB ceiling by default.** This is the most
+  important limitation on this page. libumem's mmap heap uses a
+  page-sized quantum on Linux (Solaris, which this code was written for, got
+  64 KiB), so it consumes one kernel VMA per ~76 KiB of address space and runs
+  into `vm.max_map_count` (default **65530**) at roughly **5 GB**. Past that
+  point `umem_alloc()` returns NULL. Measured: ~39 % of allocations failing at
+  192 threads while glibc on the same box, same workload, reached 96 GB without
+  a single failure — and libumem was using *less* memory (~5 GB vs ~9.4 GB)
+  when it began failing.
+
+  If you need more than a few GB from libumem on Linux today, raise the limit:
+
+  ```sh
+  sysctl -w vm.max_map_count=1048576     # or a value suited to your heap
+  ```
+
+  An aggravating bug made this hard to diagnose for years:
+  `vmem_mmap_top_alloc()` restored `errno` over its failure paths, so callers
+  saw NULL with a stale `errno` and the symptom looked like "libumem is slower"
+  rather than "libumem could not get memory". Root cause, evidence, and the
+  proposed fix:
+  [`docs/results/2026-09-22-umem-heap-ceiling-vma.md`](docs/results/2026-09-22-umem-heap-ceiling-vma.md).
+  **Not yet fixed** — the fix changes address-space layout and is waiting on its
+  own regression test.
 - **Raw malloc / free throughput on tiny allocations.** jemalloc and
   mimalloc are faster on `malloc(8)` / `free` micro-benchmarks,
   primarily because their fast paths are smaller and they don't pay

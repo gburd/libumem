@@ -75,6 +75,107 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Ten reachable correctness and lifetime defects in default code paths**
+  (`docs/plans/2026-09-21-production-readiness.md`, Phase 1). Each was fixed at
+  the shared function and each carries a regression that fails before the fix
+  and passes after, verified on x86_64 and aarch64 in isolated builds:
+
+  - **Interposed `calloc` handed out overlapping live allocations.** The
+    recursion guard was a process-global `int` set on *every* ordinary call, so
+    one thread's `calloc` made concurrent callers take the static-buffer path,
+    and the buffer offset reset while earlier allocations were still live.
+    Pre-fix: cross-thread overlap at identical addresses (`owner=1` vs
+    `owner=0`) then SIGSEGV; `pthread_create` failing with "cannot allocate
+    memory for thread-local data" at two threads. Now per-thread initial-exec
+    TLS, with one ownership classifier shared by `free`, `realloc`, and
+    `malloc_usable_size`.
+  - **`fork()` deadlocked against ordinary allocation (ABBA).** The fork
+    handler took depot `ml_lock`s before per-CPU `cc_lock`s; allocation takes
+    `cc_lock` first and then blocks on `ml_lock`. Pre-fix: gdb stacks on both
+    architectures showing the cycle on the same cache. The handler's comment
+    claimed its order matched normal operation; it was the reverse.
+  - **The malloc interposer did not participate in `fork()` at all.** Two
+    mutexes that ordinary `free()`/`realloc()` take had no handlers, so a child
+    could inherit one held by a thread that no longer existed. Pre-fix: the
+    child deadlocked on the *first* fork (300 forks, 1 hang).
+  - **Thread exit lost half of every cached PTC bin.** `umem_ptc_destroy()`
+    called the half-bin flush once per bin and then freed the PTC, so the
+    remainder lost its only reference while the slab layer still counted it
+    allocated. Its comment said "Flush all bins". Pre-fix, exact oracle: **2304
+    objects stranded**; post-fix 0.
+  - **A magazine's capacity was not sampled with the magazine.** A resize
+    between obtaining a magazine and reading `mt_magsize` let a 127-round
+    magazine be indexed as 255, past the end of its own allocation. Pre-fix:
+    **3,133,215 capacity desyncs** (`recorded=255 true=127`) and a SIGSEGV. The
+    free side had the same bug reversed, putting a half-filled magazine on the
+    depot's *full* list. Capacity now derives from the magazine itself.
+  - **Populated magazines were discarded on a magtype mismatch.** Both return
+    paths freed the shell without draining it, and callers pass *full*
+    magazines. Pre-fix: 127 objects lost from one shell, 381 from three —
+    exactly one magazine's capacity each.
+  - **`umem_cache_destroy()` leaked every retained empty slab.** With
+    reclamation on by default, freeing the last object retains the slab; destroy
+    only *logged* the nonzero `cache_buftotal`. Trigger: create a
+    `UMC_NOMAGAZINE` cache, allocate one object, free it, destroy. Pre-fix:
+    4096 bytes leaked per cache, with `vmem_destroy()` independently agreeing.
+  - **Reclamation discarded metadata the allocator reads again.**
+    `MADV_DONTNEED` zeroed buftags and free patterns that are written only at
+    slab creation and never rebuilt, so a later *valid* allocation failed
+    libumem's own corruption check. Pre-fix: `boundary tag corrupted` +
+    SIGABRT, and an `ASSERT(sp->slab_refcnt == sp->slab_chunks)` for embedded
+    freelist links on larger-quantum arenas.
+  - **`slab_state` was published unlocked** while readers hold `cache_lock`.
+    TSAN named it exactly: write at `umem_slab_reclaim` vs read at
+    `umem_slab_alloc`. 1 report -> 0.
+  - **The maintenance thread's startup handshake could lose its wakeup.** The
+    worker signalled under a different mutex than the waiter used, so
+    `umem_reap()` could hang forever; `pthread_cond_wait()` was also inside an
+    `ASSERT`, compiled out entirely under `NDEBUG`.
+  - **Unchecked size arithmetic and non-conforming aligned allocation.** Arena
+    offsets could wrap (a `SIZE_MAX-15` request moved the bump pointer
+    *backward* and aliased a live allocation), bootstrap header addition could
+    wrap and return an undersized mapping, bootstrap `realloc` released its
+    ownership record before knowing it could succeed, and `posix_memalign()`
+    accepted alignments POSIX requires to be `EINVAL`. `aligned_alloc()` is now
+    interposed.
+
+- **A pre-existing `umem_reap()` self-deadlock**, found while testing the
+  reclaim race and reachable from the real update thread: an update pass holding
+  `umem_cache_lock` -> slab destroy -> vmem seg refill -> `vmem_reap` ->
+  `umem_reap` -> `umem_updateall` -> the same non-recursive lock. Latent only
+  because the reap rate limiter usually returns first. Control: guard removed ->
+  hangs; guard present -> completes in 5 s.
+
+### Found, not fixed — a hard ~5 GB heap ceiling on Linux
+
+- **libumem cannot exceed roughly 5 GB of heap on Linux with default kernel
+  settings.** `vmem_mmap.c` uses a page-sized quantum where Solaris used 64 KiB
+  (there is no `MAP_ALIGN` on Linux), so the heap burns one VMA per ~76 KiB and
+  exhausts `vm.max_map_count` (default 65530). Measured at failure: **65,532
+  VMAs, 100 % of the limit**; 65530 x 76 KiB is ~4.7 GB, matching the observed
+  ceiling. At 192 threads this showed up as **~39 % of allocations returning
+  NULL** while glibc on the same box with the same budget reached 96 GB and
+  never failed — with libumem using *less* memory (~5 GB vs ~9.4 GB) when it
+  began failing, which is what ruled out ordinary exhaustion. Reap-and-retry
+  barely moves it (91.7 % -> 89.9 %), because address space rather than a free
+  list is exhausted.
+
+  Compounding it: `vmem_mmap_top_alloc()` **restored `errno` over its failure
+  paths**, erasing the real `ENOMEM`, which is why this presented for years as
+  "libumem is slower on this workload".
+
+  Workaround today: raise `vm.max_map_count`. The fix changes address-space
+  layout and is deliberately unassigned until it has its own regression driving
+  the heap past 5 GB plus before/after RSS. Evidence:
+  `docs/results/2026-09-22-umem-heap-ceiling-vma.md`.
+
+  **This also invalidates previously published libumem fragmentation and
+  sustained-fragmentation *throughput* numbers**, independently of the
+  fragmentation-ratio defect: those runs were failing roughly two in five
+  allocations with nothing in the output disclosing it.
+
+### Fixed — supporting components
+
 - **Weighted hash partitioning assigned every weight to the wrong
   claimant.** `hash_partitions_create_with_weights()` compacted accepted
   entries in one pass, then read `weights[i]` from the *original*
