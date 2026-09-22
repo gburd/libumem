@@ -272,7 +272,6 @@ run_round(const char *label, umem_cache_t *cp, int want_resize,
 	/* Suppressed for the whole parking ramp, in BOTH rounds. */
 	umem_depot_contention = UINT_MAX;
 	umem_reap_interval = 1;
-
 	atomic_store(&release, 0);
 	atomic_store(&parked, 0);
 
@@ -297,8 +296,29 @@ run_round(const char *label, umem_cache_t *cp, int want_resize,
 	during = outstanding();
 
 	if (want_resize) {
-		/* Only now open the ordinary contention-scheduled path. */
+		/*
+		 * Open the ordinary contention-scheduled path, and supply the
+		 * contention input a busy depot supplies.
+		 *
+		 * Why the counter is bumped rather than earned: the eight parked
+		 * threads here are deliberately few, and on a 192-vCPU box with
+		 * one depot stripe per CPU they essentially never collide, so no
+		 * contention is recorded and no resize is ever scheduled (measured
+		 * on arm-hi: INCONCLUSIVE, magtype unchanged after 20s, where the
+		 * same test resizes reliably on an 8-vCPU box).  Raising the thread
+		 * count to earn the contention organically would make the test
+		 * depend on machine width, which is how a regression quietly stops
+		 * reproducing.
+		 *
+		 * The DECISION is still umem_cache_update()'s own, unchanged:
+		 * it compares the contention delta against umem_depot_contention
+		 * and schedules UMU_MAGAZINE_RESIZE itself.  Only the input is
+		 * supplied here, and it is the same counter umem_depot_pop()
+		 * increments on a failed trylock.  umem_magazine_tuning stays off.
+		 */
 		umem_depot_contention = 0;
+		(void) atomic_fetch_add((_Atomic(uint64_t) *)
+		    &cp->cache_depot_contention, 4096);
 		for (sec = 0; sec < 20; sec++) {
 			umem_reap();
 			(void) sleep(1);
@@ -306,6 +326,8 @@ run_round(const char *label, umem_cache_t *cp, int want_resize,
 				*observed_to = cp->cache_magtype->mt_magsize;
 				break;
 			}
+			(void) atomic_fetch_add((_Atomic(uint64_t) *)
+			    &cp->cache_depot_contention, 4096);
 		}
 		umem_depot_contention = UINT_MAX;
 	} else {
