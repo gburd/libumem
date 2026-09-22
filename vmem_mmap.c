@@ -113,12 +113,38 @@ vmem_mmap_alloc(vmem_t *src, size_t size, int vmflags)
 		vmem_reap();
 
 		ASSERT((vmflags & VM_NOSLEEP) == VM_NOSLEEP);
-		errno = old_errno;
+		/*
+		 * Failure: leave errno as mmap() set it.  See below.
+		 */
 		return (NULL);
 	}
 #endif
 
-	errno = old_errno;
+	/*
+	 * Restore errno ONLY on success.  A successful allocation must not
+	 * perturb the caller's errno; a failed one must not erase the reason.
+	 *
+	 * P5.5, and this function had the defect TWICE.  v3.0.0 fixed the
+	 * errno erasure in vmem_mmap_top_alloc() below and announced "failure
+	 * paths now leave errno alone", which was false here:
+	 *
+	 *   1. the MAP_FIXED failure branch above restored it, and
+	 *   2. this restore is reached with ret == NULL whenever
+	 *      vmem_alloc(src) fails -- which is the address-space-exhaustion
+	 *      path, since src imports through vmem_mmap_top_alloc().  So the
+	 *      ENOMEM that top_alloc was carefully fixed to preserve was
+	 *      overwritten one frame later, by this line.
+	 *
+	 * Only (1) was in the P5.5 report; (2) is the one that was actually on
+	 * the measured heap-ceiling path
+	 * (docs/results/2026-09-22-umem-heap-ceiling-vma.md), so the v3.0.0 fix
+	 * was not merely incomplete across functions but ineffective for the
+	 * failure it was written for.
+	 * test/security/test_errno_preserved.c demonstrates it under
+	 * RLIMIT_AS.
+	 */
+	if (ret != NULL)
+		errno = old_errno;
 	return (ret);
 }
 

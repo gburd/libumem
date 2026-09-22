@@ -178,6 +178,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   paths**, erasing the real `ENOMEM`, which is why this presented for years as
   "libumem is slower on this workload".
 
+  **Correction (2026-09-22, P5.5).** The release notes for this version said the
+  `errno` erasure was fixed and that "failure paths now leave `errno` alone".
+  That was **false**: the fix landed in `vmem_mmap_top_alloc()` only, and its
+  sibling `vmem_mmap_alloc()` in the same file kept the identical
+  `errno = old_errno` on its failure path, so a caller of the mmap backend's
+  span allocator still got `NULL` with a stale `errno`. This is exactly the
+  symptom-at-one-call-site failure AGENTS.md &sect;7 forbids, committed by the
+  coordinator who wrote that rule. The sibling is fixed in v3.0.1; the false
+  claim is recorded here rather than quietly patched, because the claim is
+  itself the finding. A sweep of `vmem_*.c` / `umem_*.c` for the same pattern is
+  recorded in the v3.0.1 notes.
+
   Workaround today: raise `vm.max_map_count`. The fix changes address-space
   layout and is deliberately unassigned until it has its own regression driving
   the heap past 5 GB plus before/after RSS. Evidence:
