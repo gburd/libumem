@@ -571,6 +571,16 @@ test_unit_test_hash_partition_CPPFLAGS = -I$(srcdir)
 test_unit_test_hash_partition_LDADD =
 test_unit_test_hash_partition_LDFLAGS = -lm
 
+# P2.2/P2.5 diagnostic: why does umem_alloc return NULL under the 192-thread
+# fragmentation workload when glibc malloc does not?  Reads umem/vmem state,
+# modifies no allocator code.  Not in TESTS (it is a diagnostic that wants a
+# high-core box and several GB, not a gate).
+noinst_PROGRAMS += test/bench/probe_alloc_failure
+test_bench_probe_alloc_failure_SOURCES = test/bench/probe_alloc_failure.c
+test_bench_probe_alloc_failure_LDADD = libumem.la
+test_bench_probe_alloc_failure_LDFLAGS = -pthread
+test_bench_probe_alloc_failure_CPPFLAGS = -I$(srcdir)
+
 # Debug overhead benchmark
 test_bench_bench_debug_overhead_SOURCES = test/bench/bench_debug_overhead.c
 test_bench_bench_debug_overhead_LDADD = libumem.la
