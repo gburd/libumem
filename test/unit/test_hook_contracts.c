@@ -314,10 +314,16 @@ main(void)
 	watchdog_start(120);
 
 	printf("umem_hooks contract tests\n");
+	/*
+	 * ORDER MATTERS for the pre-fix control.  L2 DEADLOCKS against the
+	 * pre-fix code, and a deadlocked process never reaches later tests, so
+	 * the L1 use-after-free race must run BEFORE it or the control only
+	 * ever demonstrates L4 + a hang.
+	 */
 	test_unregister_idempotent();
 	test_walk_stops();
-	test_walk_reentrant();
 	test_unregister_drains();
+	test_walk_reentrant();
 
 	if (failures != 0) {
 		printf("\n%d contract violation(s)\n", failures);
