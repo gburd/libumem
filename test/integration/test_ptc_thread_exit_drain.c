@@ -20,24 +20,32 @@
  * cumulative.
  *
  * HOW THIS DETECTS IT
- *   umem_cache_stats() reports cache_buftotal (buffers the slab layer has
- *   handed out) and the cache's allocated/free accounting.  We use the
- *   allocator's own view of outstanding buffers for a specific size class:
+ *   umem_walk_allocated() counts buffers the slab layer still considers handed
+ *   out.  A lost object stays in that set forever, because nothing holds a
+ *   reference that could return it.
  *
- *     1. Warm up, then record a baseline.
- *     2. Spawn threads; each allocates N objects of one size class and frees
- *        them, so they land in that thread's PTC bin, then exits.
- *     3. After joining, and after a reap to push magazine contents down to the
- *        slab layer, the outstanding count must return to the baseline.
+ *     1. Warm up, then run several rounds.  Each round spawns threads that
+ *        each cache PER_THREAD objects of one size class in their PTC bin and
+ *        then exit.
+ *     2. After joining and reaping, sample the outstanding count.
  *
- *   Pre-fix, each thread strands roughly half a bin, so the outstanding count
- *   climbs with every round and never comes back.
+ *   IMPORTANT -- WHY THIS NEEDS AN INTERNAL CONTROL
+ *   The magazine, depot, and slab layers all legitimately retain freed
+ *   objects, and that retention grows for a while before it plateaus.  A
+ *   threshold on absolute growth therefore cannot distinguish "retained" from
+ *   "lost": measured on a fixed build, this workload grows the outstanding
+ *   count from ~315 to ~1092 over six rounds even with PTC COMPLETELY
+ *   DISABLED, where no PTC object loss is possible.
  *
- * The check is a bound, not an equality on a single round: the magazine and
- * depot layers legitimately retain objects.  What must not happen is unbounded
- * GROWTH across rounds, which is what losing references produces.  Running
- * several rounds and requiring the count to stop growing distinguishes
- * "retained in a cache" (bounded) from "lost" (monotonic).
+ *   So the test runs the same workload twice in one process: once with the PTC
+ *   active and once with it bypassed (umem_ptc_enabled = 0), and compares.
+ *   PTC-enabled growth must not exceed the PTC-disabled growth by more than a
+ *   margin.  Pre-fix, each exiting thread stranded about half a bin, which put
+ *   PTC-enabled growth far above the control; post-fix the two track each
+ *   other.
+ *
+ *   This is deliberately a comparison and not an equality: both arms include
+ *   ordinary allocator retention, which is what the control subtracts out.
  */
 
 #ifndef _GNU_SOURCE
@@ -109,23 +117,20 @@ churn(void *arg)
 	return (NULL);		/* thread exits here: PTC destructor runs */
 }
 
-int
-main(void)
+/* Run ROUNDS rounds of thread churn and return how much the outstanding
+ * count grew over the second half of the run. */
+static ssize_t
+measure_growth(const char *label)
 {
 	size_t counts[ROUNDS];
 	int r, i;
 	pthread_t th[NTHREADS];
 
-	/* Warm up: create the cache and its magazines before measuring. */
-	void *w = umem_alloc(OBJ_SIZE, UMEM_DEFAULT);
-	if (w != NULL)
-		umem_free(w, OBJ_SIZE);
-
 	for (r = 0; r < ROUNDS; r++) {
 		for (i = 0; i < NTHREADS; i++) {
 			if (pthread_create(&th[i], NULL, churn, NULL) != 0) {
 				fprintf(stderr, "pthread_create failed\n");
-				return (2);
+				exit(2);
 			}
 		}
 		for (i = 0; i < NTHREADS; i++)
@@ -136,32 +141,53 @@ main(void)
 		(void) sleep(1);
 
 		counts[r] = outstanding();
-		printf("round %d: outstanding(size=%d)=%zu\n", r, OBJ_SIZE,
-		    counts[r]);
+		printf("  %s round %d: outstanding(size=%d)=%zu\n", label, r,
+		    OBJ_SIZE, counts[r]);
 	}
 
+	return ((ssize_t)counts[ROUNDS - 1] - (ssize_t)counts[ROUNDS / 2]);
+}
+
+int
+main(void)
+{
+	/* umem_ptc_enabled is the library's own switch; flipping it lets us run
+	 * the control arm in the same process, with the same caches already
+	 * warm, so the comparison is not confounded by startup differences. */
+	extern int umem_ptc_enabled;
+	ssize_t growth_ptc, growth_noptc;
+
+	/* Warm up: create the cache and its magazines before measuring. */
+	void *w = umem_alloc(OBJ_SIZE, UMEM_DEFAULT);
+	if (w != NULL)
+		umem_free(w, OBJ_SIZE);
+
+	printf("arm 1: PTC enabled (the path under test)\n");
+	umem_ptc_enabled = 1;
+	growth_ptc = measure_growth("ptc");
+
+	printf("arm 2: PTC disabled (control -- no PTC loss is possible)\n");
+	umem_ptc_enabled = 0;
+	growth_noptc = measure_growth("noptc");
+
 	/*
-	 * Verdict: the count must stop growing.  Compare the last two rounds
-	 * against the middle of the run; retention is fine, monotonic growth
-	 * proportional to thread count is the leak.
+	 * Margin: one quarter of a bin per thread per round is far below the
+	 * half-bin-per-thread the pre-fix code stranded, and comfortably above
+	 * run-to-run noise in ordinary retention.
 	 */
-	size_t mid = counts[ROUNDS / 2];
-	size_t last = counts[ROUNDS - 1];
-	size_t per_round_leak_floor =
-	    (size_t)(NTHREADS * (PER_THREAD / 4));	/* conservative */
+	ssize_t margin = (ssize_t)(NTHREADS * (PER_THREAD / 4));
 
-	printf("mid(round %d)=%zu last(round %d)=%zu growth=%zd "
-	    "leak_floor_per_round=%zu\n",
-	    ROUNDS / 2, mid, ROUNDS - 1, last, (ssize_t)(last - mid),
-	    per_round_leak_floor);
+	printf("growth: ptc=%zd control=%zd margin=%zd\n",
+	    growth_ptc, growth_noptc, margin);
 
-	if (last > mid + per_round_leak_floor) {
-		printf("RESULT: FAIL (outstanding buffers keep growing across "
-		    "rounds -- exiting threads are losing cached objects)\n");
+	if (growth_ptc > growth_noptc + margin) {
+		printf("RESULT: FAIL (PTC-enabled growth exceeds the PTC-off "
+		    "control by more than the margin -- exiting threads are "
+		    "losing cached objects)\n");
 		return (1);
 	}
 
-	printf("RESULT: PASS (outstanding buffers stabilised; exiting threads "
-	    "return their cached objects)\n");
+	printf("RESULT: PASS (PTC-enabled growth tracks the PTC-off control; "
+	    "exiting threads return their cached objects)\n");
 	return (0);
 }
