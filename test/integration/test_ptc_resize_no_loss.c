@@ -430,6 +430,27 @@ main(void)
 	    "magazines\n");
 	floor_test = run_round("test", cp, 1, &t_from, &t_to);
 
+#ifdef UMEM_PTC_RESIZE_PROBE
+	/*
+	 * The magtype only grows and this size class has one step, so the resize
+	 * cannot be repeated -- but a stale magazine can still be handed in later,
+	 * and until one is, the path under test has not run.  Keep churning until
+	 * a shell is actually freed rather than leaving the verdict to chance
+	 * (observed on arm-hi: a run where no shell was freed at all).
+	 */
+	if (t_to != 0) {
+		int extra;
+
+		for (extra = 0; extra < 4 &&
+		    umem_ptc_probe_shell_frees == 0; extra++) {
+			int x_from, x_to;
+			printf("  no shell freed yet; churning again (%d)\n",
+			    extra + 1);
+			(void) run_round("extra", cp, 0, &x_from, &x_to);
+		}
+	}
+#endif
+
 	if (c_to != 0) {
 		printf("RESULT: INCONCLUSIVE (the control round resized, so it "
 		    "is not a control)\n");
