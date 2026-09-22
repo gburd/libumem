@@ -92,7 +92,7 @@ typedef struct umem_hook {
 	struct umem_hook *hook_next;	/* Next in hook list */
 	struct umem_hook *hook_prev;	/* Previous in hook list */
 	int hook_active;		/* Hook is active */
-	int hook_refcnt;		/* In-flight track_*/walk callers (L1) */
+	int hook_refcnt;		/* In-flight track_/walk callers (L1) */
 	uint32_t hook_walk_gen;		/* Last walk that visited this hook */
 } umem_hook_t;
 
