@@ -116,7 +116,7 @@ subtracted \(em thread-local bins have no process-wide registry, so no other
 thread can enumerate them; the JSON report sets
 .I ptc_unaccounted
 and the text report says so.  Run the target with
-.B UMEM_OPTIONS=ptc=0
+.B UMEM_OPTIONS=tcache=0
 for an exact count.  Oversize allocations (above the largest size class, served
 straight from a vmem arena rather than a cache) are also not accounted, and a
 buffer the application legitimately still owns is outstanding too.  Treat the

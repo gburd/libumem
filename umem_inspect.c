@@ -1120,7 +1120,7 @@ findleaks_emit_cache_note(FILE *out, umem_inspect_format_t fmt,
 		    "(the per-thread cache is enabled: buffers retained in "
 		    "another thread's PTC bins or per-thread magazines cannot "
 		    "be enumerated and are counted as outstanding.  Run with "
-		    "UMEM_OPTIONS=ptc=0 for an exact count.)\n", out);
+		    "UMEM_OPTIONS=tcache=0 for an exact count.)\n", out);
 	(void) fputc('\n', out);
 }
 

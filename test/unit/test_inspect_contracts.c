@@ -337,13 +337,15 @@ test_whatis_reports_cached(void)
 	 * umem_whatis() never returned it, so pre-fix `cached` is 0 here.
 	 *
 	 * With the PTC off (see above) the magazine layer is the only place a
-	 * freed buffer can be, so this is a strong assertion: nearly every
-	 * buffer must be accounted as CACHED or FREE, not merely one of them.
+	 * freed buffer can be, so require nearly all of them to be accounted.
+	 * The residual `allocated` count must be small: if a whole retention
+	 * site is unsubtracted -- as happened when the rseq magazine handling
+	 * was compiled out by a bad include guard -- this is where it shows.
 	 */
-	CHECK(cached + freestate >= N / 2,
-	    "item 7 violated: most freed buffers are still reported as held -- "
-	    "a retention site is not being subtracted (magazine, or the rseq "
-	    "magazines if their subtraction was compiled out)");
+	CHECK(cached + freestate >= N - N / 8,
+	    "item 7 violated: too many freed buffers are still reported as "
+	    "held -- a retention site is not being subtracted (magazine, or "
+	    "the rseq magazines if their subtraction was compiled out)");
 }
 
 int
@@ -356,7 +358,10 @@ main(int argc, char **argv)
 	 */
 	if (getenv("UMEM_INSPECT_CONTRACTS_REEXEC") == NULL) {
 		(void) setenv("UMEM_INSPECT_CONTRACTS_REEXEC", "1", 1);
-		(void) setenv("UMEM_OPTIONS", "ptc=0", 1);
+		/* The option is 'tcache', not 'ptc' (see envvar.c).  An
+		 * unrecognised name is ignored silently, which would leave
+		 * the PTC on and quietly weaken the check below. */
+		(void) setenv("UMEM_OPTIONS", "tcache=0", 1);
 		(void) execv("/proc/self/exe", argv);
 		/* execv failed: carry on with PTC enabled rather than
 		 * reporting a pass we did not earn. */

@@ -121,7 +121,7 @@ are thread-local with no process-wide registry, so no other thread can
 enumerate them.  When PTC is enabled the JSON report sets
 .I ptc_unaccounted
 and the text report states it; run the target with
-.B UMEM_OPTIONS=ptc=0
+.B UMEM_OPTIONS=tcache=0
 for an exact count.  Oversize allocations \(em above the largest size class,
 served directly from a vmem arena rather than from a cache \(em are not
 accounted here at all.  A buffer the application legitimately still owns is
