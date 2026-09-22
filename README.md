@@ -34,6 +34,19 @@ Drop-in malloc replacement:
 LD_PRELOAD=/usr/local/lib/libumem_malloc.so ./myapp
 ```
 
+> **Do not do this to a setuid, setgid, or root-owned process, and do not use
+> libumem in a network-facing process yet.** A security audit of v3.0.0
+> (2026-09-22) found one critical and three high-severity issues, tracked as
+> Phase 5 of
+> [the readiness plan](docs/plans/2026-09-21-production-readiness.md):
+> a `PATH`-resolved `addr2line` exec on the allocator's own startup path with no
+> privilege gate; no `issetugid`/`AT_SECURE` gating on `UMEM_OPTIONS` at all, so
+> a hostile environment can make a privileged process create and truncate files;
+> library file writers with neither `O_EXCL` nor `O_NOFOLLOW`; and unmangled
+> freelist pointers stored inside freed user buffers, which makes an ordinary
+> application heap overflow **more** exploitable under libumem than under glibc
+> (which has had safe-linking since 2.32). See "Security status" below.
+
 Or link directly for full performance and access to the C API:
 
 ```bash
@@ -309,6 +322,42 @@ loop" than to "long-running server with object lifecycles", pick
 jemalloc or mimalloc.  If it's the other way around, pick libumem.
 
 ---
+
+## Security status
+
+**Audited 2026-09-22 against v3.0.0. Not hardened for hostile input yet.**
+
+The correctness work in v3.0.0 is real — ten reachable defects in default code
+paths, each with a regression that fails before the fix and passes after, on two
+architectures. But correctness and hardening are different disciplines, and this
+code was written for a trusted environment. An adversarial audit found:
+
+| Severity | Issue | Affects |
+|---|---|---|
+| **Critical** | `execlp("addr2line")` resolves through `PATH` on the unconditional `umem_init()` path, gated only by an ungated `getenv`. A setuid binary *linked* against libumem (`AT_SECURE` blocks `LD_PRELOAD`, not linkage) runs the attacker's `addr2line` before `main()`. The `-e /proc/self/exe` argument also names *addr2line itself* after exec, so the feature cannot work as written. | setuid targets; any process with an untrusted `PATH` |
+| **High** | No `issetugid`/`AT_SECURE` gating on option parsing at all. `UMEM_OPTIONS=profile=record:/path` creates and truncates a caller-chosen file as the target's UID. | privileged processes with an untrusted environment |
+| **High** | No `O_EXCL` or `O_NOFOLLOW` in any library file writer, so snapshot and profile paths follow symlinks. | root daemons writing to shared directories |
+| **High** | Freelist links (`bc_next`) are stored **inside freed user buffers**, unmangled. A one-buffer overflow into an adjacent freed buffer yields an arbitrary-address allocation. glibc has mangled these since 2.32. | any process with an ordinary heap overflow |
+
+Plus medium-severity issues: a predictable `/tmp` socket path with an unlink
+TOCTOU, a peer check that accepts the *real* uid (so for a setuid target the
+unprivileged invoker gets control), a forgeable interposer header whose failure
+path continues instead of aborting, and an unbounded frame-pointer walk under
+`UMEM_DEBUG=audit`.
+
+**What is safe today:** a non-privileged process that trusts its own
+environment, is not directly exposed to untrusted input, and keeps its heap
+under ~5 GB on Linux (see the ceiling below).
+
+**What is not:** setuid/setgid or root processes, processes with an
+attacker-influenced environment, and network-facing services — the last because
+of the freelist issue, which is an exploitability multiplier for bugs in *your*
+code, not libumem's.
+
+Tracking and exit criteria: Phase 5 of
+[`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
+One finding in that audit was a false claim in v3.0.0's own release notes, which
+is recorded there too rather than quietly corrected.
 
 ## Platform support
 
