@@ -349,6 +349,53 @@ evidence, no claims of features that have no production caller.
 
 ## Exit criteria
 
+**Verified 2026-09-22 at `4ba7d00`** by `scripts/ec2/exit_criteria_gate.sh`,
+run through `verify-isolated.sh` (committed content only) on `c7i.2xlarge`
+x86_64 and `c7g.2xlarge` aarch64. **GATE: PASS on both** (`gate_failures=0`).
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Phase 1 fixed, pre-fix failure demonstrated, both arches | 10/10 |
+| 2 | Phase 2 harness corrected; withdrawn conclusions not restored | done |
+| 3 | Phase 3 contracts documented and tested, or withdrawn | 7/7 |
+| 4 | Phase 4 surface reduced; options work or are gone | done |
+| 5 | `make check` scope accurate; suites runnable and run | 21 entries, 20 PASS / 1 SKIP / 0 FAIL |
+| 6 | Clean tarball builds; installed prefix works | tarball 20 PASS / 0 FAIL; external consumer compiles and runs |
+| 7 | README/CHANGELOG describe what is true | done |
+
+The gate deliberately runs what `make check` does not, and that is how it
+earned its keep — it found four defects after all four phases had reported
+complete:
+
+- `test_hook_contracts` failing its own vacuity guard on x86_64 (the guard was
+  right; the test counted attempts rather than tracked calls).
+- **Six property-test call sites that never tested anything.**
+  `QCC_getValue()` yields the value's address and must be dereferenced; they
+  cast it to `long`, so every range check rejected a pointer and the driver
+  reported "Gave up after 0 tests!". Flagged in the original review, never
+  fixed, invisible because these binaries are built but not in `TESTS`.
+- A clean tarball that could not pass its own `make check`, because
+  `oracle_null_shim.c` — compiled at runtime by the test that proves the oracle
+  discriminates — was in no `EXTRA_DIST`.
+- Two PTC regressions returning 3 for INCONCLUSIVE, which automake reads as
+  FAIL; a correct "I could not open the window" reddened the suite.
+
+### Known-open at the gate, and disclosed rather than hidden
+
+- **`prop_fragmentation` aborts** on `ASSERT(vmflag & VM_NOSLEEP)` at
+  `vmem.c:603`. Confirmed pre-existing (identical `rc=134` at `ebcb467`); it
+  went unnoticed because the test is built but not in `TESTS`, so `make check`
+  never ran it on any commit or release. The gate labels it
+  KNOWN-PREEXISTING rather than counting it as a pass or a new failure.
+  `docs/results/2026-09-22-prop-fragmentation-vmem-abort.md`
+- **The ~5 GB Linux heap ceiling** (`vm.max_map_count`), unassigned pending its
+  own regression. This is what still blocks calling libumem
+  production-ready for general use, and it now leads the README's limitations.
+  `docs/results/2026-09-22-umem-heap-ceiling-vma.md`
+- The four Phase 3 items listed under "Still open after Phase 3" below.
+
+The original criteria, unchanged:
+
 1. Phase 1 fixed, each with a demonstrated pre-fix failure and post-fix pass,
    on x86_64 and aarch64.
 2. Phase 2 harness corrections landed; withdrawn conclusions either
