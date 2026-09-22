@@ -133,14 +133,32 @@ vmem_mmap_alloc(vmem_t *src, size_t size, int vmflags)
 
 	ret = vmem_alloc(src, size, vmflags);
 #ifndef _WIN32
-	if (ret != NULL &&
-	    mmap(ret, size, ALLOC_PROT, ALLOC_FLAGS | MAP_FIXED, -1, 0) ==
-	    MAP_FAILED) {
+	/*
+	 * Make the span usable.  The parent reservation is PROT_NONE so that
+	 * address space vmem has not handed out cannot be touched; a span
+	 * becomes readable/writable only here.
+	 *
+	 * mprotect(), not a fresh MAP_FIXED mmap().  Both make the range RW, but
+	 * the mmap() replaces the mapping, and a distinct mapping cannot be
+	 * merged with its neighbours by the kernel -- so every span permanently
+	 * cost one VMA.  That is the real driver of vm.max_map_count exhaustion:
+	 * measured at 4013 mappings in the 64K-256K range for 500MB of 4K
+	 * allocations, i.e. one VMA per span regardless of span size.  Raising
+	 * CHUNKSIZE alone did not help, because the span COUNT, not their
+	 * alignment, is what consumes VMAs.
+	 *
+	 * mprotect() keeps the single underlying mapping, so adjacent RW spans
+	 * coalesce back into one VMA instead of accumulating.
+	 * See docs/results/2026-09-22-umem-heap-ceiling-vma.md.
+	 */
+	if (ret != NULL && mprotect(ret, size, ALLOC_PROT) != 0) {
 		vmem_free(src, ret, size);
 		vmem_reap();
-
-		ASSERT((vmflags & VM_NOSLEEP) == VM_NOSLEEP);
-		errno = old_errno;
+		/*
+		 * Leave errno alone: mprotect() has just said why (ENOMEM when
+		 * the VMA limit is reached), and erasing it is what made this
+		 * ceiling look like a performance problem for years.
+		 */
 		return (NULL);
 	}
 #endif
@@ -156,7 +174,19 @@ vmem_mmap_free(vmem_t *src, void *addr, size_t size)
 #ifdef _WIN32
 	VirtualFree(addr, size, MEM_RELEASE);
 #else
-	(void) mmap(addr, size, FREE_PROT, FREE_FLAGS | MAP_FIXED, -1, 0);
+	/*
+	 * Return the span to PROT_NONE so freed address space cannot be touched,
+	 * and drop its pages.
+	 *
+	 * MADV_DONTNEED releases the physical memory (the mapping stays, so this
+	 * is not a leak); mprotect() restores the reservation's protection
+	 * without replacing the mapping, which is what lets the range merge back
+	 * into its neighbours.  The previous MAP_FIXED mmap() did both at once
+	 * but created a fresh unmergeable mapping every time -- see
+	 * vmem_mmap_alloc() above.
+	 */
+	(void) madvise(addr, size, MADV_DONTNEED);
+	(void) mprotect(addr, size, FREE_PROT);
 #endif
 	vmem_free(src, addr, size);
 	errno = old_errno;
