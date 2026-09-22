@@ -44,9 +44,16 @@
  *   Every allocation in this test is made by a thread that later EXITS, and
  *   thread exit drains the PTC completely (P1.3a, already fixed).  The main
  *   thread never allocates at this size class, so once all threads are joined
- *   and the allocator has been reaped, NO per-thread cache holds an object of
- *   this size and the residual outstanding count is the measurement: retained
- *   objects have come back, lost ones cannot.
+ *   NO per-thread cache holds an object of this size.
+ *
+ *   The count is then driven to its FLOOR: reap repeatedly until it stops
+ *   falling.  That is the distinction the test rests on -- retained objects come
+ *   back when the layers holding them are reaped, lost objects never do, so the
+ *   floor is a hard bound that reaping cannot get below.  A single post-reap
+ *   sample is not usable: the depot's working-set logic needs two update cycles
+ *   to release a magazine, so one sample mostly measures reap timing (measured
+ *   on a FIXED build, two consecutive single-sample runs gave a control of 1321
+ *   and then 64).
  *
  *   WHY THIS NEEDS A PTC-OFF CONTROL ARM
  *   The magazine, depot, and slab layers all legitimately RETAIN freed objects,
@@ -124,7 +131,7 @@
 
 /* Result the child reports to the parent. */
 struct arm_result {
-	long	residual;	/* outstanding once everything has quiesced */
+	long	floor;		/* outstanding after reaping to convergence */
 	int	from;		/* magsize before */
 	int	to;		/* magsize after (0 == no resize happened) */
 };
@@ -232,8 +239,38 @@ warmup(void *arg)
 }
 
 /*
+ * Reap until the outstanding count stops falling, and return the floor.
+ *
+ * Retention is released by reaping; loss is not.  Stop after five consecutive
+ * non-improving samples, bounded at 30 so a pathological case cannot hang the
+ * test.
+ */
+static long
+reap_to_floor(const char *label)
+{
+	long best = (long)outstanding();
+	int stale = 0, iter;
+
+	for (iter = 0; iter < 30 && stale < 5; iter++) {
+		long now;
+
+		umem_reap();
+		(void) sleep(1);
+		now = (long)outstanding();
+		if (now < best) {
+			best = now;
+			stale = 0;
+		} else {
+			stale++;
+		}
+	}
+	printf("  %s: reaped to floor after %d samples\n", label, iter);
+	return (best);
+}
+
+/*
  * Run one arm to completion in this (freshly forked) process and report the
- * outstanding buffers left over once every allocating thread has exited.
+ * floor the outstanding count reaches once every allocating thread has exited.
  */
 static void
 run_arm(const char *label, int ptc_on, struct arm_result *out)
@@ -244,7 +281,7 @@ run_arm(const char *label, int ptc_on, struct arm_result *out)
 	umem_cache_t *cp;
 	pthread_t th[NTHREADS];
 	pthread_t wt;
-	size_t before;
+	size_t during;
 	int i, sec;
 
 	umem_ptc_enabled = ptc_on;
@@ -255,7 +292,7 @@ run_arm(const char *label, int ptc_on, struct arm_result *out)
 	cp = umem_alloc_table[(OBJ_SIZE - 1) >> UMEM_ALIGN_SHIFT];
 	out->from = cp->cache_magtype->mt_magsize;
 	out->to = 0;
-	out->residual = 0;
+	out->floor = 0;
 
 	if (pthread_create(&wt, NULL, warmup, NULL) != 0)
 		exit(2);
@@ -272,7 +309,7 @@ run_arm(const char *label, int ptc_on, struct arm_result *out)
 	while (atomic_load(&parked) < NTHREADS)
 		(void) usleep(1000);
 
-	before = outstanding();
+	during = outstanding();
 
 	for (sec = 0; sec < 20; sec++) {
 		umem_reap();
@@ -287,21 +324,10 @@ run_arm(const char *label, int ptc_on, struct arm_result *out)
 	for (i = 0; i < NTHREADS; i++)
 		(void) pthread_join(th[i], NULL);
 
-	/*
-	 * Every thread that ever allocated at this size has exited, so every
-	 * PTC that held one of these objects has been drained.  Reap twice:
-	 * the first pass pushes magazine contents down, the second lets the
-	 * depot's two-cycle working-set logic release them.
-	 */
-	umem_reap();
-	(void) sleep(2);
-	umem_reap();
-	(void) sleep(2);
-
-	out->residual = (long)outstanding();
+	out->floor = reap_to_floor(label);
 	printf("  %s: magsize %d -> %d, outstanding %zu (during) -> %ld "
-	    "(residual, all allocating threads exited)\n", label, out->from,
-	    out->to, before, out->residual);
+	    "(floor, all allocating threads exited)\n", label, out->from,
+	    out->to, during, out->floor);
 	(void) fflush(stdout);
 }
 
@@ -405,14 +431,15 @@ main(void)
 	 */
 	margin = NTHREADS * 64;
 
-	printf("residual: ptc=%ld control=%ld margin=%ld\n", ptc.residual,
-	    control.residual, margin);
+	printf("floor: ptc=%ld control=%ld margin=%ld\n", ptc.floor,
+	    control.floor, margin);
 
-	if (ptc.residual > control.residual + margin) {
+	if (ptc.floor > control.floor + margin) {
 		printf("RESULT: FAIL (with the PTC active, more buffers remain "
-		    "outstanding after every allocating thread exited than the "
-		    "PTC-off control leaves, by more than the margin -- "
-		    "populated magazines are being discarded)\n");
+		    "outstanding after every allocating thread exited and the "
+		    "count was reaped to its floor than the PTC-off control "
+		    "leaves, by more than the margin -- populated magazines are "
+		    "being discarded)\n");
 		return (1);
 	}
 
