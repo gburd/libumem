@@ -44,6 +44,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/unit/test_inspect_contracts \
 		  test/unit/repro_reclaim_destroy \
 		  test/unit/repro_reclaim_reuse \
+		  test/unit/test_freelist_mangle \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
 		  test/bench/probe_reclaim_rss \
@@ -294,6 +295,16 @@ test_unit_repro_reclaim_reuse_SOURCES = test/unit/repro_reclaim_reuse.c
 test_unit_repro_reclaim_reuse_LDADD = libumem.la
 test_unit_repro_reclaim_reuse_LDFLAGS = -pthread
 test_unit_repro_reclaim_reuse_CPPFLAGS = -I$(srcdir)
+
+# P5.4 regression: the slab freelist link inside a freed user buffer must not
+# be usable as an arbitrary-address primitive.  Reaches cache_bufctl and
+# cache_flags to place the write exactly where an overflow would, so it needs
+# umem_base.h and -I$(srcdir).  Fails when the library is built with
+# -DUMEM_NO_LINK_MANGLE, which is the control arm.
+test_unit_test_freelist_mangle_SOURCES = test/unit/test_freelist_mangle.c
+test_unit_test_freelist_mangle_LDADD = libumem.la
+test_unit_test_freelist_mangle_LDFLAGS = -pthread
+test_unit_test_freelist_mangle_CPPFLAGS = -I$(srcdir)
 
 # --- v2.1.0 additive test/tool targets (exec-helper harness, property
 # --- tests, benchmark contention driver, umemctl live-inspection CLI) ---
@@ -768,6 +779,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/stress/interpose_regress.sh \
 	test/stress/oracle_control.sh \
 	test/unit/test_lifecycle_churn \
+	test/unit/test_freelist_mangle \
 	test/bench/test_bench_accounting \
 	test/bench/check_budget.sh \
 	test/integration/test_ptc_thread_exit_drain_probe \
