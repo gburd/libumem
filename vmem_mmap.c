@@ -30,6 +30,7 @@
 
 #include "config.h"
 #include <errno.h>
+#include <stdint.h>		/* uintptr_t, for CHUNKSIZE alignment below */
 
 #if HAVE_SYS_MMAN_H
 #include <sys/mman.h>
@@ -184,7 +185,42 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 	buf = mmap((void*)CHUNKSIZE, size, FREE_PROT, FREE_FLAGS | MAP_ALIGN,
 			-1, 0);
 #else
-	buf = mmap(0, size, FREE_PROT, FREE_FLAGS, -1, 0);
+	/*
+	 * No MAP_ALIGN outside Solaris, so ask for CHUNKSIZE alignment the hard
+	 * way: over-map by one quantum and trim the ends.
+	 *
+	 * This became necessary when CHUNKSIZE stopped being the page size (see
+	 * UMEM_CHUNKSIZE_DEFAULT).  mmap() only promises page alignment, while
+	 * _vmem_extend_alloc() asserts the span is aligned to the arena's
+	 * quantum -- so a plain mmap() here aborted with
+	 * "((addr | size | alloc) & (vmp->vm_quantum - 1)) == 0" on the first
+	 * heap growth.  Caught by test/integration/test_heap_ceiling.
+	 *
+	 * The trimmed slack is unmapped immediately, so the cost is one extra
+	 * quantum of address space transiently, and zero memory: these are
+	 * PROT_NONE/MAP_NORESERVE reservations.
+	 */
+	if (CHUNKSIZE > (size_t)_sysconf(_SC_PAGESIZE)) {
+		size_t over = size + CHUNKSIZE;
+		char *raw = mmap(0, over, FREE_PROT, FREE_FLAGS, -1, 0);
+
+		if (raw == MAP_FAILED) {
+			buf = MAP_FAILED;
+		} else {
+			char *aligned = (char *)P2ROUNDUP((uintptr_t)raw,
+			    CHUNKSIZE);
+			size_t head = (size_t)(aligned - raw);
+			size_t tail = over - head - size;
+
+			if (head != 0)
+				(void) munmap(raw, head);
+			if (tail != 0)
+				(void) munmap(aligned + size, tail);
+			buf = aligned;
+		}
+	} else {
+		buf = mmap(0, size, FREE_PROT, FREE_FLAGS, -1, 0);
+	}
 #endif
 
 	if (buf != MAP_FAILED) {
