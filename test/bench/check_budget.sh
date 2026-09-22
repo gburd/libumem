@@ -72,9 +72,10 @@ for wl in multi prodcons frag; do
 			rc=1
 			continue
 		fi
-		# prodcons: only the producer half allocates, so its completed-op
-		# count is ~2N (each buffer is allocated then freed).  Bound it
-		# loosely but still tightly enough to catch a factor of t.
+		# prodcons: only the producer half allocates, and each buffer is
+		# allocated then freed, so completed ops run ~2N.  frag also
+		# counts allocs and frees plus its drain pass.  Bound loosely
+		# but tightly enough to catch a factor of t.
 		lo=$(( N * 80 / 100 )); hi=$(( N * 250 / 100 ))
 		if (( total < lo || total > hi )); then
 			echo "    FAIL: total_ops=$total outside [$lo,$hi] for a"
@@ -82,8 +83,20 @@ for wl in multi prodcons frag; do
 			echo "          the wrong number of times (pre-fix: N/t)"
 			rc=1
 		fi
-		if (( threads != t )); then
+		# Expected thread count.  prodcons splits the requested count into
+		# producers and consumers and forces at least one of each, so -t 1
+		# legitimately runs 2 threads.  Reporting 2 there is the HONEST
+		# count (that is what ran) and must not be asserted away -- the
+		# defect being guarded against is the opposite one, a workload
+		# reporting a count it did not run.
+		if [[ $wl == prodcons ]]; then
+			want_threads=$(( t < 2 ? 2 : t ))
+		else
+			want_threads=$t
+		fi
+		if (( threads != want_threads )); then
 			echo "    FAIL: reported threads=$threads for -t $t"
+			echo "          (expected $want_threads for $wl)"
 			rc=1
 		fi
 	done
