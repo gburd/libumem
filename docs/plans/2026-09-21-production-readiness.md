@@ -26,6 +26,30 @@ that claim can be made.
 Each item: root cause, fix at the shared function, regression that reproduces
 the pre-fix failure, EC2 verification on x86_64 and aarch64.
 
+**Status as of 2026-09-22**
+
+| Item | State | Evidence |
+|---|---|---|
+| P1.1 interposer `calloc` ownership | FIXED | `docs/results/prefix-evidence/` |
+| P1.2 fork lock order | FIXED | gdb stacks both arches |
+| P1.2 follow-up: interposer fork hooks | FIXED | `2026-09-22` job logs |
+| P1.3a PTC thread-exit drain | FIXED | `2026-09-22-p1.3-ptc-lifetime.md` |
+| P1.3b magazine capacity/resize race | **OPEN** | analyzed, not reproduced |
+| P1.3c populated magazine discarded | **OPEN** | analyzed, not reproduced |
+| P1.4 destroy with retained slabs | FIXED | `2026-09-21` reclaim report |
+| P1.5a/b/c reclaim metadata + publication | FIXED | TSAN 1 -> 0, aborts pre-fix |
+| P1.6 maintenance-thread startup | FIXED | evidence retracted once, then redone |
+| P1.7 overflow + alignment contracts | FIXED | `docs/results/prefix-evidence/` |
+
+Also fixed while here, outside the original list: a pre-existing `umem_reap`
+self-deadlock reachable from the real update thread; a hash-partition weight
+misassignment; two harness defects that were corrupting every verification in
+this workstream (four regressions silently dropped from `TESTS` by a comment
+continuation, and a nondeterministic `cached_skipped` assertion that made
+`--disable-rseq` unable to pass `make check` at all).
+
+Phase 1 is **not** complete: P1.3b and P1.3c remain.
+
 ### P1.1 Interposer `calloc` storage ownership and concurrency
 `malloc_interpose.c:189, 443–479`
 
@@ -56,16 +80,21 @@ from a single-threaded parent and cannot catch this).
 ### P1.3 PTC complete draining and resize-safe magazine ownership
 `umem_ptc.c:401–429, 473–503`; `umem.c:2413–2445, 3374–3417, 3571–3604`
 
-Thread exit calls the half-bin flush once per bin, then frees the PTC, losing
-the remainder (128 cached objects → 64 lost). Separately, a magazine
-resize between acquiring a magazine and reading the cache's current capacity
-lets an old smaller magazine be indexed with the new larger size; and stale
-magazine handling frees the magazine shell without draining a full
-magazine's objects.
+**P1.3a (FIXED, 2026-09-22).** Thread exit called the half-bin flush once per
+bin and then freed the PTC, stranding the remainder while the slab layer still
+counted those objects as allocated. See
+`docs/results/2026-09-22-p1.3-ptc-lifetime.md`.
 
-Required: drain to empty at thread exit; capacity and magazine obtained as
-one consistent decision; never discard a populated magazine; regressions for
-exit-with-populated-bins and resize-under-load.
+**P1.3b (OPEN).** A magazine resize between obtaining a magazine and reading
+the cache's current capacity lets an old smaller magazine be indexed with the
+new larger size. Reachable by default: ordinary depot contention schedules a
+resize independently of `umem_magazine_tuning`. Needs the magazine and its
+capacity to be one consistent decision, demonstrated on a high-core box under
+ASan.
+
+**P1.3c (OPEN).** Stale magazine handling frees the magazine shell without
+draining a populated magazine, and callers pass full magazines down that path.
+`umem_ptc_mag_flush_all()` already shows the correct draining pattern.
 
 ### P1.4 Cache destruction with retained empty slabs
 `umem.c:1750–1758, 4624–4703`
