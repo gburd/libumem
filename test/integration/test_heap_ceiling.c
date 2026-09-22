@@ -57,11 +57,27 @@
 
 #include "umem.h"
 
-/* Above the ~5 GB pre-fix ceiling, with margin. */
-#define TARGET_BYTES	(7ULL * 1024 * 1024 * 1024)
-/* Large enough to move fast, small enough to stay a cache/oversize allocation
- * rather than a single giant mapping. */
-#define CHUNK		(1024 * 1024)
+/*
+ * SIZE MATTERS, and it took a measurement to get right.  The VMA cost is not
+ * uniform across allocation sizes, because only the slab path fragments the
+ * address space:
+ *
+ *   size    count     total     VMAs     VMAs/MB
+ *     64   200000      12MB      168      ~14
+ *   4096   200000     781MB     6257     8.01     <-- the fragmenting path
+ *  65536   200000   12500MB       75      ~0      (oversize arena: few mappings)
+ * 131072   200000   25000MB       75      ~0      (ditto)
+ *
+ * Measured on the pre-fix build. A 1MB chunk size -- the obvious choice -- goes
+ * straight to the oversize arena and reached 7GB with 72 VMAs, so it PASSED
+ * against the defect and proved nothing. 4096 B is the size that actually
+ * exercises the ceiling: at 8.01 VMAs/MB the 65530 cap arrives at ~8 GB.
+ *
+ * So allocate past that. These are touched, so this needs real memory: the
+ * target is kept just over the cliff rather than far beyond it.
+ */
+#define CHUNK		4096
+#define TARGET_BYTES	(9ULL * 1024 * 1024 * 1024)
 #define NCHUNKS		(TARGET_BYTES / CHUNK)
 
 static long
@@ -137,6 +153,30 @@ main(void)
 		return (77);
 	}
 
+	{
+		long memkb = 0;
+		FILE *mi = fopen("/proc/meminfo", "r");
+		char line[256];
+
+		if (mi != NULL) {
+			while (fgets(line, sizeof (line), mi) != NULL) {
+				if (strncmp(line, "MemTotal:", 9) == 0) {
+					(void) sscanf(line + 9, " %ld", &memkb);
+					break;
+				}
+			}
+			(void) fclose(mi);
+		}
+		/* Touched pages, so this needs the memory for real. */
+		if (memkb > 0 &&
+		    (unsigned long long)memkb * 1024 < TARGET_BYTES + (2ULL << 30)) {
+			printf("SKIP: MemTotal %ldMB is too small to hold a "
+			    "touched %lluMB working set\n", memkb / 1024,
+			    TARGET_BYTES / (1024 * 1024));
+			return (77);
+		}
+	}
+
 	held = calloc(NCHUNKS, sizeof (void *));
 	if (held == NULL) {
 		printf("SKIP: cannot allocate the tracking array\n");
@@ -167,6 +207,18 @@ main(void)
 		/* Touch it: address space that cannot be used is not a pass. */
 		((char *)p)[0] = (char)(i & 0xff);
 		((char *)p)[CHUNK - 1] = (char)(i & 0xff);
+		if ((i & 0xffff) == 0 && count_vmas() > limit - 64) {
+			/*
+			 * About to hit the cap. Stop here rather than let the
+			 * kernel start failing mmap: the VMA check below is
+			 * what reports it, and we want the count, not a crash.
+			 */
+			printf("  stopping early at %lluMB: vmas=%ld is "
+			    "within 64 of the %ld limit\n",
+			    (i * CHUNK) / (1024 * 1024), count_vmas(), limit);
+			ok++;
+			break;
+		}
 		held[i] = p;
 		ok++;
 	}
