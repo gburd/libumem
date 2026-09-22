@@ -454,12 +454,21 @@ main(void)
 	if (c_to != 0) {
 		printf("RESULT: INCONCLUSIVE (the control round resized, so it "
 		    "is not a control)\n");
-		return (3);
+		/*
+		 * 77, not 3: automake treats any nonzero exit as FAIL, so a
+		 * correct "I could not open the window, so I am not claiming
+		 * anything" was reported as a test failure and reddened the
+		 * whole suite (observed on aarch64 under make check while the
+		 * same binary passed 8/8 standalone).  77 is automake's SKIP.
+		 * The distinction the test is making -- never PASS on an
+		 * unopened window -- is preserved; only its exit code changes.
+		 */
+		return (77);
 	}
 	if (t_to == 0) {
 		printf("RESULT: INCONCLUSIVE (no magazine resize happened, so "
 		    "the window under test was never opened)\n");
-		return (3);
+		return (77);
 	}
 
 	/*
@@ -486,7 +495,7 @@ main(void)
 	if (umem_ptc_probe_shell_frees == 0) {
 		printf("RESULT: INCONCLUSIVE (no magazine shell was freed on a "
 		    "magtype mismatch, so the path under test never ran)\n");
-		return (3);
+		return (77);
 	}
 	if (umem_ptc_probe_objects_lost != 0) {
 		printf("RESULT: FAIL (%ld objects were still inside magazines "

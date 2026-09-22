@@ -585,13 +585,22 @@ main(int argc, char **argv)
 		printf("RESULT: INCONCLUSIVE (no magazine resize happened, so "
 		    "the window under test was never opened -- raise the "
 		    "thread count or the run time)\n");
-		return (3);
+		/*
+		 * 77, not 3: automake treats any nonzero exit as FAIL, so a
+		 * correct "I could not open the window, so I am not claiming
+		 * anything" was reported as a test failure and reddened the
+		 * whole suite (observed on aarch64 under make check while the
+		 * same binary passed 8/8 standalone).  77 is automake's SKIP.
+		 * The distinction the test is making -- never PASS on an
+		 * unopened window -- is preserved; only its exit code changes.
+		 */
+		return (77);
 	}
 #ifdef UMEM_PTC_RESIZE_PROBE
 	if (umem_ptc_probe_refills == 0) {
 		printf("RESULT: INCONCLUSIVE (no PTC magazine was ever loaded "
 		    "from the depot, so the path under test never ran)\n");
-		return (3);
+		return (77);
 	}
 #endif
 #ifndef UMEM_PTC_RESIZE_PROBE
@@ -607,7 +616,7 @@ main(int argc, char **argv)
 		    "this build cannot open the window on purpose -- rebuild "
 		    "with -DUMEM_PTC_RESIZE_PROBE to get a verdict)\n",
 		    (long)atomic_load(&checks));
-		return (3);
+		return (77);
 	}
 #endif
 	if (atomic_load(&fail_capacity) != 0 || atomic_load(&fail_alias) != 0 ||
