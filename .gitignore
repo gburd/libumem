@@ -270,3 +270,7 @@ tools/umem_profile_dump
 
 # compiled umem(1) introspection CLI (was tools/umem bash script)
 tools/umem
+
+# Fetched EC2 job logs (scripts/ec2/job.sh fetch). Transient per-run output;
+# commit the curated report under docs/results/ instead.
+docs/results/jobs/
