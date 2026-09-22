@@ -48,6 +48,8 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/bench_debug_overhead \
 		  test/bench/bench_cache_rseq \
 		  test/bench/probe_reclaim_rss \
+		  test/security/test_secure_gate_helper \
+		  test/security/test_errno_preserved \
 		  tools/umem_profile_dump
 
 libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS) $(SOLARIS_SOCKET_LIBS) -version-info 1:0:0
@@ -786,6 +788,27 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_ptc_resize_no_loss_probe \
 	test/integration/test_heap_ceiling
 
+# Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5).  Each demonstrates
+# the exposure it closes and fails against v3.0.0 -- see the header comment in
+# each file for the pre-fix behaviour.  They are in TESTS, not run-by-hand: a
+# hardening fix whose regression nobody runs is not a fix (AGENTS.md 7a).
+TESTS += test/security/test_no_path_exec.sh \
+	test/security/test_secure_env_gate.sh \
+	test/security/test_writer_nofollow.sh \
+	test/security/test_errno_preserved
+
+# P5.2/P5.3 need a fresh process per probe (UMEM_OPTIONS is read once, from a
+# constructor), and they reach misc.c's umem_secure_mode_force, so the helper
+# links against the library rather than being a script.
+test_security_test_secure_gate_helper_SOURCES = \
+	test/security/test_secure_gate_helper.c
+test_security_test_secure_gate_helper_LDADD = libumem.la
+test_security_test_secure_gate_helper_CPPFLAGS = -I$(srcdir)
+
+test_security_test_errno_preserved_SOURCES = test/security/test_errno_preserved.c
+test_security_test_errno_preserved_LDADD = libumem.la
+test_security_test_errno_preserved_CPPFLAGS = -I$(srcdir)
+
 # The heap-ceiling regression (docs/results/2026-09-22-umem-heap-ceiling-vma.md)
 # allocates past the old ~5GB vm.max_map_count ceiling.  It SKIPs (77) when the
 # kernel's limit has been raised far above the default, since then it cannot
@@ -826,7 +849,10 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/stress/oracle_fast.sh \
 	test/stress/oracle_control.sh \
 	test/bench/check_budget.sh \
-	test/stress/interpose_regress.sh
+	test/stress/interpose_regress.sh \
+	test/security/test_no_path_exec.sh \
+	test/security/test_secure_env_gate.sh \
+	test/security/test_writer_nofollow.sh
 
 # Generated API documentation goes to doxygen-out/, NOT docs/.
 # docs/ is durable, version-controlled project documentation (plans, results,
