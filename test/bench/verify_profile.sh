@@ -16,8 +16,11 @@ if [ ! -x "$BENCH" ]; then
 fi
 
 if [ ! -x "$BENCH" ]; then
-    echo "SKIP: bench_profile_test not built"
-    exit 0
+    # P2.4: a missing prerequisite is a SKIP, not a pass.  This printed
+    # "SKIP" and then exited 0, so a caller (and automake) recorded success
+    # for a verification that never executed.  77 is automake's SKIP status.
+    echo "SKIP: bench_profile_test not built -- profile verification NOT executed"
+    exit 77
 fi
 
 mkdir -p /tmp/claude-1000
