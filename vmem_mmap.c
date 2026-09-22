@@ -48,6 +48,7 @@
 #endif
 
 #include "vmem_base.h"
+#include "umem_base.h"	/* umem_mmap_chunksize (UMEM_OPTIONS=chunksize) */
 
 /*
  * No PROT_EXEC: libumem allocates data memory, not executable code.
@@ -94,6 +95,31 @@
 #define	CHUNKSIZE	(64*1024)	/* 64 kilobytes */
 #else
 static size_t CHUNKSIZE;
+
+/*
+ * Default quantum for the "mmap_top" parent arena on platforms without
+ * MAP_ALIGN (i.e. everything except Solaris/illumos).
+ *
+ * This used to be the page size, which is a correctness-neutral but
+ * operationally severe choice on Linux: the parent arena hands the heap
+ * address space in quantum-sized units, so a page-sized quantum makes the heap
+ * accumulate roughly one kernel VMA per ~76 KiB of mapped space.  The kernel
+ * caps VMAs per process at vm.max_map_count (default 65530), so libumem hit a
+ * hard ceiling at about 5 GB and then returned NULL -- measured: 65,532 VMAs
+ * at failure (100%% of the limit) and ~39%% of allocations failing at 192
+ * threads, while glibc on the same box reached 96 GB without a single failure.
+ * See docs/results/2026-09-22-umem-heap-ceiling-vma.md.
+ *
+ * 64 KiB matches the value Solaris has always used here (the MAP_ALIGN branch
+ * above), which is the configuration this allocator was designed and tuned
+ * for, and it raises the VMA-bound ceiling by ~16x.  It costs address space,
+ * not memory: the span is reserved PROT_NONE/MAP_NORESERVE and only the pages
+ * actually allocated are ever faulted in.
+ *
+ * Override at runtime if a deployment needs something else:
+ *   UMEM_OPTIONS=chunksize=<bytes>   (rounded up to a page multiple)
+ */
+#define	UMEM_CHUNKSIZE_DEFAULT	(64*1024)
 #endif
 
 static vmem_t *mmap_heap;
@@ -178,10 +204,21 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 		/*
 		 * Growing the heap failed.  The allocation above will
 		 * already have called umem_reap().
+		 *
+		 * Do NOT restore errno here.  mmap() has just told us WHY it
+		 * failed, and that is the single most useful fact available:
+		 * ENOMEM from vm.max_map_count exhaustion is indistinguishable
+		 * from ordinary out-of-memory unless the caller can see it.
+		 * This function used to overwrite it with the value on entry, so
+		 * a caller got NULL with a stale, unrelated errno -- which is
+		 * why libumem hitting its ~5GB address-space ceiling presented
+		 * for years as "libumem is slower on this workload" rather than
+		 * "libumem could not get memory"
+		 * (docs/results/2026-09-22-umem-heap-ceiling-vma.md).
+		 *
+		 * The success paths still restore errno: a successful allocation
+		 * must not perturb it.
 		 */
-		ASSERT((vmflags & VM_NOSLEEP) == VM_NOSLEEP);
-
-		errno = old_errno;
 		return (NULL);
 	}
 }
@@ -201,7 +238,19 @@ vmem_mmap_arena(vmem_alloc_t **a_out, vmem_free_t **f_out)
 	pagesize = info.dwPageSize;
 	CHUNKSIZE = info.dwAllocationGranularity;
 #elif !defined(MAP_ALIGN)
-	CHUNKSIZE = pagesize;
+	/*
+	 * 64 KiB by default rather than the page size -- see
+	 * UMEM_CHUNKSIZE_DEFAULT above for why (vm.max_map_count exhaustion at
+	 * ~5 GB).  umem_mmap_chunksize is settable via
+	 * UMEM_OPTIONS=chunksize=<bytes>; 0 means "use the default".
+	 */
+	if (umem_mmap_chunksize != 0) {
+		CHUNKSIZE = P2ROUNDUP(umem_mmap_chunksize, pagesize);
+	} else {
+		CHUNKSIZE = UMEM_CHUNKSIZE_DEFAULT;
+	}
+	if (CHUNKSIZE < pagesize)
+		CHUNKSIZE = pagesize;
 #endif
 	
 	if (mmap_heap == NULL) {

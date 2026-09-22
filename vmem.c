@@ -121,6 +121,7 @@
 #include <sys/sysmacros.h>
 #endif
 #include <stdio.h>
+#include <errno.h>		/* vmem_populate() reports ENOMEM on VM_SLEEP */
 #if HAVE_STRINGS_H
 #include <strings.h>
 #endif
@@ -600,7 +601,33 @@ vmem_populate(vmem_t *vmp, int vmflag)
 
 	(void) mutex_unlock(&vmp->vm_lock);
 
-	ASSERT(vmflag & VM_NOSLEEP);	/* we do not allow sleep allocations */
+	/*
+	 * VM_SLEEP is not supported (see this file's header comment: a sleeping
+	 * populate could hold vmem_nosleep_lock indefinitely).  Every caller
+	 * inside libumem passes VM_NOSLEEP -- umem.c's UMEM_VMFLAGS() is
+	 * hardcoded to it -- so reaching here without it means an external
+	 * caller used a flag the API does not honour.
+	 *
+	 * Report that instead of asserting.  The assertion aborted the whole
+	 * process with "Assertion failed: vmflag & VM_NOSLEEP" and no hint that
+	 * the caller's flags were at fault, which is how a test's misuse of
+	 * VM_SLEEP looked for years like an allocator crash
+	 * (docs/results/2026-09-22-prop-fragmentation-vmem-abort.md).  Under
+	 * NDEBUG the assertion vanished entirely and execution continued into a
+	 * path the comment above says is not allowed -- strictly worse.
+	 *
+	 * ENOMEM is the honest answer: we cannot grow the segment pool under the
+	 * discipline this caller asked for.
+	 */
+	if (!(vmflag & VM_NOSLEEP)) {
+		log_message("vmem_populate: VM_SLEEP is not supported "
+		    "(arena '%s'); use VM_NOSLEEP, or UMEM_NOFAIL at the umem "
+		    "layer for sleep-like behaviour\n", vmp->vm_name);
+		(void) mutex_lock(&vmp->vm_lock);
+		errno = ENOMEM;
+		return (0);
+	}
+
 	lp = &vmem_nosleep_lock;
 
 	/*

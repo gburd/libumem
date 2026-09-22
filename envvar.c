@@ -210,6 +210,13 @@ static umem_env_item_t umem_options_items[] = {
 		"Seconds before dirty slabs are reclaimed (default 30)",
 		NULL, 0,	&umem_reclaim_delay
 	},
+	{ "chunksize",		"Evolving",	ITEM_SIZE,
+		"Quantum of the mmap heap's parent arena (default 64K). A "
+		"page-sized quantum burns one kernel VMA per ~76K of heap and "
+		"hits vm.max_map_count at ~5G; larger values raise that ceiling "
+		"and cost address space, not memory.",
+		NULL, 0, NULL,	&umem_mmap_chunksize
+	},
 	{ "perthread_cache",	"Evolving",	ITEM_SIZE,
 		"Size (in bytes) of per-thread allocation cache",
 		NULL, 0, NULL, &umem_ptc_size
