@@ -168,6 +168,55 @@ Limits of the table above, stated rather than implied:
   test originally asserted `VmHWM >= VmRSS`; that assertion was wrong, failed
   intermittently (1 in 5 runs), and is now a tolerance band.
 
+
+---
+
+## A real allocator finding, surfaced by the failure column
+
+The `alloc_failures` column added above immediately produced a substantive
+result: **`umem_alloc` returns NULL for a large fraction of attempts at scale
+where glibc `malloc` never does.**
+
+| | libc | umem |
+|---|---|---|
+| frag, 192 threads, matched budget | 36,540,723 ops, **0 failures** | ~16,000,000 ops, **~10.5M failures (~39%)** |
+| `probe_alloc_failure`, 192t × 250k live | 48,000,000 ok, **0 failures** | 3,960,223 ok, **44,039,777 failures (91.7%)** |
+| peak reached | **~96 GB `VmHWM`** | heap capped at **4.95 GiB** |
+
+Diagnosed to root cause: **`vm.max_map_count` exhaustion.** Peak VMA count
+65,532 against the default limit of 65,530 — 100%. umem's default mmap backend
+grows the heap with one `mmap()` per extension and, because `MAP_ALIGN` does not
+exist on Linux, `CHUNKSIZE = pagesize`, so each non-coalescable span costs a VMA
+at ~75 KiB of usable heap per VMA. glibc reaches 96 GB on the same box because
+it grows via `brk` plus a few large mappings. Full evidence, the alternatives
+ruled out, and candidate fixes:
+[`2026-09-22-umem-heap-ceiling-max-map-count.md`](2026-09-22-umem-heap-ceiling-max-map-count.md).
+
+It is a **configuration/sizing limit with a named knob**
+(`vm.max_map_count`), not a correctness defect — and not correct fail-fast
+either: `umem_reap()` plus retry moved the failure rate only from 91.7% to
+89.9%, so it is a hard ceiling rather than transient pressure. The fix belongs
+in `vmem_mmap.c`, outside this workstream's file set, and is unassigned.
+
+Also found while tracing it: `vmem_mmap_top_alloc()` saves `errno` on entry and
+restores it on **both** failure paths (`vmem_mmap.c:143,183,190`), so the real
+`mmap` `ENOMEM` is erased before any caller can see it. The `errno=0` the probe
+recorded is an artifact of that code, not evidence the OS succeeded. Operators
+diagnosing a NULL from `umem_alloc` on Linux have no errno to work with.
+
+### What this invalidates, independently of the ratio defect
+
+**Every previously published umem `frag` and sustained-`frag` number was
+measured over a run in which a large fraction of allocations failed, and nothing
+in the output said so.** The old harness counted a NULL as nothing at all —
+neither an operation nor an error — so it surfaced only as a lower `total_ops`
+(which reads as "slower") plus a few stderr lines in a log nobody diffs.
+
+These are two separate defects on the same runs: the ratio defect made the
+**memory** figure wrong; this makes the **throughput** figure incomparable,
+because the two allocators did different amounts of work. Neither is fixed by
+recomputing the other.
+
 ---
 
 ## P2.3 — the oracle could pass on failure
@@ -322,7 +371,7 @@ VmHWM tolerance fix; it failed 1-in-5 before it.
 
 ## The real finding: this codebase's evidence quality
 
-**Four harness defects in this one workstream produced false results.** Not
+**Five harness defects in this one workstream produced false results.** Not
 allocator bugs — bugs in the things that decide whether the allocator is
 working:
 
@@ -334,11 +383,21 @@ working:
    `/* #undef UMEM_INTROSPECT */` — so a test ran against a library with the
    feature compiled out and failed at its first step.
 4. My own `VmHWM >= VmRSS` assumption, which the kernel does not guarantee and
-   which failed intermittently.
+   which failed intermittently (1 in 5 runs).
+5. Allocation failures counted as nothing at all — not an operation, not an
+   error — so a run failing 39% of its allocations was reported with a smaller
+   `total_ops` and no other trace. This one hid a real allocator ceiling for as
+   long as the harness has existed.
 
-Add the two measurement defects this phase fixed (P2.1, P2.2) and my own
-max-ratio selection bias, and the pattern is clear: **on this project, the
-harness has been a more common source of wrong answers than the allocator.**
+Add the two measurement defects this phase fixed (P2.1, P2.2), my own
+max-ratio selection bias, and my own per-allocator calibration, and the pattern
+is clear: **on this project, the harness has been a more common source of wrong
+answers than the allocator.**
+
+The sharpest illustration is defect 5: it did not merely produce a wrong
+number, it *concealed a real allocator limitation* — a ~5 GB heap ceiling — for
+the entire life of the harness. A measurement apparatus that cannot report
+failure will eventually report a broken system as a working one.
 Every one of these produced a confident, plausible, wrong result — a green suite,
 a passing oracle, a 505× fragmentation figure, a "192-thread" number from one
 thread.
