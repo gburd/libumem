@@ -39,9 +39,14 @@
  * HOW THIS DETECTS IT
  *   umem_walk_allocated() counts buffers the slab layer still considers handed
  *   out.  A lost object stays in that set forever, because nothing holds a
- *   reference that could return it.  The test samples that count immediately
- *   BEFORE the magtype change and again after the threads holding populated
- *   magazines have released and exited, and reports the difference.
+ *   reference that could return it.
+ *
+ *   Every allocation in this test is made by a thread that later EXITS, and
+ *   thread exit drains the PTC completely (P1.3a, already fixed).  The main
+ *   thread never allocates at this size class, so once all threads are joined
+ *   and the allocator has been reaped, NO per-thread cache holds an object of
+ *   this size and the residual outstanding count is the measurement: retained
+ *   objects have come back, lost ones cannot.
  *
  *   WHY THIS NEEDS A PTC-OFF CONTROL ARM
  *   The magazine, depot, and slab layers all legitimately RETAIN freed objects,
@@ -54,9 +59,17 @@
  *   test/integration/test_ptc_thread_exit_drain.c, which learned this the hard
  *   way, and docs/results/2026-09-22-p1.3-ptc-lifetime.md.)
  *
- *   So the same workload runs twice and the arms are compared: PTC active, and
- *   PTC bypassed (umem_ptc_enabled = 0).  The control subtracts out ordinary
+ *   So the same workload runs twice and the residuals are compared: PTC active,
+ *   and PTC bypassed (umem_ptc_enabled = 0).  The control subtracts out ordinary
  *   retention.
+ *
+ *   An earlier version of this test compared the CHANGE in outstanding buffers
+ *   across the resize instead of the residual.  That was not a usable signal:
+ *   umem_cache_magazine_resize() calls umem_cache_magazine_purge() first, which
+ *   destroys every per-CPU magazine, so both arms drop by one to two thousand
+ *   buffers and the two arms' baselines differ by more than the defect does
+ *   (observed: ptc -1536, control -2120, on a build where the defect was fixed).
+ *   The residual after everything has quiesced has no such term in it.
  *
  *   WHY THE TWO ARMS ARE SEPARATE PROCESSES
  *   A cache's magtype only ever GROWS, and at this size class it has exactly one
@@ -111,7 +124,7 @@
 
 /* Result the child reports to the parent. */
 struct arm_result {
-	long	delta;		/* outstanding after - before */
+	long	residual;	/* outstanding once everything has quiesced */
 	int	from;		/* magsize before */
 	int	to;		/* magsize after (0 == no resize happened) */
 };
@@ -191,8 +204,36 @@ park_with_full_magazine(void *arg)
 }
 
 /*
+ * Warm up in a thread that then EXITS, so ordinary retention is near its
+ * plateau before the measurement starts and no PTC is left holding objects of
+ * this size afterwards.  Single worker: concurrent warm-up would record depot
+ * contention and spend the one available magtype step before the parked
+ * threads exist.
+ */
+static void *
+warmup(void *arg)
+{
+	void **warm = calloc(PER_THREAD * 2, sizeof (void *));
+	int pass, i;
+
+	(void) arg;
+	if (warm == NULL)
+		return (NULL);
+	for (pass = 0; pass < 4; pass++) {
+		for (i = 0; i < PER_THREAD * 2; i++)
+			warm[i] = umem_alloc(OBJ_SIZE, UMEM_DEFAULT);
+		for (i = 0; i < PER_THREAD * 2; i++) {
+			if (warm[i] != NULL)
+				umem_free(warm[i], OBJ_SIZE);
+		}
+	}
+	free(warm);
+	return (NULL);
+}
+
+/*
  * Run one arm to completion in this (freshly forked) process and report the
- * change in outstanding buffers across the magtype change.
+ * outstanding buffers left over once every allocating thread has exited.
  */
 static void
 run_arm(const char *label, int ptc_on, struct arm_result *out)
@@ -202,7 +243,8 @@ run_arm(const char *label, int ptc_on, struct arm_result *out)
 	extern uint_t umem_depot_contention;
 	umem_cache_t *cp;
 	pthread_t th[NTHREADS];
-	size_t before, after;
+	pthread_t wt;
+	size_t before;
 	int i, sec;
 
 	umem_ptc_enabled = ptc_on;
@@ -213,29 +255,11 @@ run_arm(const char *label, int ptc_on, struct arm_result *out)
 	cp = umem_alloc_table[(OBJ_SIZE - 1) >> UMEM_ALIGN_SHIFT];
 	out->from = cp->cache_magtype->mt_magsize;
 	out->to = 0;
-	out->delta = 0;
+	out->residual = 0;
 
-	/*
-	 * Warm up SINGLE-THREADED, so ordinary retention is already near its
-	 * plateau before we start measuring and no depot contention has been
-	 * recorded yet (a resize here would close the window before the
-	 * threads exist).
-	 */
-	{
-		void **warm = calloc(PER_THREAD * 2, sizeof (void *));
-		int pass;
-		if (warm == NULL)
-			exit(2);
-		for (pass = 0; pass < 4; pass++) {
-			for (i = 0; i < PER_THREAD * 2; i++)
-				warm[i] = umem_alloc(OBJ_SIZE, UMEM_DEFAULT);
-			for (i = 0; i < PER_THREAD * 2; i++) {
-				if (warm[i] != NULL)
-					umem_free(warm[i], OBJ_SIZE);
-			}
-		}
-		free(warm);
-	}
+	if (pthread_create(&wt, NULL, warmup, NULL) != 0)
+		exit(2);
+	(void) pthread_join(wt, NULL);
 
 	for (i = 0; i < NTHREADS; i++) {
 		if (pthread_create(&th[i], NULL, park_with_full_magazine,
@@ -263,14 +287,21 @@ run_arm(const char *label, int ptc_on, struct arm_result *out)
 	for (i = 0; i < NTHREADS; i++)
 		(void) pthread_join(th[i], NULL);
 
-	/* Let the magazine and depot layers settle before sampling. */
+	/*
+	 * Every thread that ever allocated at this size has exited, so every
+	 * PTC that held one of these objects has been drained.  Reap twice:
+	 * the first pass pushes magazine contents down, the second lets the
+	 * depot's two-cycle working-set logic release them.
+	 */
 	umem_reap();
 	(void) sleep(2);
-	after = outstanding();
+	umem_reap();
+	(void) sleep(2);
 
-	out->delta = (long)after - (long)before;
-	printf("  %s: magsize %d -> %d, outstanding %zu -> %zu (delta %+ld)\n",
-	    label, out->from, out->to, before, after, out->delta);
+	out->residual = (long)outstanding();
+	printf("  %s: magsize %d -> %d, outstanding %zu (during) -> %ld "
+	    "(residual, all allocating threads exited)\n", label, out->from,
+	    out->to, before, out->residual);
 	(void) fflush(stdout);
 }
 
@@ -321,11 +352,16 @@ main(void)
 	struct arm_result ptc, control;
 	long margin;
 
-	/* Probe the size class from the still-single-threaded parent. */
+	/*
+	 * Probe the size class from the still-single-threaded parent.  Done in
+	 * a thread that exits, so the parent's own PTC never holds an object of
+	 * this size (it would be inherited by both children).
+	 */
 	{
-		void *w = umem_alloc(OBJ_SIZE, UMEM_DEFAULT);
-		if (w != NULL)
-			umem_free(w, OBJ_SIZE);
+		pthread_t pt;
+		if (pthread_create(&pt, NULL, warmup, NULL) != 0)
+			return (2);
+		(void) pthread_join(pt, NULL);
 	}
 	cp = umem_alloc_table[(OBJ_SIZE - 1) >> UMEM_ALIGN_SHIFT];
 	if (cp == NULL) {
@@ -369,18 +405,19 @@ main(void)
 	 */
 	margin = NTHREADS * 64;
 
-	printf("delta across resize: ptc=%+ld control=%+ld margin=%ld\n",
-	    ptc.delta, control.delta, margin);
+	printf("residual: ptc=%ld control=%ld margin=%ld\n", ptc.residual,
+	    control.residual, margin);
 
-	if (ptc.delta > control.delta + margin) {
-		printf("RESULT: FAIL (PTC-enabled growth across the magtype "
-		    "change exceeds the PTC-off control by more than the "
-		    "margin -- populated magazines are being discarded)\n");
+	if (ptc.residual > control.residual + margin) {
+		printf("RESULT: FAIL (with the PTC active, more buffers remain "
+		    "outstanding after every allocating thread exited than the "
+		    "PTC-off control leaves, by more than the margin -- "
+		    "populated magazines are being discarded)\n");
 		return (1);
 	}
 
-	printf("RESULT: PASS (PTC-enabled growth across the %d -> %d resize "
-	    "tracks the PTC-off control; populated magazines are drained, not "
-	    "discarded)\n", ptc.from, ptc.to);
+	printf("RESULT: PASS (across the %d -> %d resize, the PTC arm leaves no "
+	    "more outstanding than the PTC-off control; populated magazines "
+	    "are drained, not discarded)\n", ptc.from, ptc.to);
 	return (0);
 }
