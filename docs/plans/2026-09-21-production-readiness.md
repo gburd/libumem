@@ -203,6 +203,55 @@ operation — on both architectures.
 
 ## Phase 3 — Diagnostic contracts
 
+**Status: COMPLETE (2026-09-22), with four items explicitly left open.** Report:
+agent transcript; verification at `0aa6629` independently re-checked by the
+coordinator on x86_64 (default: 18 PASS / 1 SKIP / 0 FAIL; `--enable-introspect`:
+19/19) and by the agent on aarch64.
+
+All seven contracts are now defined in the headers/man pages, enforced in code,
+and covered by a test with a demonstrated pre-fix failure:
+
+| Item | Contract | Pre-fix failure shown |
+|---|---|---|
+| 1 cache lifetime | C1: cache-list walks hold `umem_cache_lock` throughout | SIGSEGV in `umem_findleaks` concurrent with `umem_cache_destroy`/`munmap` |
+| 2 snapshot consistency | C2-C4: two-phase collect-then-emit, no allocation under a lock, truncation reported | deadlock backtrace: `fputc`->`json_escape`->walker holding `cache_lock` |
+| 3 callback reentrancy | L1-L5: refcount + quiesce on unregister | 221 callbacks still running after unregister returned; 1 against a freed hook |
+| 4 socket auth/disconnect | A1-A3, SIGPIPE blocked, `SO_PEERCRED`, EOF poll | socket mode 777 under `umask 000`; target DIED on mid-response disconnect |
+| 5 stop/resume + fork | B1-B5, `umem_introspect_fork_child()` | fork child HUNG on an inherited armed predicate |
+| 6 core vs live | `--core` withdrawn and fails loudly; gdb failures propagate; injection refused | `--core` exited 0 printing nothing; `shell touch` via argument accepted |
+| 7 outstanding vs leak | renamed throughout; `UMEM_BUF_CACHED` returned; PTC gap reported | not one freed buffer reported CACHED or FREE |
+
+Coordinator-verified independently: injection refused (no `/tmp/PWNED`),
+`auto-load safe-path` scoped to the helper directory rather than `/`, `--core`
+exits 2 with an explanation, socket mode 0600 explicit, `SO_PEERCRED` used.
+
+`umem_fork.c` gained one weak declaration and one call in the child branch,
+following the existing `umem_interpose_release_child()` pattern.
+
+### Still open after Phase 3
+
+- **rseq cached-set subtraction is compiled but not covered by a failing
+  test.** The agent found its own `#ifdef UMEM_RSEQ_AVAILABLE` guard could
+  never fire (that header *defines* the macro), so the branch had been compiled
+  out entirely; fixed to match `umem.c`'s `__linux__ && HAVE_LINUX_RSEQ_H`.
+  But a control build then passed identically, because rseq serves zero rounds
+  (`rseq_alloc=0 rseq_free=0`), so no test can currently distinguish the two.
+  Testable only once rseq magazines are actually populated. The claim that this
+  path is covered was retracted rather than left standing.
+- **Oversize allocations are still unaccounted.** `umem.c:3440` routes them
+  past the caches into vmem, so cache-only walks omit them. Fixing needs a
+  vmem-arena walk in the core allocator.
+- **PTC bins are not enumerable**, so their held objects cannot be subtracted.
+  Reported honestly as `ptc_unaccounted` instead of being silently miscounted.
+  Needs a registry in `umem_ptc.c`.
+- **`cached_skipped` remains nondeterministic** (measured: `2 1 2 2 2 2 2 1 1 2
+  2 2` default; `1`x12 under `--disable-rseq`), so the e2e assertion is a bound
+  (<=8), not an equality.
+- **`--core` is withdrawn, not implemented.** A passive core reader is a
+  separate project.
+
+### Phase 3 as originally written
+
 Define, document, and test:
 
 - **Cache lifetime during inspection** (`umem_inspect.c:147–156`): walking the
