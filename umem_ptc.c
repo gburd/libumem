@@ -574,7 +574,15 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 			n = bin->count;
 			umem_ptc_bin_flush(bin,
 			    umem_ptc_bin_size(bin_idx));
-			ASSERT(bin->count == 0);
+			/*
+			 * Deliberately NOT an ASSERT here.  Under the probe build
+			 * the stranded count below is this regression's oracle,
+			 * and asserting would abort on the first exiting thread
+			 * before the test could read it -- turning a legible
+			 * "N objects stranded" result into a bare SIGABRT (seen:
+			 * rc=134 with no output at all).  The invariant is still
+			 * enforced, by the test, via the counter.
+			 */
 
 			/*
 			 * Returning a large number of objects can hold cc_lock
