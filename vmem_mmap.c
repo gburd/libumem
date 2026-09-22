@@ -187,18 +187,35 @@ vmem_mmap_free(vmem_t *src, void *addr, size_t size)
 	VirtualFree(addr, size, MEM_RELEASE);
 #else
 	/*
-	 * Return the span to PROT_NONE so freed address space cannot be touched,
-	 * and drop its pages.
-	 *
-	 * MADV_DONTNEED releases the physical memory (the mapping stays, so this
-	 * is not a leak); mprotect() restores the reservation's protection
-	 * without replacing the mapping, which is what lets the range merge back
-	 * into its neighbours.  The previous MAP_FIXED mmap() did both at once
-	 * but created a fresh unmergeable mapping every time -- see
-	 * vmem_mmap_alloc() above.
+	 * Release the pages.  MADV_DONTNEED drops the physical memory while
+	 * leaving the mapping in place, so this is not a leak.
 	 */
 	(void) madvise(addr, size, MADV_DONTNEED);
-	(void) mprotect(addr, size, FREE_PROT);
+
+	/*
+	 * Whether to also restore PROT_NONE is a real trade-off, measured:
+	 *
+	 *   64 contiguous 128K spans, mprotect'd RW  -> 25 VMAs (they merge)
+	 *   ...then MADV_DONTNEED on alternating ones -> 25 VMAs (no change)
+	 *   ...then mprotect(PROT_NONE) on those too  -> 88 VMAs
+	 *
+	 * The protection change is what splits the mapping, and splits are what
+	 * exhaust vm.max_map_count -- that is the whole ~5GB ceiling, not the
+	 * span size or the heap quantum (both of which were tried first and did
+	 * not help).  See docs/results/2026-09-22-umem-heap-ceiling-vma.md.
+	 *
+	 * What PROT_NONE buys is that touching a span vmem has reclaimed faults
+	 * immediately instead of silently reading stale or reused memory.  That
+	 * is worth a VMA when someone is hunting a bug, and not worth a hard
+	 * multi-gigabyte heap ceiling in production.
+	 *
+	 * So: trap under UMF_DEADBEEF (UMEM_DEBUG=default, which already exists
+	 * to catch exactly this class of error), and keep the address space
+	 * mergeable otherwise.  MADV_DONTNEED means a stray read in the
+	 * non-debug case sees a zero page rather than another allocation's data.
+	 */
+	if (unlikely(umem_flags & UMF_DEADBEEF))
+		(void) mprotect(addr, size, FREE_PROT);
 #endif
 	vmem_free(src, addr, size);
 	errno = old_errno;
