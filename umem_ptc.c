@@ -572,7 +572,7 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 				continue;
 
 			n = bin->count;
-			umem_ptc_bin_flush_all(bin,
+			umem_ptc_bin_flush(bin,
 			    umem_ptc_bin_size(bin_idx));
 			ASSERT(bin->count == 0);
 
