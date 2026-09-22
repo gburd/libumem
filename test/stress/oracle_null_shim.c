@@ -28,12 +28,15 @@
  * never installed.
  */
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <dlfcn.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 typedef void *(*umem_alloc_fn)(size_t, int);
 typedef void (*umem_free_fn)(void *, size_t);
