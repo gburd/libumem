@@ -31,6 +31,7 @@
 #include "config.h"
 #include <errno.h>
 #include <stdint.h>		/* uintptr_t, for CHUNKSIZE alignment below */
+#include <pthread.h>		/* guards the shared heap reservation */
 
 #if HAVE_SYS_MMAN_H
 #include <sys/mman.h>
@@ -121,6 +122,17 @@ static size_t CHUNKSIZE;
  *   UMEM_OPTIONS=chunksize=<bytes>   (rounded up to a page multiple)
  */
 #define	UMEM_CHUNKSIZE_DEFAULT	(64*1024)
+
+/*
+ * How much address space to reserve per heap growth.
+ *
+ * Spans carved from one reservation are contiguous, so after
+ * vmem_mmap_alloc() mprotect()s them they merge into a single VMA.  Bigger
+ * reservations therefore mean fewer VMAs; the cost is reserved (not committed)
+ * address space, which on 64-bit is effectively free.  256MB keeps the VMA
+ * count for a multi-GB heap in the dozens rather than the tens of thousands.
+ */
+#define	UMEM_HEAP_RESERVE	(256ULL * 1024 * 1024)
 #endif
 
 static vmem_t *mmap_heap;
@@ -216,41 +228,62 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 			-1, 0);
 #else
 	/*
-	 * No MAP_ALIGN outside Solaris, so ask for CHUNKSIZE alignment the hard
-	 * way: over-map by one quantum and trim the ends.
+	 * Grow in large CONTIGUOUS reservations.
 	 *
-	 * This became necessary when CHUNKSIZE stopped being the page size (see
-	 * UMEM_CHUNKSIZE_DEFAULT).  mmap() only promises page alignment, while
-	 * _vmem_extend_alloc() asserts the span is aligned to the arena's
-	 * quantum -- so a plain mmap() here aborted with
-	 * "((addr | size | alloc) & (vmp->vm_quantum - 1)) == 0" on the first
-	 * heap growth.  Caught by test/integration/test_heap_ceiling.
+	 * Why not simply mmap(size): the heap then gets one separate mapping per
+	 * growth, and separate mappings never merge, so every span costs a VMA
+	 * permanently.  That is what exhausted vm.max_map_count at ~5GB.
 	 *
-	 * The trimmed slack is unmapped immediately, so the cost is one extra
-	 * quantum of address space transiently, and zero memory: these are
-	 * PROT_NONE/MAP_NORESERVE reservations.
+	 * Why not over-map and trim for CHUNKSIZE alignment (the previous attempt
+	 * here): trimming leaves an unmapped HOLE between reservations, which is
+	 * even worse -- measured 4593 rw mappings each separated by a 64KB gap,
+	 * unable to merge for exactly that reason.
+	 *
+	 * So reserve a large aligned region at once and satisfy many growths from
+	 * it.  Spans handed out of one reservation are contiguous, so once
+	 * vmem_mmap_alloc() mprotect()s them RW they coalesce into a single VMA
+	 * instead of accumulating one per span.  Reservations are
+	 * PROT_NONE/MAP_NORESERVE, so an unused tail costs address space only.
+	 *
+	 * See docs/results/2026-09-22-umem-heap-ceiling-vma.md.
 	 */
-	if (CHUNKSIZE > (size_t)_sysconf(_SC_PAGESIZE)) {
-		size_t over = size + CHUNKSIZE;
-		char *raw = mmap(0, over, FREE_PROT, FREE_FLAGS, -1, 0);
+	static char *resv_base;		/* current reservation */
+	static size_t resv_left;
+	static pthread_mutex_t resv_lock = PTHREAD_MUTEX_INITIALIZER;
+
+	(void) pthread_mutex_lock(&resv_lock);
+	if (resv_left < size) {
+		size_t want = UMEM_HEAP_RESERVE;
+
+		while (want < size)
+			want *= 2;
+		/*
+		 * Over-map by one quantum and trim only the HEAD, so the
+		 * reservation is CHUNKSIZE-aligned (_vmem_extend_alloc asserts
+		 * this) without leaving a hole after it: the tail stays part of
+		 * the reservation and is handed out by later growths.
+		 */
+		char *raw = mmap(0, want + CHUNKSIZE, FREE_PROT, FREE_FLAGS,
+		    -1, 0);
 
 		if (raw == MAP_FAILED) {
+			(void) pthread_mutex_unlock(&resv_lock);
 			buf = MAP_FAILED;
-		} else {
-			char *aligned = (char *)P2ROUNDUP((uintptr_t)raw,
-			    CHUNKSIZE);
-			size_t head = (size_t)(aligned - raw);
-			size_t tail = over - head - size;
-
-			if (head != 0)
-				(void) munmap(raw, head);
-			if (tail != 0)
-				(void) munmap(aligned + size, tail);
-			buf = aligned;
+			goto grown;
 		}
-	} else {
-		buf = mmap(0, size, FREE_PROT, FREE_FLAGS, -1, 0);
+		char *aligned = (char *)P2ROUNDUP((uintptr_t)raw, CHUNKSIZE);
+		size_t head = (size_t)(aligned - raw);
+
+		if (head != 0)
+			(void) munmap(raw, head);
+		resv_base = aligned;
+		resv_left = want + CHUNKSIZE - head;
 	}
+	buf = resv_base;
+	resv_base += size;
+	resv_left -= size;
+	(void) pthread_mutex_unlock(&resv_lock);
+grown:
 #endif
 
 	if (buf != MAP_FAILED) {
