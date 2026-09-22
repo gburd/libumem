@@ -85,14 +85,23 @@
  *   67,443,588 invariant samples across 96 threads on a 192-vCPU arm-hi box,
  *   zero hits.
  *
- *   So when built with -DUMEM_PTC_RESIZE_PROBE the test widens that window
- *   (umem_ptc_resize_probe_ns) for the duration of the run, so threads are
- *   demonstrably sitting inside it when the one genuine resize lands.  The probe
- *   changes no decision and performs no store the library does not: the resize
- *   is still the ordinary contention-scheduled one, and any desync observed is
- *   the library's own arithmetic.  Without the probe the test still runs and
- *   still checks the invariant on every transfer, but it cannot promise to have
- *   opened the window, and reports that rather than passing.
+ *   Widening the window with a delay is ALSO not enough, and that was measured
+ *   too: this workload performs only a few hundred depot magazine loads in 25
+ *   seconds (the PTC bins absorb nearly everything), so a 200us delay per load
+ *   gives ~47ms of open window against one instant in 25s -- 0 desyncs in 89
+ *   million samples, against a build with the defect present.
+ *
+ *   So with -DUMEM_PTC_RESIZE_PROBE the window becomes a GATE rather than a
+ *   delay.  A thread that has just obtained a magazine parks inside the window;
+ *   the test waits until several are parked, forces the magtype change while they
+ *   sit there holding old-magtype magazines, and then releases them.  Each one
+ *   then records a capacity for a magazine obtained under the OLD magtype with
+ *   the cache now on the NEW one -- the P1.3b condition, reached by construction
+ *   rather than by luck.  The probe changes no decision and performs no store the
+ *   library does not: the resize is the ordinary contention-scheduled one and any
+ *   desync is the library's own arithmetic.  Without the probe the test still
+ *   checks the invariant on every transfer, but cannot promise to have opened the
+ *   window, and reports INCONCLUSIVE rather than passing.
  *
  *   READ THIS BEFORE QUOTING THE RESULT.  Because the window has to be widened
  *   to be hit at all, a failure here establishes that the window is real and
@@ -122,12 +131,6 @@
 #define NPARCEL		512	/* handoff ring depth */
 #define DEFAULT_THREADS	32
 #define RUN_SECONDS	25
-/*
- * How wide to hold the window open when the probe is compiled in.  Long enough
- * that with this many threads cycling magazines, several are inside the window
- * at any instant, so the single genuine resize necessarily lands on one.
- */
-#define PROBE_US	200
 
 extern size_t pagesize;
 
@@ -403,6 +406,8 @@ main(int argc, char **argv)
 	extern uint_t umem_depot_contention;
 #ifdef UMEM_PTC_RESIZE_PROBE
 	extern volatile long umem_ptc_resize_probe_ns;
+	extern volatile int umem_ptc_probe_gate;
+	extern volatile long umem_ptc_probe_inwindow;
 	extern volatile long umem_ptc_probe_refills;
 	extern volatile long umem_ptc_probe_desyncs;
 #endif
@@ -417,10 +422,9 @@ main(int argc, char **argv)
 		nthreads = 2;
 
 #ifdef UMEM_PTC_RESIZE_PROBE
-	printf("probe: BUILT IN; the window between obtaining a magazine and "
-	    "reading its capacity is widened to %dus for this run so the one "
-	    "resize this process gets can land inside it\n",
-	    PROBE_US);
+	printf("probe: BUILT IN; threads that obtain a magazine PARK inside the "
+	    "window until the magtype has been changed, so the race does not "
+	    "depend on timing luck\n");
 #else
 	printf("probe: NOT built in (-DUMEM_PTC_RESIZE_PROBE); the invariant is "
 	    "still checked on every transfer, but a ~20ns window and one resize "
@@ -463,10 +467,10 @@ main(int argc, char **argv)
 		return (2);
 #ifdef UMEM_PTC_RESIZE_PROBE
 	/*
-	 * Hold the window open BEFORE the workers start, so it is already wide
-	 * when the update thread makes its one resize decision.
+	 * Close the gate BEFORE the workers start, so arrivals accumulate inside
+	 * the window from the first magazine load.
 	 */
-	umem_ptc_resize_probe_ns = (long)PROBE_US * 1000L;
+	umem_ptc_probe_gate = 1;
 #endif
 	for (i = 0; i < nthreads; i++) {
 		if (pthread_create(&th[i], NULL, worker,
@@ -481,6 +485,54 @@ main(int argc, char **argv)
 	 * watch for the magtype to actually change.  umem_reap() is what
 	 * creates the update thread in a multithreaded process.
 	 */
+#ifdef UMEM_PTC_RESIZE_PROBE
+	/*
+	 * Deterministic sequence, instead of hoping the single resize lands in a
+	 * ~20ns window:
+	 *
+	 *   1. wait until threads are parked INSIDE the window, each holding a
+	 *      magazine of the current magtype,
+	 *   2. force the magtype change while they are parked,
+	 *   3. open the gate.
+	 *
+	 * Every released thread then records a capacity for a magazine it
+	 * obtained under the OLD magtype, with the cache now on the new one --
+	 * which is precisely the P1.3b condition.
+	 */
+	{
+		int waited;
+
+		for (waited = 0; waited < 100 &&
+		    umem_ptc_probe_inwindow < 4; waited++)
+			(void) usleep(100000);
+		printf("  %ld threads parked inside the window\n",
+		    umem_ptc_probe_inwindow);
+
+		for (sec = 0; sec < RUN_SECONDS; sec++) {
+			umem_reap();
+			(void) sleep(1);
+			magsize_now = cp->cache_magtype->mt_magsize;
+			if (magsize_now != magsize_start) {
+				printf("  magazine resize forced at t=%ds: "
+				    "%d -> %d rounds, with %ld threads still "
+				    "parked holding old-magtype magazines\n",
+				    sec, magsize_start, magsize_now,
+				    umem_ptc_probe_inwindow);
+				(void) atomic_exchange(&resizes_seen, 1);
+				break;
+			}
+		}
+
+		/* Release them into the post-resize world. */
+		umem_ptc_probe_gate = 0;
+
+		/* Let the released threads run, and keep new ones flowing. */
+		for (sec = 0; sec < 5; sec++) {
+			umem_reap();
+			(void) sleep(1);
+		}
+	}
+#else
 	for (sec = 0; sec < RUN_SECONDS; sec++) {
 		umem_reap();
 		(void) sleep(1);
@@ -492,12 +544,13 @@ main(int argc, char **argv)
 				    magsize_now);
 		}
 	}
+#endif
 
 	atomic_store(&stop, 1);
 	for (i = 0; i < nthreads; i++)
 		(void) pthread_join(th[i], NULL);
 #ifdef UMEM_PTC_RESIZE_PROBE
-	umem_ptc_resize_probe_ns = 0;
+	umem_ptc_probe_gate = 0;
 #endif
 
 	magsize_now = cp->cache_magtype->mt_magsize;
@@ -556,7 +609,8 @@ main(int argc, char **argv)
 		return (1);
 	}
 	printf("RESULT: PASS (every PTC magazine was described by its own "
-	    "capacity across %d -> %d resize, with the window held open for "
-	    "%dus per transfer)\n", magsize_start, magsize_now, PROBE_US);
+	    "capacity across the %d -> %d resize, including the magazines held "
+	    "by threads parked inside the window while it happened)\n",
+	    magsize_start, magsize_now);
 	return (0);
 }

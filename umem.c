@@ -2099,27 +2099,50 @@ umem_mag_capacity(umem_magazine_t *mp)
  */
 #ifdef UMEM_PTC_RESIZE_PROBE
 #include <time.h>
-volatile long umem_ptc_resize_probe_ns = 0;
 /*
- * Observation counters for the P1.3b window, read by
- * test/stress/repro_ptc_resize_capacity.c.  Sampling the PTC state from the
- * owning thread LATER cannot be relied on to see a desync (the magazine may be
- * replaced first), so the check is made here, at the instant the capacity is
- * recorded -- the only point where "the magazine and its capacity are one
- * decision" is either true or false.
+ * Test-only gate for the P1.3b window, driven by
+ * test/stress/repro_ptc_resize_capacity.c.
  *
- * probe_refills also lets the test prove the path was exercised at all: a run
- * where no magazine was ever loaded proves nothing, and must not be reported as
- * a pass.
+ * A timed delay here is not enough, and the measurement proved it: this workload
+ * performs only a few hundred depot magazine loads in 25 seconds (the PTC bins
+ * absorb nearly everything), and a cache resizes exactly once, so even a 200us
+ * delay per load leaves ~47ms of open window against a single instant somewhere
+ * in 25 seconds -- 0 hits in 89 million samples.
+ *
+ * So the probe BLOCKS instead of sleeping: a thread that has just obtained a
+ * magazine parks here and publishes that it is inside the window.  The test
+ * waits until enough threads are parked, forces the magtype change, and then
+ * releases them -- at which point they proceed to record a capacity, with the
+ * magtype provably having changed while they held the magazine.  No timing luck.
+ *
+ * Blocking here is safe: umem_depot_alloc_trylock() releases ml_lock before
+ * returning, so a thread parked at this point holds no allocator lock, and the
+ * update thread's resize (which takes cc_lock and ml_lock) cannot be blocked by
+ * it.  The wait is bounded so a mis-driven test cannot hang the process.
  */
-volatile long umem_ptc_probe_refills = 0;
-volatile long umem_ptc_probe_desyncs = 0;
+volatile long umem_ptc_resize_probe_ns = 0;
+volatile int umem_ptc_probe_gate = 0;		/* 1 = park arrivals here */
+volatile long umem_ptc_probe_inwindow = 0;	/* threads parked right now */
+volatile long umem_ptc_probe_refills = 0;	/* magazines loaded */
+volatile long umem_ptc_probe_desyncs = 0;	/* capacity != magazine's own */
 
 static void
 umem_ptc_resize_probe(void)
 {
 	long ns = umem_ptc_resize_probe_ns;
 	struct timespec ts;
+
+	if (umem_ptc_probe_gate) {
+		int spins = 0;
+
+		(void) atomic_add_64((uint64_t *)&umem_ptc_probe_inwindow, 1);
+		/* Bounded: 30s at 1ms, so a mis-driven test cannot hang. */
+		while (umem_ptc_probe_gate && spins++ < 30000)
+			(void) usleep(1000);
+		(void) atomic_add_64((uint64_t *)&umem_ptc_probe_inwindow,
+		    -1ULL);
+		return;
+	}
 
 	if (ns <= 0)
 		return;
@@ -2131,6 +2154,11 @@ umem_ptc_resize_probe(void)
 /*
  * Record whether the capacity just written for `mp` is in fact that magazine's
  * own capacity.  Observation only: changes no decision.
+ *
+ * This has to be done HERE rather than by the test sampling its own PTC later:
+ * a desynchronized magazine is typically replaced before the next sample, so an
+ * after-the-fact check looks at state that has already moved on (measured: 0
+ * observed desyncs in 86M such samples on a build with the defect present).
  */
 static void
 umem_ptc_probe_observe(umem_magazine_t *mp, int recorded)
