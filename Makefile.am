@@ -664,7 +664,8 @@ TESTS += test/unit/test_overflow_contracts \
 	test/stress/interpose_regress.sh \
 	test/stress/oracle_control.sh \
 	test/unit/test_lifecycle_churn \
-	test/bench/test_bench_accounting
+	test/bench/test_bench_accounting \
+	test/bench/check_budget.sh
 
 TEST_EXTENSIONS = .sh
 # The .sh tests are '#!/usr/bin/env bash' scripts using bash-only syntax, and
@@ -685,6 +686,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/stress/oracle_fast.sh \
 	test/stress/oracle_control.sh \
+	test/bench/check_budget.sh \
 	test/stress/interpose_regress.sh
 
 # Generated API documentation goes to doxygen-out/, NOT docs/.

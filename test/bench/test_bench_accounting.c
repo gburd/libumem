@@ -12,11 +12,13 @@
  * P2.1 total-vs-per-thread budget
  *   workload_config.operation_count is a TOTAL across all threads.  Run the
  *   multi workload with the same total at 1, 2 and 4 threads: total_operations
- *   must stay ~constant.  Pre-fix, bench_main divided the total by the thread
- *   count and the workload divided again, so work fell as 1/threads^2 -- at 4
- *   threads the total was a quarter of the 1-thread total.  We call the
- *   workload directly here, so this case pins the workload's half of the
- *   double division; the caller's half is pinned by ops_budget_is_total.
+ *   must stay ~constant, bounded on BOTH sides.  The lower bound catches the
+ *   budget being divided more than once (matrix.sh divided, then bench_main.c
+ *   divided again, so aggregate work fell as 1/threads^2).  The upper bound
+ *   catches the workload treating operation_count as per-thread, which is what
+ *   it did pre-fix and what made pre-dividing in every caller look necessary.
+ *   The end-to-end version of this, through matrix.sh itself, is
+ *   test/bench/check_budget.sh.
  *
  * P2.1 work floor
  *   A total budget too small to divide meaningfully must be raised to
@@ -133,14 +135,30 @@ test_ops_budget_is_total(void)
 	    "the floor should not apply at this budget; test is misconfigured");
 
 	/* Integer division across threads means exact equality is not
-	 * guaranteed; 1% is far tighter than the 4x error the defect caused. */
+	 * guaranteed.  BOTH bounds matter:
+	 *   lower -- catches the budget being divided more than once (the
+	 *            matrix.sh + bench_main.c stack, which gave 1/threads^2);
+	 *   upper -- catches the workload treating operation_count as
+	 *            PER-THREAD, which is what it did pre-fix and what made
+	 *            pre-dividing in the caller look necessary.
+	 * 1% is far tighter than the 4x error either direction produced. */
 	CHECK(t2.total_operations > total * 99 / 100,
 	    "2 threads ran %llu of %llu total ops -- the budget was divided "
 	    "more than once", (unsigned long long)t2.total_operations,
 	    (unsigned long long)total);
+	CHECK(t2.total_operations < total * 101 / 100,
+	    "2 threads ran %llu ops for a %llu total budget -- "
+	    "operation_count is being treated as per-thread",
+	    (unsigned long long)t2.total_operations,
+	    (unsigned long long)total);
 	CHECK(t4.total_operations > total * 99 / 100,
 	    "4 threads ran %llu of %llu total ops -- the budget was divided "
 	    "more than once", (unsigned long long)t4.total_operations,
+	    (unsigned long long)total);
+	CHECK(t4.total_operations < total * 101 / 100,
+	    "4 threads ran %llu ops for a %llu total budget -- "
+	    "operation_count is being treated as per-thread",
+	    (unsigned long long)t4.total_operations,
 	    (unsigned long long)total);
 	CHECK(t1.thread_count == 1 && t2.thread_count == 2 &&
 	    t4.thread_count == 4, "thread_count must be what actually ran");
