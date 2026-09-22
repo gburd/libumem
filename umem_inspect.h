@@ -17,11 +17,34 @@
  * mdb.  Every ::foo dcmd has a umem_foo() C entry point here, plus a
  * JSON variant for tool consumption.
  *
- * Thread-safety: inspection functions acquire cache_lock on every cache
- * they visit.  They are safe to call while the target is running but
- * will serialize with concurrent allocations in each cache they touch.
- * For a wedged or crashed target, prefer calling from a debugger so that
- * no locks are actually required (the target is stopped).
+ * Thread-safety and locking contract (implemented in umem_inspect.c, where
+ * the clauses are labelled C1..C5):
+ *
+ *   C1 CACHE LIFETIME.  Every cache-list walk holds umem_cache_lock for its
+ *      whole duration, so a cache cannot be destroyed underneath it.
+ *      Inspection therefore BLOCKS umem_cache_create()/umem_cache_destroy()
+ *      while it collects.  It does not block allocation.
+ *
+ *   C2 NO ALLOCATION UNDER ALLOCATOR LOCKS.  Collection copies into a buffer
+ *      sized before any lock is taken; formatting, sorting, file I/O and YOUR
+ *      CALLBACK all run with every allocator lock released.  A umem_walk_*()
+ *      callback may therefore allocate, do I/O, and call back into libumem.
+ *
+ *   C3 SNAPSHOT SCOPE.  Per cache, the collected set is consistent.  ACROSS
+ *      caches it is not one instant: cache A is read before cache B and
+ *      allocation continues in between.  A set that outgrows the snapshot
+ *      buffer is reported as truncated, never silently shortened.
+ *
+ *   C4 WHAT MAY BE TORN.  Counters are read under the lock that writes them,
+ *      so each is whole, but a set of them is not a single instant.  The rseq
+ *      per-CPU magazine state has no mutex and is read best-effort.  The
+ *      transaction log's lh_lock covers only chunk rotation -- records are
+ *      written under a per-CPU lock, so a record can be observed half-written;
+ *      implausible records are dropped.
+ *
+ *   C5 DEBUGGER USE.  These functions take allocator mutexes.  Calling them
+ *      from a debugger against a target stopped while one of those mutexes was
+ *      held will hang the call.  Retry, or snapshot from inside the process.
  *
  * Debug requirements: most functions work at all UMEM_DEBUG levels but
  * produce richer output at higher levels.  Specifically:
@@ -70,11 +93,12 @@ typedef struct umem_buffer_info {
 } umem_buffer_info_t;
 
 #define	UMEM_BUF_UNKNOWN	0
-#define	UMEM_BUF_ALLOCATED	1
+#define	UMEM_BUF_ALLOCATED	1	/* held above the slab layer */
 #define	UMEM_BUF_FREE		2	/* on a slab freelist */
-#define	UMEM_BUF_CACHED		3	/* sitting in a magazine / PTC */
+#define	UMEM_BUF_CACHED		3	/* freed, resident in a magazine */
 
-/* Callback signature for umem_walk_*.  Returning non-zero stops the walk. */
+/* Callback signature for umem_walk_*.  Returning non-zero stops the walk.
+ * Runs with NO allocator lock held (C2): it may allocate and do I/O. */
 typedef int (*umem_buffer_cb_t)(const umem_buffer_info_t *info, void *arg);
 
 /* ------------------------------------------------------------------------
@@ -92,15 +116,25 @@ typedef enum umem_inspect_format {
  * ------------------------------------------------------------------------ */
 
 /*
- * ::findleaks equivalent.  Walks every cache that has UMF_HASH set and
- * enumerates live bufctls; when UMF_AUDIT is also set, groups them by
- * stack-trace fingerprint and reports the N largest leak classes.
+ * ::findleaks equivalent.  Reports OUTSTANDING ALLOCATIONS grouped by
+ * allocation stack fingerprint, ranked by total bytes -- not proven leaks: a
+ * buffer the application legitimately still owns is outstanding too.
  *
- * Without UMF_AUDIT, still reports counts per cache and a stack-less
- * summary (useful to point UMEM_DEBUG=audit at the offending workload).
+ * Buffers resident in per-CPU magazines, depot magazines and rseq per-CPU
+ * magazines are subtracted (reported as cached_skipped).  NOT subtracted:
+ * buffers retained in another thread's per-thread cache (PTC), because
+ * thread-local bins have no process-wide registry -- the report sets
+ * ptc_unaccounted when PTC is enabled.  Oversize allocations (served straight
+ * from a vmem arena, bypassing the caches) are not accounted at all.
  *
- * Returns the total number of live buffers encountered (possibly leaked).
- * Emits output to `out`; if NULL, stderr is used.
+ * Treat the count as an UPPER BOUND; the signal is a class that grows across
+ * successive reports.
+ *
+ * Without UMF_AUDIT there are no stack traces, so classes cannot be
+ * distinguished; counts per cache are still accurate.
+ *
+ * Returns the total number of outstanding buffers encountered.  Emits output
+ * to `out`; if NULL, stderr is used.
  */
 size_t umem_findleaks(FILE *out, umem_inspect_format_t fmt,
     unsigned max_classes);
@@ -114,15 +148,23 @@ size_t umem_log_dump(FILE *out, umem_inspect_format_t fmt,
     unsigned max_records);
 
 /*
- * ::umastat equivalent.  Per-cache summary: bufsize, inuse, total,
- * memory in use, successful allocs, failed allocs, depot contention.
+ * ::umastat equivalent.  Per-cache summary: bufsize, buffers HELD above the
+ * slab layer, total, memory in use, successful allocs, failed allocs, depot
+ * contention.
+ *
+ * HELD is cache_slab_alloc - cache_slab_free.  A buffer the application has
+ * already freed but which still sits in a magazine, rseq magazine or PTC bin
+ * is counted: it is not a measure of application memory in use.
  */
 void umem_status_dump(FILE *out, umem_inspect_format_t fmt);
 
 /*
- * ::whatis <addr> equivalent.  Given any pointer, attempt to resolve it
- * to a cache + slab + buffer + state.  Fills `out` on success.  Returns
- * 0 on success, -1 if addr is not in any umem-owned region.
+ * ::whatis <addr> equivalent.  Resolves a pointer to a cache + slab + buffer +
+ * state (UMEM_BUF_ALLOCATED / _FREE / _CACHED).  Fills `out` on success.
+ * Returns 0 on success, -1 if addr is not in any umem-owned region.
+ *
+ * A buffer retained in another thread's PTC bin reports ALLOCATED, since
+ * thread-local bins are not enumerable from outside the owning thread.
  */
 int umem_whatis(const void *addr, umem_buffer_info_t *out);
 

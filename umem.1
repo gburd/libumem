@@ -16,7 +16,7 @@ umem \- runtime introspection for libumem-using processes
 .I BIN
 .I CMD
 .RI [ ARGS... ]
-.RB " (accepted, but see MODES: produces no report)"
+.RB " (accepted, but REFUSED: see MODES)"
 .br
 .B umem
 .B \-\-dump
@@ -58,8 +58,9 @@ Attach to a live process.  The process must be linked against
 sub-command and detached afterwards.
 .TP
 \fB\-\-core\fR \fICORE\fR \fB\-\-exe\fR \fIBIN\fR
-.B DOES NOT WORK; DO NOT USE.
-This mode is accepted and exits 0 while producing
+.B NOT SUPPORTED; REFUSED.
+This mode now exits 2 with an explanation.  It previously exited 0 while
+producing
 .I no report at all,
 which is indistinguishable from "nothing found".  Verified 2026-09-21: the
 same command against a live process printed 200 outstanding buffers, and
@@ -106,14 +107,25 @@ These are
 .I outstanding allocations,
 not proven leaks.  Allocator-internal caches
 .RB ( UMC_NOHASH ", " UMC_QCACHE )
-are filtered out, and buffers sitting in per-CPU magazines are subtracted
-(and reported as
+are filtered out, and buffers sitting in per-CPU magazines, depot magazines
+and rseq per-CPU magazines are subtracted (and reported as
 .IR cached_skipped ).
-Buffers held by the per-thread cache (PTC) or the rseq per-CPU layer are
+Buffers retained in another thread's per-thread cache (PTC) are
 .I not
-subtracted, oversize allocations are not accounted, and a buffer the
-application legitimately still owns is outstanding too.  Treat the count as
-an upper bound and look for classes that grow across successive reports.
+subtracted \(em thread-local bins have no process-wide registry, so no other
+thread can enumerate them; the JSON report sets
+.I ptc_unaccounted
+and the text report says so.  Run the target with
+.B UMEM_OPTIONS=ptc=0
+for an exact count.  Oversize allocations (above the largest size class, served
+straight from a vmem arena rather than a cache) are also not accounted, and a
+buffer the application legitimately still owns is outstanding too.  Treat the
+count as an upper bound and look for classes that grow across successive
+reports.
+.IP
+If the allocation set grows faster than it can be snapshotted, the report says
+so explicitly rather than silently under-reporting
+.RI ( truncated " in JSON)."
 .IP
 For stack traces the target must run with
 .B UMEM_DEBUG=audit
@@ -130,8 +142,18 @@ stack trace.  Requires the target to run with
 .TP
 \fBstatus\fR \fB[\-f text|json]\fR
 Per-cache summary (mdb's \fB::umastat\fR equivalent): bufsize, buffers
-in use, total buffers, memory in use, successful and failed
+held above the slab layer, total buffers, memory in use, successful and failed
 allocations, depot contention.
+.IP
+The
+.B HELD
+column (
+.I inuse
+in JSON) is
+.IR cache_slab_alloc " \- " cache_slab_free :
+buffers the slab layer has handed upward.  A buffer the application has already
+freed but which still sits in a magazine, an rseq magazine or a PTC bin is
+counted here.  It is not a count of memory the application is using.
 .TP
 \fBwalk\fR \fB[allocated|freed|log]\fR \fB[\-f text|json]\fR \fB[\-n N]\fR
 Stream every entry in the requested set without grouping.  Useful for
@@ -139,9 +161,20 @@ custom downstream processing.  Default kind is
 .BR allocated .
 .TP
 \fBwhatis\fR \fIADDR\fR
-Resolve an address to its owning cache, slab, and allocation state
-(ALLOCATED, FREE, or CACHED).  When stack traces are available, also
-prints the alloc/free stack from the bufctl audit record.
+Resolve an address to its owning cache, slab, and buffer state:
+.B ALLOCATED
+(held, and not found in any enumerable cache),
+.B FREE
+(on a slab freelist), or
+.B CACHED
+(freed by the application but still resident in a magazine, depot magazine or
+rseq magazine).  When stack traces are available, also prints the alloc/free
+stack from the bufctl audit record.
+.IP
+A buffer retained in another thread's PTC bin reports
+.B ALLOCATED:
+thread-local bins are not enumerable from outside the owning thread.  That is
+the one documented false positive.
 .TP
 \fBbufctl\fR \fIADDR\fR
 Alias for
@@ -272,13 +305,24 @@ $ umem --dump /var/log/umem/14.ums log -n 100
 .RE
 .fi
 .SH EXIT STATUS
-Returns 0 on success, non-zero on error (target not running, missing
-debugger, malformed snapshot, etc.).
-.PP
-Note that
+.TP
+.B 0
+The command ran and produced a report.
+.TP
+.B 2
+Usage error, or the command could not produce a report: the debugger could not
+be executed, could not attach, exited nonzero, was killed, produced no
+sentinel-delimited output, or
 .B \-\-core
-returns 0 while printing nothing; do not treat a zero exit from that mode as
-"no findings".
+was requested (which is refused; see MODES).  The debugger's own diagnostics
+are passed through on standard error.
+.PP
+A zero exit therefore means a report was produced.  This was not previously
+true: every debugger exit status except 127 was treated as success and the
+debugger's standard error was discarded, so an attach failure \(em and every
+.B \-\-core
+invocation \(em exited 0 with empty output, indistinguishable from "no
+findings".
 .SH SEE ALSO
 .BR umem_alloc (3),
 .BR umem_cache_create (3),

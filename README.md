@@ -266,7 +266,7 @@ Where libumem **wins decisively**:
 - **Forensics without re-running the workload.** Snapshot a live process
   (`umem_inspect_snapshot()`, or `umem --pid ... snapshot`) and analyze the
   `.ums` file offline, anywhere, with no target process required. Note that
-  `umem --core` does **not** work — see the Debugging section.
+  `umem --core` does **not** work and is refused — see the Debugging section.
 - **Embedded address-space management.**  vmem hierarchies handle
   use cases (DMA pools, NUMA-bound allocations, custom
   page-replacement) where you'd otherwise hand-roll.
@@ -586,15 +586,20 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
   Non-invasive (no in-process thread). Best for CI, post-mortem, and
   scripted leak-finding.
 
-  **`umem --core` does not work.** It is accepted and exits 0 while printing
-  nothing, which reads as "no leaks". Verified 2026-09-21 against a control:
+  **`umem --core` does not work, and now says so.** It is refused with exit
+  status 2 and an explanation. It previously exited 0 while printing nothing,
+  which reads as "no leaks". Verified 2026-09-21 against a control:
   the same command on a live process reported 200 outstanding buffers; on
   that process's own core it produced zero bytes
   ([log](docs/results/2026-09-21-core-mode-produces-no-report.log)). The
   cause is structural — every command is executed by calling
   `umem_inspect(3)` entry points *inside the target process*, and a core has
-  no process to call into. A passive core reader is not implemented
-  (Phase 3 of the readiness plan). Use the snapshot workflow instead.
+  no process to call into. A passive core reader is not implemented. Use the
+  snapshot workflow instead.
+
+  A zero exit from `umem` now means a report was produced: debugger failures
+  (cannot attach, nonzero exit, killed, no output) exit 2 and pass gdb's
+  stderr through, instead of being reported as a clean empty run.
 - **`umemctl`** — an opt-in in-process channel (`--enable-introspect` +
   `UMEM_OPTIONS=introspect=1`) for the live/interactive things a ptrace
   snapshot cannot do: **streaming** event logs (`logtail`), a live TUI
@@ -609,7 +614,7 @@ umem --pid $(pgrep myapp) findleaks -f json | jq .
 umem --pid $(pgrep myapp) status
 umem --pid $(pgrep myapp) snapshot /tmp/state.ums   # capture while alive
 umem --dump /tmp/state.ums findleaks               # analyze offline
-#   NOT: umem --core ...  (accepted, reports nothing -- see above)
+#   NOT: umem --core ...  (refused with exit 2 -- see above)
 
 # umemctl: live streaming + interactive break-on-leak
 #   (built with --enable-introspect; target run with UMEM_OPTIONS=introspect=1)

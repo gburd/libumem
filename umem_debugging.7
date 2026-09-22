@@ -113,8 +113,8 @@ $ umem --pid $! findleaks -f json | jq '.classes[0]'
 .SS Core dump \(em not supported
 .PP
 .B umem \-\-core
-is accepted but produces
-.I no report,
+is refused: it exits 2 with an explanation.  It previously produced
+.I no report
 while exiting 0.  Verified 2026-09-21 against a control: the same command
 on a live process listed 200 outstanding buffers; on that process's core it
 printed zero bytes and returned success.  Every command is implemented by
@@ -124,7 +124,7 @@ instead.
 .PP
 .in +4
 .nf
-$ umem --core core.12345 --exe ./myapp findleaks   # prints nothing
+$ umem --core core.12345 --exe ./myapp findleaks   # exits 2, explains why
 .fi
 .in -4
 .SS Offline (binary snapshot)

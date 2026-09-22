@@ -58,25 +58,53 @@ argument may be passed
 .BR NULL ;
 output is then written to
 .BR stderr .
-Each cache is briefly locked while it is walked, and no global state is
-mutated.  Two caveats the 2026-09-21 review identified, both tracked in
-Phase 3 of
-.IR docs/plans/2026-09-21-production-readiness.md :
-the cache list itself is walked without
-.BR umem_cache_lock ,
-so a cache destroyed concurrently can be read; and a report is not a
-consistent snapshot, since per-cache locks are taken and released one cache
-at a time.  Prefer inspecting a quiesced process, a snapshot, or a core.
+.PP
+.B LOCKING AND SNAPSHOT CONTRACT.
+Every cache-list walk holds
+.B umem_cache_lock
+for its whole duration, so a cache cannot be destroyed underneath it.
+Inspection therefore blocks
+.BR umem_cache_create (3)
+and
+.BR umem_cache_destroy (3)
+while it collects; it does not block allocation.
+.PP
+Collection is two-phase: buffers are copied under the relevant locks into a
+buffer sized beforehand, and then formatting, sorting, classification, file
+I/O and any caller-supplied walk callback run with every allocator lock
+released.  A walk callback may therefore allocate, perform I/O, and call back
+into libumem.
+.PP
+A report is consistent per cache but is
+.I not
+one instant across caches: cache A is read before cache B, and allocation
+continues in between.  If the allocation set grows faster than it can be
+snapshotted the report says so explicitly \(em
+.I truncated
+in JSON \(em rather than silently under-reporting.
+.PP
+Statistics counters are read under the lock that writes them, so each is
+whole, but a set of them is not a single instant.  The rseq per-CPU magazine
+state has no mutex by construction and is read best-effort with clamped
+counts.  The transaction log's
+.B lh_lock
+protects only chunk rotation \(em records are written under a per-CPU lock, so
+a record can be observed half-written; implausible records are discarded
+rather than reported.
+.PP
+Because these routines take allocator mutexes, calling them from a debugger
+against a target that was stopped while one of those mutexes was held will
+hang the call.  Retry, or take a snapshot from inside the process.
 .SS umem_findleaks
-Walks every user-visible cache, enumerates buffers that are currently
-allocated, groups them by allocation stack-trace fingerprint, and
+Walks every user-visible cache, enumerates buffers that are currently held,
+groups them by allocation stack-trace fingerprint, and
 emits the top
 .I max_classes
 classes ranked by total bytes.  Returns the number of buffers
 visited.
 .PP
-Buffers currently sitting in per-CPU magazines are detected and
-subtracted (and reported as
+Buffers currently sitting in magazines are detected and subtracted (and
+reported as
 .I cached_skipped
 in the JSON output), and allocator-internal caches
 .RB ( UMC_NOHASH ", " UMC_QCACHE )
@@ -85,14 +113,20 @@ are filtered out.
 The result is
 .I outstanding allocations,
 which is not the same as leaks.  The cached-set computation covers the
-central depot, the per-CPU depot arrays, and each per-CPU loaded/previous
-magazine; it does
+central depot, the per-CPU depot arrays, each per-CPU loaded/previous
+magazine, and each rseq per-CPU loaded/previous magazine.  It does
 .I not
-cover buffers held by the per-thread cache (PTC) or the rseq per-CPU layer,
-and oversize allocations are not accounted here.  A buffer the application
-legitimately still owns is also outstanding.  Use the count as an upper
-bound on leaked buffers, and compare reports over time rather than reading
-a single one as a verdict.
+cover buffers retained in another thread's per-thread cache (PTC): those bins
+are thread-local with no process-wide registry, so no other thread can
+enumerate them.  When PTC is enabled the JSON report sets
+.I ptc_unaccounted
+and the text report states it; run the target with
+.B UMEM_OPTIONS=ptc=0
+for an exact count.  Oversize allocations \(em above the largest size class,
+served directly from a vmem arena rather than from a cache \(em are not
+accounted here at all.  A buffer the application legitimately still owns is
+also outstanding.  Use the count as an upper bound, and compare reports over
+time rather than reading a single one as a verdict.
 .PP
 Stack traces are present only when the target was started with
 .BR UMEM_DEBUG=audit ;
@@ -112,13 +146,35 @@ suffixes.  Returns the number of records emitted.
 .SS umem_status_dump
 Per-cache summary equivalent to mdb's
 .BR ::umastat :
-buffer size, buffers in use, total, memory in use, allocations,
+buffer size, buffers
+.B HELD
+above the slab layer, total, memory in use, allocations,
 allocation failures, and depot contention.
+.PP
+.B HELD
+(
+.I inuse
+in JSON) is
+.IR cache_slab_alloc " \- " cache_slab_free .
+A buffer the application has already freed but which still sits in a magazine,
+an rseq magazine or a PTC bin is counted here, so this is not a measure of
+application memory in use.  The
+.I alloc_ops
+field is recomputed by summing the per-CPU counters; the
+.B cache_alloc_ops
+field it used to report is only refreshed inside an optional magazine-tuning
+branch and otherwise reads zero or stale.
 .SS umem_whatis
 Resolves
 .I addr
-to its owning cache, slab, and current state (allocated, free, or
-cached in a magazine).  Fills
+to its owning cache, slab, and current state:
+.B UMEM_BUF_ALLOCATED
+(held),
+.B UMEM_BUF_FREE
+(on a slab freelist), or
+.B UMEM_BUF_CACHED
+(freed by the application but still resident in a magazine, depot magazine or
+rseq magazine).  Fills
 .I *out
 on success.  Prefers user-visible caches over the qcaches that back
 them: an address inside an
@@ -133,6 +189,11 @@ is not in any libumem region (with
 .B errno
 set to
 .BR ENOENT ).
+.PP
+A buffer retained in another thread's PTC bin reports
+.BR UMEM_BUF_ALLOCATED ,
+since thread-local bins are not enumerable from outside the owning thread.
+That is the one documented false positive.
 .SS umem_bufctl_audit_dump
 Pretty-prints the bufctl audit record (as the mdb dcmd
 .B ::bufctl_audit
@@ -149,8 +210,12 @@ is invoked once per entry with a
 that the callback may use, copy, or ignore.  Returning a non-zero
 value from
 .I cb
-stops the walk early.  All three walkers acquire each cache's lock
-for the duration of that cache's portion of the walk.
+stops the walk early.
+.PP
+The callback runs against a snapshot, with
+.B no allocator lock held,
+so it may allocate, perform I/O, and call back into libumem.  It previously
+ran under each cache's lock, which deadlocks under malloc interposition.
 .SS umem_walk_dump
 Convenience wrapper that streams every entry in
 .I kind
