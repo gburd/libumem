@@ -105,7 +105,16 @@ assert d["total_bytes"] == 8832, f"expected 8832 bytes leaked, got {d['total_byt
 # reds that agents then mis-attributed to their own changes.  What this test
 # must actually establish is that the cached-set subtraction RUNS and does
 # not over-subtract: the deliberate leaks below are the deterministic part.
-assert 0 <= d["cached_skipped"] <= 32, \
+#
+# Phase 3 re-measured this after the accounting fix (rseq magazines are now
+# subtracted too).  It is STILL NOT DETERMINISTIC: 12 runs of a default build
+# gave 2,1,2,2,2,2,2,1,1,2,2,2 and 12 runs of --disable-rseq gave 1 every
+# time.  So the bound is tightened from 32 to 8 -- enough to catch
+# over-subtraction, without asserting a value the allocator does not promise.
+# It is deliberately not asserted >= 1: with PTC enabled a freed buffer can
+# land in a thread-local bin instead of a magazine, and nothing guarantees any
+# given run leaves one in a magazine.
+assert 0 <= d["cached_skipped"] <= 8, \
     f"cached_skipped out of plausible range: {d['cached_skipped']}"
 # At least one class with cache=umem_alloc_4096
 assert any(c["cache"] == "umem_alloc_4096" for c in d["classes"]), \
@@ -208,7 +217,7 @@ import json, sys
 d = json.loads(sys.stdin.read())
 assert d["total_buffers"] == 12, "offline buffer count mismatch"
 assert d["total_bytes"] == 8832, "offline byte count mismatch"
-assert 0 <= d["cached_skipped"] <= 32, \
+assert 0 <= d["cached_skipped"] <= 8, \
     f"offline cached_skipped out of plausible range: {d['cached_skipped']}"
 print("  OK: offline matches live")
 '
