@@ -200,8 +200,14 @@ build.log
 test.log
 benchmark*.log
 
-# Session artifacts (agent-generated)
-*AGENT*.md
+# Session artifacts (agent-generated scratch files, NOT deliberate docs).
+#
+# AGENTS.md is deliberately NOT ignored: it is this project's steering document
+# (working rules for humans and agents) and belongs in version control.  The
+# old blanket `*AGENT*.md` pattern silently excluded it, so it existed only as
+# an untracked local file and `git add -A` skipped it without comment.
+*_AGENT_*.md
+AGENT_NOTES*.md
 *TASK_*.md
 *SESSION*.md
 *STATUS_*.md
