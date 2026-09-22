@@ -34,8 +34,8 @@ the pre-fix failure, EC2 verification on x86_64 and aarch64.
 | P1.2 fork lock order | FIXED | gdb stacks both arches |
 | P1.2 follow-up: interposer fork hooks | FIXED | `2026-09-22` job logs |
 | P1.3a PTC thread-exit drain | FIXED | `2026-09-22-p1.3-ptc-lifetime.md` |
-| P1.3b magazine capacity/resize race | **OPEN** | analyzed, not reproduced |
-| P1.3c populated magazine discarded | **OPEN** | analyzed, not reproduced |
+| P1.3b magazine capacity/resize race | FIXED | `2026-09-22-p1.3bc-magazine-resize.md` |
+| P1.3c populated magazine discarded | FIXED | `2026-09-22-p1.3bc-magazine-resize.md` |
 | P1.4 destroy with retained slabs | FIXED | `2026-09-21` reclaim report |
 | P1.5a/b/c reclaim metadata + publication | FIXED | TSAN 1 -> 0, aborts pre-fix |
 | P1.6 maintenance-thread startup | FIXED | evidence retracted once, then redone |
@@ -48,7 +48,20 @@ this workstream (four regressions silently dropped from `TESTS` by a comment
 continuation, and a nondeterministic `cached_skipped` assertion that made
 `--disable-rseq` unable to pass `make check` at all).
 
-Phase 1 is **not** complete: P1.3b and P1.3c remain.
+Phase 1 is complete as listed. Two caveats a reader should carry forward:
+
+- **P1.3b's regression is a mechanism demonstration, not a rate measurement.**
+  Its window is ~20ns and a cache resizes at most once per process, so chance did
+  not open it in 67M samples against a build with the defect present. It has to
+  be opened deliberately (a test-only probe that parks threads inside the
+  window). The defect and the fix are both real -- pre-fix the same run produces
+  3.1M capacity desyncs and a SIGSEGV -- but nothing here establishes that this
+  occurs at any particular rate in production.
+- **P1.3a's regression has a marginal oracle on x86_64.** It fails ~17% of runs
+  post-fix versus ~7% at baseline, with the PTC arm under test unchanged
+  (151 -> 147) and the *control* arm having dropped (196 -> 66), which tightens
+  its fixed margin. Not a P1.3a regression, but its threshold needs replacing
+  with an exact oracle. Details in `2026-09-22-p1.3bc-magazine-resize.md`.
 
 ### P1.1 Interposer `calloc` storage ownership and concurrency
 `malloc_interpose.c:189, 443–479`
@@ -85,16 +98,21 @@ bin and then freed the PTC, stranding the remainder while the slab layer still
 counted those objects as allocated. See
 `docs/results/2026-09-22-p1.3-ptc-lifetime.md`.
 
-**P1.3b (OPEN).** A magazine resize between obtaining a magazine and reading
-the cache's current capacity lets an old smaller magazine be indexed with the
-new larger size. Reachable by default: ordinary depot contention schedules a
-resize independently of `umem_magazine_tuning`. Needs the magazine and its
-capacity to be one consistent decision, demonstrated on a high-core box under
-ASan.
+**P1.3b (FIXED, 2026-09-22).** A magazine resize between obtaining a magazine
+and reading the cache's current capacity let an old smaller magazine be indexed
+with the new larger size. Capacity is now derived from the magazine's own source
+magtype cache, so the magazine and its capacity are one decision and the window
+does not exist. ASan cannot detect this class of overrun at all (magazines live
+inside umem's own mmap-backed slabs, no redzone, no poisoning in this tree), so
+detection is via a capacity invariant. See
+`2026-09-22-p1.3bc-magazine-resize.md`.
 
-**P1.3c (OPEN).** Stale magazine handling frees the magazine shell without
-draining a populated magazine, and callers pass full magazines down that path.
-`umem_ptc_mag_flush_all()` already shows the correct draining pattern.
+**P1.3c (FIXED, 2026-09-22).** Stale magazine handling freed the magazine shell
+without draining a populated magazine, and callers passed full magazines down
+that path. Both return functions now take the round count, drain before
+discarding, and put a magazine on the depot's full list only when it is exactly
+full. Pre-fix: exactly 127 objects destroyed per discarded magazine, counted at
+the point of loss. See `2026-09-22-p1.3bc-magazine-resize.md`.
 
 ### P1.4 Cache destruction with retained empty slabs
 `umem.c:1750–1758, 4624–4703`
