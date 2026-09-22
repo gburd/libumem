@@ -67,8 +67,18 @@ else
 	echo "  provenance: sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown) (working tree, NOT isolated)"
 fi
 echo "  uname: $(uname -srm)"
-echo "  libumem: $(ls -l "$ROOT/.libs/libumem.so"* 2>/dev/null | head -1 || echo missing)"
-echo "  digest: $( { sha256sum "$ROOT/.libs/libumem.so.0.0.0" 2>/dev/null || echo 'n/a'; } | cut -c1-16 )"
+# Identity of the library that actually ran, resolved through the symlink --
+# .libs/libumem.so is a link, and digesting the link name rather than the file
+# reported "n/a" (observed on the first 192-vCPU run).
+LIBUMEM_SO=$(readlink -f "$ROOT/.libs/libumem.so" 2>/dev/null || true)
+[[ -r ${LIBUMEM_SO:-} ]] || LIBUMEM_SO=$(ls "$ROOT"/.libs/libumem.so.*.*.* 2>/dev/null | head -1)
+if [[ -r ${LIBUMEM_SO:-} ]]; then
+	echo "  libumem: $LIBUMEM_SO"
+	echo "  digest: $( { sha256sum "$LIBUMEM_SO" 2>/dev/null || shasum -a 256 "$LIBUMEM_SO" 2>/dev/null; } | awk '{print $1}')"
+else
+	echo "  libumem: NOT FOUND -- results below cannot be attributed to a binary"
+	echo "  digest: unavailable"
+fi
 echo ""
 
 rc=0
