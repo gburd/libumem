@@ -32,10 +32,17 @@
 #include "umem_inspect.h"
 #include "umem_stacktrace.h"
 #include "umem_ptc.h"
-#include "misc.h"
-#ifdef UMEM_RSEQ_AVAILABLE
+/*
+ * umem_rseq.h DEFINES UMEM_RSEQ_AVAILABLE; it does not consume it.  Guarding
+ * this include with #ifdef UMEM_RSEQ_AVAILABLE therefore never fires, which
+ * silently compiled out the rseq magazine subtraction below and left every
+ * rseq-resident buffer reported as outstanding -- the exact defect this was
+ * meant to fix.  Test the same condition umem.c tests to decide the include.
+ */
+#if defined(__linux__) && defined(HAVE_LINUX_RSEQ_H)
 #include "umem_rseq.h"
 #endif
+#include "misc.h"
 
 #include <errno.h>
 #include <fcntl.h>

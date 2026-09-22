@@ -31,6 +31,7 @@
  * or a crash, and a hung test is indistinguishable from a slow one in CI.
  */
 
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -288,6 +289,14 @@ test_no_alloc_under_lock(void)
  * documented false positive.  The test therefore asserts the property that
  * must hold -- CACHED is reachable at all -- over a batch, rather than for one
  * buffer.
+ *
+ * WHY THE PTC IS DISABLED HERE.  With PTC enabled most freed buffers stop in a
+ * thread-local bin and never reach a magazine, so the CACHED population is
+ * dominated by whatever PTC happens to overflow.  That made this check pass
+ * even while the rseq-magazine subtraction was compiled out entirely (the
+ * UMEM_RSEQ_AVAILABLE include guard could never fire, since umem_rseq.h is
+ * what DEFINES that macro).  Re-exec once with UMEM_OPTIONS=ptc=0 so freed
+ * buffers go to the magazine layer, which is the layer under test.
  */
 static void
 test_whatis_reports_cached(void)
@@ -326,20 +335,43 @@ test_whatis_reports_cached(void)
 	 * The contract: a freed, magazine-resident buffer must be reportable
 	 * as CACHED.  umem_inspect.h has always documented UMEM_BUF_CACHED and
 	 * umem_whatis() never returned it, so pre-fix `cached` is 0 here.
+	 *
+	 * With the PTC off (see above) the magazine layer is the only place a
+	 * freed buffer can be, so this is a strong assertion: nearly every
+	 * buffer must be accounted as CACHED or FREE, not merely one of them.
 	 */
-	CHECK(cached + freestate > 0,
-	    "item 7 violated: not one freed buffer was reported CACHED or "
-	    "FREE -- whatis still calls freed memory allocated");
+	CHECK(cached + freestate >= N / 2,
+	    "item 7 violated: most freed buffers are still reported as held -- "
+	    "a retention site is not being subtracted (magazine, or the rseq "
+	    "magazines if their subtraction was compiled out)");
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
+	/*
+	 * Re-exec once with the PTC off.  See test_whatis_reports_cached():
+	 * with PTC on, freed buffers stop in thread-local bins and the
+	 * magazine-layer accounting under test is barely exercised.
+	 */
+	if (getenv("UMEM_INSPECT_CONTRACTS_REEXEC") == NULL) {
+		(void) setenv("UMEM_INSPECT_CONTRACTS_REEXEC", "1", 1);
+		(void) setenv("UMEM_OPTIONS", "ptc=0", 1);
+		(void) execv("/proc/self/exe", argv);
+		/* execv failed: carry on with PTC enabled rather than
+		 * reporting a pass we did not earn. */
+		fprintf(stderr,
+		    "warning: could not re-exec with ptc=0 (%s); the CACHED "
+		    "check is weaker in this run\n", strerror(errno));
+	}
+	(void) argc;
+
 	/* Generous: the churn test alone runs 5s, and this must not flake on
 	 * a loaded CI box.  A real lifetime bug hangs indefinitely. */
 	watchdog_start(180);
 
-	printf("umem_inspect contract tests\n");
+	printf("umem_inspect contract tests (UMEM_OPTIONS=%s)\n",
+	    getenv("UMEM_OPTIONS") ? getenv("UMEM_OPTIONS") : "");
 	test_whatis_reports_cached();
 	test_no_alloc_under_lock();
 	test_inspect_vs_destroy_churn();
