@@ -426,6 +426,14 @@ test_integration_test_threading_stress_CPPFLAGS = -I$(srcdir)/test
 test_integration_test_fork_mt_load_SOURCES = test/integration/test_fork_mt_load.c
 test_integration_test_fork_mt_load_LDADD = libumem.la
 test_integration_test_fork_mt_load_LDFLAGS = -pthread
+
+# P1.3a regression: a thread must return ALL its PTC-cached objects on exit.
+noinst_PROGRAMS += test/integration/test_ptc_thread_exit_drain
+test_integration_test_ptc_thread_exit_drain_SOURCES = \
+	test/integration/test_ptc_thread_exit_drain.c
+test_integration_test_ptc_thread_exit_drain_LDADD = libumem.la
+test_integration_test_ptc_thread_exit_drain_LDFLAGS = -pthread
+test_integration_test_ptc_thread_exit_drain_CPPFLAGS = -I$(srcdir)
 test_integration_test_fork_mt_load_CPPFLAGS = -I$(srcdir)
 
 # P1.6 regression: update-thread startup handshake.  -rdynamic so the
