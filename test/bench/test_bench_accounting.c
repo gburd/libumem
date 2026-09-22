@@ -243,6 +243,17 @@ test_frag_live_bytes(void)
 
 	CHECK(st.has_fragmentation == 1,
 	    "the fragmentation workload must define a fragmentation ratio");
+	/* A run with allocation failures did less work than requested, so its
+	 * throughput is not comparable to one without.  The count must be
+	 * reported, not left to a stderr warning: the 192-thread sustained run
+	 * had umem complete 16M operations against libc's 36.5M from the same
+	 * -n and nothing in the output said why. */
+	printf("   alloc_failures=%llu\n",
+	    (unsigned long long)st.alloc_failures);
+	CHECK(st.alloc_failures == 0,
+	    "%llu allocation failures against the mock allocator, which cannot "
+	    "fail -- the counter is wired up wrong",
+	    (unsigned long long)st.alloc_failures);
 	CHECK(st.live_bytes_at_peak > 0,
 	    "live_bytes_at_peak must be sampled");
 	CHECK(st.live_bytes_at_peak <= ceiling,
@@ -348,6 +359,10 @@ test_no_bogus_fragmentation(void)
 		    "live set)", cases[i].name);
 		CHECK(st.total_operations > 0,
 		    "%s completed no operations", cases[i].name);
+		CHECK(st.alloc_failures == 0,
+		    "%s reported %llu allocation failures against a mock "
+		    "allocator that cannot fail", cases[i].name,
+		    (unsigned long long)st.alloc_failures);
 	}
 }
 

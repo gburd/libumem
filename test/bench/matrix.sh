@@ -362,7 +362,7 @@ alloc_identity() {
 # 14 rss_at_live_peak  15 vmhwm_bytes  16 allocated_bytes
 # 17 live_bytes_at_peak  18 live_bytes_median  19 frag  20 frag_median
 # 21 frag_samples  22 cpu_user  23 cpu_sys  24 ops_cov  25 runs
-# 26 unstable  27 ops_floor_raised
+# 26 unstable  27 ops_floor_raised  28 alloc_failures
 #
 # frag/frag_median are EMPTY for workloads that define no fragmentation ratio
 # (single/multi/prodcons hold no live set) and for series too thin to summarise.
@@ -419,6 +419,10 @@ emit_point() {
         echo "runs = ${f[25]}"
         echo "unstable = $([[ "${f[26]}" == "1" ]] && echo true || echo false)"
         echo "ops_floor_raised = $([[ "${f[27]:-0}" == "1" ]] && echo true || echo false)"
+        # Nonzero => this point completed LESS work than -n asked for, so its
+        # throughput is not comparable to a point with zero.  Recorded as data,
+        # not left to a stderr warning nobody reads.
+        echo "alloc_failures = ${f[28]:-0}"
     } >> "$MATRIX"
 }
 

@@ -243,6 +243,7 @@ emit_windows() {
     # 15 vmhwm_bytes 16 allocated_bytes 17 live_bytes_at_peak
     # 18 live_bytes_median 19 frag 20 frag_median 21 frag_samples
     # 22/23 cpu 24 ops_cov 25 runs 26 unstable 27 ops_floor_raised
+    # 28 alloc_failures
     {
         echo ""
         echo "[[window]]"
@@ -275,10 +276,12 @@ emit_windows() {
             echo "# frag: undefined here (no live set, or too few samples)"
         fi
         echo "ops_floor_raised = $([[ "${f[27]:-0}" == "1" ]] && echo true || echo false)"
+        echo "alloc_failures = ${f[28]:-0}"
     } >> "$OUT"
-    printf '  %-10s %-18s w=%-2s mops=%8.3f p99=%9s p999=%10s rss@peak=%s vmhwm=%s\n' \
-        "$a" "$label" "$WINDOW_INDEX" \
-        "$(awk "BEGIN{print ${f[6]}/1e6}")" "${f[10]}" "${f[11]}" "${f[14]}" "${f[15]}"
+    printf '  %-10s %-18s w=%-2s ops=%-9s mops=%8.3f p99=%9s p999=%10s rss@peak=%s%s\n' \
+        "$a" "$label" "$WINDOW_INDEX" "${f[3]}" \
+        "$(awk "BEGIN{print ${f[6]}/1e6}")" "${f[10]}" "${f[11]}" "${f[14]}" \
+        "$([[ "${f[28]:-0}" != "0" ]] && echo "  ALLOC_FAILURES=${f[28]}" || echo "")"
 }
 
 echo "sustained load: allocators=${ALLOCS[*]} threads=$THREADS"

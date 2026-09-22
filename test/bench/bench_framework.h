@@ -96,6 +96,13 @@ typedef struct bench_stats {
     size_t frag_live_median;
     double frag_ratio_median;
     size_t frag_samples;
+    /* Allocation failures during the run.  A failed allocation is NOT an
+     * operation, so a run that hit them completed LESS WORK than requested --
+     * which silently makes its throughput incomparable to a run that did not.
+     * Reported as a column, never only as a stderr warning: the sustained
+     * 192-thread run had umem complete 16M operations against libc's 36.5M
+     * from the same -n, and nothing in the output said why. */
+    uint64_t alloc_failures;
     double fragmentation_ratio;   /* peak RSS / live bytes at that instant */
     int has_fragmentation;        /* 0 => undefined for this workload */
 

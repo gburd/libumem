@@ -140,6 +140,11 @@ void bench_print_stats(const bench_stats_t *stats) {
                " the requested total was too small to measure]\n",
                BENCH_MIN_OPS_PER_THREAD);
     }
+    if (stats->alloc_failures > 0) {
+        printf("            [%llu ALLOCATION FAILURES: this run did less work"
+               " than requested and is not comparable to one with none]\n",
+               (unsigned long long)stats->alloc_failures);
+    }
     if (stats->runs_measured > 1) {
         printf("Stability:  CoV %.2f%% over %d runs%s\n",
                stats->ops_cov * 100.0, stats->runs_measured,
@@ -201,13 +206,18 @@ void bench_print_stats(const bench_stats_t *stats) {
  *   frag             peak_rss_bytes / live_bytes_at_peak, or EMPTY when the
  *                    workload does not define one (see has_fragmentation)
  *   ops_floor_raised 1 if the per-thread budget was raised to the floor
+ *   alloc_failures   allocations that returned NULL.  NONZERO MEANS THE RUN
+ *                    COMPLETED LESS WORK THAN REQUESTED, so its throughput is
+ *                    not comparable to a run with zero.  Never inferred from
+ *                    total_ops alone.
  */
 void bench_print_csv_header(void) {
     printf("allocator,workload,threads,total_ops,ops_per_thread,elapsed_sec,ops_per_sec,");
     printf("lat_min,lat_p50,lat_p90,lat_p99,lat_p999,lat_max,lat_mean,");
     printf("rss_at_live_peak,vmhwm_bytes,allocated_bytes,live_bytes_at_peak,");
     printf("live_bytes_median,frag,frag_median,frag_samples,");
-    printf("cpu_user_ms,cpu_sys_ms,ops_cov,runs,unstable,ops_floor_raised\n");
+    printf("cpu_user_ms,cpu_sys_ms,ops_cov,runs,unstable,ops_floor_raised,");
+    printf("alloc_failures\n");
 }
 
 void bench_print_csv_row(const bench_stats_t *stats) {
@@ -232,10 +242,11 @@ void bench_print_csv_row(const bench_stats_t *stats) {
                stats->frag_ratio_median, stats->frag_samples);
     else
         printf(",,%zu,", stats->frag_samples);
-    printf("%.1f,%.1f,%.4f,%d,%d,%d\n",
+    printf("%.1f,%.1f,%.4f,%d,%d,%d,%llu\n",
            stats->cpu_usage.user_ms, stats->cpu_usage.sys_ms,
            stats->ops_cov, stats->runs_measured, stats->unstable,
-           stats->ops_floor_raised);
+           stats->ops_floor_raised,
+           (unsigned long long)stats->alloc_failures);
 }
 
 /* Thread context for multithreaded benchmarks */
@@ -248,6 +259,7 @@ typedef struct thread_context {
     size_t bytes_allocated;
     size_t bytes_freed;
     uint64_t operations;
+    uint64_t failures;                /* allocations that returned NULL */
     pthread_barrier_t *start_barrier;
 } thread_context_t;
 
@@ -282,7 +294,9 @@ void workload_single_thread(allocator_ops_t *ops, bench_stats_t *stats, void *co
         void *ptr = ops->alloc(size);
         uint64_t alloc_end = bench_get_ns();
 
-        if (ptr) {
+        if (!ptr) {
+            stats->alloc_failures++;
+        } else {
             /* Touch memory to ensure it's allocated */
             memset(ptr, 0x42, size);
             total_allocated += size;
@@ -368,7 +382,9 @@ static void* mt_worker_thread(void *arg) {
         void *ptr = ops->alloc(size);
         uint64_t alloc_end = bench_get_ns();
 
-        if (ptr) {
+        if (!ptr) {
+            ctx->failures++;
+        } else {
             memset(ptr, 0x42 + ctx->thread_id, size);
             ctx->bytes_allocated += size;
             ctx->operations++;
@@ -474,6 +490,7 @@ void workload_multi_thread(allocator_ops_t *ops, bench_stats_t *stats, void *con
         total_ops += contexts[i].operations;
         total_allocated += contexts[i].bytes_allocated;
         total_freed += contexts[i].bytes_freed;
+        stats->alloc_failures += contexts[i].failures;
     }
 
     stats->elapsed_seconds = (end - start) / 1e9;
@@ -608,6 +625,7 @@ typedef struct {
     td_histogram_t *latency_hist;
     size_t bytes_allocated;
     uint64_t operations;
+    uint64_t failures;                /* allocations that returned NULL */
     pthread_barrier_t *start_barrier;
 } pc_context_t;
 
@@ -630,7 +648,7 @@ static void *producer_thread(void *arg) {
         void *ptr = ops->alloc(size);
         uint64_t t1 = bench_get_ns();
 
-        if (!ptr) continue;
+        if (!ptr) { ctx->failures++; continue; }
         memset(ptr, 0x42, size);
 
         td_add(ctx->latency_hist, (double)(t1 - t0), 1);
@@ -768,6 +786,7 @@ void workload_producer_consumer(allocator_ops_t *ops,
         td_merge(combined, contexts[i].latency_hist);
         total_ops += contexts[i].operations;
         total_alloc += contexts[i].bytes_allocated;
+        stats->alloc_failures += contexts[i].failures;
     }
 
     stats->elapsed_seconds = (end - start) / 1e9;
@@ -880,7 +899,7 @@ typedef struct {
     td_histogram_t *hist;
     size_t bytes_allocated;           /* cumulative traffic, this thread */
     uint64_t operations;
-    int failed;                       /* an allocation returned NULL */
+    uint64_t failures;                /* allocations that returned NULL */
     /* Shared, process-wide live-byte accounting + the sample series. */
     atomic_size_t *live_bytes;
     pthread_mutex_t *peak_lock;
@@ -984,9 +1003,10 @@ static void *frag_worker(void *arg) {
             uint64_t t1 = bench_get_ns();
 
             if (!ptr) {
-                /* Not an operation, and not live bytes.  Report it: a run
-                 * that could not allocate has not measured fragmentation. */
-                ctx->failed = 1;
+                /* Not an operation, and not live bytes.  Counted, because a
+                 * run that could not allocate did LESS WORK than asked and is
+                 * therefore not comparable to one that did. */
+                ctx->failures++;
                 continue;
             }
             memset(ptr, 0xAB, sz);
@@ -1127,21 +1147,25 @@ void workload_fragmentation(allocator_ops_t *ops,
     td_histogram_t *combined = NULL;
     uint64_t total_ops = 0;
     size_t total_allocated = 0;
-    int any_failed = 0;
+    uint64_t total_failures = 0;
     if (td_init(100.0, &combined) == 0) {
         for (int i = 0; i < nthreads; i++) {
             if (ctxs[i].hist == NULL) continue;
             td_merge(combined, ctxs[i].hist);
             total_ops += ctxs[i].operations;
             total_allocated += ctxs[i].bytes_allocated;
-            any_failed |= ctxs[i].failed;
+            total_failures += ctxs[i].failures;
         }
     }
+    stats->alloc_failures = total_failures;
 
-    if (any_failed) {
-        fprintf(stderr, "bench: WARNING -- at least one allocation failed "
-                "during the fragmentation workload; the ratio below is not a "
-                "measurement of a healthy allocator\n");
+    if (total_failures > 0) {
+        fprintf(stderr, "bench: WARNING -- %llu allocation(s) FAILED during "
+                "the fragmentation workload.  This run completed less work "
+                "than requested; its throughput is not comparable to a run "
+                "that did not, and the ratio is not a measurement of a "
+                "healthy allocator.\n",
+                (unsigned long long)total_failures);
     }
 
     /* Report the number of threads that actually ran, never the number
