@@ -87,6 +87,13 @@ typedef struct umem_ptc_mag {
 } umem_ptc_mag_t;
 
 /*
+ * Set once umem_ptc_mag_t carries a separate capacity for `previous`.
+ * Regressions that must build against both the pre- and post-P1.3b struct
+ * (to show they discriminate) test for this.
+ */
+#define	UMEM_PTC_MAG_HAS_PMAGSIZE	1
+
+/*
  * Default cache line size for alignment. Must match UMEM_CACHE_LINE_SIZE
  * in umem_impl.h (which may be overridden by configure --with-cache-line-size).
  */

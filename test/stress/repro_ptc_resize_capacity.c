@@ -159,6 +159,27 @@ legal_magsize(int n)
 	    n == 31 || n == 63 || n == 127 || n == 255);
 }
 
+/*
+ * The capacity the library records for `previous`.
+ *
+ * Pre-fix there was only ONE magsize field for both magazines, which is part of
+ * the defect: a resize can land between two refills, so loaded and previous can
+ * be of different magtypes and one field cannot describe both.  This test has to
+ * build against both versions of the struct in order to show that it
+ * discriminates, so it reads the separate field where it exists and falls back
+ * to the shared one where it does not -- which is exactly the pre-fix claim
+ * being checked.
+ */
+static int
+recorded_pcap(umem_ptc_mag_t *mag)
+{
+#ifdef UMEM_PTC_MAG_HAS_PMAGSIZE
+	return (mag->pmagsize);
+#else
+	return (mag->magsize);
+#endif
+}
+
 static void
 check_own_ptc(int bin)
 {
@@ -183,11 +204,12 @@ check_own_ptc(int bin)
 	}
 	if (mag->previous != NULL) {
 		int cap = true_capacity(mag->previous);
-		if (mag->pmagsize != cap || !legal_magsize(cap) ||
+		int rec = recorded_pcap(mag);
+		if (rec != cap || !legal_magsize(cap) ||
 		    mag->prounds < 0 || mag->prounds > cap) {
 			fprintf(stderr, "CAPACITY DESYNC (previous): recorded "
-			    "pmagsize=%d true=%d prounds=%d\n",
-			    mag->pmagsize, cap, mag->prounds);
+			    "capacity=%d true=%d prounds=%d\n",
+			    rec, cap, mag->prounds);
 			atomic_fetch_add(&fail_capacity, 1);
 		}
 	}
