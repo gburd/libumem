@@ -148,6 +148,34 @@ regressions.
 
 ## Phase 2 — Trustworthy evidence
 
+**Status as of 2026-09-22.** Report:
+`docs/results/2026-09-22-phase2-trustworthy-evidence.md`.
+
+| Item | State | Evidence |
+|---|---|---|
+| P2.1 double-divided work budget | FIXED | `test_bench_accounting` + `check_budget.sh` (end-to-end) |
+| P2.2 fragmentation accounting | FIXED | same; pair + VmHWM + series, sample floor |
+| P2.3 oracle progress/failure | FIXED | `oracle_control.sh`: 7 cases incl. a broken-allocator shim |
+| P2.4 status honesty | FIXED | 4 scripts corrected to SKIP=77 / real verdicts |
+| P2.5 evidence and identity | FIXED | sha/flags/digests recorded; per-window sustained |
+| P2.6 release artifacts | FIXED | separate workstream |
+| P2.7 lifecycle coverage | FIXED | `test_lifecycle_churn` + `lifecycle_stress.sh` |
+
+Withdrawn conclusions were **not** restored. The 192-thread scaling and
+fragmentation claims require re-measurement under the protocol in
+`test/bench/README.md`; new measurements taken here are labelled as new and
+not comparable to the withdrawn figures.
+
+**Found while fixing the harness, and NOT fixed — needs assignment:**
+`umem_alloc` returns NULL for a large fraction of attempts at multi-GB heap
+sizes because the default mmap backend exhausts `vm.max_map_count` (peak VMA
+65,532 of 65,530) at ~5 GB, where glibc reaches 96 GB on the same box. This is
+a sizing limit in `vmem_mmap.c` (`CHUNKSIZE = pagesize` on Linux → one VMA per
+~75 KiB of heap), not a correctness defect, and `umem_reap()`+retry does not
+relieve it. `vmem_mmap_top_alloc()` also restores `errno` on its failure paths,
+so the underlying `mmap` `ENOMEM` is unobservable. See
+`docs/results/2026-09-22-umem-heap-ceiling-max-map-count.md`.
+
 ### P2.1 Benchmark work sizing
 `test/bench/matrix.sh:293–301`; `test/bench/bench_main.c:146–147`
 
