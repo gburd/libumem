@@ -691,6 +691,36 @@ cliff a general-purpose user would hit. HIGH = degrades sharply (>10x) vs
 glibc in a realistic regime. MEDIUM = measurable, bounded, worth fixing.
 FINE = pushed past the target with no cliff; recorded so it is not re-run.
 
+**Status as of 2026-09-23** (all measured at `a2548b8`; boxes: `c7i.2xlarge`
+x86 16 GB, `c7g.2xlarge` arm 16 GB, `c7i.metal-48xl` 192 vCPU 377 GB)
+
+| Item | Dimension | Verdict | The number | glibc |
+|---|---|---|---|---|
+| P6.1 | object count | **BLOCKING** | 512 B objects: `umem_alloc` -> NULL at 8.2 GB, 63k VMAs (`vm.max_map_count`); 64 B: 48k VMAs at 100M. `3f2e67c` fixed one of two paths. Lever (c) 4 MiB qcache slab floor: 15,702 -> 274 VMAs, zero small-heap cost | 54 VMAs |
+| P6.2 | object size | HIGH | vmem segment supply FINE to 11 GB; every freed oversize object is a permanent VMA (40k at 136 KiB x 40k); oversize alloc 20-100x slower per call | same VMA count at half-freed, but its dynamic mmap threshold exits the regime |
+| P6.3 | thread count | HIGH | 16,000 threads: no cap; 56 KB/idle thread (`umem_ptc_t` is 31 KB, 20 KB of it padding); exit drain 423 us/thread and main stalls 37 ms | 17.5 KB/thread, 11 us/thread flat, 1 ms |
+| P6.4/4b | cache count | HIGH on 192 CPUs | allocation unaffected at 50k caches; 117 KB/cache, 415 ms create tails, **3.0 s `fork()`** at 50k on 192 CPUs; 51k VMAs + 1.8 GB left after destroying all | n/a |
+| P6.5 | fragmentation over time | FINE / MEDIUM | 18 min churn: RSS +11 MB over the last 17 min (plateau); ratio 1.13 -> 1.33 is the live set shrinking under a fixed RSS | 1.018 flat |
+| P6.6 | fork with 4 GB heap | FINE | 23 ms vs 21 ms; child COW +0.4 MB; handlers +2 ms constant, not heap-proportional | 21 ms |
+| P6.7 | kernel knobs | FINE / MEDIUM / BLOCKING | clean NULL + ENOMEM under `RLIMIT_AS`, `RLIMIT_DATA`, `overcommit=2`; but no 64 B allocation possible after the first failure (glibc: yes); one stale-errno path on `RLIMIT_DATA`; `max_map_count=4096` fails 512 B at **500 MB** (P6.1 again) | recovers; 2 GB |
+| P6.8 | reclaim under pressure | **BLOCKING** | a freed 2 GB slab heap is 100 % resident at t = 100 s with the update thread running: every freed object sits in a depot magazine, `slab_refcnt` never reaches 0, `umem_cache_reclaim_pages` skips them, and the periodic pass never reaps the depot. `umem_reap()` every 10 s: -5 MB / 100 s | keeps interior pages too, but claims nothing |
+
+Two of the eight are BLOCKING and both are one-mechanism fixes with a
+measured lever (P6.1) or a named missing call (P6.8). The rest are
+`ncpus`-proportional or per-thread constants that are 3-6x glibc and a
+VMA-on-free pattern that P6.1's fix and P6.2 (1) address together.
+
+**What was not tested and why.** `arm-hi` was not launched: the 192-CPU
+measurements (P6.3, P6.4b) were taken on `intel-hi` and are
+`umem_max_ncpus`-driven, not ISA-driven; the 8-CPU arm results for P6.1,
+P6.2, P6.4, P6.7, P6.8 match x86 within noise wherever both were run. The
+30-minute frag run came out at 18 minutes because the window count was
+sized from a per-window estimate that was 40 % high; the plateau was
+established by minute 3 and held to minute 18. `probe_caches` has no glibc
+arm (no equivalent API). Raw job logs are in `docs/results/jobs/` on the
+measuring machine and are gitignored; every number above is transcribed
+into its entry.
+
 ### P6.1 The heap ceiling is fixed for one of two paths; small objects still hit it -- BLOCKING
 `umem.c:5038` (`UMC_QCACHE` branch: `bestfit = MAX(1 << highbit(3 *
 vm_qcache_max), 64)`, deliberately excluded from the `3f2e67c` floor);
