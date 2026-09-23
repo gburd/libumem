@@ -813,9 +813,24 @@ stated per arena. Owner: the author of `3f2e67c`, by their request.
   `vmem_hash_rescale`/`umem_hash_rescale`/`vmem_populate` above 0.15 %; the
   profile is `pthread_mutex_trylock`/`unlock` and the probe's own clock. Not
   ordered by VMA count across the lever table (8.8 ms at 7,891 VMAs; 89 ms at
-  274), so **not the VMA count** either. Untriaged; needs off-CPU or
-  `sched_switch` tracing on the fill to catch 19 events in 47 s. HIGH if it
-  survives the VMA fix, since 95 ms is a tail a latency-sensitive user sees.
+  274), so **not the VMA count** either. **Control that does move it:**
+  `UMEM_OPTIONS=reap_interval=1000` (the update thread never ticks during
+  the run) takes the worst alloc at 30M x 64 B from 35 ms (default, same
+  job) / 48 ms (`reclaim=0`) to **3.4 ms**, with 5 stalls > 1 ms instead of
+  7-19. So the update thread *is* implicated after all, on the fill, even
+  though a parked heap shows nothing -- something `umem_cache_update` does
+  while slabs are being created costs the allocating thread tens of ms, and
+  the parked probe missed it because no slabs are being created then. The
+  candidate is `umem_cache_reclaim_pages()` walking the cache's *entire slab
+  list* (`for (sp = nullsp->slab_prev; sp != nullsp; ...)`, `umem.c:4416`)
+  under `cache_lock` every 10 s: at 30M x 64 B that is ~490k slabs per pass
+  for one cache, and `umem_slab_create` needs the same lock. `perf` shows
+  `umem_cache_update` at 0.46 % of samples, which is small in aggregate and
+  exactly what a rare 35 ms lock hold looks like. Diagnosis needs the lock
+  hold time measured directly; the fix shape is to walk only slabs that can
+  change state (a DIRTY/CLEAN list, not the full list) so the walk is
+  O(empty slabs), not O(all slabs). HIGH: 95 ms tails at 100M objects, and
+  they grow with heap size.
 - *RSS grows while freeing.* 7368 -> 9022 MB freeing 100M x 64 B (both
   arches), +494 MB at 30M with `reclaim=0`, +165 MB at 512 B x 15M, +38 MB at
   4 KiB: ~16 B per freed object, scaling with count not bytes. glibc flat.
@@ -825,6 +840,105 @@ stated per arena. Owner: the author of `3f2e67c`, by their request.
   10 s update tick, which the 25 s free phase mostly outruns. **Unconfirmed at
   the smaps level.** MEDIUM: it is 22 % of the heap transiently, and glibc's
   in-buffer bins have no equivalent cost.
+
+### P6.2 Object size: oversize objects cost one VMA each once freed and reallocated -- HIGH (the vmem layer itself is FINE)
+`vmem_mmap.c:158` (`vmem_mmap_free`: `mmap(PROT_NONE, MAP_FIXED)` over the
+freed span splits the RW mapping it came from); `vmem.c:1098-1106`
+(`vmem_xfree` returns a fully-free imported span to its source, one span per
+oversize object); `vmem.c:136` (`VMEM_SEG_INITIAL`), `vmem.c:578`
+(`vmem_populate`)
+
+Provenance: `a2548b8`, `c7g.2xlarge`, `probe_objsize <size> <count>
+<rounds>`; each round fills every slot, frees every other one, and the next
+round refills the holes. `objsize`, `objsize2` job logs.
+
+**The vmem segment supply is FINE.** 8,000 x 1 MiB, 180 x 64 MiB, 11 x 1 GiB
+(11-11.25 GB of address space touched at 64 KiB stride), 40,000 x 136 KiB:
+no allocation failed, no abort, no `vmem_populate` failure. `VMEM_SEG_INITIAL`
+= 100 is only the static bootstrap pool; `vmem_populate` grows
+`vmem_seg_arena` from the heap on demand (each populate takes
+`VMEM_MINFREE + populators * reserve` segments = one page of `vmem_seg_t`),
+and the only ceiling is the heap itself. The P1.5-era change that made
+`vmem_populate` return ENOMEM on `VM_SLEEP` is not on this path -- every
+libumem-internal caller is `VM_NOSLEEP` -- and was not reached. RSS tracks
+live bytes exactly (0.71 GB for 11.25 GB touched at 64 KiB stride, same as
+glibc), and after freeing everything RSS returns to 0.00-0.02 GB: the
+oversize arena hands spans straight back to the mmap heap and the heap
+`PROT_NONE`s them, so **oversize memory is returned to the kernel
+immediately**, which is what item 8 asks about for this class.
+
+**What is not fine: every freed oversize object becomes its own VMA, and
+they never merge back.**
+
+| size x count | umem VMAs full / after freeing half | glibc VMAs full / half | umem VMAs after freeing ALL |
+|---|---:|---:|---:|
+| 1 MiB x 8,000 | 103 / **8,102** | 74 / 4,073 | **1,303** |
+| 136 KiB x 40,000 (just over `UMEM_MAXBUF`) | 103 / **40,102** | 74 / 20,074 | **6,151** |
+| 64 MiB x 180 | 103 / 282 | 74 / 163 | 103 |
+| 1 GiB x 11 | 103 / 113 | 74 / 78 | 105 |
+
+Mechanism, from the numbers: while full, umem is at 103 VMAs -- the 1 MiB
+objects came from a handful of large `MAP_FIXED` RW commits (via
+`vmem_mmap_alloc` over a reservation that `_vmem_extend_alloc` had grown), so
+the kernel sees one RW VMA per import. Freeing every other object then
+`vmem_xfree`s each 1 MiB span back to `mmap_heap`, and `vmem_mmap_free` remaps
+each one `PROT_NONE` with `MAP_FIXED`. **A PROT_NONE hole punched into an RW
+VMA splits it into three**, and the heap-ceiling doc measured exactly this
+("`mprotect(PROT_NONE)` on those too: 25 -> 88"). 4,000 holes = 8,102 VMAs.
+glibc does the same thing for `mmap`-threshold chunks (4,073 -- one `munmap`
+per freed chunk, punching holes in the same way), so **at the half-freed
+instant the two are comparable: umem is 2x glibc**. The difference is what
+happens next:
+
+- glibc's mmap threshold is dynamic: after the first free of a 1 MiB
+  `mmap`ped chunk it raises the threshold, so the refill round comes from
+  the `brk` heap and the arenas -- its VMA count stays at 4,073 and its
+  "full" count on round 1 *is* 4,073, then flat. And when everything is
+  freed it is back to 74.
+- umem refills the holes from the freed spans (good: "post-free alloc"
+  lands inside the reservation, `0xfffd...`), but the reservation has
+  already been fragmented by the PROT_NONE remaps, and re-committing a hole
+  RW with `mmap(MAP_FIXED)` does not merge it with its RW neighbours (the
+  replacement-mapping rule). Full again, umem is back to 103 -- **only
+  because the kernel did merge them**, which contradicts the rule. So the
+  RW commit *does* merge here where it did not in P6.1, and the difference
+  is that here the neighbours were created by the same `_vmem_extend_alloc`
+  reservation; P6.1's 128 KiB slabs were each their own top-level
+  reservation. Either way: after all is freed, 1,303 VMAs remain for 8,000
+  objects, 6,151 for 40,000 -- PROT_NONE fragments that were never
+  coalesced back into one reservation.
+
+**The ceiling this produces.** At 136 KiB (the first oversize size), 40,000
+live-then-half-freed objects cost 40,102 VMAs = 61 % of `vm.max_map_count`.
+**A program holding ~65k oversize objects and freeing a scattered half of
+them exhausts the map count** -- 8.7 GB at 136 KiB, and any process with
+large numbers of 128 KiB-2 MiB buffers (network I/O buffers, image tiles,
+database pages above 128 KiB) is in this regime. glibc reaches the same
+VMA count for the same pattern, but its dynamic threshold exits the regime
+after the first round, and umem has no such escape. The oversize path is
+also **20-100x slower per call**: worst 1.1-1.5 ms per `umem_alloc` vs
+12-236 us for glibc, because every oversize allocation is an `mmap` syscall
+plus a vmem span create; glibc's `mmap` is the same syscall but with no
+segment bookkeeping.
+
+**Required fix.** Two independent halves:
+(1) Stop punching PROT_NONE holes on every oversize free. `vmem_mmap_free`
+should `madvise(MADV_DONTNEED)` (or `MADV_FREE`) the span and leave it RW
+and mapped -- RSS returns identically (measured: RSS after free is already
+~0 because of the remap, and DONTNEED gives the same), the VMA does not
+split, and the next commit is a no-op instead of another `mmap`. The
+security argument for PROT_NONE (a freed span faults on use-after-free) is
+real; if it is kept, it should be for spans above a size threshold (say
+>= 16 MiB, where VMA count cannot matter) and DONTNEED below. Regression:
+`probe_objsize 139264 40000 2` must stay under ~200 VMAs at the half-freed
+point.
+(2) Cache oversize spans below a size ceiling instead of returning them to
+the mmap heap on every free: an `umem_oversize_arena` with a `qcache_max` of
+a few MiB (it is created with `0`, `umem.c:5787`) turns 136 KiB-2 MiB
+allocations into slab-cached objects with no syscall, and closes the
+20-100x per-call gap at the same time. With P6.1's fix in place the qcache
+slabs would be >= 4 MiB spans. This is the same lever as glibc's dynamic
+mmap threshold, done statically.
 
 ## Exit criteria
 
