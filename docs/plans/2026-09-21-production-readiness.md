@@ -1417,6 +1417,254 @@ with `reclaim_delay=0` should show the drop within two intervals.
 (4) Rewrite the `umem.c:40-56` header: it describes the defect as a
 platform nuance, and after (1) it will be false.
 
+## Phase 8 — Performance gaps
+
+**Origin:** the 2026-09-23 allocator comparison,
+`docs/results/2026-09-23-allocator-comparison.md`. Nine allocators (glibc,
+libumem through its API, libumem through its `LD_PRELOAD` interposer,
+jemalloc, tcmalloc, mimalloc, snmalloc, scudo, rpmalloc), four boxes
+(`c7i.2xlarge`, `c7g.2xlarge`, `c7i.metal-48xl`, `c8g.metal-48xl`), fixed
+total work per point, two replicate processes per arm alternating at the
+innermost loop, and **a null control at every grid point** (libumem against a
+relabelled copy of itself). Only gaps that clear that null are listed. Sha
+`f2a8267` (allocator sources identical to `v3.1.0`); the P8.1 fix is
+`a74065e`, measured separately.
+
+**The distinction this phase rests on.** The comparison measured two libumem
+arms and they are different things:
+
+| arm | `multi` 16:64, 192 threads, `c7i.metal-48xl` | vs glibc (431 Mops) |
+|---|---|---|
+| `umem_alloc` API (what `-lumem` callers get) | **394 Mops** | -9 % |
+| `LD_PRELOAD=libumem_malloc.so` at `f2a8267` (what drop-in users got) | **0.82 Mops** | -99.8 % |
+| `LD_PRELOAD=libumem_malloc.so` at `a74065e` | **314 Mops** | -27 % |
+
+Every earlier comparison in this repository measured only the first row.
+
+Design costs that are **accepted, not tasks** (category (a) in the results
+doc): the 1.2-1.6x RSS/live-set ratio at 64 B and up and 2.6x at 16-63 B
+against glibc's 1.0-1.9x (size-class rounding plus warm object caches and
+magazines -- scudo, the other size-class allocator with a header, lands at
+the same 2.6x; §5.5 of the results doc); the 8-byte `malloc_data_t` header
+on the interposer path (it is how `free()` learns the size; glibc pays the
+same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
+(P6.1; the probe here reproduced it at 4.45-4.55 GB with 6.2-6.9M
+`alloc_failures` before `3f2e67c` landed).
+
+**Status as of 2026-09-23**
+
+| Item | Gap (measured, null-controlled) | State |
+|---|---|---|
+| P8.1 interposer global mutex on every `free()` | preload 0.8 Mops vs API 394 at 192 t (500x); negative thread scaling on all 4 boxes | **FIXED** `a74065e`; A/B 0.79 -> 314 Mops (396x) at 192 t, null +/-3.5 % |
+| P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | open; mechanism in source |
+| P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; profile attributes it |
+| P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | open; **diagnosis task**, mechanism not established |
+| P8.5 `frag` 20-33 % behind size-class allocators; 2.2-3x behind sustained, p999 22 us | all thread counts incl. t=1, both lo boxes; sustained frag umem slowest in field | open; mechanism in source, needs a profile to apportion |
+
+### P8.1 The `LD_PRELOAD` interposer took a global mutex on every `free()` -- FIXED
+
+`malloc_interpose.c:321-343` (`is_libc_pointer`: `libc_ptr_lock` + 512-slot
+scan, unconditional), `:393-427` (`interpose_owner_of`: that scan, then
+`process_free(ptr, 0, ...)` to classify), `:636-683` (`free`: classify, then
+`umem_malloc_free` -> `process_free(ptr, 1, ...)` decoding the same header
+again). At `f2a8267`.
+
+**Measured** (`c7i.metal-48xl`, `multi` 16:64, 20M ops, 2 replicates,
+alternating with 10 other arms): 3.03 / 2.02 / 1.61 / 1.06 / 0.89 / **0.82**
+Mops at 1 / 8 / 32 / 64 / 128 / 192 threads. Same build's API arm: 6.70 /
+37.8 / 140.7 / 181.5 / 277.7 / **393.6**. glibc 431.5 at 192. Preload-arm
+null control at these points sd 3-5 %. The same shape on `c8g.metal-48xl`
+(1.15 vs 487.5), `c7i.2xlarge` (1.5 vs 31.6 at t=8) and `c7g.2xlarge` (1.5
+vs 50.6). The table only ever holds bootstrap-phase `memalign` pointers and is
+empty for the whole steady-state life of every process; the lock was taken to
+search nothing.
+
+**Fixed in `a74065e`** (malloc_interpose.c only): an atomic live-entry count
+gates the scan; `free()` goes to `umem_malloc_free()` in one pass once READY.
+Regression `test/stress/repro_interpose_free_scaling` (1- vs 8-thread
+aggregate throughput: pre 0.29x, post 4.10x; gated in `make check`).
+
+**A/B that closes it** (`scripts/ec2/interpose_ab.sh`, `c7i.metal-48xl`,
+pre `5513c81` vs post `a74065e` vs an independent rebuild of pre as the null,
+3 alternating pairs per point, `docs/results/2026-09-23-interpose-ab/`):
+null t=192 median -0.5 % (-3.5..+1.7); pre -> post 2.0x / 14.9x / 72x / 145x
+/ 262x / **396x** at 1 / 8 / 32 / 64 / 128 / 192 threads; prodcons 64:256
+t=192 p999 2.73 ms -> 50 us. Zero `ops_floor_raised`, zero `alloc_failures`.
+
+### P8.2 The `umem_alloc` path collapses at 1k:4k object sizes under threads
+
+`umem_ptc.c:46` (`umem_ptc_maxsize = 2048`), `:85-93` (`ptc_size_classes`
+ends at 2048 with two zero pads), `:199-213` (`umem_ptc_bin_table[idx] = -1`
+above `umem_ptc_maxsize`); `umem.c:3699-3813` (`_umem_alloc`: `bin < 0`
+falls straight to `_umem_cache_alloc`), `:3157-3235` (`_umem_cache_alloc`:
+rseq fast path serves zero hits, then `cc_lock`), `:549-558` (`umem_magtype`:
+chunks 2560-4096 get **31-round** magazines, 5120 gets 15; the PTC-covered
+classes get 63-127).
+
+**Measured** (API arm, `multi` 1024:4096, all four boxes; the wrapper's
+16-byte header maps a 1024..4095 request onto caches 1280..5120, and ~2/3 of
+the range lands above 2048):
+
+| box | t | glibc | umem | best | umem/glibc | umem p999 ns | null here |
+|---|---|---|---|---|---|---|---|
+| `c7i.2xlarge` | 8 | 23.5 | 6.0 | 30.9 jemalloc | 0.26 | 10,173 | +1.3 % |
+| `c7g.2xlarge` | 8 | 29.6 | 8.6 | 39.6 jemalloc | 0.29 | 5,992 | +3.4 % |
+| `c7i.metal-48xl` | 8 | 28.5 | 5.8 | 38.6 rpmalloc | 0.20 | 9,413 | -1.0 % |
+| `c7i.metal-48xl` | 64 | 146 | 9.0 | 204 tcmalloc | **0.06** | 50,824 | +0.1 % |
+| `c7i.metal-48xl` | 192 | 326 | 23.0 | 458 tcmalloc | 0.07 | 49,154 | -8.0 % |
+| `c8g.metal-48xl` | 64 | 215 | 14.9 | 309 mimalloc | 0.07 | 42,548 | +0.0 % |
+| `c8g.metal-48xl` | 192 | 337 | 33.7 | 412 snmalloc | 0.10 | 41,682 | -11.0 % |
+
+t=1 is fine (0.97-1.10x glibc). The umem@null arm reproduces the collapse
+to within 1 % (5.98 vs 5.94 Mops at `c7i.metal` t=8): deterministic.
+`prodcons` and `frag` at 1k:4k do **not** show it (the object survives long
+enough to amortise the depot round trip).
+
+**Mechanism.** Above 2048 B the PTC is bypassed by construction, every
+operation takes `cc_lock` on the per-CPU magazine layer, and on `multi` each
+thread draws a different random size class per iteration, so one CPU cache's
+loaded/previous pair is churned across 4-5 classes with 31-round magazines.
+A 31-round magazine drains in 31 allocations; each drain is a blocking
+`umem_depot_alloc()` round trip. The 8-vCPU contention dump for the
+neighbouring 1024/1280 classes shows the shape (`dep_remote` 26,177 vs
+`dep_local` 39 -- nearly every reload steals cross-CPU). Competitors' thread
+caches extend to 32 KB (tcmalloc, jemalloc) or are the whole allocator.
+
+**Diagnose.** Run `multi` 1024:4096 t=8 with `UMEM_OPTIONS=ptc_maxsize=8192`
+(the knob exists, `envvar.c:245`). If the cliff moves to 4k:16k the mechanism
+is proven in one run. Then `bench_contention -w multi -s 2048:4096` to
+confirm `cc_alloc` and `full_reload` carry the traffic.
+
+**Fix.** (1) Extend `ptc_size_classes` and `PTC_NBINS` (`umem_ptc.h:50`)
+through 8192 and default `umem_ptc_maxsize` to match; the bins for 2.5-8 KB
+objects want fewer slots (`PTC_NSLOTS_LARGE` is 32; 16 is enough) so
+`umem_ptc_t` does not grow past P6.3's already-flagged 31 KB. (2)
+Independently, raise `mt_magsize` for the 2048..8192 band in `umem_magtype`
+from 31/15 to 63 -- the Solaris tuning assumed a 64 KB slab and objects of
+this size are exactly the ones `3f2e67c` now packs 16-per-slab. (3)
+Regression: `multi` 1024:4096 at t=8 must be >= 0.8x glibc on `c7i.2xlarge`
+(today 0.26x); an A/B with the null control at t=8 and t=192 on metal.
+
+### P8.3 Interposer per-call overhead after P8.1
+
+`malloc_interpose.c` `free()` fast path at `a74065e` (`is_static_pointer`,
+`is_bootstrap_pointer` via PLT into `libumem.so`, `is_libc_pointer`, then
+`umem_malloc_free`); `malloc.c:736-754` (`umem_malloc_free` calls
+`is_bootstrap_pointer` **again**), `:535-731` (`process_free`:
+`__errno_location()`, `umem_may_own()` twice, header decode, poison store).
+
+**Measured** (post-fix, same build, API vs preload alternating, 3 pairs per
+point, `c7i.metal-48xl`, `multi` 16:64): preload/API = 0.814 / 0.694 / 0.741
+/ 0.782 / 0.810 / 0.811 at 1 / 8 / 32 / 64 / 128 / 192 threads, i.e. a flat
+**19-31 % per-operation cost with no thread dependence**. `perf` at t=192
+(`docs/results/2026-09-23-interpose-ab/perf-post-umem-preload-t192.flat.txt`):
+`is_bootstrap_pointer` 5.9 %, `process_free` 4.4 %, `_umem_free` 2.6 %,
+`umem_malloc` 2.0 %, `umem_may_own` 1.7 %, `free` 1.7 %, `is_libc_pointer`
+0.7 %, `umem_malloc_free` 0.7 % -- versus the API arm's `_umem_alloc` +
+`_umem_free` + wrapper at ~6 % total. `hull_refresh`/`vmem_walk` appear in no
+profile at any thread count: there is no second lock.
+
+**Fix.** (1) Call `is_bootstrap_pointer` once: `umem_malloc_free` is reached
+from the interposer only after the interposer has already checked, so give
+the interposer an entry that skips it (or inline the check -- it is one load
+and one compare, but it is a load of `buf[-1]` on an arbitrary pointer, which
+is the read P5.8 exists to avoid; the hull test should come first and the
+bootstrap magic test only on a hull miss). (2) Inline `umem_may_own`'s hull
+hit (two compares against two atomics) into `process_free`; keep the
+out-of-line refresh for the miss. (3) Drop the `__errno_location()` save /
+restore on the success path -- `process_free` sets `errno` only on the
+failure paths, so read it lazily there. Target: preload/API >= 0.95 at t=1
+and t=192 under the P8.1 A/B protocol; regression is that protocol's
+reference table.
+
+### P8.4 API `multi` 16:64 is 8-24 % behind the best allocator at 128-192 threads on x86_64 metal -- DIAGNOSIS
+
+`c7i.metal-48xl`, `multi` 16:64, 20M ops: umem 37.8 / 140.7 / 181.5 /
+277.7 / 393.6 Mops at 8 / 32 / 64 / 128 / 192 threads vs mimalloc 42.8 /
+164.3 / 210.0 / 348.3 / 504.9 and glibc 38.4 / 128.7 / 177.7 / 298.5 /
+431.5: -12 / -14 / -14 / **-20 / -24 %** vs best. Null at these points -5.5 /
++9.5 / +0.3 / +8.0 / +6.1 %, pooled sd 8.5 %, so only t=128 and t=192 clear
+the band on their own; the sign is the same at all five thread counts and at
+64:256 / 256:1024 (-5..-18 %). On `c8g.metal-48xl` the same gap is 3-6 % at
+every thread count -- inside the null -- so it is x86_64-specific or
+implementation-on-x86-specific, not a design property.
+
+**Mechanism not established.** The `multi` contention dumps show zero depot
+traffic and zero `cc_alloc` at these points: every operation is a PTC hit,
+so this is per-operation cost on the hit path itself. The available profile
+(`perf-post-umem-t192.flat.txt`) puts `_umem_alloc` + `_umem_free` at
+4.8 %, but the benchmark's own t-digest (`td_qsort`, `td_add`,
+`td_compress`) is 30+ % of cycles and drowns the signal.
+
+**Diagnose** (this is the task; no fix is proposed until it lands): (1)
+`perf stat -e instructions,cycles,L1-dcache-load-misses` for umem vs mimalloc
+vs glibc on this exact point with `bench_main`'s histogram disabled (add a
+`-q` that skips `td_add`; the framework has no such switch today). (2)
+`perf annotate` of `_umem_alloc`'s PTC block (`umem.c:3699-3730`): the
+candidates are the `umem_introspect_break_armed` load on every alloc, the
+`thread_ptc` TLS access, and the `ptc_bin_capacity()` call on every free
+(`umem.c:3911`). (3) The same on `c8g.metal-48xl` where the gap is absent,
+to see which counter differs.
+
+### P8.5 `frag` is 20-33 % behind the size-class allocators at 16..1024 B, and 2-3x behind under sustained load
+
+`umem.c:1686-1745` (`umem_slab_alloc`: `cache_lock`, one object per
+acquisition), `:1839-1926` (`umem_slab_free`: same lock), `:2435-2500`
+(`umem_depot_alloc_trylock`: bounded stripe scan), `umem_ptc.h:46-48`
+(PTC bin capacity 128 / 64 / 32), `umem.c:3328` (`umem_cache_alloc_batch`,
+exists and is unused by the PTC refill path).
+
+**Measured** (`frag`, both 8-vCPU boxes, every thread count 1..8, null
++/-3-9 %): umem 4.2 / 3.9 / 3.4 Mops at t=1 for 16:64 / 64:256 / 256:1024 vs
+the best 6.1 / 5.7 / 4.9 (`c7i.2xlarge`); -20..-36 % at t=2..8. At 1k:4k
+the gap is 8-15 %, at the band's edge. Sustained `frag` 16:64, 8 threads, 4
+x 20 s windows, matched work: **umem 8.7 Mops vs 19-22 for everything else
+including glibc; p999 22 us vs 0.3-2.2 us**; umem@null reproduces both to
+within 5 %. umem beats glibc on the matrix `frag` (1.2-2.3x) because glibc's
+`free()` consolidation has a 10-16 us tail, but that is not the comparison
+that matters.
+
+**Mechanism.** The workload holds `budget/4` live objects per thread (5M in
+the matrix, 11M sustained) and frees a random half each round, so half of
+each round's allocations cannot come from anything recently freed and must
+reach the slab layer, one object per `cache_lock` acquisition, and half the
+frees are of objects the PTC/magazine layers never saw. The 8-thread
+contention dump (`contention-umem-frag-t8-16_64.txt`) shows `dep_conten`
+(depot trylock failures) 45,736-58,261 per size class against `dep_local`
+~41,000 -- **more than half of all depot attempts fail the trylock** -- and
+`cc_alloc` 500-1,100 magazine-layer allocations that bypassed the PTC.
+jemalloc/mimalloc/snmalloc serve this pattern from per-thread page free
+lists with no shared lock.
+
+**Diagnose.** `perf record` umem `frag` 16:64 at t=1 (no contention) and
+t=8, split between `umem_slab_alloc`/`umem_slab_free` (lock + list), `umem_slab_create`, and the PTC miss path. The metal `perf-umem-frag-*`
+captures from the comparison run are the first cut.
+
+**Fix.** (1) Batch the slab layer: `umem_slab_alloc` hands out one object per
+`cache_lock`; when a PTC magazine needs refilling and the depot is empty, take
+the lock once and fill the whole magazine from the slab freelist
+(`umem_cache_alloc_batch` is the shape, `umem.c:3328`). Same on the free
+side for a full PTC magazine whose depot push fails. (2) The trylock miss
+rate at 8 threads on 8 stripes says stripes collide; with rseq giving the
+real CPU that should only happen on migration (`rseq_rstrt` is 0 here) --
+check that `cache_depot_ncpus` is not being rounded to fewer stripes than
+CPUs, and whether `umem_depot_alloc_trylock`'s bounded scan
+(`UMEM_DEPOT_STEAL_MAX`) is what fails rather than the local stripe. (3)
+Regression: sustained `frag` 16:64 at 8 threads >= 0.8x glibc and p999 <
+5 us on `c7i.2xlarge` (today 0.45x and 22 us).
+
+### Phase 8 exit criteria
+
+1. P8.1 closed (it is). The README's Performance section states the
+   interposer-vs-API distinction with both numbers.
+2. P8.2 and P8.5 each have a pre-fix demonstration (the rows above), a fix,
+   and a post-fix A/B with the null control on at least one metal box.
+3. P8.3's target met, or the residual re-measured and accepted with its
+   number in the README.
+4. P8.4 has a mechanism or is closed as "inside noise" with the counters
+   that show it.
+5. No new number in the README without a null control beside it.
+
 ## Exit criteria
 
 **Verified 2026-09-22 at `4ba7d00`** by `scripts/ec2/exit_criteria_gate.sh`,
