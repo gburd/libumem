@@ -940,8 +940,18 @@ first, then fixed.
 - umem's 1.2-1.6x RSS/live vs glibc's 1.0-1.25x at 64 B and up (§5.5).
 - The ceiling at 4.5 GB on 16 GiB boxes at HEAD-before-`3f2e67c` (§5.6).
 
+- The sustained-`frag` collapse at 192 threads (8-19x, p999 6-10 ms) and
+  its mechanism in the depot's per-stripe mutexes (§4.5, §5.7).
+- Sustained `prodcons` p999 at 192 threads is 240-270 us, not in the
+  tens-of-microseconds tier; whether that is a regression from the recorded
+  84-93 us is undecidable against a measurement taken with a broken budget
+  (§5.8).
+
 **Not established:**
-- Anything from `prodcons` on 8 vCPU (bimodal; null +244%).
+- Anything from `prodcons` *throughput* on 8 vCPU (bimodal; null +244%).
 - The mechanism of the 8-24% x86_64-metal `multi` gap (§5.4).
-- Whether `3f2e67c` lifts the ceiling, or `a74065e`'s effect on `frag`/RSS.
-- aarch64 metal `multi-hi` and sustained -- see §4.2/§4.5 for what did land.
+- Whether `3f2e67c`/`cf3f762` lift the ceiling, or what `147d5ff`/`9bbe58b`
+  (periodic depot reap; the update thread now actually exists) do to the RSS
+  and sustained figures. Everything here is pre all four commits.
+- aarch64 metal `multi-hi` (200M ops): its clean rerun was cancelled to
+  release the box; the 20M `multi` pass covers the same points at +/-18 %.

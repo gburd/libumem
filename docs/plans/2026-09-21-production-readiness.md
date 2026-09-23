@@ -1646,7 +1646,7 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 | P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | open; mechanism in source |
 | P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; profile attributes it |
 | P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | open; **diagnosis task**, mechanism not established |
-| P8.5 `frag` 20-33 % behind size-class allocators; 2.2-3x behind sustained, p999 22 us | all thread counts incl. t=1, both lo boxes; sustained frag umem slowest in field | open; mechanism in source, needs a profile to apportion |
+| P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | open; mechanism in source + profile + contention dump |
 
 ### P8.1 The `LD_PRELOAD` interposer took a global mutex on every `free()` -- FIXED
 
@@ -1801,27 +1801,54 @@ acquisition), `:1839-1926` (`umem_slab_free`: same lock), `:2435-2500`
 (PTC bin capacity 128 / 64 / 32), `umem.c:3328` (`umem_cache_alloc_batch`,
 exists and is unused by the PTC refill path).
 
-**Measured** (`frag`, both 8-vCPU boxes, every thread count 1..8, null
-+/-3-9 %): umem 4.2 / 3.9 / 3.4 Mops at t=1 for 16:64 / 64:256 / 256:1024 vs
-the best 6.1 / 5.7 / 4.9 (`c7i.2xlarge`); -20..-36 % at t=2..8. At 1k:4k
-the gap is 8-15 %, at the band's edge. Sustained `frag` 16:64, 8 threads, 4
-x 20 s windows, matched work: **umem 8.7 Mops vs 19-22 for everything else
-including glibc; p999 22 us vs 0.3-2.2 us**; umem@null reproduces both to
-within 5 %. umem beats glibc on the matrix `frag` (1.2-2.3x) because glibc's
-`free()` consolidation has a 10-16 us tail, but that is not the comparison
-that matters.
+**Measured** (`frag`, all four boxes, null +/-3-11 %): umem 4.2 / 3.9 / 3.4
+Mops at t=1 for 16:64 / 64:256 / 256:1024 vs the best 6.1 / 5.7 / 4.9
+(`c7i.2xlarge`), -27..-42 % at t=1 on metal; -20..-36 % at t=2..8. At 1k:4k
+the gap is 8-15 %, at the band's edge; above t=32 on metal every allocator
+converges (the benchmark's `memset` saturates). Sustained `frag` 16:64,
+matched work, 4 x 20 s windows:
+
+| box | threads | umem Mops | field | umem p999 | field p999 |
+|---|---|---|---|---|---|
+| `c7i.2xlarge` | 8 | 8.7 | 19-22 (glibc 19.3) | 22 us | 0.4-8 us |
+| `c7g.2xlarge` | 8 | 7.7 | 19-25 (glibc 21.5) | 22 us | 0.3-5 us |
+| `c7i.metal-48xl` | 192 | **2.0** | 14-16 (glibc 15.4) | **6.0 ms** | 25 us-0.7 ms |
+| `c8g.metal-48xl` | 192 | **1.2** | 22-24 (glibc 23.0) | **9.9 ms** | 0.3 us-0.2 ms |
+
+umem@null reproduces every row to within 5 %. At 192 threads this is the
+worst point in the whole comparison: 8-19x behind everything, glibc
+included, and the window ran 18-31 s where the field took 1.6-2.4 s. umem
+beats glibc on the *matrix* `frag` (1.2-2.3x) because glibc's `free()`
+consolidation has a 10-16 us tail, but that is not the comparison that
+matters.
 
 **Mechanism.** The workload holds `budget/4` live objects per thread (5M in
 the matrix, 11M sustained) and frees a random half each round, so half of
 each round's allocations cannot come from anything recently freed and must
 reach the slab layer, one object per `cache_lock` acquisition, and half the
-frees are of objects the PTC/magazine layers never saw. The 8-thread
-contention dump (`contention-umem-frag-t8-16_64.txt`) shows `dep_conten`
-(depot trylock failures) 45,736-58,261 per size class against `dep_local`
-~41,000 -- **more than half of all depot attempts fail the trylock** -- and
-`cc_alloc` 500-1,100 magazine-layer allocations that bypassed the PTC.
-jemalloc/mimalloc/snmalloc serve this pattern from per-thread page free
-lists with no shared lock.
+frees are of objects the PTC/magazine layers never saw. The freed objects
+land on the *freeing* CPU's depot stripe and are wanted next by whichever
+CPU allocates, so at N threads the depot is an N-way all-to-all exchange
+through per-stripe mutexes. Evidence at both scales:
+
+- 8 threads (`contention-umem-frag-t8-16_64.txt`): `dep_conten` (depot
+  trylock failures) 45,736-58,261 per size class against `dep_local`
+  ~41,000 -- **more than half of all depot attempts fail the trylock** --
+  and `cc_alloc` 500-1,100 magazine-layer allocations that bypassed the PTC.
+- 192 threads (`c7i.metal`, `contention-umem-frag-t192-64_256.txt`):
+  `dep_remote` 4,800-13,900 vs `dep_local` 2,000-5,000 per class -- **2-3
+  of every 4 reloads steal from another CPU's stripe** -- and `dep_conten`
+  2,000-6,100. `perf` on the same point
+  (`perf-umem-frag-t192-64_256.flat.txt`): **`pthread_mutex_trylock` 10.0 %
+  + `pthread_mutex_unlock` 2.9 % of all cycles**, callers `umem_depot_alloc`
+  / `umem_depot_pop_trylock`, plus 1.2 % in the kernel's `osq_lock` under
+  `mmap` (slab creation contending on `mmap_lock`). glibc's profile on the
+  same point has no user-space lock at all (its 20 % `osq_lock` is the same
+  `mmap_lock`, and it still finishes 8x sooner).
+
+jemalloc/mimalloc/snmalloc/rpmalloc return a freed object to the *owning*
+thread's page or segment (a lock-free push), not to the freeing CPU's
+stripe, so their remote-free cost is O(1) with no lock and no scan.
 
 **Diagnose.** `perf record` umem `frag` 16:64 at t=1 (no contention) and
 t=8, split between `umem_slab_alloc`/`umem_slab_free` (lock + list), `umem_slab_create`, and the PTC miss path. The metal `perf-umem-frag-*`
@@ -1831,14 +1858,21 @@ captures from the comparison run are the first cut.
 `cache_lock`; when a PTC magazine needs refilling and the depot is empty, take
 the lock once and fill the whole magazine from the slab freelist
 (`umem_cache_alloc_batch` is the shape, `umem.c:3328`). Same on the free
-side for a full PTC magazine whose depot push fails. (2) The trylock miss
-rate at 8 threads on 8 stripes says stripes collide; with rseq giving the
-real CPU that should only happen on migration (`rseq_rstrt` is 0 here) --
-check that `cache_depot_ncpus` is not being rounded to fewer stripes than
-CPUs, and whether `umem_depot_alloc_trylock`'s bounded scan
-(`UMEM_DEPOT_STEAL_MAX`) is what fails rather than the local stripe. (3)
-Regression: sustained `frag` 16:64 at 8 threads >= 0.8x glibc and p999 <
-5 us on `c7i.2xlarge` (today 0.45x and 22 us).
+side for a full PTC magazine whose depot push fails. (2) The all-to-all
+stripe traffic is the structural cost: consider returning a full magazine
+to the stripe of the CPU that *allocated* its objects (the slab knows; a
+magazine does not, but `umem_slab_t`/`bufctl` are per-object and the first
+round's slab is a good-enough hint), or a per-cache global full list that
+`umem_depot_alloc_trylock` tries **before** the bounded 8-stripe steal scan
+(`UMEM_DEPOT_STEAL_MAX`, `umem.c:576`) so a hot cache's full magazines are
+found in O(1) rather than after 8 failed trylocks. (3) Measure first: the
+`perf` capture says 13 % of cycles are in the mutexes themselves, which
+bounds what (1)/(2) can recover to ~15 %; the remaining 8x must then be
+lock *wait*, which `perf` attributes to the caller -- take a `perf record
+-e sched:sched_switch` or `off-cpu` profile of the same point before
+choosing between (1) and (2). (4) Regression: sustained `frag` 16:64 at 8
+threads >= 0.8x glibc and p999 < 5 us on `c7i.2xlarge` (today 0.45x and
+22 us); at 192 threads on metal >= 0.5x glibc (today 0.13x).
 
 ### Phase 8 exit criteria
 
