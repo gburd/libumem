@@ -1,0 +1,120 @@
+
+Sorted summary for file /tmp/ab_post/libumem_malloc.so
+----------------------------------------------
+
+   31.91 malloc_interpose.c:702
+   19.15 malloc_interpose.c:198
+   14.89 malloc_interpose.c:682
+   11.35 malloc_interpose.c:703
+   11.35 malloc_interpose.c:749
+   11.35 malloc_interpose.c:726
+ Percent |	Source code & Disassembly of libumem_malloc.so for cycles (141 samples, percent: local period)
+--------------------------------------------------------------------------------------------------------------
+         :
+         :
+         :
+         : 3    Disassembly of section .text:
+         :
+         : 5    00000000000016d0 <free>:
+         : 6    free():
+         : 683  * free - must handle mixed allocation sources
+         : 684  */
+         : 685  void
+         : 686  free(void *ptr)
+         : 687  {
+         : 688  if (ptr == NULL)
+    0.00 :   16d0:   test   %rdi,%rdi
+    0.00 :   16d3:   je     1830 <free+0x160>
+         : 682  {
+    0.00 :   16d9:   push   %r12
+    0.00 :   16db:   push   %rbp
+   14.89 :   16dc:   mov    %rdi,%rbp // malloc_interpose.c:682
+    0.00 :   16df:   sub    $0x8,%rsp
+         : 701  * else goes straight to umem, whose process_free() validates and
+         : 702  * either frees or reports -- exactly what the classify-then-free
+         : 703  * sequence did, in one pass.  Since P5.8 a rejected pointer leaves
+         : 704  * state untouched, so skipping the pre-classification loses no safety.
+         : 705  */
+         : 706  if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1) &&
+    0.00 :   16e3:   mov    0x5a9f(%rip),%eax        # 7188 <interpose_state>
+    0.00 :   16e9:   cmp    $0x2,%eax
+    0.00 :   16ec:   jne    1715 <free+0x45>
+         : 710  is_static_pointer():
+         : 198  return (ptr >= (const void *)static_buffer &&
+    9.22 :   16ee:   lea    0x4a7b(%rip),%rax        # 6170 <static_buffer> // malloc_interpose.c:198
+    0.00 :   16f5:   cmp    %rax,%rdi
+    9.93 :   16f8:   jb     1705 <free+0x35>
+    0.00 :   16fa:   add    $0x1000,%rax
+    0.00 :   1700:   cmp    %rax,%rdi
+    0.00 :   1703:   jb     1715 <free+0x45>
+         : 205  free():
+         : 702  !is_static_pointer(ptr) && !is_bootstrap_pointer(ptr) &&
+    0.00 :   1705:   mov    %rbp,%rdi
+   13.48 :   1708:   call   1070 <is_bootstrap_pointer@plt> // malloc_interpose.c:702
+    0.00 :   170d:   test   %eax,%eax
+    6.38 :   170f:   je     1810 <free+0x140>
+         : 708  !is_libc_pointer(ptr, NULL)) {
+         : 709  umem_malloc_free(ptr);
+         : 710  return;
+         : 711  }
+         :
+         : 713  switch (interpose_owner_of(ptr, NULL)) {
+    0.00 :   1715:   xor    %esi,%esi
+    0.00 :   1717:   mov    %rbp,%rdi
+    0.00 :   171a:   call   1450 <interpose_owner_of>
+    0.00 :   171f:   cmp    $0x3,%eax
+    0.00 :   1722:   je     1770 <free+0xa0>
+    0.00 :   1724:   ja     1750 <free+0x80>
+    0.00 :   1726:   cmp    $0x1,%eax
+    0.00 :   1729:   je     17d8 <free+0x108>
+    0.00 :   172f:   cmp    $0x2,%eax
+    0.00 :   1732:   jne    17e0 <free+0x110>
+         : 749  libc_free(ptr);
+         : 750  return;
+         : 751  }
+         :
+         : 753  umem_malloc_free(ptr);
+         : 754  }
+    0.00 :   1738:   add    $0x8,%rsp
+         : 717  bootstrap_free(ptr);
+    0.00 :   173c:   mov    %rbp,%rdi
+         : 749  }
+    0.00 :   173f:   pop    %rbp
+    0.00 :   1740:   pop    %r12
+         : 717  bootstrap_free(ptr);
+    0.00 :   1742:   jmp    10c0 <bootstrap_free@plt>
+    0.00 :   1747:   nopw   0x0(%rax,%rax,1)
+         : 708  switch (interpose_owner_of(ptr, NULL)) {
+    0.00 :   1750:   cmp    $0x4,%eax
+    0.00 :   1753:   jne    17e0 <free+0x110>
+         : 749  }
+    0.00 :   1759:   add    $0x8,%rsp
+         : 726  umem_malloc_free(ptr);
+    0.00 :   175d:   mov    %rbp,%rdi
+         : 749  }
+    0.00 :   1760:   pop    %rbp
+   11.35 :   1761:   pop    %r12 // malloc_interpose.c:749
+         : 726  umem_malloc_free(ptr);
+   11.35 :   1763:   jmp    1060 <umem_malloc_free@plt> // malloc_interpose.c:726
+    0.00 :   1768:   nopl   0x0(%rax,%rax,1)
+         : 729  untrack_libc_ptr():
+         : 396  (void) pthread_mutex_lock(&libc_ptr_lock);
+    0.00 :   1770:   lea    0x2969(%rip),%r12        # 40e0 <libc_ptr_lock>
+    0.00 :   1777:   mov    %r12,%rdi
+    0.00 :   177a:   call   1140 <pthread_mutex_lock@plt>
+         : 397  for (i = 0; i < MAX_LIBC_PTRS; i++) {
+    0.00 :   177f:   lea    0x299a(%rip),%rcx        # 4120 <libc_ptrs>
+    0.00 :   1786:   xor    %eax,%eax
+    0.00 :   1788:   mov    %rcx,%rdx
+    0.00 :   178b:   jmp    17a0 <free+0xd0>
+    0.00 :   178d:   nopl   (%rax)
+    0.00 :   1790:   add    $0x1,%rax
+    0.00 :   1794:   add    $0x10,%rdx
+    0.00 :   1798:   cmp    $0x200,%rax
+    0.00 :   179e:   je     17c4 <free+0xf4>
+         : 398  if (libc_ptrs[i].ptr == ptr) {
+    0.00 :   17a0:   cmp    (%rdx),%rbp
+    0.00 :   17a3:   jne    1790 <free+0xc0>
+         : 399  libc_ptrs[i].ptr = NULL;
+    0.00 :   17a5:   shl    $0x4,%rax
+    0.00 :   17a9:   add    %rax,%rcx

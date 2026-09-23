@@ -1,4 +1,4 @@
-arm,label,replicate,
+arm,label,replicate,allocator,workload,threads,total_ops,ops_per_thread,elapsed_sec,ops_per_sec,lat_min,lat_p50,lat_p90,lat_p99,lat_p999,lat_max,lat_mean,rss_at_live_peak,vmhwm_bytes,allocated_bytes,live_bytes_at_peak,live_bytes_median,frag,frag_median,frag_samples,cpu_user_ms,cpu_sys_ms,ops_cov,runs,unstable,ops_floor_raised,alloc_failures
 pre,null-preload-multi-1-16:64,1,umem-preload,multi-thread,1,20000000,20000000,6.627219,3017857.19,18,20,22,24,25,81811,21,9490432,9490432,789934599,0,0,,,0,6626.4,0.0,0.0017,3,0,0,0
 nullB,null-preload-multi-1-16:64,1,umem-preload,multi-thread,1,20000000,20000000,6.597898,3031268.53,18,20,22,24,25,82515,21,9486336,9486336,789934599,0,0,,,0,6597.4,0.0,0.0018,3,0,0,0
 pre,null-preload-multi-1-16:64,2,umem-preload,multi-thread,1,20000000,20000000,6.580054,3039488.59,18,20,22,24,25,93347,21,9490432,9490432,789934599,0,0,,,0,6579.7,0.0,0.0014,3,0,0,0

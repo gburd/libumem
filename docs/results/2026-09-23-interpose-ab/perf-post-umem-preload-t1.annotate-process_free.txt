@@ -1,0 +1,160 @@
+
+Sorted summary for file /tmp/ab_post/libumem.so.1
+----------------------------------------------
+
+   13.28 malloc.c:697
+   11.78 malloc.c:726
+    9.02 malloc.c:538
+    8.27 malloc.c:565
+    7.77 malloc.c:546
+    6.02 malloc.c:708
+    6.01 malloc.c:577
+    6.01 malloc.c:706
+    5.51 malloc.c:719
+    5.51 malloc.c:587
+    5.01 malloc.c:712
+    4.51 malloc.c:585
+    4.01 malloc.c:561
+    3.76 malloc.c:725
+    3.26 malloc.c:709
+ Percent |	Source code & Disassembly of libumem.so.1 for cycles (399 samples, percent: local period)
+---------------------------------------------------------------------------------------------------------
+         :
+         :
+         :
+         : 3     Disassembly of section .text:
+         :
+         : 5     00000000000835a0 <process_free>:
+         : 6     process_free():
+         :
+         : 539   int
+         : 540   process_free(void *buf_arg,
+         : 541   int do_free,            /* free the buffer, or just get its size? */
+         : 542   size_t *data_size_arg)  /* output: bytes of data in buf_arg */
+         : 543   {
+    0.00 :   835a0:  push   %r15
+    0.00 :   835a2:  push   %r14
+    0.00 :   835a4:  push   %r13
+    2.76 :   835a6:  push   %r12 // malloc.c:538
+    0.00 :   835a8:  mov    %rdi,%r12
+    0.00 :   835ab:  push   %rbp
+    0.00 :   835ac:  mov    %esi,%ebp
+    6.26 :   835ae:  push   %rbx
+    0.00 :   835af:  mov    %rdx,%rbx
+    0.00 :   835b2:  sub    $0x38,%rsp
+         : 546   /*
+         : 547   * Check for bootstrap pointers first.
+         : 548   * These have a different header format (bootstrap_header_t) and must
+         : 549   * be handled separately to avoid misinterpreting their headers.
+         : 550   */
+         : 551   if (is_bootstrap_pointer(buf_arg)) {
+    4.01 :   835b6:  call   692e0 <is_bootstrap_pointer@plt> // malloc.c:546
+    0.00 :   835bb:  test   %eax,%eax
+    3.76 :   835bd:  je     835f0 <process_free+0x50>
+         : 552   if (data_size_arg != NULL) {
+         : 553   bootstrap_header_t *hdr = (bootstrap_header_t *)buf_arg - 1;
+         : 554   *data_size_arg = hdr->size - sizeof(bootstrap_header_t);
+         : 555   }
+         : 556   /* For do_free=1, bootstrap_free should be called instead */
+         : 557   return (1);
+    0.00 :   835bf:  mov    $0x1,%r13d
+         : 547   if (data_size_arg != NULL) {
+    0.00 :   835c5:  test   %rbx,%rbx
+    0.00 :   835c8:  je     835d6 <process_free+0x36>
+         : 549   *data_size_arg = hdr->size - sizeof(bootstrap_header_t);
+    0.00 :   835ca:  mov    -0x8(%r12),%rax
+    0.00 :   835cf:  sub    $0x10,%rax
+    0.00 :   835d3:  mov    %rax,(%rbx)
+         : 726   *data_size_arg = data_size;
+         : 727   }
+         :
+         : 729   errno = old_errno;
+         : 730   return (1);
+         : 731   }
+    0.00 :   835d6:  add    $0x38,%rsp
+    0.00 :   835da:  mov    %r13d,%eax
+    0.00 :   835dd:  pop    %rbx
+    3.01 :   835de:  pop    %rbp // malloc.c:726
+    0.00 :   835df:  pop    %r12
+    0.00 :   835e1:  pop    %r13
+    0.00 :   835e3:  pop    %r14
+    5.26 :   835e5:  pop    %r15
+    3.51 :   835e7:  ret
+    0.00 :   835e8:  nopl   0x0(%rax,%rax,1)
+    0.00 :   835f0:  mov    %eax,%r13d
+         : 569   buf--;
+    0.00 :   835f3:  lea    -0x8(%r12),%r15
+         : 565   int old_errno = errno;
+    4.01 :   835f8:  call   690c0 <__errno_location@plt> // malloc.c:565
+         : 577   if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+    0.00 :   835fd:  mov    $0x8,%esi
+    0.00 :   83602:  mov    %r15,%rdi
+         : 565   int old_errno = errno;
+    0.00 :   83605:  mov    %rax,%r14
+    4.26 :   83608:  mov    (%rax),%eax
+    0.25 :   8360a:  mov    %eax,0xc(%rsp)
+         : 577   if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+    6.01 :   8360e:  call   83060 <umem_may_own> // malloc.c:577
+    0.00 :   83613:  test   %eax,%eax
+    0.00 :   83615:  je     83818 <process_free+0x278>
+         : 587   switch (UMEM_MALLOC_DECODE(buf->malloc_stat, size)) {
+    0.00 :   8361b:  mov    -0x4(%r12),%esi
+    0.00 :   83620:  mov    -0x8(%r12),%eax
+         : 585   size = buf->malloc_size;
+    4.51 :   83625:  mov    -0x8(%r12),%ecx // malloc.c:585
+         : 587   switch (UMEM_MALLOC_DECODE(buf->malloc_stat, size)) {
+    0.00 :   8362a:  add    %esi,%eax
+    0.00 :   8362c:  cmp    $0x3a10c000,%eax
+    0.00 :   83631:  je     83870 <process_free+0x2d0>
+    0.00 :   83637:  ja     83710 <process_free+0x170>
+    5.51 :   8363d:  cmp    $0x6e47000,%eax // malloc.c:587
+    0.00 :   83642:  je     83780 <process_free+0x1e0>
+    0.00 :   83648:  cmp    $0x16ba7000,%eax
+    0.00 :   8364d:  jne    83850 <process_free+0x2b0>
+         : 599   base = (void *)(buf - 1);
+    0.00 :   83653:  lea    -0x10(%r12),%r8
+         : 601   data_size = size - 2 * sizeof (malloc_data_t);
+    0.00 :   83658:  lea    -0x10(%rcx),%r9
+         : 561   int memalign = 0;
+    4.01 :   8365c:  xor    %r11d,%r11d // malloc.c:561
+         : 600   overhead_min = 2 * sizeof (malloc_data_t);
+    0.00 :   8365f:  mov    $0x10,%eax
+         : 604   npoison = 1;
+    0.00 :   83664:  mov    $0x1,%r10d
+         : 697   if (size < overhead_min || !umem_may_own(base, size)) {
+    0.00 :   8366a:  cmp    %rax,%rcx
+    0.00 :   8366d:  jb     837e0 <process_free+0x240>
+    4.51 :   83673:  mov    %rcx,%rsi // malloc.c:697
+    0.00 :   83676:  mov    %r8,%rdi
+    0.00 :   83679:  mov    %rcx,0x18(%rsp)
+    0.00 :   8367e:  mov    %r8,0x10(%rsp)
+    4.01 :   83683:  mov    %r11d,0x2c(%rsp)
+    0.00 :   83688:  mov    %r10d,0x28(%rsp)
+    0.00 :   8368d:  mov    %r9,0x20(%rsp)
+    4.76 :   83692:  call   83060 <umem_may_own>
+    0.00 :   83697:  mov    0x10(%rsp),%r8
+    0.00 :   8369c:  mov    0x18(%rsp),%rcx
+    0.00 :   836a1:  test   %eax,%eax
+    0.00 :   836a3:  je     837e0 <process_free+0x240>
+         : 706   if (do_free) {
+    6.01 :   836a9:  test   %ebp,%ebp // malloc.c:706
+    0.00 :   836ab:  mov    0x20(%rsp),%r9
+    0.00 :   836b0:  je     838e0 <process_free+0x340>
+         : 708   for (i = 0; i < npoison; i++)
+    0.00 :   836b6:  mov    0x28(%rsp),%r10d
+         : 709   poison_lo[i].malloc_stat = UMEM_FREE_PATTERN_32;
+    3.26 :   836bb:  movl   $0xdeadbeef,0x4(%r15) // malloc.c:709
+         : 708   for (i = 0; i < npoison; i++)
+    0.00 :   836c3:  mov    0x2c(%rsp),%r11d
+    0.00 :   836c8:  cmp    $0x2,%r10d
+    6.02 :   836cc:  jne    836d6 <process_free+0x136> // malloc.c:708
+         : 709   poison_lo[i].malloc_stat = UMEM_FREE_PATTERN_32;
+    0.00 :   836ce:  movl   $0xdeadbeef,0xc(%r15)
+         : 712   if (memalign) {
+    0.00 :   836d6:  test   %r11d,%r11d
+    5.01 :   836d9:  je     838f0 <process_free+0x350> // malloc.c:712
+         : 714   vmem_xfree(umem_memalign_arena, base, size);
+    0.00 :   836df:  mov    0x13612(%rip),%rax        # 96cf8 <umem_memalign_arena@@Base-0x264f8>
+    0.00 :   836e6:  mov    %rcx,%rdx
+    0.00 :   836e9:  mov    %r8,%rsi
+    0.00 :   836ec:  mov    (%rax),%rdi

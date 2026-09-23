@@ -1,0 +1,39 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 149K of event 'cycles'
+# Event count (approx.): 472971695202
+#
+# Overhead  Command     Shared Object         Symbol                                 
+# ........  ..........  ....................  .......................................
+#
+    25.47%  bench_main  bench_main            [.] td_qsort
+            |          
+             --25.47%--td_qsort
+    16.79%  bench_main  bench_main            [.] mt_worker_thread
+            |          
+             --15.38%--mt_worker_thread
+     9.39%  bench_main  bench_main            [.] td_add
+            |          
+             --8.90%--td_add
+     7.78%  bench_main  [vdso]                [.] 0x0000000000000c19
+            |          
+             --7.75%--0x7fadb2aefc1c
+                       clock_gettime@@GLIBC_2.17
+     5.94%  bench_main  libumem.so.1          [.] is_bootstrap_pointer
+            |          
+             --5.38%--is_bootstrap_pointer
+     4.40%  bench_main  libumem.so.1          [.] process_free
+            |          
+             --3.45%--process_free
+     3.98%  bench_main  bench_main            [.] td_compress
+            |          
+             --3.98%--td_compress
+     2.62%  bench_main  libumem.so.1          [.] _umem_free
+            |          
+             --2.43%--_umem_free
+#
+# (Tip: System-wide collection from all CPUs: perf record -a)
+#

@@ -1,0 +1,43 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 145K of event 'cycles'
+# Event count (approx.): 466770788519
+#
+# Overhead  Command     Shared Object      Symbol                                 
+# ........  ..........  .................  .......................................
+#
+    28.76%  bench_main  bench_main         [.] mt_worker_thread
+            |          
+             --26.08%--mt_worker_thread
+    23.85%  bench_main  bench_main         [.] td_qsort
+            |          
+             --23.85%--td_qsort
+     8.86%  bench_main  [vdso]             [.] 0x0000000000000c19
+            |          
+             --8.80%--0x7f1d3ff60c1c
+                       clock_gettime@@GLIBC_2.17
+     5.15%  bench_main  [vdso]             [.] 0x0000000000000bb1
+            |          
+             --5.12%--0x7f1d3ff60bb4
+                       clock_gettime@@GLIBC_2.17
+     4.77%  bench_main  bench_main         [.] td_add
+            |          
+             --4.26%--td_add
+     4.20%  bench_main  bench_main         [.] td_compress
+            |          
+             --4.20%--td_compress
+     2.47%  bench_main  libumem.so.1       [.] _umem_alloc
+            |          
+             --2.35%--_umem_alloc
+     2.31%  bench_main  libumem.so.1       [.] _umem_free
+            |          
+             --2.13%--_umem_free
+     2.23%  bench_main  bench_main         [.] umem_free_wrapper
+            |          
+             --2.07%--umem_free_wrapper
+#
+# (Tip: To show assembler sample contexts use perf record -b / perf script -F +brstackinsn --xed)
+#
