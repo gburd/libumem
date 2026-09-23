@@ -1,0 +1,9 @@
+    71.23%  bench_main  bench_main                 [.] frag_worker
+     9.95%  bench_main  libc.so.6                  [.] pthread_mutex_trylock@@GLIBC_2.34
+     2.94%  bench_main  libc.so.6                  [.] __GI___pthread_mutex_unlock_usercnt
+     1.83%  bench_main  [vdso]                     [.] 0x0000000000000c2e
+     1.28%  bench_main  bench_main                 [.] umem_free_wrapper
+     1.20%  bench_main  [kernel.kallsyms]          [k] osq_lock
+     0.93%  bench_main  libumem.so.1.0.0           [.] umem_depot_alloc
+     0.84%  bench_main  libumem.so.1.0.0           [.] umem_depot_pop_trylock
+     0.80%  bench_main  bench_main                 [.] td_qsort

@@ -1,0 +1,6 @@
+   100.00%     0.00%  bench_main  libc.so.6          [.] start_thread
+   100.00%     0.00%  bench_main  libc.so.6          [.] thread_start
+    50.14%    49.93%  bench_main  bench_main         [.] producer_thread
+    49.85%     5.98%  bench_main  bench_main         [.] consumer_thread
+    42.57%    42.57%  bench_main  bench_main         [.] ring_pop
+     1.05%     0.14%  bench_main  libc.so.6          [.] __sched_yield

@@ -1,0 +1,1 @@
+    97.99%  bench_main  [kernel.kallsyms]        [k] native_queued_spin_lock_slowpath

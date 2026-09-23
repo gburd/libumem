@@ -1,0 +1,4 @@
+[ perf record: Woken up 12226 times to write data ]
+Warning:
+1 out of order events recorded.
+[ perf record: Captured and wrote 3473.470 MB /tmp/perf-umem-preload-multi-t192-64_256.data (24462324 samples) ]

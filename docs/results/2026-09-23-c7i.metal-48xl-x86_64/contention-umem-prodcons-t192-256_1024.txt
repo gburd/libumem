@@ -1,0 +1,28 @@
+# umem prodcons t=192 size=256:1024 ops=19200000 alloc_failures=0
+throughput_mops = 1.790
+lat_p50_ns = 545
+lat_p99_ns = 111981
+lat_p999_ns = 1968406
+lat_max_ns = 161192644
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=192
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            6              0              0            0
+umem_magazine_63                      0            0            0           19            0            0              0              0            0
+umem_magazine_127                   223            0            0          146           18            1              0              0            0
+umem_magazine_255                     0            0            0            0            0            5              0              0            0
+umem_slab_cache                       0            0            0            0            0          342              0              0            0
+umem_bufctl_cache                     0            0            0            0            0        23672              0              0            0
+umem_va_4096                          0            0            0            0            0          550              0              0            0
+umem_va_8192                          0            0            0            0            0           21              0              0            0
+umem_va_32768                         0            0            0            0            0            0              0              0            0
+umem_alloc_320                   331491            0            0          830         3964          562              0              0            0
+umem_alloc_384                   431199            0            0          939         5401          809              0              0            0
+umem_alloc_448                   430240            0            0          941         5393          776              0              0            0
+umem_alloc_512                   428178            0            0          939         5402          786              0              0            0
+umem_alloc_640                   842586            0            0         1123        11717         1899              0              0            0
+umem_alloc_768                   865946            0            0         1201        11897         1853              0              0            0
+umem_alloc_896                   853240            0            0         1205        11954         1959              0              0            0
+umem_alloc_1024                  846292            0            0          742        23930          531              0              0            0
+umem_alloc_1280                  104116            0            0          784         2143          103              0              0            0
+umem_alloc_32768                      0            0            0          152            3           11              0              0            0

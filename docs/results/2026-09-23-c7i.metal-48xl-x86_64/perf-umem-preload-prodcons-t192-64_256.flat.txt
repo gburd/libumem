@@ -1,0 +1,4 @@
+    84.60%  bench_main  bench_main               [.] producer_thread
+     7.28%  bench_main  [kernel.kallsyms]        [k] native_queued_spin_lock_slowpath
+     0.62%  bench_main  libc.so.6                [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.57%  bench_main  libc.so.6                [.] __sched_yield

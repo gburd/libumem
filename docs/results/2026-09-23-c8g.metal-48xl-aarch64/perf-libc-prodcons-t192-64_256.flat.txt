@@ -1,0 +1,4 @@
+    49.93%  bench_main  bench_main         [.] producer_thread
+    42.57%  bench_main  bench_main         [.] ring_pop
+     5.98%  bench_main  bench_main         [.] consumer_thread
+     0.58%  bench_main  [kernel.kallsyms]  [k] arch_local_irq_enable

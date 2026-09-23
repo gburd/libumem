@@ -1,0 +1,11 @@
+   100.00%     0.00%  bench_main  libc.so.6              [.] start_thread
+   100.00%     0.00%  bench_main  libc.so.6              [.] thread_start
+    99.88%    93.05%  bench_main  bench_main             [.] frag_worker
+     2.32%     0.68%  bench_main  libc.so.6              [.] cfree@GLIBC_2.17
+     1.76%     0.47%  bench_main  libc.so.6              [.] malloc
+     1.60%     1.36%  bench_main  libc.so.6              [.] _int_free
+     1.40%     0.01%  bench_main  libc.so.6              [.] clock_gettime@@GLIBC_2.17
+     1.39%     0.01%  bench_main  [vdso]                 [.] __kernel_clock_gettime
+     1.33%     0.22%  bench_main  bench_main             [.] td_add
+     1.29%     0.71%  bench_main  libc.so.6              [.] _int_malloc
+     1.08%     0.24%  bench_main  bench_main             [.] td_compress

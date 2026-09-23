@@ -1,0 +1,2 @@
+[ perf record: Woken up 495 times to write data ]
+[ perf record: Captured and wrote 150.917 MB /tmp/perf-libc-prodcons-t192-64_256.data (1632015 samples) ]

@@ -1,0 +1,9 @@
+    67.17%  bench_main  bench_main            [.] frag_worker
+    19.81%  bench_main  [kernel.kallsyms]     [k] osq_lock
+     2.80%  bench_main  libc.so.6             [.] _int_free
+     1.71%  bench_main  libc.so.6             [.] _int_malloc
+     1.07%  bench_main  libc.so.6             [.] malloc
+     0.93%  bench_main  [vdso]                [.] 0x0000000000000c2e
+     0.86%  bench_main  bench_main            [.] td_qsort
+     0.68%  bench_main  [kernel.kallsyms]     [k] rwsem_spin_on_owner
+     0.67%  bench_main  libc.so.6             [.] cfree@GLIBC_2.2.5

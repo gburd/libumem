@@ -1,0 +1,4 @@
+    54.80%  bench_main  bench_main            [.] ring_pop
+    42.18%  bench_main  bench_main            [.] producer_thread
+     0.69%  bench_main  libc.so.6             [.] _int_free
+     0.55%  bench_main  [kernel.kallsyms]     [k] _raw_spin_lock

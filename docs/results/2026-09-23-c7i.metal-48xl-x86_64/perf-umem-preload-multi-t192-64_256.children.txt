@@ -1,0 +1,13 @@
+    98.66%     0.00%  bench_main  [kernel.kallsyms]        [k] entry_SYSCALL_64_after_hwframe
+    98.66%     0.01%  bench_main  [kernel.kallsyms]        [k] do_syscall_64
+    98.61%     0.00%  bench_main  [kernel.kallsyms]        [k] __x64_sys_futex
+    98.60%     0.00%  bench_main  [kernel.kallsyms]        [k] do_futex
+    98.07%    97.99%  bench_main  [kernel.kallsyms]        [k] native_queued_spin_lock_slowpath
+    97.62%     0.06%  bench_main  [kernel.kallsyms]        [k] _raw_spin_lock
+    55.57%     0.11%  bench_main  libc.so.6                [.] __GI___lll_lock_wait
+    55.39%     0.00%  bench_main  [kernel.kallsyms]        [k] futex_wait
+    55.39%     0.02%  bench_main  [kernel.kallsyms]        [k] __futex_wait
+    55.01%     0.01%  bench_main  [kernel.kallsyms]        [k] futex_wait_setup
+    54.87%     0.11%  bench_main  [kernel.kallsyms]        [k] futex_q_lock
+    43.25%     0.01%  bench_main  libc.so.6                [.] __GI___lll_lock_wake
+    43.21%     0.12%  bench_main  [kernel.kallsyms]        [k] futex_wake

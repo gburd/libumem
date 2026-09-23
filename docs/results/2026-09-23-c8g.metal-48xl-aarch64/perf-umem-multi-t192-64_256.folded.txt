@@ -1,0 +1,176 @@
+    32.44%  bench_main  bench_main             [.] td_qsort
+547 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort
+446 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort
+206 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort
+125 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort;td_qsort
+25 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort;td_qsort;td_qsort
+    20.53%  bench_main  [vdso]                 [.] 0x0000000000000518
+905 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa9a42518
+     9.48%  bench_main  [vdso]                 [.] 0x0000000000000508
+360 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa9a42508
+     8.34%  bench_main  bench_main             [.] td_add
+259 thread_start;start_thread;mt_worker_thread;td_add
+     5.04%  bench_main  bench_main             [.] mt_worker_thread
+229 thread_start;start_thread;mt_worker_thread
+     4.74%  bench_main  bench_main             [.] td_compress
+211 thread_start;start_thread;mt_worker_thread;td_add;td_compress
+     4.71%  bench_main  [vdso]                 [.] 0x00000000000004fc
+190 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa9a424fc
+     2.96%  bench_main  [vdso]                 [.] 0x000000000000050c
+135 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa9a4250c
+     2.27%  bench_main  [vdso]                 [.] 0x0000000000000528
+104 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa9a42528
+     1.58%  bench_main  libc.so.6              [.] clock_gettime@@GLIBC_2.17
+44 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17
+     1.30%  bench_main  libumem.so.1.0.0       [.] _umem_free
+60 thread_start;start_thread;mt_worker_thread;_umem_free
+     1.09%  bench_main  libm.so.6              [.] log
+59 thread_start;start_thread;mt_worker_thread;td_add;log
+     1.04%  bench_main  libumem.so.1.0.0       [.] _umem_alloc
+66 thread_start;start_thread;mt_worker_thread;umem_alloc_wrapper;_umem_alloc
+     0.66%  bench_main  bench_main             [.] umem_alloc_wrapper
+23 thread_start;start_thread;mt_worker_thread;umem_alloc_wrapper
+     0.45%  bench_main  [vdso]                 [.] 0x0000000000000580
+     0.42%  bench_main  libc.so.6              [.] rand_r
+     0.35%  bench_main  libc.so.6              [.] __GI___memset_generic
+     0.34%  bench_main  [vdso]                 [.] 0x000000000000057c
+     0.32%  bench_main  bench_main             [.] umem_alloc@plt
+     0.30%  bench_main  [vdso]                 [.] 0x00000000000004f0
+     0.18%  bench_main  [vdso]                 [.] 0x0000000000000550
+     0.16%  bench_main  [vdso]                 [.] __kernel_clock_gettime
+     0.13%  bench_main  bench_main             [.] memset@plt
+     0.10%  bench_main  [vdso]                 [.] 0x00000000000004f4
+     0.09%  bench_main  bench_main             [.] umem_free_wrapper
+     0.09%  bench_main  [vdso]                 [.] 0x00000000000004e0
+     0.08%  bench_main  [vdso]                 [.] 0x00000000000004c8
+     0.08%  bench_main  [vdso]                 [.] 0x00000000000004dc
+     0.08%  bench_main  [vdso]                 [.] 0x000000000000052c
+     0.06%  bench_main  [vdso]                 [.] 0x0000000000000504
+     0.06%  bench_main  [vdso]                 [.] 0x0000000000000510
+     0.06%  bench_main  bench_main             [.] umem_free@plt
+     0.06%  bench_main  [vdso]                 [.] 0x00000000000004d0
+     0.05%  bench_main  bench_main             [.] clock_gettime@plt
+     0.04%  bench_main  bench_main             [.] log@plt
+     0.04%  bench_main  [vdso]                 [.] 0x0000000000000578
+     0.04%  bench_main  [vdso]                 [.] 0x00000000000004f8
+     0.04%  bench_main  [vdso]                 [.] 0x000000000000053c
+     0.04%  bench_main  [vdso]                 [.] 0x0000000000000514
+     0.04%  bench_main  [vdso]                 [.] 0x0000000000000500
+     0.02%  bench_main  libc.so.6              [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.02%  bench_main  bench_main             [.] rand_r@plt
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000540
+     0.01%  bench_main  [vdso]                 [.] 0x00000000000004d8
+     0.01%  bench_main  libumem.so.1.0.0       [.] vmem_contains
+     0.01%  bench_main  [vdso]                 [.] 0x0000000000000520
+     0.01%  bench_main  [kernel.kallsyms]      [k] find_vma
+     0.01%  bench_main  [vdso]                 [.] 0x0000000000000548
+     0.00%  bench_main  libc.so.6              [.] __GI___pthread_mutex_unlock_usercnt
+     0.00%  numactl     [kernel.kallsyms]      [k] security_vm_enough_memory_mm
+     0.00%  bench_main  [kernel.kallsyms]      [k] arch_local_irq_restore
+     0.00%  bench_main  libc.so.6              [.] pthread_mutex_lock@@GLIBC_2.17
+     0.00%  bench_main  [kernel.kallsyms]      [k] osq_lock
+     0.00%  bench_main  [kernel.kallsyms]      [k] futex_q_lock
+     0.00%  bench_main  [kernel.kallsyms]      [k] rwsem_spin_on_owner
+     0.00%  bench_main  libumem.so.1.0.0       [.] umem_depot_alloc
+     0.00%  bench_main  [kernel.kallsyms]      [k] perf_iterate_ctx
+     0.00%  bench_main  libc.so.6              [.] pthread_getattr_np@@GLIBC_2.32
+     0.00%  bench_main  [kernel.kallsyms]      [k] queued_spin_lock_slowpath
+     0.00%  bench_main  [kernel.kallsyms]      [k] futex_wake
+     0.00%  bench_main  libumem.so.1.0.0       [.] umem_depot_pop_trylock
+     0.00%  bench_main  [kernel.kallsyms]      [k] el0_svc
+     0.00%  bench_main  [kernel.kallsyms]      [k] __pi_clear_page
+     0.00%  bench_main  [kernel.kallsyms]      [k] mas_walk
+     0.00%  bench_main  [kernel.kallsyms]      [k] finish_task_switch.isra.0
+     0.00%  bench_main  [kernel.kallsyms]      [k] __list_del_entry_valid_or_report
+     0.00%  bench_main  [kernel.kallsyms]      [k] rmqueue.constprop.0
+     0.00%  bench_main  [kernel.kallsyms]      [k] __radix_tree_lookup
+     0.00%  bench_main  [kernel.kallsyms]      [k] futex_wake_mark
+     0.00%  bench_main  libumem.so.1.0.0       [.] _umem_cache_alloc
+     0.00%  bench_main  [kernel.kallsyms]      [k] fpsimd_load_state
+     0.00%  bench_main  libumem.so.1.0.0       [.] _umem_cache_free
+     0.00%  bench_main  [kernel.kallsyms]      [k] vms_clear_ptes.part.0
+     0.00%  bench_main  [kernel.kallsyms]      [k] zone_statistics
+     0.00%  bench_main  [kernel.kallsyms]      [k] __arm64_sys_mmap
+     0.00%  bench_main  [kernel.kallsyms]      [k] __percpu_counter_sum
+     0.00%  bench_main  [kernel.kallsyms]      [k] invoke_syscall
+     0.00%  bench_main  [kernel.kallsyms]      [k] flush_tlb_batched_pending
+     0.00%  bench_main  [kernel.kallsyms]      [k] mas_topiary_replace
+     0.00%  bench_main  [kernel.kallsyms]      [k] __lruvec_stat_mod_folio
+     0.00%  bench_main  [kernel.kallsyms]      [k] arch_local_irq_restore
+     0.00%  bench_main  [kernel.kallsyms]      [k] memcg1_commit_charge
+     0.00%  bench_main  [kernel.kallsyms]      [k] __pte_offset_map_lock
+     0.00%  bench_main  [kernel.kallsyms]      [k] wake_q_add_safe
+     0.00%  bench_main  [kernel.kallsyms]      [k] up_read
+     0.00%  bench_main  libumem.so.1.0.0       [.] _umem_cache_alloc@plt
+     0.00%  bench_main  libumem.so.1.0.0       [.] umem_ptc_get
+     0.00%  bench_main  [kernel.kallsyms]      [k] memset
+     0.00%  bench_main  libc.so.6              [.] pthread_barrier_wait@@GLIBC_2.34
+     0.00%  bench_main  libumem.so.1.0.0       [.] vmem_span_create
+     0.00%  bench_main  libc.so.6              [.] __GI___lll_lock_wake
+     0.00%  bench_main  libumem.so.1.0.0       [.] lowbit
+     0.00%  bench_main  ld-linux-aarch64.so.1  [.] _dl_tlsdesc_return
+     0.00%  bench_main  [kernel.kallsyms]      [k] do_mem_abort
+     0.00%  bench_main  [kernel.kallsyms]      [k] arch_counter_get_cntpct
+     0.00%  bench_main  [kernel.kallsyms]      [k] percpu_ref_put_many.constprop.0
+     0.00%  bench_main  [kernel.kallsyms]      [k] folio_batch_move_lru
+     0.00%  bench_main  libc.so.6              [.] start_thread
+     0.00%  bench_main  [kernel.kallsyms]      [k] __alloc_pages_noprof
+     0.00%  bench_main  [kernel.kallsyms]      [k] down_write
+     0.00%  bench_main  libc.so.6              [.] _int_free
+     0.00%  bench_main  [kernel.kallsyms]      [k] __memcg_slab_post_alloc_hook
+     0.00%  bench_main  [kernel.kallsyms]      [k] get_page_from_freelist
+     0.00%  bench_main  [kernel.kallsyms]      [k] __mem_cgroup_charge
+     0.00%  bench_main  [kernel.kallsyms]      [k] get_mem_cgroup_from_mm
+     0.00%  bench_main  [kernel.kallsyms]      [k] lock_vma_under_rcu
+     0.00%  bench_main  [kernel.kallsyms]      [k] sched_getaffinity
+     0.00%  bench_main  [kernel.kallsyms]      [k] __arm64_sys_sched_getaffinity
+     0.00%  bench_main  libc.so.6              [.] pthread_mutex_unlock@@GLIBC_2.17
+     0.00%  bench_main  libumem.so.1.0.0       [.] umem_slab_alloc
+     0.00%  bench_main  libc.so.6              [.] malloc
+     0.00%  bench_main  [kernel.kallsyms]      [k] vms_gather_munmap_vmas
+     0.00%  bench_main  [kernel.kallsyms]      [k] mt_find
+     0.00%  bench_main  [kernel.kallsyms]      [k] free_percpu.part.0
+     0.00%  bench_main  [kernel.kallsyms]      [k] do_notify_resume
+     0.00%  bench_main  libumem.so.1.0.0       [.] _vmem_extend_alloc
+     0.00%  bench_main  [kernel.kallsyms]      [k] futex_wait
+     0.00%  bench_main  [kernel.kallsyms]      [k] rseq_update_cpu_node_id
+     0.00%  bench_main  libumem.so.1.0.0       [.] vmem_freelist_delete
+     0.00%  bench_main  [kernel.kallsyms]      [k] unmap_page_range
+     0.00%  bench_main  [kernel.kallsyms]      [k] __futex_wait
+     0.00%  bench_main  [kernel.kallsyms]      [k] __arch_copy_from_user
+     0.00%  bench_main  [kernel.kallsyms]      [k] __set_current_blocked
+     0.00%  bench_main  [kernel.kallsyms]      [k] get_futex_key
+     0.00%  bench_main  ld-linux-aarch64.so.1  [.] _dl_runtime_resolve
+     0.00%  bench_main  libumem.so.1.0.0       [.] pthread_self@plt
+     0.00%  bench_main  [kernel.kallsyms]      [k] arch_local_irq_restore
+     0.00%  bench_main  libumem.so.1.0.0       [.] pthread_mutex_lock@plt
+     0.00%  bench_main  [kernel.kallsyms]      [k] rseq_get_rseq_cs_ptr_val
+     0.00%  bench_main  ld-linux-aarch64.so.1  [.] check_match
+     0.00%  bench_main  [kernel.kallsyms]      [k] futex_wait_queue
+     0.00%  bench_main  [kernel.kallsyms]      [k] uaccess_ttbr0_enable
+     0.00%  bench_main  [kernel.kallsyms]      [k] plist_add
+     0.00%  bench_main  [kernel.kallsyms]      [k] __mod_memcg_lruvec_state
+     0.00%  bench_main  [kernel.kallsyms]      [k] sigprocmask
+     0.00%  bench_main  [kernel.kallsyms]      [k] handle_mm_fault
+     0.00%  bench_main  libc.so.6              [.] __ctype_init
+     0.00%  bench_main  [kernel.kallsyms]      [k] schedule
+     0.00%  bench_main  [kernel.kallsyms]      [k] futex_unqueue
+     0.00%  bench_main  [kernel.kallsyms]      [k] calculate_sigpending
+     0.00%  bench_main  [kernel.kallsyms]      [k] __schedule
+     0.00%  perf-exec   [kernel.kallsyms]      [k] perf_event_addr_filters_exec
+     0.00%  bench_main  libc.so.6              [.] __GI___lll_lock_wait
+     0.00%  bench_main  [kernel.kallsyms]      [k] schedule_tail
+     0.00%  bench_main  [kernel.kallsyms]      [k] remove_entity_load_avg
+     0.00%  bench_main  [kernel.kallsyms]      [k] fpsimd_restore_current_state
+     0.00%  bench_main  [kernel.kallsyms]      [k] el0_svc_common.constprop.0
+     0.00%  bench_main  [kernel.kallsyms]      [k] handle_softirqs
+     0.00%  bench_main  [kernel.kallsyms]      [k] sched_balance_domains
+     0.00%  bench_main  [kernel.kallsyms]      [k] sched_balance_update_blocked_averages
+     0.00%  bench_main  [kernel.kallsyms]      [k] task_fpsimd_load
+     0.00%  bench_main  [kernel.kallsyms]      [k] do_el0_svc
+     0.00%  bench_main  [kernel.kallsyms]      [k] do_futex
+     0.00%  bench_main  [kernel.kallsyms]      [k] __arm64_sys_futex
+     0.00%  bench_main  [kernel.kallsyms]      [k] ret_from_fork
+     0.00%  bench_main  [kernel.kallsyms]      [k] __update_load_avg_blocked_se
+     0.00%  bench_main  [kernel.kallsyms]      [k] rwsem_down_write_slowpath
+     0.00%  perf-exec   [kernel.kallsyms]      [k] mutex_lock

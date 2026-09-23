@@ -1,0 +1,2 @@
+    96.10%  bench_main  [kernel.kallsyms]        [k] native_queued_spin_lock_slowpath
+     0.83%  bench_main  libc.so.6                [.] pthread_mutex_trylock@@GLIBC_2.34

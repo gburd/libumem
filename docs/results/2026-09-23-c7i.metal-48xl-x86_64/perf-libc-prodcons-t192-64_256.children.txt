@@ -1,0 +1,7 @@
+    54.94%     0.00%  bench_main  bench_main            [.] libc_alloc
+    54.94%     0.00%  bench_main  [unknown]             [k] 0x4c4c4120612d2020
+    54.83%    54.80%  bench_main  bench_main            [.] ring_pop
+    42.21%    42.18%  bench_main  bench_main            [.] producer_thread
+     1.29%     0.01%  bench_main  [kernel.kallsyms]     [k] entry_SYSCALL_64_after_hwframe
+     1.28%     0.01%  bench_main  [kernel.kallsyms]     [k] do_syscall_64
+     1.14%     0.05%  bench_main  libc.so.6             [.] __sched_yield

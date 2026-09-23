@@ -1,0 +1,14 @@
+    60.18%     0.00%  bench_main  [unknown]                [.] 0x4242424242424242
+    39.91%    39.47%  bench_main  libumem_malloc.so.1.0.0  [.] interpose_owner_of
+    24.54%    24.54%  bench_main  bench_main               [.] td_qsort
+     8.75%     0.54%  bench_main  libc.so.6                [.] clock_gettime@@GLIBC_2.17
+     5.13%     5.13%  bench_main  [vdso]                   [.] 0x0000000000000c19
+     5.13%     0.00%  bench_main  [vdso]                   [.] 0x00007f89b69abc1c
+     5.06%     4.12%  bench_main  libumem.so.1.0.0         [.] process_free
+     3.74%     3.53%  bench_main  libc.so.6                [.] __random
+     2.50%     2.50%  bench_main  bench_main               [.] td_compress
+     2.17%     2.06%  bench_main  bench_main               [.] td_add
+     2.09%     1.52%  bench_main  bench_main               [.] workload_single_thread
+     1.95%     1.63%  bench_main  libumem.so.1.0.0         [.] umem_may_own
+     1.64%     1.58%  bench_main  libumem.so.1.0.0         [.] _umem_free
+     1.49%     1.06%  bench_main  libumem.so.1.0.0         [.] is_bootstrap_pointer

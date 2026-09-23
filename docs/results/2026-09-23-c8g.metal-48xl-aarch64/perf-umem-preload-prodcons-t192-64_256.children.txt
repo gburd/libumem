@@ -1,0 +1,6 @@
+   100.00%     0.00%  bench_main  libc.so.6                [.] start_thread
+   100.00%     0.00%  bench_main  libc.so.6                [.] thread_start
+    53.38%     0.00%  bench_main  bench_main               [.] consumer_thread
+    52.46%    52.44%  bench_main  bench_main               [.] ring_pop
+    46.61%    45.37%  bench_main  bench_main               [.] producer_thread
+     1.11%     0.01%  bench_main  libumem.so.1.0.0         [.] umem_depot_pop_trylock

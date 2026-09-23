@@ -1,0 +1,17 @@
+    67.36%    67.17%  bench_main  bench_main                 [.] frag_worker
+    32.41%     0.00%  bench_main  [unknown]                  [.] 0xabababababababab
+    22.10%     0.00%  bench_main  [kernel.kallsyms]          [k] do_syscall_64
+    22.10%     0.00%  bench_main  [kernel.kallsyms]          [k] entry_SYSCALL_64_after_hwframe
+    21.71%     0.01%  bench_main  libc.so.6                  [.] __mprotect
+    21.65%     0.02%  bench_main  [kernel.kallsyms]          [k] do_mprotect_pkey
+    21.65%     0.00%  bench_main  [kernel.kallsyms]          [k] __x64_sys_mprotect
+    20.83%     0.01%  bench_main  [kernel.kallsyms]          [k] down_write_killable
+    20.81%     0.01%  bench_main  [kernel.kallsyms]          [k] rwsem_down_write_slowpath
+    20.52%     0.01%  bench_main  [kernel.kallsyms]          [k] rwsem_optimistic_spin
+    19.83%    19.81%  bench_main  [kernel.kallsyms]          [k] osq_lock
+     2.82%     2.80%  bench_main  libc.so.6                  [.] _int_free
+     2.60%     0.00%  bench_main  bench_main                 [.] libc_alloc
+     2.59%     0.00%  bench_main  [unknown]                  [.] 0x4c4c4120612d2020
+     1.80%     1.71%  bench_main  libc.so.6                  [.] _int_malloc
+     1.60%     0.04%  bench_main  libc.so.6                  [.] clock_gettime@@GLIBC_2.17
+     1.08%     1.07%  bench_main  libc.so.6                  [.] malloc

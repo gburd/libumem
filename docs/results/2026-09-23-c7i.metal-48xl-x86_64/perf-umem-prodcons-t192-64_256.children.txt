@@ -1,0 +1,10 @@
+    56.83%     0.01%  bench_main  bench_main            [.] umem_alloc_wrapper
+    56.82%     0.00%  bench_main  [unknown]             [k] 0x2d20200000000063
+    56.35%    56.32%  bench_main  bench_main            [.] ring_pop
+    38.29%    38.26%  bench_main  bench_main            [.] producer_thread
+     2.52%     0.00%  bench_main  [unknown]             [.] 0000000000000000
+     2.10%     0.01%  bench_main  [kernel.kallsyms]     [k] entry_SYSCALL_64_after_hwframe
+     2.09%     0.02%  bench_main  [kernel.kallsyms]     [k] do_syscall_64
+     1.99%     0.09%  bench_main  libc.so.6             [.] __sched_yield
+     1.90%     1.89%  bench_main  libc.so.6             [.] pthread_mutex_trylock@@GLIBC_2.34
+     1.72%     0.00%  bench_main  [kernel.kallsyms]     [k] __x64_sys_sched_yield
