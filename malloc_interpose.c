@@ -237,6 +237,36 @@ static struct libc_ptr_ent libc_ptrs[MAX_LIBC_PTRS];
 static pthread_mutex_t libc_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
+ * Number of live entries in libc_ptrs[].  This is the fast-path gate for
+ * is_libc_pointer(), and it exists because of a measured ~500x collapse:
+ *
+ *   The table only ever gains entries from bootstrap-phase memalign() --
+ *   i.e. before umem is READY -- and is EMPTY for the entire steady-state
+ *   life of almost every process.  Yet free() consulted it unconditionally,
+ *   taking the process-global libc_ptr_lock and scanning all 512 slots on
+ *   every single call.  A global mutex on the hottest path in the library,
+ *   acquired to search an empty table.
+ *
+ *   Measured on c7i.metal-48xl (192 vCPU), multi 16:64, null-controlled
+ *   (preload-arm sd 3.75%): the LD_PRELOAD interposer ran 3.0 Mops/s at one
+ *   thread and 0.8 Mops/s at 192 -- NEGATIVE scaling -- while the umem_alloc
+ *   API path on the same build did 398 Mops/s at 192 (glibc: 421).  Every
+ *   earlier comparison in this repo measured the API path, which is why a
+ *   500x gap on the drop-in path went unseen.
+ *
+ * Reads of the count are relaxed and lock-free.  That is sound because the
+ * count is only a GATE: a nonzero read falls through to the locked, exact
+ * scan; a zero read means "no libc entry can match", and that is true at
+ * the instant of the read.  Could an entry be added after a zero read?
+ * Only by bootstrap memalign(), which by construction hands a pointer to
+ * the caller before anyone can free() it -- so a pointer being freed while
+ * the count reads zero was never in the table.  (Track increments BEFORE
+ * publishing the pointer; untrack decrements AFTER the slot is cleared, so
+ * a stale nonzero only costs a lock, never a miss.)
+ */
+static atomic_size_t libc_ptr_live = 0;
+
+/*
  * Fork participation.
  *
  * static_buffer_lock and libc_ptr_lock are taken by ORDINARY free() and
@@ -301,6 +331,9 @@ track_libc_ptr(void *ptr, size_t size)
 	(void) pthread_mutex_lock(&libc_ptr_lock);
 	for (i = 0; i < MAX_LIBC_PTRS; i++) {
 		if (libc_ptrs[i].ptr == NULL) {
+			/* Count up BEFORE the pointer becomes findable. */
+			atomic_fetch_add_explicit(&libc_ptr_live, 1,
+			    memory_order_release);
 			libc_ptrs[i].ptr = ptr;
 			libc_ptrs[i].size = size;
 			ok = 1;
@@ -324,6 +357,14 @@ is_libc_pointer(void *ptr, size_t *sizep)
 	int found = 0;
 
 	if (ptr == NULL)
+		return (0);
+
+	/*
+	 * Fast path: an empty table cannot contain ptr.  This single relaxed
+	 * load replaces a mutex acquire + 512-slot scan on every free(), and
+	 * is the whole fix for the negative thread scaling described above.
+	 */
+	if (atomic_load_explicit(&libc_ptr_live, memory_order_acquire) == 0)
 		return (0);
 
 	(void) pthread_mutex_lock(&libc_ptr_lock);
@@ -357,6 +398,9 @@ untrack_libc_ptr(void *ptr)
 		if (libc_ptrs[i].ptr == ptr) {
 			libc_ptrs[i].ptr = NULL;
 			libc_ptrs[i].size = 0;
+			/* Count down AFTER the slot is cleared. */
+			atomic_fetch_sub_explicit(&libc_ptr_live, 1,
+			    memory_order_release);
 			break;
 		}
 	}
@@ -638,6 +682,28 @@ free(void *ptr)
 {
 	if (ptr == NULL)
 		return;
+
+	/*
+	 * Steady-state fast path.  Once READY, the overwhelmingly common case
+	 * is a umem-owned pointer, and interpose_owner_of() classifies it by
+	 * running process_free(ptr, 0, ...) -- a full header decode -- only
+	 * for umem_malloc_free() to run process_free(ptr, 1, ...) and decode
+	 * the SAME header again.  Two decodes per free on the hot path.
+	 *
+	 * The static and bootstrap checks below are cheap range compares and
+	 * must stay first (those pointers have no umem header).  The libc
+	 * check is gated on the live count (see libc_ptr_live).  Everything
+	 * else goes straight to umem, whose process_free() validates and
+	 * either frees or reports -- exactly what the classify-then-free
+	 * sequence did, in one pass.  Since P5.8 a rejected pointer leaves
+	 * state untouched, so skipping the pre-classification loses no safety.
+	 */
+	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1) &&
+	    !is_static_pointer(ptr) && !is_bootstrap_pointer(ptr) &&
+	    !is_libc_pointer(ptr, NULL)) {
+		umem_malloc_free(ptr);
+		return;
+	}
 
 	switch (interpose_owner_of(ptr, NULL)) {
 	case OWN_STATIC:
