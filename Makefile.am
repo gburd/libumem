@@ -811,7 +811,8 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_ptc_resize_no_loss_probe \
 	test/integration/test_heap_ceiling \
 	test/integration/test_heap_ceiling_512.sh \
-	test/integration/test_reclaim_returns.sh
+	test/integration/test_reclaim_returns.sh \
+	test/integration/test_fork_child_reclaim.sh
 
 # Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
 # P5.9).  Each demonstrates the exposure it closes and fails against v3.0.0 --
@@ -894,6 +895,12 @@ noinst_PROGRAMS += test/integration/test_reclaim_returns
 test_integration_test_reclaim_returns_SOURCES = test/integration/test_reclaim_returns.c
 test_integration_test_reclaim_returns_LDADD = libumem.la
 test_integration_test_reclaim_returns_CPPFLAGS = -I$(srcdir)
+
+# P6.9: forked children must recreate the update thread.
+noinst_PROGRAMS += test/integration/test_fork_child_reclaim
+test_integration_test_fork_child_reclaim_SOURCES = test/integration/test_fork_child_reclaim.c
+test_integration_test_fork_child_reclaim_LDADD = libumem.la
+test_integration_test_fork_child_reclaim_CPPFLAGS = -I$(srcdir)
 test_integration_test_heap_ceiling_SOURCES = \
 	test/integration/test_heap_ceiling.c
 test_integration_test_heap_ceiling_LDADD = libumem.la
@@ -987,6 +994,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/security/test_abort_option.sh \
 	test/integration/test_heap_ceiling_512.sh \
 	test/integration/test_reclaim_returns.sh \
+	test/integration/test_fork_child_reclaim.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh \
