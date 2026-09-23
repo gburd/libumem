@@ -35,6 +35,7 @@
  */
 
 #include <stddef.h>
+#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,6 +75,16 @@ void umem_introspect_break_check(void *buf, size_t size,
  * child can stop on an allocation with nothing alive to resume it.
  */
 void umem_introspect_fork_child(void);
+
+/*
+ * Peer-authorization decision for the control channel (P5.7).  Exposed so the
+ * rule can be tested directly: a real setuid target is not testable inside
+ * `make check`, and the rule is exactly what a setuid target depends on.
+ *
+ * Returns non-zero if a client whose credentials say `peer` may drive a
+ * process whose effective uid is `euid`.
+ */
+int umem_introspect_peer_authorized(uid_t peer, uid_t euid);
 
 #else /* !UMEM_INTROSPECT */
 

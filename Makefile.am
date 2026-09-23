@@ -50,6 +50,9 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/probe_reclaim_rss \
 		  test/security/test_secure_gate_helper \
 		  test/security/test_errno_preserved \
+		  test/security/test_forged_free \
+		  test/security/test_stack_bounds \
+		  test/security/test_introspect_peer_uid \
 		  tools/umem_profile_dump
 
 libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS) $(SOLARIS_SOCKET_LIBS) -version-info 1:0:0
@@ -788,14 +791,49 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_ptc_resize_no_loss_probe \
 	test/integration/test_heap_ceiling
 
-# Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5).  Each demonstrates
-# the exposure it closes and fails against v3.0.0 -- see the header comment in
-# each file for the pre-fix behaviour.  They are in TESTS, not run-by-hand: a
-# hardening fix whose regression nobody runs is not a fix (AGENTS.md 7a).
+# Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
+# P5.9).  Each demonstrates the exposure it closes and fails against v3.0.0 --
+# see the header comment in each file for the pre-fix behaviour.  They are in
+# TESTS, not run-by-hand: a hardening fix whose regression nobody runs is not a
+# fix (AGENTS.md 7a).
+#
+# test_introspect_sock_path.sh and test_introspect_peer_uid SKIP (77) without
+# --enable-introspect -- there is no control channel to attack in a default
+# build.  test_forged_free and test_stack_bounds.sh run in every build.
 TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_secure_env_gate.sh \
 	test/security/test_writer_nofollow.sh \
-	test/security/test_errno_preserved
+	test/security/test_errno_preserved \
+	test/security/test_forged_free \
+	test/security/test_stack_bounds.sh \
+	test/security/test_introspect_sock_path.sh \
+	test/security/test_introspect_peer_uid
+
+# P5.8: forges a malloc header and asserts free() refuses it without mutating
+# anything.  Links BOTH libraries: the forgery must travel the interposer's
+# free() -> interpose_owner_of() -> process_free() path, which is the one an
+# LD_PRELOAD'd process uses.
+test_security_test_forged_free_SOURCES = test/security/test_forged_free.c
+test_security_test_forged_free_LDADD = libumem.la libumem_malloc.la
+test_security_test_forged_free_CPPFLAGS = -I$(srcdir)
+
+# P5.9: needs frame pointers in the TEST (it corrupts its own frame) and a real
+# pthread stack it allocates itself.  -fno-omit-frame-pointer is on the test,
+# not the library: the library's own walk is what is under test, and arm B
+# deliberately compiles one caller without a frame pointer.
+test_security_test_stack_bounds_SOURCES = test/security/test_stack_bounds.c
+test_security_test_stack_bounds_LDADD = libumem.la
+test_security_test_stack_bounds_LDFLAGS = -pthread
+test_security_test_stack_bounds_CPPFLAGS = -I$(srcdir)
+test_security_test_stack_bounds_CFLAGS = $(AM_CFLAGS) -fno-omit-frame-pointer
+
+# P5.7: tests the peer-authorization decision directly.  A real setuid target
+# is not creatable inside `make check` (it needs root, and would leave a setuid
+# binary in the build tree), which the test says in its own header.
+test_security_test_introspect_peer_uid_SOURCES = \
+	test/security/test_introspect_peer_uid.c
+test_security_test_introspect_peer_uid_LDADD = libumem.la
+test_security_test_introspect_peer_uid_CPPFLAGS = -I$(srcdir)
 
 # P5.2/P5.3 need a fresh process per probe (UMEM_OPTIONS is read once, from a
 # constructor), and they reach misc.c's umem_secure_mode_force, so the helper
@@ -852,7 +890,9 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/stress/interpose_regress.sh \
 	test/security/test_no_path_exec.sh \
 	test/security/test_secure_env_gate.sh \
-	test/security/test_writer_nofollow.sh
+	test/security/test_writer_nofollow.sh \
+	test/security/test_stack_bounds.sh \
+	test/security/test_introspect_sock_path.sh
 
 # Generated API documentation goes to doxygen-out/, NOT docs/.
 # docs/ is durable, version-controlled project documentation (plans, results,

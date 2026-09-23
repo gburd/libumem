@@ -44,6 +44,107 @@
 #endif
 
 #include <stdio.h>
+#include <stdint.h>
+
+/*
+ * REAL STACK BOUNDS FOR THE FRAME-POINTER WALK (P5.9).
+ *
+ * The Linux frame walks below dereference fp[0]/fp[1].  Alignment, a
+ * monotonically-increasing chain and a 16 MiB span above the starting frame
+ * were the only limits, and none of them bounds the walk to memory that is
+ * actually this thread's stack:
+ *
+ *   - a corrupted saved-fp (UMEM_DEBUG=audit on a program that overflows a
+ *     stack buffer) points anywhere;
+ *   - a caller compiled WITHOUT frame pointers -- the -O2 default -- leaves
+ *     an ordinary data value in %rbp/x29, so the "saved fp" is just whatever
+ *     that function was using the register for.
+ *
+ * Either way the allocator READ an attacker-influenced address.  Read-only
+ * (the only writes are pcstack[depth++], bounded by pcstack_limit, into the
+ * caller's own bufctl), so this is a crash or an info leak, not code
+ * execution -- but it is still an out-of-bounds read inside malloc.
+ *
+ * So ask the system where this thread's stack is and reject every frame
+ * outside it.  glibc's pthread_getattr_np() reports the real mapping
+ * (/proc/self/maps for the main thread, the TCB for others).
+ *
+ * RE-ENTRANCY: the main thread's first lookup reads /proc/self/maps with
+ * stdio, which allocates, which re-enters the allocator and can land back
+ * here.  in_lookup makes that inner call report "bounds unknown" (the walk
+ * then uses the heuristic) instead of recursing.  The answer is cached per
+ * thread, so the cost is one lookup per thread.
+ *
+ * FALLBACK, stated rather than hidden: where no bounds are available (not
+ * glibc, or the re-entrant call above) the old 16 MiB-ceiling heuristic still
+ * applies.  It is a heuristic: it bounds how far the walk can wander UP from
+ * a frame that is genuinely on the stack, and nothing more.
+ */
+#if defined(__linux__) && defined(__GLIBC__)
+#define	UMEM_HAVE_STACK_BOUNDS	1
+#include <pthread.h>
+#endif
+
+/*
+ * Returns 1 and fills [*lop, *hip) with this thread's stack, or 0 if the
+ * bounds could not be determined.  Never allocates on the cached path.
+ */
+static int
+umem_stack_bounds(uintptr_t *lop, uintptr_t *hip)
+{
+#ifdef UMEM_HAVE_STACK_BOUNDS
+	static __thread uintptr_t cached_lo
+	    __attribute__((tls_model("initial-exec")));
+	static __thread uintptr_t cached_hi
+	    __attribute__((tls_model("initial-exec")));
+	static __thread int in_lookup
+	    __attribute__((tls_model("initial-exec")));
+	pthread_attr_t attr;
+	void *base;
+	size_t size;
+
+	if (cached_hi == 0) {
+		if (in_lookup)
+			return (0);	/* re-entered through malloc */
+		in_lookup = 1;
+		if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+			if (pthread_attr_getstack(&attr, &base, &size) == 0 &&
+			    size > 0) {
+				cached_lo = (uintptr_t)base;
+				cached_hi = cached_lo + size;
+			}
+			(void) pthread_attr_destroy(&attr);
+		}
+		in_lookup = 0;
+		if (cached_hi == 0)
+			return (0);
+	}
+	*lop = cached_lo;
+	*hip = cached_hi;
+	return (1);
+#else
+	(void) lop;
+	(void) hip;
+	return (0);
+#endif
+}
+
+/*
+ * Is the frame at fp safe to dereference?  Both fp[0] and fp[1] must lie
+ * inside the thread stack.  With no bounds available, fall back to the
+ * heuristic ceiling.  (Alignment is checked by the caller: it differs per
+ * architecture.)
+ */
+static int
+umem_frame_readable(uintptr_t fp, int have_bounds, uintptr_t lo, uintptr_t hi,
+    uintptr_t ceiling)
+{
+	const uintptr_t need = 2 * sizeof (uintptr_t);
+
+	if (have_bounds)
+		return (hi >= need && fp >= lo && fp <= hi - need);
+	return (fp < ceiling);
+}
 
 #if defined(EC_UMEM_DUMMY_PCSTACK) && (defined(__amd64) || defined(__x86_64__) || defined(__i386))
 /*
@@ -66,20 +167,19 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 {
 	uintptr_t *fp = (uintptr_t *)__builtin_frame_address(0);
 	uintptr_t *nextfp;
-	uintptr_t fp_ceiling;
+	uintptr_t fp_ceiling, stk_lo = 0, stk_hi = 0;
+	int have_bounds;
 	int depth = 0;
 
 	if (check_sigthread)
 		return (0);		/* not safe from a signal handler */
 
 	/*
-	 * Bound the frame-pointer walk to a plausible span above the
-	 * starting frame.  A frame pointer that has wandered past the top
-	 * of the stack (e.g. at thread teardown, where the outermost saved
-	 * fp can be garbage) would otherwise dereference an unmapped high
-	 * address and SEGV.  Stacks grow down, so every valid caller frame
-	 * is at a higher address than ours, within one stack's worth.
+	 * Real stack bounds where the system will tell us (P5.9); the 16 MiB
+	 * span above the starting frame is only the fallback.  See
+	 * umem_stack_bounds() above.
 	 */
+	have_bounds = umem_stack_bounds(&stk_lo, &stk_hi);
 	fp_ceiling = (uintptr_t)fp + (16 * 1024 * 1024);
 
 	while (depth < pcstack_limit && fp != NULL) {
@@ -87,8 +187,9 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 		if ((uintptr_t)fp & (sizeof (uintptr_t) - 1))
 			break;
 
-		/* Do not dereference a frame past the plausible stack top */
-		if ((uintptr_t)fp >= fp_ceiling)
+		/* Never dereference a frame outside this thread's stack */
+		if (!umem_frame_readable((uintptr_t)fp, have_bounds,
+		    stk_lo, stk_hi, fp_ceiling))
 			break;
 
 		nextfp = (uintptr_t *)(fp[0]);	/* saved frame pointer */
@@ -117,7 +218,8 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 {
 	uintptr_t *fp;
 	uintptr_t *nextfp;
-	uintptr_t fp_ceiling;
+	uintptr_t fp_ceiling, stk_lo = 0, stk_hi = 0;
+	int have_bounds;
 	int depth = 0;
 
 	if (check_sigthread) {
@@ -132,10 +234,11 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 	);
 
 	/*
-	 * Bound the walk to a plausible span above the starting frame;
-	 * a frame pointer past the top of the stack (garbage at thread
-	 * teardown) would otherwise SEGV on dereference.
+	 * Real stack bounds where the system will tell us (P5.9); the 16 MiB
+	 * span above the starting frame is only the fallback.  See
+	 * umem_stack_bounds() above.
 	 */
+	have_bounds = umem_stack_bounds(&stk_lo, &stk_hi);
 	fp_ceiling = (uintptr_t)fp + (16 * 1024 * 1024);
 
 	/* Walk the frame pointer chain */
@@ -145,8 +248,9 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 			break;
 		}
 
-		/* Do not dereference a frame past the plausible stack top */
-		if ((uintptr_t)fp >= fp_ceiling) {
+		/* Never dereference a frame outside this thread's stack */
+		if (!umem_frame_readable((uintptr_t)fp, have_bounds,
+		    stk_lo, stk_hi, fp_ceiling)) {
 			break;
 		}
 

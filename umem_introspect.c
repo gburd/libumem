@@ -896,16 +896,150 @@ handle_line(FILE *out, char *line)
 	fflush(out);
 }
 
+/*
+ * ---- socket location (P5.6) ----
+ *
+ * The path used to be /tmp/umem.<pid>.sock: a PREDICTABLE name in a
+ * world-writable sticky directory.  The pid is guessable and the target has
+ * not bound yet at the moment it matters, so another user on the box can
+ * create that path first.  Two things follow, both demonstrated in
+ * test/security/test_introspect_sock_path.sh:
+ *
+ *   - the target then finds the address in use.  If the squatter is
+ *     listening, the target refuses to bind (correctly -- A3) and has no
+ *     channel at all, while `umemctl <pid> ...` resolves the SAME predictable
+ *     path and talks to the squatter: the operator's commands go to the
+ *     attacker and the attacker's answers come back as if they were the
+ *     allocator's.
+ *   - if the squatter is not listening, the target treated the path as its
+ *     own stale socket and removed that directory entry -- an entry it did
+ *     not create.
+ *
+ * FIX: put the socket in a directory only this euid can write to, so the
+ * path cannot be pre-created by anyone else:
+ *
+ *   1. $XDG_RUNTIME_DIR, if it is a real directory (not a symlink), owned by
+ *      geteuid(), with no group/other permissions.  This is what the variable
+ *      is for and systemd already guarantees those properties.
+ *   2. otherwise /tmp/umem-<euid>, which the library creates itself with
+ *      mkdir(0700).  mkdir() is atomic and fails if ANYTHING is already
+ *      there, including a symlink, so a squatter cannot win by pre-creating
+ *      it; if it already exists it is accepted only after the same
+ *      ownership/permission check as (1).
+ *
+ * The name inside that directory stays umem.<pid>.sock -- predictable is
+ * fine once nobody else can create entries in the directory.
+ *
+ * UMEM_INTROSPECT_SOCK still overrides, because a developer pointing the
+ * channel at a scratch path is the reason it exists -- but NOT in secure
+ * mode, where the environment is chosen by a less privileged party.  (In
+ * secure mode envvar.c refuses introspect=1 outright, so this is the second
+ * of two gates, not the only one.)
+ */
+
+/*
+ * Is dfd a directory we can trust to hold the control socket?  Owned by this
+ * euid, and not writable (or even readable) by group or other.
+ */
+static int
+dir_is_private(int dfd)
+{
+	struct stat sb;
+
+	if (fstat(dfd, &sb) != 0)
+		return (0);
+	if (!S_ISDIR(sb.st_mode))
+		return (0);
+	if (sb.st_uid != geteuid())
+		return (0);
+	return ((sb.st_mode & (S_IRWXG | S_IRWXO)) == 0);
+}
+
+/* Open dir for the checks above without ever following a symlink. */
+static int
+open_private_dir(const char *dir)
+{
+	int dfd = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW
+#ifdef O_CLOEXEC
+	    | O_CLOEXEC
+#endif
+	    );
+
+	if (dfd < 0)
+		return (-1);
+	if (!dir_is_private(dfd)) {
+		(void) close(dfd);
+		return (-1);
+	}
+	return (dfd);
+}
+
+/*
+ * Pick the directory for the socket.  Returns 0 and fills dir[] on success.
+ * Never trusts a path it has not just validated.
+ */
+static int
+sock_dir(char *dir, size_t n)
+{
+	const char *xdg = getenv("XDG_RUNTIME_DIR");
+	int dfd;
+
+	/*
+	 * XDG_RUNTIME_DIR comes from the environment, so it is only used
+	 * after the ownership/permission check, and never in secure mode.
+	 */
+	if (!umem_secure_mode() && xdg != NULL && xdg[0] == '/') {
+		if ((size_t)snprintf(dir, n, "%s", xdg) < n) {
+			if ((dfd = open_private_dir(dir)) >= 0) {
+				(void) close(dfd);
+				return (0);
+			}
+		}
+	}
+
+	if ((size_t)snprintf(dir, n, "/tmp/umem-%ld", (long)geteuid()) >= n)
+		return (-1);
+
+	/*
+	 * mkdir(0700) is the whole defence here: it is atomic, and it fails
+	 * with EEXIST for a pre-created directory OR a pre-created symlink,
+	 * neither of which we then accept without checking.  umask cannot
+	 * loosen the mode below because we verify it afterwards.
+	 */
+	if (mkdir(dir, S_IRWXU) != 0 && errno != EEXIST)
+		return (-1);
+	if ((dfd = open_private_dir(dir)) < 0) {
+		log_message("umem: introspect: %s is not a private directory "
+		    "owned by uid %ld; not opening a control socket\n",
+		    dir, (long)geteuid());
+		return (-1);
+	}
+	(void) close(dfd);
+	return (0);
+}
+
+/*
+ * Fill buf with the control socket path.  Returns buf, or NULL if no safe
+ * path is available (the caller then does not start a server).
+ */
 static const char *
 sock_path(char *buf, size_t n)
 {
 	const char *env = getenv("UMEM_INTROSPECT_SOCK");
-	if (env != NULL && env[0] != '\0') {
-		strncpy(buf, env, n - 1);
-		buf[n - 1] = '\0';
-	} else {
-		snprintf(buf, n, "/tmp/umem.%ld.sock", (long)getpid());
+	char dir[96];
+
+	if (env != NULL && env[0] != '\0' && !umem_secure_mode()) {
+		/* Developer override: their path, their directory, their call. */
+		if ((size_t)snprintf(buf, n, "%s", env) >= n)
+			return (NULL);	/* would be silently truncated */
+		return (buf);
 	}
+
+	if (sock_dir(dir, sizeof (dir)) != 0)
+		return (NULL);
+	if ((size_t)snprintf(buf, n, "%s/umem.%ld.sock", dir,
+	    (long)getpid()) >= n)
+		return (NULL);
 	return (buf);
 }
 
@@ -918,17 +1052,39 @@ sock_path(char *buf, size_t n)
  *     umask leaving it group/other-readable is a real exposure.
  *
  * A2. Every connection's peer credentials are checked with SO_PEERCRED: only
- *     the same uid, or root, is served.  File permissions alone are not
+ *     the EFFECTIVE uid, or root, is served.  File permissions alone are not
  *     enough -- the path may live on a filesystem that ignores them, and the
  *     socket may be inherited.
  *
- * A3. The stale-path unlink is no longer unconditional.  It used to remove
- *     whatever was at the path before binding, so a second process (or a
- *     hostile one) could displace a live server's socket, or delete an
- *     unrelated file if UMEM_INTROSPECT_SOCK pointed at one.  Now a bind is
- *     attempted first, and the path is only removed if it is a socket that
- *     nothing is listening on.
+ * A3. The stale path is never unlink()ed.  The sequence used to be
+ *     stat -> probe connect -> unlink -> bind, which acts on a path after
+ *     looking at it, and looked at it with stat(2) -- which FOLLOWS symlinks,
+ *     so a symlink pointing at somebody else's socket read back as "my own
+ *     stale socket" and its directory entry was removed.  See
+ *     umem_introspect_peer_authorized() and bind_control_socket() below.
  */
+
+/*
+ * P5.7: the peer-authorization decision, factored out so it can be tested
+ * without a setuid binary (see test/security/test_introspect_peer_uid.c).
+ *
+ * It used to accept `peer == getuid() || peer == geteuid() || peer == 0`.
+ * The REAL uid has no business here.  In a setuid target the real uid is the
+ * unprivileged invoker, so accepting it handed that invoker the whole control
+ * channel: whatis/bufctl read process memory at addresses the client chooses,
+ * and `break` parks allocating threads until a `continue` that need never
+ * come -- a DoS of the privileged process from an unprivileged account.
+ *
+ * euid is the identity the process actually acts with, so euid is the identity
+ * that may drive it.  root is kept: root can ptrace the process anyway, so
+ * refusing it buys nothing.
+ */
+int
+umem_introspect_peer_authorized(uid_t peer, uid_t euid)
+{
+	return (peer == euid || peer == 0);
+}
+
 static int
 peer_is_authorized(int cfd)
 {
@@ -938,7 +1094,7 @@ peer_is_authorized(int cfd)
 
 	if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred, &len) != 0)
 		return (0);	/* cannot verify -> refuse */
-	if (cred.uid == getuid() || cred.uid == geteuid() || cred.uid == 0)
+	if (umem_introspect_peer_authorized(cred.uid, geteuid()))
 		return (1);
 	log_message("umem: introspect: refused connection from uid %ld\n",
 	    (long)cred.uid);
@@ -953,6 +1109,51 @@ peer_is_authorized(int cfd)
 #endif
 }
 
+/*
+ * Reclaim a stale socket path WITHOUT unlinking it (A3, P5.6).
+ *
+ * Called only after bind() returned EADDRINUSE and the path was found to be
+ * a socket (by lstat, so a symlink is not mistaken for one) that nothing is
+ * listening on.  Rather than unlink() the caller's path and bind again -- a
+ * TOCTOU, because between the look and the unlink the entry can be replaced
+ * -- bind a unique name in the SAME directory and rename() it over the path.
+ *
+ * rename(2) is atomic and never follows a symlink at either end, so the worst
+ * an attacker who swaps the path in the window achieves is having their own
+ * entry replaced.  No file outside our own directory entry is ever removed,
+ * whatever the path turns into mid-sequence.
+ *
+ * Returns 0 on success.  On failure the temporary entry is cleaned up; that
+ * unlink is safe because the name is ours and was just created by us.
+ */
+static int
+rebind_over_stale(int lfd, const char *path)
+{
+	struct sockaddr_un tmpaddr;
+	char tmp[sizeof (tmpaddr.sun_path)];
+	const char *slash = strrchr(path, '/');
+	size_t dirlen = (slash != NULL) ? (size_t)(slash - path) + 1 : 0;
+
+	/* Same directory, so rename() cannot fail with EXDEV. */
+	if ((size_t)snprintf(tmp, sizeof (tmp), "%.*sumem.%ld.tmp",
+	    (int)dirlen, path, (long)getpid()) >= sizeof (tmp))
+		return (-1);
+
+	memset(&tmpaddr, 0, sizeof (tmpaddr));
+	tmpaddr.sun_family = AF_UNIX;
+	(void) snprintf(tmpaddr.sun_path, sizeof (tmpaddr.sun_path), "%s", tmp);
+
+	/* A leftover of ours from a previous run; our name, safe to remove. */
+	(void) unlink(tmp);
+	if (bind(lfd, (struct sockaddr *)&tmpaddr, sizeof (tmpaddr)) != 0)
+		return (-1);
+	if (rename(tmp, path) != 0) {
+		(void) unlink(tmp);
+		return (-1);
+	}
+	return (0);
+}
+
 /* Bind, reclaiming only a socket path that nothing is listening on (A3). */
 static int
 bind_control_socket(int lfd, const char *path)
@@ -963,7 +1164,12 @@ bind_control_socket(int lfd, const char *path)
 
 	memset(&addr, 0, sizeof (addr));
 	addr.sun_family = AF_UNIX;
-	strncpy(addr.sun_path, path, sizeof (addr.sun_path) - 1);
+	/* Truncation would bind a DIFFERENT path than the caller asked for. */
+	if ((size_t)snprintf(addr.sun_path, sizeof (addr.sun_path), "%s",
+	    path) >= sizeof (addr.sun_path)) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
 
 	/* 0600 regardless of the inherited umask (A1). */
 	old = umask(077);
@@ -972,23 +1178,28 @@ bind_control_socket(int lfd, const char *path)
 		/*
 		 * Something is at the path.  Only reclaim it if it is a socket
 		 * with no listener -- i.e. a leftover from a dead process.
+		 *
+		 * lstat, NOT stat: stat follows symlinks, so a symlink aimed at
+		 * somebody else's socket used to read back as "my own stale
+		 * socket" and get its directory entry removed.  A symlink is
+		 * never a socket this process left behind.
 		 */
 		struct stat sb;
 		int probe;
-		if (stat(path, &sb) == 0 && S_ISSOCK(sb.st_mode) &&
+		if (lstat(path, &sb) == 0 && S_ISSOCK(sb.st_mode) &&
 		    (probe = socket(AF_UNIX, SOCK_STREAM, 0)) >= 0) {
 			int live = (connect(probe,
 			    (struct sockaddr *)&addr, sizeof (addr)) == 0);
 			(void) close(probe);
-			if (!live) {
-				(void) unlink(path);
-				rc = bind(lfd, (struct sockaddr *)&addr,
-				    sizeof (addr));
-			} else {
+			if (!live)
+				rc = rebind_over_stale(lfd, path);
+			else
 				log_message("umem: introspect: %s already "
 				    "has a live server; not replacing it\n",
 				    path);
-			}
+		} else {
+			log_message("umem: introspect: %s exists and is not a "
+			    "stale socket of ours; not replacing it\n", path);
 		}
 	}
 	(void) umask(old);
@@ -1032,7 +1243,12 @@ introspect_thread(void *unused)
 	brk_server_thread = pthread_self();
 	brk_server_valid = 1;
 
-	sock_path(path, sizeof (path));
+	if (sock_path(path, sizeof (path)) == NULL) {
+		log_message("umem: introspect: no safe socket path; "
+		    "control channel not started\n");
+		brk_server_valid = 0;
+		return (NULL);
+	}
 
 	lfd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (lfd < 0)
@@ -1041,7 +1257,7 @@ introspect_thread(void *unused)
 		close(lfd);
 		return (NULL);
 	}
-	log_message("umem: introspect socket at %s (mode 0600, same-uid "
+	log_message("umem: introspect socket at %s (mode 0600, same-euid "
 	    "peers only)\n", path);
 
 	/*

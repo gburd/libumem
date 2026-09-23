@@ -51,36 +51,84 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+/* Connect to one path; -1 (silent) on failure.  errno is left set. */
+static int
+try_connect_quiet(const char *path)
+{
+	struct sockaddr_un addr;
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+	if (fd < 0)
+		return (-1);
+	memset(&addr, 0, sizeof (addr));
+	addr.sun_family = AF_UNIX;
+	snprintf(addr.sun_path, sizeof (addr.sun_path), "%s", path);
+	if (connect(fd, (struct sockaddr *)&addr, sizeof (addr)) < 0) {
+		int e = errno;
+		close(fd);
+		errno = e;
+		return (-1);
+	}
+	return (fd);
+}
+
+/* Same, but explain the failure (used for an explicitly-named path). */
+static int
+try_connect(const char *path)
+{
+	int fd = try_connect_quiet(path);
+
+	if (fd < 0) {
+		fprintf(stderr, "umemctl: cannot connect to %s: %s\n",
+		    path, strerror(errno));
+		fprintf(stderr, "  (is the target running with "
+		    "UMEM_OPTIONS=introspect=1?)\n");
+	}
+	return (fd);
+}
+
+/*
+ * Resolve the target's control socket.
+ *
+ * Must agree with umem_introspect.c's sock_path() (P5.6): the socket is no
+ * longer in /tmp under a predictable name, because any user on the box could
+ * create that name first.  Try the same two locations the server does, in the
+ * same order.
+ */
 static int
 connect_pid(long pid)
 {
 	char path[108];
 	const char *env = getenv("UMEM_INTROSPECT_SOCK");
-	struct sockaddr_un addr;
-	int fd;
+	const char *xdg = getenv("XDG_RUNTIME_DIR");
+	const char *dirs[2];
+	int ndirs = 0, i, fd = -1;
+	char privdir[96];
 
-	if (env != NULL && env[0] != '\0')
+	if (env != NULL && env[0] != '\0') {
 		snprintf(path, sizeof (path), "%s", env);
-	else
-		snprintf(path, sizeof (path), "/tmp/umem.%ld.sock", pid);
+		return (try_connect(path));
+	}
 
-	fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (fd < 0) {
-		perror("socket");
-		return (-1);
+	if (xdg != NULL && xdg[0] == '/')
+		dirs[ndirs++] = xdg;
+	snprintf(privdir, sizeof (privdir), "/tmp/umem-%ld",
+	    (long)geteuid());
+	dirs[ndirs++] = privdir;
+
+	for (i = 0; i < ndirs; i++) {
+		snprintf(path, sizeof (path), "%s/umem.%ld.sock", dirs[i], pid);
+		if ((fd = try_connect_quiet(path)) >= 0)
+			return (fd);
 	}
-	memset(&addr, 0, sizeof (addr));
-	addr.sun_family = AF_UNIX;
-	strncpy(addr.sun_path, path, sizeof (addr.sun_path) - 1);
-	if (connect(fd, (struct sockaddr *)&addr, sizeof (addr)) < 0) {
-		fprintf(stderr, "umemctl: cannot connect to %s: %s\n",
-		    path, strerror(errno));
-		fprintf(stderr, "  (is the target running with "
-		    "UMEM_OPTIONS=introspect=1?)\n");
-		close(fd);
-		return (-1);
-	}
-	return (fd);
+
+	/* Report against the location the server prefers. */
+	snprintf(path, sizeof (path), "%s/umem.%ld.sock", dirs[0], pid);
+	fprintf(stderr, "umemctl: cannot connect to %s: %s\n",
+	    path, strerror(errno));
+	fprintf(stderr, "  (is the target running with "
+	    "UMEM_OPTIONS=introspect=1?)\n");
+	return (-1);
 }
 
 /* Send one command line, print the response up to a lone "." terminator. */

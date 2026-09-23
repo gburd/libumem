@@ -40,6 +40,7 @@
 
 #include "umem_base.h"
 #include "umem_impl.h"
+#include "vmem_base.h"
 
 #include "misc.h"
 #include "malloc_guard.h"
@@ -370,6 +371,132 @@ umem_memalign(size_t align, size_t size_arg)
  */
 
 /*
+ * ---- "could this address possibly be ours?" (P5.8) ----
+ *
+ * process_free() below is handed pointers by the LD_PRELOAD interposer, and
+ * under LD_PRELOAD not every pointer reaching free() came from us: a library
+ * with its own allocator, or a plain bug in the application, delivers a
+ * foreign or wild pointer.  The malloc_data_t magic is a FIXED CONSTANT
+ * (umem_impl.h: UMEM_MALLOC_DECODE is stat + size), so it is forgeable, and
+ * the interposer sets umem_abort = 0 -- so a header that passes used to be
+ * enough to make libumem free memory it does not own.
+ *
+ * This is the range check the bootstrap allocator already has in
+ * is_bootstrap_pointer(), for umem's own memory: every byte umem hands out
+ * lies inside a span of vmem_heap (the "mmap_heap"/sbrk heap arena), because
+ * umem_internal/va/default/oversize/memalign/firewall all import from it.
+ *
+ * WHAT IT IS: the convex hull of vmem_heap's spans -- a SUPERSET of owned
+ * memory, since spans are not contiguous.  So it is a necessary, not a
+ * sufficient, condition: exactly the same character as is_bootstrap_pointer's
+ * magic check.  It cannot be fooled by a header forged in a foreign heap or
+ * on the stack, which is the exposure it closes.
+ *
+ * WHY A CACHED HULL and not vmem_contains(): vmem_contains() walks the span
+ * list under the arena lock, and this runs on every free().  The hull is two
+ * compares.  It only ever WIDENS -- the updates below are CAS loops, so a
+ * concurrent pair cannot narrow it by losing an update -- which means a stale
+ * read can produce a false MISS but never a false hit.  A miss then refreshes
+ * and re-tests, so a valid pointer is never rejected.
+ *
+ * NO LOCK OF ITS OWN, deliberately: this is on the free() path, and a new
+ * lock there would have to be placed in the fork/vmem lock order.  vmem_walk()
+ * takes only the arena's own lock, which free() does not already hold.
+ *
+ * ponytail: convex hull, refreshed on miss.  If a between-spans foreign
+ * pointer with a forged header ever matters, the upgrade is a sorted span
+ * table with a binary search, or vmem_contains() gated on the hull hit.
+ */
+static _Atomic uintptr_t umem_heap_lo = (uintptr_t)UINTPTR_MAX;
+static _Atomic uintptr_t umem_heap_hi;
+
+static void
+hull_span_cb(void *arg, void *addr, size_t size)
+{
+	uintptr_t *hull = arg;	/* [0] = lo, [1] = hi */
+	uintptr_t start = (uintptr_t)addr;
+
+	if (start < hull[0])
+		hull[0] = start;
+	if (start + size > hull[1])
+		hull[1] = start + size;
+}
+
+/* Widen lo downward / hi upward, never the other way (see above). */
+static void
+hull_lower(_Atomic uintptr_t *slot, uintptr_t v)
+{
+	uintptr_t cur = atomic_load(slot);
+
+	while (v < cur) {
+		if (atomic_compare_exchange_weak(slot, &cur, v))
+			return;
+	}
+}
+
+static void
+hull_raise(_Atomic uintptr_t *slot, uintptr_t v)
+{
+	uintptr_t cur = atomic_load(slot);
+
+	while (v > cur) {
+		if (atomic_compare_exchange_weak(slot, &cur, v))
+			return;
+	}
+}
+
+/*
+ * Re-read vmem_heap's spans and widen the cached hull.  Called only when a
+ * candidate missed the hull, i.e. never on the common path.  vmem_walk()
+ * calls the callback with the arena lock held, so the callback must not
+ * allocate -- it does not.
+ */
+static void
+hull_refresh(void)
+{
+	uintptr_t hull[2];
+
+	if (vmem_heap == NULL)
+		return;
+	hull[0] = (uintptr_t)UINTPTR_MAX;
+	hull[1] = 0;
+	vmem_walk(vmem_heap, VMEM_SPAN, hull_span_cb, hull);
+	if (hull[1] == 0)
+		return;			/* no spans yet */
+	hull_lower(&umem_heap_lo, hull[0]);
+	hull_raise(&umem_heap_hi, hull[1]);
+}
+
+/*
+ * Could [addr, addr + len) be memory umem handed out?  Conservative: a false
+ * "yes" is possible (the hull is a superset), a false "no" is not.
+ */
+static int
+umem_may_own(const void *addr, size_t len)
+{
+	uintptr_t a = (uintptr_t)addr;
+	uintptr_t end;
+
+	if (a == 0 || len == 0)
+		return (0);
+	end = a + len;
+	if (end < a)
+		return (0);		/* wrapped: not a real object */
+
+	if (a >= atomic_load(&umem_heap_lo) &&
+	    end <= atomic_load(&umem_heap_hi))
+		return (1);
+
+	/*
+	 * Missed.  The heap may simply have grown since the last refresh, so
+	 * re-read the spans and re-test before rejecting anything.
+	 */
+	hull_refresh();
+	return (a >= atomic_load(&umem_heap_lo) &&
+	    end <= atomic_load(&umem_heap_hi));
+}
+
+/*
  * process_free:
  *
  * Pulls information out of a buffer pointer, and optionally free it.
@@ -379,6 +506,27 @@ umem_memalign(size_t align, size_t size_arg)
  * On success, returns the data size through *data_size_arg, if (!is_free).
  *
  * Preserves errno, since free()'s semantics require it.
+ *
+ * VALIDATION ORDER (P5.8).  Under LD_PRELOAD this is handed pointers that are
+ * not necessarily ours, so it is the trust boundary and the ordering matters:
+ *
+ *   1. bootstrap pointer?  (its own range + magic check)
+ *   2. is the HEADER inside umem-owned address space?  If not, return without
+ *      reading it -- reading buf[-1] for an arbitrary pointer was an 8-byte
+ *      read before an arbitrary address.
+ *   3. decode the header; the magic tells us the layout
+ *   4. is the decoded size self-consistent, and does [base, base+size) lie
+ *      inside umem-owned address space?
+ *   5. ONLY NOW write anything.
+ *
+ * Pre-fix, step 2 did not exist, step 4 did not exist, and step 5 happened
+ * inside the switch: every successful-magic branch stored UMEM_FREE_PATTERN_32
+ * into buf->malloc_stat BEFORE the size was sanity-checked, and the
+ * MALLOC_OVERSIZE/MEMALIGN branches wrote one header's stat word before
+ * validating the other one.  With a forged header those writes landed in
+ * memory libumem does not own, and (since the interposer sets umem_abort = 0)
+ * execution continued into _umem_free()/vmem_xfree() on a foreign address.
+ * Nothing is written now until the pointer has been accepted.
  *
  * Exposed for malloc_interpose.c
  */
@@ -407,6 +555,11 @@ process_free(void *buf_arg,
 	void *base;
 	size_t size;
 	size_t data_size;
+	/* Set by the switch, acted on only after validation (step 5). */
+	malloc_data_t *poison_lo = NULL;	/* lowest stat word to clear */
+	int npoison = 0;			/* 1 or 2 consecutive words */
+	int memalign = 0;
+	size_t overhead_min;			/* smallest legal `size` */
 
 	const char *message;
 	int old_errno = errno;
@@ -414,33 +567,51 @@ process_free(void *buf_arg,
 	buf = (malloc_data_t *)buf_arg;
 
 	buf--;
+
+	/*
+	 * Step 2: do not read a header that cannot be ours.  This is the check
+	 * that turns "8-byte read before an arbitrary address" into a refusal.
+	 * Only the FIRST header is covered here; the two-tag layouts re-check
+	 * before reading their second one.
+	 */
+	if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+		umem_err_recoverable("%s(%p): not a libumem allocation "
+		    "(outside umem's heap)\n",
+		    do_free ? "free" : "realloc", buf_arg);
+		errno = old_errno;
+		return (0);
+	}
+
 	size = buf->malloc_size;
 
 	switch (UMEM_MALLOC_DECODE(buf->malloc_stat, size)) {
 
 	case MALLOC_MAGIC:
 		base = (void *)buf;
+		overhead_min = sizeof (malloc_data_t);
 		data_size = size - sizeof (malloc_data_t);
-
-		if (do_free)
-			buf->malloc_stat = UMEM_FREE_PATTERN_32;
-
-		goto process_malloc;
+		poison_lo = buf;
+		npoison = 1;
+		goto validate;
 
 #ifdef _LP64
 	case MALLOC_SECOND_MAGIC:
 		base = (void *)(buf - 1);
+		overhead_min = 2 * sizeof (malloc_data_t);
 		data_size = size - 2 * sizeof (malloc_data_t);
-
-		if (do_free)
-			buf->malloc_stat = UMEM_FREE_PATTERN_32;
-
-		goto process_malloc;
+		/* Only the second tag carries state; the first is padding. */
+		poison_lo = buf;
+		npoison = 1;
+		goto validate;
 
 	case MALLOC_OVERSIZE_MAGIC: {
 		size_t high_size;
 
 		buf--;
+		if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+			message = "invalid or corrupted buffer";
+			break;
+		}
 		high_size = buf->malloc_size;
 
 		if (UMEM_MALLOC_DECODE(buf->malloc_stat, high_size) !=
@@ -452,14 +623,11 @@ process_free(void *buf_arg,
 		size += high_size << 32;
 
 		base = (void *)buf;
+		overhead_min = 2 * sizeof (malloc_data_t);
 		data_size = size - 2 * sizeof (malloc_data_t);
-
-		if (do_free) {
-			buf->malloc_stat = UMEM_FREE_PATTERN_32;
-			(buf + 1)->malloc_stat = UMEM_FREE_PATTERN_32;
-		}
-
-		goto process_malloc;
+		poison_lo = buf;
+		npoison = 2;
+		goto validate;
 	}
 #endif
 
@@ -472,6 +640,10 @@ process_free(void *buf_arg,
 		overhead += sizeof (malloc_data_t);
 
 		buf--;
+		if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+			message = "invalid or corrupted buffer";
+			break;
+		}
 		high_size = buf->malloc_size;
 
 		if (UMEM_MALLOC_DECODE(buf->malloc_stat, high_size) !=
@@ -480,21 +652,18 @@ process_free(void *buf_arg,
 			break;
 		}
 		size += high_size << 32;
-
-		/*
-		 * destroy the main tag's malloc_stat
-		 */
-		if (do_free)
-			(buf + 1)->malloc_stat = UMEM_FREE_PATTERN_32;
+		/* Both tags are cleared, after validation. */
+		npoison = 2;
+#else
+		npoison = 1;
 #endif
 
 		base = (void *)buf;
+		overhead_min = overhead;
 		data_size = size - overhead;
-
-		if (do_free)
-			buf->malloc_stat = UMEM_FREE_PATTERN_32;
-
-		goto process_memalign;
+		poison_lo = buf;
+		memalign = 1;
+		goto validate;
 	}
 	default:
 		if (buf->malloc_stat == UMEM_FREE_PATTERN_32)
@@ -510,20 +679,47 @@ process_free(void *buf_arg,
 	errno = old_errno;
 	return (0);
 
-process_malloc:
-	if (do_free)
-		_umem_free(base, size);
-	else
-		*data_size_arg = data_size;
+validate:
+	/*
+	 * Step 4.  The magic is a fixed constant, so passing the switch above
+	 * proves nothing on its own -- it is forgeable, and an attacker who can
+	 * write into a buffer can write a header in front of an address of
+	 * their choosing.  Two independent things must also hold:
+	 *
+	 *   - the size is self-consistent with the layout the magic named, so
+	 *     data_size cannot have underflowed to a huge value;
+	 *   - the whole object lies inside umem's heap, so a header forged in a
+	 *     foreign heap, on the stack, or in a data section is rejected.
+	 *
+	 * Failing either of these is treated exactly like a bad magic: report,
+	 * mutate nothing, and return 0 so the caller does not use the size.
+	 */
+	if (size < overhead_min || !umem_may_own(base, size)) {
+		umem_err_recoverable("%s(%p): header claims %zu bytes at %p, "
+		    "which is not a libumem allocation; refusing\n",
+		    do_free ? "free" : "realloc", buf_arg, size, base);
+		errno = old_errno;
+		return (0);
+	}
 
-	errno = old_errno;
-	return (1);
+	/* Step 5: accepted.  Now, and only now, mutate. */
+	if (do_free) {
+		int i;
+		for (i = 0; i < npoison; i++)
+			poison_lo[i].malloc_stat = UMEM_FREE_PATTERN_32;
+	}
 
-process_memalign:
-	if (do_free)
-		vmem_xfree(umem_memalign_arena, base, size);
-	else
-		*data_size_arg = data_size;
+	if (memalign) {
+		if (do_free)
+			vmem_xfree(umem_memalign_arena, base, size);
+		else
+			*data_size_arg = data_size;
+	} else {
+		if (do_free)
+			_umem_free(base, size);
+		else
+			*data_size_arg = data_size;
+	}
 
 	errno = old_errno;
 	return (1);
