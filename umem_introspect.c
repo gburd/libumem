@@ -222,10 +222,29 @@ is_allocated(umem_cache_t *cp, umem_slab_t *sp, uintptr_t buf_addr)
 				return (0);
 		}
 	}
-	/* Free-list fallback. */
+	/*
+	 * Free-list fallback.
+	 *
+	 * bc_next in a slab freelist is MANGLED (P5.4:
+	 * ptr ^ umem_link_cookie ^ (&slot >> 12)), so it must be decoded
+	 * before it is followed -- otherwise this walk dereferences a mangled
+	 * value, which is a wild read.  Only the SLAB freelist is mangled; the
+	 * UMF_HASH allocated-address chain in audit_bufctl_for() below stores
+	 * plain pointers and is correctly left alone.  See umem_impl.h's
+	 * UMEM_LINK_MANGLE comment, which lists this function as a reader.
+	 *
+	 * The bounded iteration count is not defensive decoration: if the
+	 * chain is corrupt (which is the scenario mangling exists to detect)
+	 * the decoded links are garbage, and an inspector must not spin
+	 * forever on a cycle while holding cache_lock.
+	 */
 	{
 		umem_bufctl_t *bcp;
-		for (bcp = sp->slab_head; bcp != NULL; bcp = bcp->bc_next) {
+		unsigned safety = 0;
+
+		for (bcp = sp->slab_head;
+		    bcp != NULL && safety++ < (1u << 20);
+		    bcp = UMEM_LINK_DEMANGLE(&bcp->bc_next, bcp->bc_next)) {
 			uintptr_t a = (cp->cache_flags & UMF_HASH)
 			    ? (uintptr_t)bcp->bc_addr
 			    : ((uintptr_t)bcp - cp->cache_bufctl);
