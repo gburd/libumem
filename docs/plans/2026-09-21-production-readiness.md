@@ -1276,6 +1276,117 @@ import -- glibc gets this for free from its existing arena; libumem has to
 choose to. (3) Find and close the `RLIMIT_DATA` errno-0 path; add
 `RLIMIT_DATA` to `test_errno_preserved`.
 
+### P6.8 Reclaim under pressure: a freed 4 GB heap stays resident indefinitely -- BLOCKING
+`umem.c:4084-4100` (`umem_cache_reap` -> `umem_depot_ws_reap`, the only
+path that returns depot magazines to the slab layer, reached only via
+`UMU_REAP`); `umem.c:4743-4813` (`umem_reap`: the only thing that sets
+`UMU_REAP`, and only when a *caller* invokes it or a backend allocation
+fails); `umem.c:4565-4655` (`umem_cache_update`, the periodic pass: hash
+rescale, `umem_depot_ws_update`, magazine resize, `umem_cache_reclaim_pages`
+-- **no `UMU_REAP`**); `umem.c:4416-4435` (`umem_cache_reclaim_pages`
+touches only slabs with `slab_refcnt == 0`); `umem.c:40-56` (the file header
+documents this and calls it a "nuance")
+
+Provenance: `a2548b8`, `c7g.2xlarge` (16 GB). `probe_reclaim <gb> <window>
+<mix>`: build the heap (all pages touched), free all of it in one pass, then
+sample RSS every second for 100 s while doing one 32 B alloc/free per second
+(a live process, not a parked one). `reclaim`, `reclaim_mt2`, `reclaim_gdb5`
+jobs.
+
+| run | peak RSS | RSS 1 s after free | RSS at 30 s | at 60 s | at 100 s | glibc at 100 s |
+|---|---:|---:|---:|---:|---:|---:|
+| 4 GB: 2 GB x 4 KiB + 2 GB x 1 MiB | 4,141 MB | 2,098 MB | 2,098 | 2,098 | **2,098** | 2,062 (same shape: the 4 KiB half stays) |
+| 2 GB x 4 KiB, single-threaded | 2,090 MB | 2,095 MB | 2,095 | 2,095 | **2,095** | -- |
+| 2 GB x 4 KiB, `umem_reap()` called once before the fill so the update thread exists | 2,090 MB | 2,095 MB | 2,100 | 2,100 | **2,100** | -- |
+| 2 GB x 4 KiB, `umem_reap()` called every 10 s during the window | 2,090 MB | 2,095 MB | 2,100 | 2,099 | **2,095** (-5 MB) | -- |
+
+**The oversize half works:** the 1 MiB objects' 2 GB is back with the kernel
+within a second of the free (4,141 -> 2,098), because `vmem_xfree` returns
+each span to the mmap heap and `vmem_mmap_free` `PROT_NONE`s it (P6.2 shows
+the VMA cost of that). glibc does the same via `munmap`.
+
+**The slab half never comes back.** 2 GB of freed 4 KiB objects is still
+resident 100 s later with the update thread running (`gdb`: thread 2 in
+`umem_update_thread` at `umem_update_thread.c:160`, `umem_update_thr` set,
+`umem_reap_interval` 10, `umem_reclaim_delay` 30, `umem_reclaim_enabled` 1,
+`umem_update_next` advancing every 10 s). Even calling `umem_reap()` every
+10 s -- the file header's documented advice for Linux -- returned 5 MB of
+2,095 in 100 s. glibc keeps its 2 GB too (its interior holes are below the
+`brk` top and `M_TRIM_THRESHOLD` only trims the top), so **at the 100 s mark
+umem and glibc are equal** -- but glibc has no mechanism it is claiming to
+run, and libumem does. The reclaim feature (P1.4/P1.5, `umem_reclaim_delay`
+30 s, `MADV_DONTNEED` on idle slabs) does not fire on this, the most ordinary
+shape of "free a big heap".
+
+**Mechanism, read from the live process with `gdb` 14 s after the free:**
+
+```
+cache=umem_alloc_4096 slabsize=65536 buftotal=524288 slab_create=32768 slab_destroy=0 magsize=31
+full.ml_total=0  empty.ml_total=0
+per-cpu depot: full=16911  empty=0
+```
+
+All 524,288 freed objects are in **16,911 full magazines of 31 rounds on
+the per-CPU depot lists** (16,911 x 31 = 524,241; the rest are in the CPU
+layer's loaded/previous magazines). From the slab layer's point of view every
+one of those objects is *allocated*: `slab_refcnt` is nonzero on every one of
+the 32,768 slabs. `umem_cache_reclaim_pages()` is running every 10 s exactly
+as designed, and it skips every slab (`if (sp->slab_refcnt != 0) continue;`,
+`umem.c:4418`), so nothing ever becomes `SLAB_DIRTY`, the 30 s delay never
+starts, and `MADV_DONTNEED` is never issued. The pages are not held by the
+slab layer's retention policy; they are held by the **depot**, one layer up,
+and the only code that drains the depot is `umem_depot_ws_reap`, which is
+reached only through `umem_cache_reap`, which is reached only through
+`UMU_REAP`, which only `umem_reap()` sets -- and `umem_reap()` is called only
+by the application or by a *failed* backend allocation
+(`vmem_xalloc` -> `vmem_reap` -> `umem_reap`, `vmem.c:571`). The periodic
+update pass does `umem_depot_ws_update` (the working-set *bookkeeping*:
+`ml_reaplimit = ml_min; ml_min = ml_total`) but never the reap that acts on
+it. **So on a process that never runs out of memory, the depot is never
+reaped and freed memory is never returned, and the 30 s reclaim delay is
+unreachable for anything that went through a magazine.** The `umem_reap()`
+call *does* reach `umem_depot_ws_reap`, but `umem_maglist_ws_reap` reaps
+`MIN(ml_reaplimit, ml_min)` magazines per list per pass, i.e. the working-set
+minimum of the last interval -- and with `umem_maglist_mark_excess` capping
+`ml_min` at `UMEM_DEPOT_PERCPU_MAX` = 8, that is **at most 8 magazines per
+per-CPU list per reap**: 8 lists x 8 x 31 x 4 KiB = 8 MB per 10 s. That is
+the 5 MB measured. Draining 2 GB at that rate takes ~40 minutes of an
+application calling `umem_reap()` every 10 s.
+
+The file header (`umem.c:48-53`) says as much -- "On Linux umem will not
+return memory back to the OS until umem fails to allocate a chunk ... your
+code will need to call `umem_reap()` periodically" -- and calls it a nuance.
+With `reclaim=1` as the default, `umem_reclaim_delay` as a documented
+tunable, and P1.4/P1.5 shipped as "background page reclamation", a user
+reasonably expects freed pages to go back. They do not, and calling
+`umem_reap()` does not materially help either.
+
+**glibc comparison:** for this shape glibc also keeps interior freed pages
+(2,062 MB stays), but it (a) `munmap`s the large half at once, same as umem,
+(b) trims the top of the heap when the free is at the top -- which a
+LIFO-ish free order gets for free -- and (c) never claims otherwise. umem's
+failure is not "worse than glibc's number"; it is "the feature that exists
+to be better than glibc does not run".
+
+**Required fix.**
+(1) Make the periodic pass reap the depot: `umem_cache_update()` should
+request `UMU_REAP` (or call `umem_depot_ws_reap` directly) when the depot
+holds more than the working set -- the `ml_reaplimit`/`ml_min` bookkeeping
+it already maintains is exactly that signal. Then freed magazines return
+their objects to the slabs, `slab_refcnt` hits 0, `umem_cache_reclaim_pages`
+sees `SLAB_DIRTY` slabs, and the existing 30 s / 60 s machinery does what
+it was written to do.
+(2) Lift the `UMEM_DEPOT_PERCPU_MAX`-derived 8-magazines-per-pass cap in
+`umem_maglist_ws_reap` when the list is far above its working set: reap down
+to `ml_min`, not `MIN(reaplimit, min)`, or at least a fraction of the excess
+per pass so a 2 GB surplus drains in a few intervals rather than 40 minutes.
+(3) Regression: `probe_reclaim 2 100 small` must show RSS below 25 % of
+peak by t = 70 s (delay 30 + one interval + slack) with no `umem_reap()`
+call from the application; today it shows 100 % at t = 100 s. A second arm
+with `reclaim_delay=0` should show the drop within two intervals.
+(4) Rewrite the `umem.c:40-56` header: it describes the defect as a
+platform nuance, and after (1) it will be false.
+
 ## Exit criteria
 
 **Verified 2026-09-22 at `4ba7d00`** by `scripts/ec2/exit_criteria_gate.sh`,
