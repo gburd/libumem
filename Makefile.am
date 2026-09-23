@@ -821,11 +821,19 @@ test_security_test_forged_free_CPPFLAGS = -I$(srcdir)
 # pthread stack it allocates itself.  -fno-omit-frame-pointer is on the test,
 # not the library: the library's own walk is what is under test, and arm B
 # deliberately compiles one caller without a frame pointer.
+# P5.9: calls getpcstack() directly from a frame-pointer-having caller -- see
+# the long note in the test's header.  Driving it through umem_alloc() does NOT
+# reach the walk: the library is built -O2 without -fno-omit-frame-pointer, so
+# a walk starting inside the allocator stops after ~2 frames (measured: depth 2
+# through umem_alloc, 7 from an fp-having caller) and the first version of this
+# test passed with the fix reverted.  -O0 as well as -fno-omit-frame-pointer,
+# because the arm depends on THIS file's frames being real and walkable.
 test_security_test_stack_bounds_SOURCES = test/security/test_stack_bounds.c
 test_security_test_stack_bounds_LDADD = libumem.la
 test_security_test_stack_bounds_LDFLAGS = -pthread
 test_security_test_stack_bounds_CPPFLAGS = -I$(srcdir)
-test_security_test_stack_bounds_CFLAGS = $(AM_CFLAGS) -fno-omit-frame-pointer
+test_security_test_stack_bounds_CFLAGS = $(AM_CFLAGS) \
+	-fno-omit-frame-pointer -O0
 
 # P5.7: tests the peer-authorization decision directly.  A real setuid target
 # is not creatable inside `make check` (it needs root, and would leave a setuid

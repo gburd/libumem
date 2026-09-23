@@ -27,9 +27,11 @@ fi
 
 export LD_LIBRARY_PATH="$ROOT/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-# audit is the flag that turns on stack capture (umem.c's UMEM_AUDIT macro ->
-# getpcstack).  Assert it took effect rather than assuming: a typo here would
-# silently make every arm vacuous.
+# audit is the flag that turns on stack capture in the allocator.  This test
+# calls getpcstack() directly (see its header for why: through umem_alloc the
+# library's own -O2 frames carry no frame pointer and the walk never reaches
+# the frame under test), so audit is not strictly required -- but it is set
+# anyway so the run matches the configuration P5.9 is about.
 export UMEM_DEBUG=audit
 export UMEM_LOGGING=transaction
 
@@ -41,9 +43,17 @@ out=$("$BIN" 2>&1)
 rc=$?
 echo "$out"
 
-if ! grep -q '100 audited allocations' <<<"$out"; then
-	echo "test_stack_bounds.sh: FAIL -- the control arm did not run;"
-	echo "  the arms cannot be trusted (is UMEM_DEBUG=audit taking effect?)"
+# The test's own control arm is the vacuity guard (it fails the run if the walk
+# cannot produce a multi-frame chain).  Check for its line here too, so a build
+# that silently stopped running the arms cannot report green through this
+# wrapper.
+if ! grep -q 'uncorrupted walk returned depth' <<<"$out"; then
+	if grep -q '^SKIP:' <<<"$out"; then
+		echo "test_stack_bounds.sh: skipping (platform has no frame walk)"
+		exit 77
+	fi
+	echo "test_stack_bounds.sh: FAIL -- the control arm did not report;"
+	echo "  the arms cannot be trusted"
 	exit 1
 fi
 

@@ -57,18 +57,33 @@ build() {
 # expect_fail <label> <test command...>
 # The regression MUST exit non-zero.  Exit 77 (skip) is NOT a demonstration:
 # a skipped test proves nothing, so it is reported as a failure of this script.
+#
+# EVERY arm runs under timeout(1).  A reverted fix does not merely make a test
+# fail -- it can HANG it.  Observed on aarch64: with the P5.8 ownership check
+# reverted, test_forged_free blocked indefinitely (0% CPU for 25 minutes) inside
+# free() on a forged header, because the pre-fix code walked into allocator
+# state it then could not make progress on.  Without a timeout that stalled the
+# whole harness and looked like an infrastructure problem rather than the
+# pre-fix behaviour it actually is.  A timeout kill (124) counts as a
+# demonstrated failure, and says so.
+ARM_TIMEOUT=${ARM_TIMEOUT:-120}
+
 expect_fail() {
 	local label=$1; shift
 	local out rc
-	out=$("$@" 2>&1); rc=$?
+	out=$(timeout -k 10 "$ARM_TIMEOUT" "$@" 2>&1); rc=$?
 	if [[ $rc -eq 77 ]]; then
 		say "  INCONCLUSIVE: $label SKIPPED (rc=77) -- proves nothing"
 		say "$out" | sed 's/^/    /'
 		fails=$((fails + 1))
+	elif [[ $rc -eq 124 || $rc -eq 137 ]]; then
+		say "  PRE-FIX FAILURE DEMONSTRATED: $label HUNG " \
+		    "(killed after ${ARM_TIMEOUT}s) -- a hang is a failure"
+		say "$out" | tail -8 | sed 's/^/    /'
 	elif [[ $rc -ne 0 ]]; then
 		say "  PRE-FIX FAILURE DEMONSTRATED: $label exits $rc"
-		say "$out" | grep -E 'FAIL|MUTATED|signal|AddressSanitizer|unlink' \
-		    | head -8 | sed 's/^/    /' | tee -a /dev/null
+		say "$out" | grep -E 'FAIL|MUTATED|signal|AddressSanitizer|unlink|depth' \
+		    | head -8 | sed 's/^/    /'
 	else
 		say "  NOT DEMONSTRATED: $label still PASSES with the fix reverted"
 		say "$out" | tail -15 | sed 's/^/    /'
