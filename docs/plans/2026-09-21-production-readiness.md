@@ -703,7 +703,7 @@ x86 16 GB, `c7g.2xlarge` arm 16 GB, `c7i.metal-48xl` 192 vCPU 377 GB)
 | P6.5 | fragmentation over time | FINE / MEDIUM | 18 min churn: RSS +11 MB over the last 17 min (plateau); ratio 1.13 -> 1.33 is the live set shrinking under a fixed RSS | 1.018 flat |
 | P6.6 | fork with 4 GB heap | FINE | 23 ms vs 21 ms; child COW +0.4 MB; handlers +2 ms constant, not heap-proportional | 21 ms |
 | P6.7 | kernel knobs | FINE / MEDIUM / BLOCKING | clean NULL + ENOMEM under `RLIMIT_AS`, `RLIMIT_DATA`, `overcommit=2`; but no 64 B allocation possible after the first failure (glibc: yes); one stale-errno path on `RLIMIT_DATA`; `max_map_count=4096` fails 512 B at **500 MB** (P6.1 again) | recovers; 2 GB |
-| P6.8 | reclaim under pressure | **BLOCKING** | a freed 2 GB slab heap is 100 % resident at t = 100 s with the update thread running: every freed object sits in a depot magazine, `slab_refcnt` never reaches 0, `umem_cache_reclaim_pages` skips them, and the periodic pass never reaps the depot. `umem_reap()` every 10 s: -5 MB / 100 s | keeps interior pages too, but claims nothing |
+| P6.8 | reclaim under pressure | **FIXED** (`147d5ff`, `9bbe58b`; root: update thread never started) | a freed 2 GB slab heap is 100 % resident at t = 100 s with the update thread running: every freed object sits in a depot magazine, `slab_refcnt` never reaches 0, `umem_cache_reclaim_pages` skips them, and the periodic pass never reaps the depot. `umem_reap()` every 10 s: -5 MB / 100 s | keeps interior pages too, but claims nothing |
 
 Two of the eight are BLOCKING and both are one-mechanism fixes with a
 measured lever (P6.1) or a named missing call (P6.8). The rest are
@@ -1416,6 +1416,62 @@ call from the application; today it shows 100 % at t = 100 s. A second arm
 with `reclaim_delay=0` should show the drop within two intervals.
 (4) Rewrite the `umem.c:40-56` header: it describes the defect as a
 platform nuance, and after (1) it will be false.
+
+**STATUS: FIXED (`147d5ff`, `9bbe58b`) -- and the diagnosis above was one
+layer short.** Implementing (1)+(2) as written (`147d5ff`) produced *no
+change*: 135 MB stayed 135 MB. `gdb` on the repro: **one task in the
+process**; a breakpoint on `umem_cache_update` never fired. The periodic
+pass did not merely fail to reap the depot -- **it did not run**, because the
+update thread did not exist. Its only creator was `umem_reap()`
+(`umem.c:4855-4864`), i.e. an application call or a *failed* backend
+allocation. The P6.8 measurement above had a thread only because its 4 GB
+fill hit the VMA ceiling (P6.1), failed a backend allocation, and thereby
+called `umem_reap()`. The reclaim feature's own tests drive the pass by hand
+(`repro_reclaim_reuse.c:85`, `update_pass()`), which is how a never-started
+thread stayed unseen through P1.4/P1.5/P1.6. Every feature that documents
+itself as "background" or "periodic" -- hash rescale requests, magazine
+resize, depot working-set bookkeeping, slab reclaim -- was dead in a process
+that never ran out of memory.
+
+`9bbe58b`: `umem_init()` creates the thread after the caches exist and before
+`READY`. Isolation on `c7i.2xlarge`, `test_reclaim_returns` (128 MB of
+4 KiB, `reap_interval=1,reclaim_delay=2`, no `umem_reap()`):
+
+| build | result |
+|---|---|
+| pre (`a3aa023`) | FAIL: 135 -> 135 MB in 20 s |
+| (1)+(2) only (`147d5ff`) | FAIL: 135 -> 135 MB -- no thread to run them |
+| thread-at-init only | FAIL: pass runs, never requests `UMU_REAP` |
+| thread-at-init + (1), cap kept | PASS: 8 MB at t = 6 s -- the cap did not bite here, because the `ws_excess` gate fires only once `reaplimit` already reflects the full surplus |
+| **all three (`9bbe58b`)** | **PASS: 8 MB at t = 6 s** |
+
+The cap (2) matters for the *other* path: an application calling
+`umem_reap()` directly, which was the documented advice. `reclaim=0`,
+`umem_reap()` every 1 s: cap removed 135 -> 6 MB in 12 s; cap restored
+135 -> 126 MB in 12 s (~3 MB/s -- the agent's 5 MB/100 s at a 10 s
+interval). Both arms are now real.
+
+Thread count in a plain `umem_alloc` process: 1 -> 2. `LD_PRELOAD` on
+`/bin/ls` and `python3`: works (thread created inside the first `malloc`).
+`make check` 34/31/3/0. Follow-up recorded: **fork children still lose the
+thread** (`umem_fork.c:238` zeroes `umem_update_thr`; nothing recreates it
+until the child calls `umem_reap()` or fails an allocation) -- P6.9.
+
+### P6.9 Fork children have no update thread -- HIGH (follow-up to P6.8)
+`umem_fork.c:230-250` (`umem_do_release` as child: `umem_update_thr = 0`,
+`umem_reaping = UMEM_REAP_DONE`); no corresponding recreation.
+
+A forked child inherits the heap but not the update thread (threads do not
+survive `fork`). The child's periodic maintenance is therefore in exactly the
+pre-`9bbe58b` state: dead until `umem_reap()` or an allocation failure. For a
+pre-fork server model (nginx-style, one long-lived child per worker) that is
+every worker. Not yet measured; the mechanism is read from source.
+
+**Required fix:** recreate the thread in the child's release handler (it can
+call `umem_create_update_thread()` after dropping the locks it holds), or
+lazily on the child's first `umem_cache_update`-worthy event. Regression: fork
+after a fill, free in the child, RSS must return in the child without
+`umem_reap()`.
 
 ## Phase 8 — Performance gaps
 

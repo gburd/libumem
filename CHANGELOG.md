@@ -35,6 +35,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `test_heap_ceiling` gained a 512 B arm (`test_heap_ceiling_512.sh`). The 4 KiB
     arm passed at 9 GB throughout the second defect; a test of one path was blind
     to the other.
+- **The update thread was never started; freed memory was never returned.**
+  The only creator of libumem's maintenance thread was `umem_reap()`, which is
+  called by the application or by a *failed* backend allocation. In a process
+  that never ran out of memory -- almost every process -- there was no thread,
+  so the periodic pass never ran: no hash-rescale requests, no magazine
+  resize, no depot working-set reaping, no slab page reclaim. Every feature
+  documenting itself as "background" was dead. Found by the Phase 6 limit hunt
+  (P6.8: 2 GB freed, 100 % resident at 100 s) and then traced one layer
+  deeper than the first diagnosis when the first fix measured as no change
+  (`gdb`: one task in the process). Three changes, each shown necessary by
+  isolation:
+  - `umem_init()` starts the update thread (`9bbe58b`).
+  - The periodic pass requests a depot reap when any list is above its working
+    set (`147d5ff`); before, only `umem_reap()` did, so freed objects stayed in
+    depot magazines and `slab_refcnt` never reached zero.
+  - `umem_maglist_mark_excess()` no longer clamps `ml_min` to 8, which had
+    capped every reap at 8 magazines per list per pass -- ~8 MB per 10 s
+    against a 2 GB surplus. With `umem_reap()` every 1 s: 135 -> 6 MB in 12 s
+    (was 135 -> 126).
+  - Regression `test_reclaim_returns`: 128 MB freed with **no** `umem_reap()`
+    call, RSS 135 -> 8 MB at t = 6 s (was 135 -> 135 over 20 s).
+  - The `umem.c` header's "Nuance" section, which told Linux users to call
+    `umem_reap()` periodically, is rewritten. Fork children still lose the
+    thread (recorded as P6.9).
 - **Interposer `free()` ~500x collapse** (`a74065e`). `interpose_owner_of()` took
   a global lock and scanned 512 slots on every `free()` -- a table that is empty
   after bootstrap -- plus decoded the header twice. An atomic `libc_ptr_live`
@@ -59,6 +83,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Known
 
+- Every process now has a second thread from `umem_init()` onward. Programs
+  that count their own threads, or fork-then-exec paths that assumed a
+  single-threaded parent, will see it. It is detached, handles no signals,
+  and sleeps between intervals.
 - Startup allocates ~1,100 more bufctl records (~35 KB) than before, for the
   `umem_va_4096` and `umem_va_32768` quantum-cache slabs. This is fixed cost,
   not per-object.
