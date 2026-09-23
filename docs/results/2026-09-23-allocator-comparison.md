@@ -197,15 +197,144 @@ Single-thread p999 (ns): umem 23-43 on x86_64, 38-67 on aarch64; glibc
 
 ### 4.3 `prodcons` (half the threads allocate, half free)
 
-<!-- PRODCONS -->
+**8-vCPU boxes: not resolvable, and reported as such.** The umem-vs-umem@null
+delta on `prodcons` is sd 11% (x86_64) and **sd 47%, range -68..+244%**
+(aarch64). The cause is visible in the per-replicate data: identical
+processes land in one of two regimes. On `c7g.2xlarge`, `umem` 16:64 t=2 ran
+13.57 Mops in replicate 1 and 3.97 in replicate 2, each with CoV < 1% across
+its 3 internal runs; `umem` 256:1024 t=2: 3.82 then 12.27; `umem@null`
+256:1024 t=8: 9.94 then 15.56. The same bimodality hits libc (16:64 t=8:
+13.04 / 8.21), jemalloc (256:1024 t=8: 10.35 / 15.63), mimalloc (7.71 /
+12.60). With 2 replicates per arm a point's median is a coin flip between
+regimes. **No `prodcons` conclusion is drawn from the 8-vCPU boxes.** A
+future run wanting one needs >= 6 replicates per arm and should report the
+regime split, not a median.
+
+What can be said: the umem API arm's p999 on `prodcons` is consistently
+**2-10x lower than glibc's** at t >= 2 on both lo boxes (e.g. c7g 64:256 t=2:
+umem 565 ns vs glibc 6,669; t=8: 740 vs 5,321) and in the same tier as
+jemalloc/mimalloc -- this is the cross-thread handoff path the depot exists
+for, and it is doing its job. `umem-preload` p999 is 10-30x umem's on the
+same points (the §5.1 lock).
+
+**Metal:**
+
+<!-- PRODCONS-METAL -->
 
 ### 4.4 `frag` (grow a live pool, free ~50% at random, repeat) and the ceiling probe
 
-<!-- FRAG -->
+Throughput, Mops, 8-vCPU boxes (full tables incl. the fragmentation pair are
+in `analyze_comparison.py`'s output and the raw TOML; the pair is in §5.5).
+Budgets: 20M ops at 16:64 and 64:256, 8M at 256:1024, 3.2M at 1k:4k, so the
+live set is 0.2-2 GB and never near umem's ceiling.
+
+| box | size | t | libc | **umem** | umem-preload | jemalloc | tcmalloc | mimalloc | snmalloc | scudo | rpmalloc | umem/libc | umem vs best | null |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| c7i.2xlarge | 16:64 | 1 | 3.7 | 4.2 | 2.9 | 5.3 | 5.0 | **6.1** | 5.9 | 3.9 | 6.0 | 1.16 | **-30%** | +0.3% |
+| c7i.2xlarge | 16:64 | 8 | 18.6 | 18.9 | 2.5 | **24.9** | 20.1 | 23.7 | 24.2 | 19.2 | 23.7 | 1.02 | **-24%** | +0.2% |
+| c7i.2xlarge | 64:256 | 1 | 2.4 | 3.9 | 2.7 | 5.1 | 4.5 | 5.3 | **5.7** | 3.4 | 5.1 | 1.60 | **-32%** | -1.0% |
+| c7i.2xlarge | 64:256 | 8 | 14.7 | 17.6 | 2.7 | **23.8** | 18.5 | 21.9 | 19.5 | 16.5 | 19.6 | 1.20 | **-26%** | +3.5% |
+| c7i.2xlarge | 256:1024 | 1 | 1.9 | 3.4 | 2.5 | 3.8 | 3.7 | 4.4 | **4.9** | 2.6 | 4.2 | 1.75 | **-31%** | -0.7% |
+| c7i.2xlarge | 256:1024 | 8 | 10.9 | 15.8 | 2.4 | 19.6 | 17.7 | 19.3 | **20.3** | 11.3 | 17.1 | 1.46 | **-22%** | +5.2% |
+| c7i.2xlarge | 1k:4k | 1 | 1.2 | 2.1 | 1.7 | 1.6 | 2.3 | 1.6 | **2.4** | 1.7 | 2.1 | 1.72 | -12% | +2.1% |
+| c7i.2xlarge | 1k:4k | 8 | 5.5 | 11.1 | 2.4 | 9.2 | 10.7 | **12.9** | 11.8 | 8.9 | 10.1 | 2.01 | -14% | -0.1% |
+| c7g.2xlarge | 16:64 | 1 | 4.4 | 4.2 | 2.4 | **6.0** | 5.6 | 5.4 | 5.7 | 3.9 | 5.5 | 0.95 | **-30%** | -0.3% |
+| c7g.2xlarge | 16:64 | 8 | 22.5 | 22.5 | 2.8 | 24.7 | **25.4** | 22.3 | 22.0 | 21.0 | 20.7 | 1.00 | -11% | +3.7% |
+| c7g.2xlarge | 64:256 | 1 | 2.8 | 3.7 | 2.2 | **5.5** | 4.4 | 4.9 | 5.0 | 3.3 | 4.6 | 1.30 | **-33%** | -0.6% |
+| c7g.2xlarge | 64:256 | 8 | 14.1 | 21.7 | 2.7 | 20.2 | 19.7 | **27.0** | 25.8 | 17.9 | 20.5 | 1.54 | **-20%** | -7.4% |
+| c7g.2xlarge | 256:1024 | 1 | 2.0 | 3.3 | 2.1 | **4.5** | 3.1 | 3.8 | 4.2 | 2.4 | 3.6 | 1.62 | **-26%** | +0.1% |
+| c7g.2xlarge | 256:1024 | 8 | 12.7 | 19.9 | 2.7 | **21.5** | 17.3 | 21.2 | 21.4 | 11.7 | 19.6 | 1.56 | -8% | +0.6% |
+| c7g.2xlarge | 1k:4k | 1 | 1.4 | 2.3 | 1.6 | 2.6 | 2.3 | 1.5 | **2.7** | 1.9 | 2.1 | 1.69 | -15% | -0.6% |
+| c7g.2xlarge | 1k:4k | 8 | 6.5 | 14.8 | 2.7 | 14.5 | 13.1 | 15.6 | **16.6** | 9.8 | 12.1 | 2.28 | -11% | +1.1% |
+
+(t=2 and t=4 rows omitted here; same pattern, in the raw data.)
+
+Reading: on this workload umem beats glibc clearly (1.2-2.3x at 64 B and up;
+glibc's `free()` consolidation is the slow path here, its p999 is 10-16 us)
+but trails the modern size-class allocators by a consistent **20-33% at
+16..1024 B**, at every thread count including t=1, on both architectures,
+against a frag null of +/-3-9%. That is a finding (§5.7). At 1k:4k the gap
+is 8-15%, inside or at the edge of the band.
+
+umem's frag **p999 is the best or second-best in the field** at every point
+(400-1,700 ns vs glibc 1-16 us, tcmalloc 3-20 us, jemalloc 0.9-10 us); only
+snmalloc and mimalloc match it. The tail is not where the frag gap is.
+
+The ceiling probe is in §5.6.
 
 ### 4.5 Sustained (matched work, per-window, interleaved)
 
-<!-- SUSTAINED -->
+8-vCPU boxes, 8 threads, 4 windows x ~20 s per arm, all 11 arms interleaved,
+`prodcons` 64:256 and `frag` 16:64. Matched work: every arm ran the same
+total ops per window (56.7M / 45.4M on x86_64; 62.6M / 46.5M on aarch64).
+`ops_floor_raised` false and `alloc_failures` 0 on all 88 windows per box.
+p999 is the median over the 4 windows, with the window min..max.
+
+| box | workload | arm | Mops | p50 ns | p99 ns | **p999 ns** (min..max over windows) | rss@peak MB | live MB | frag |
+|---|---|---|---|---|---|---|---|---|---|
+| c7i.2xlarge | prodcons | libc | 6.84 | 275 | 6,373 | 11,570 (11,340..12,164) | 14 | -- | -- |
+| | | **umem** | 8.83 | 73 | 266 | **946** (861..989) | 23 | -- | -- |
+| | | umem@null | 9.72 | 86 | 268 | 904 (862..925) | 22 | -- | -- |
+| | | umem-preload | 2.95 | 348 | 11,386 | 18,844 (17,733..19,865) | 23 | -- | -- |
+| | | jemalloc | 9.91 | 121 | 768 | 1,464 (1,419..1,602) | 13 | -- | -- |
+| | | tcmalloc | 10.60 | 106 | 2,996 | 5,252 (4,925..5,849) | 13 | -- | -- |
+| | | mimalloc | 13.33 | 104 | 330 | 7,947 (7,900..8,321) | 14 | -- | -- |
+| | | snmalloc | 12.53 | 42 | 782 | 5,750 (5,072..5,970) | 14 | -- | -- |
+| | | scudo | 5.46 | 371 | 3,997 | 13,198 (11,409..13,712) | 13 | -- | -- |
+| | | rpmalloc | 10.37 | 127 | 338 | **468** (448..488) | 13 | -- | -- |
+| c7i.2xlarge | frag 16:64 | libc | 19.31 | 64 | 1,174 | 2,222 | 414 | 222 | 1.86 |
+| | | **umem** | 8.67 | 156 | 8,748 | **22,157** (22,021..22,634) | 510 | 237 | 2.15 |
+| | | umem@null | 8.68 | 156 | 8,506 | 21,538 | 510 | 237 | 2.15 |
+| | | umem-preload | 2.21 | 1,210 | 21,649 | 35,660 | 511 | 237 | 2.16 |
+| | | jemalloc | 21.15 | 42 | 416 | 1,292 | 381 | 228 | 1.67 |
+| | | tcmalloc | 19.28 | 43 | 1,732 | 8,014 | 372 | 226 | 1.65 |
+| | | mimalloc | 22.49 | 42 | 316 | 954 | 383 | 229 | 1.65 |
+| | | snmalloc | 21.64 | 38 | 92 | **379** | 374 | 226 | 1.66 |
+| | | scudo | 19.61 | 126 | 692 | 3,019 | 559 | 237 | 2.36 |
+| | | rpmalloc | 21.71 | 40 | 283 | 1,144 | 383 | 230 | 1.64 |
+| c7g.2xlarge | prodcons | libc | 11.63 | 202 | 4,322 | 8,514 | 13 | -- | -- |
+| | | **umem** | 19.54 | 48 | 126 | **838** (837..875) | 21 | -- | -- |
+| | | umem@null | 20.03 | 48 | 123 | 920 | 21 | -- | -- |
+| | | umem-preload | 3.25 | 362 | 9,002 | 14,874 | 21 | -- | -- |
+| | | jemalloc | 16.34 | 104 | 430 | 1,028 | 13 | -- | -- |
+| | | mimalloc | 21.49 | 84 | 190 | 2,526 | 13 | -- | -- |
+| | | snmalloc | 22.18 | 35 | 342 | 3,048 | 12 | -- | -- |
+| | | rpmalloc | 20.62 | 98 | 204 | **240** (236..250) | 13 | -- | -- |
+| c7g.2xlarge | frag 16:64 | libc | 21.49 | 47 | 704 | 1,610 | 451 | 246 | 1.83 |
+| | | **umem** | 7.69 | 126 | 10,819 | **22,282** (21,716..23,603) | 527 | 245 | 2.15 |
+| | | umem@null | 7.98 | 124 | 11,282 | 22,640 | 526 | 245 | 2.15 |
+| | | jemalloc | 22.53 | 33 | 439 | 1,022 | 406 | 247 | 1.65 |
+| | | mimalloc | 19.10 | 32 | 187 | 709 | 402 | 246 | 1.63 |
+| | | snmalloc | 25.18 | 32 | 46 | **296** | 402 | 246 | 1.64 |
+| | | rpmalloc | 23.70 | 34 | 178 | 762 | 401 | 246 | 1.63 |
+
+(tcmalloc/scudo aarch64 rows and the preload@null rows are in the TOML; they
+add nothing.)
+
+Two things stand out and both survive the null (umem vs umem@null agree to
+within 10% on every row):
+
+- **Sustained `prodcons` at 8 threads: umem's p999 is 0.9 us, second only to
+  rpmalloc (0.24-0.47 us), and 5-13x better than glibc/scudo/mimalloc.** This
+  is the cross-CPU handoff path (depot) and it is the healthiest number
+  libumem has. The 2026-09-09 depot trylock fix is what made it so, and it
+  holds at HEAD (§5.8 has the 192-thread comparison).
+- **Sustained `frag` 16:64 at 8 threads: umem is the slowest allocator in
+  the field, by 2.2-3x on throughput (8.7 Mops vs 19-22) and 10-60x on p999
+  (22 us vs 0.3-2.2 us).** umem@null reproduces it exactly. This is the
+  same mechanism as the matrix `frag` gap (§5.7) but ~3x larger because the
+  sustained variant's live pool is 11M objects per thread instead of 5M
+  (budget/4), so a larger fraction of allocations miss every cache layer and
+  reach the slab under `cache_lock`. The 8-vCPU contention dump for `frag`
+  16:64 t=8 (`contention-umem-frag-t8-16_64.txt`) shows the signature:
+  `dep_conten` (depot trylock failures) 45,736-58,261 per size class against
+  `dep_local` ~41,000 -- **more than half of all depot attempts fail the
+  trylock** -- plus `cc_alloc` 500-1100 (magazine-layer allocations that
+  bypassed the PTC).
+
+**Metal (192 threads):**
+
+<!-- SUSTAINED-METAL -->
 
 ---
 
@@ -456,9 +585,52 @@ the driver all in `pthread_barrier_wait`). Fixed in `174e14c` (filler
 threads); the umem/umem-preload ceiling rows are therefore incomplete and
 the stderr failure counts above are the evidence.
 
-### 5.7 [a/b?] `prodcons` and `frag` p999 on the API arm vs the field
+### 5.7 [b] `frag`: umem is 20-33% behind the size-class allocators at 16..1024 B, and 2-3x behind under sustained load, with a 22 us p999
 
-<!-- FRAG/PRODCONS TAIL -->
+Measured in §4.4 and §4.5 on both 8-vCPU boxes at every thread count
+including t=1, against a null of +/-3-9%. Absolute: umem 3.4-4.2 Mops at t=1
+vs 4.9-6.1 for the best; 8.7 Mops sustained vs 19-22.
+
+**Mechanism.** The workload holds a live set of `budget/4` objects per thread
+(5M in the matrix, 11M sustained) and frees a random half of it every round.
+Half the allocations in each round therefore cannot be served by anything
+that was recently freed -- they must come from the slab layer -- and half the
+frees are to objects that were allocated long ago from slabs the PTC/magazine
+layers have never seen. umem's layers are sized for a hot working set:
+
+- PTC bin: 128 slots for <= 256 B, 64 for <= 1 KB, 32 for <= 2 KB
+  (`umem_ptc.h:46-48`); PTC magazine pair: 2 x 127 rounds.
+- Below that, every object goes through `_umem_cache_alloc()` -> `cc_lock`
+  -> `umem_depot_alloc()`/`umem_depot_alloc_trylock()` -> on a miss,
+  `umem_slab_alloc()` under `cp->cache_lock` (`umem.c:1686-1745`), **one
+  object per lock acquisition**, and `umem_slab_create()` -> `vmem_alloc()`
+  + `umem_bufctl_cache` when a slab runs out (for non-HASH caches the bufctl
+  is inline, but `umem_slab_t` still comes from `umem_slab_cache`).
+- On the free side, `umem_slab_free()` (`umem.c:1839`) takes `cache_lock`,
+  and the 8-thread contention dump shows the depot trylock failing on more
+  than half of attempts (58,261 `dep_conten` vs 40,949 `dep_local` for
+  `umem_alloc_48`).
+
+jemalloc/mimalloc/snmalloc/rpmalloc serve exactly this pattern from
+per-thread page/segment free lists with no global lock and no per-object
+slab bookkeeping; glibc's tcache + fastbins do too, which is why glibc
+matches umem's throughput here despite its 10-16 us `free()` tail.
+
+**Diagnosis + fix approach (P8.5):** (i) `perf record` of umem `frag` 16:64
+t=1 to split the time between `umem_slab_alloc`/`umem_slab_free` (lock +
+list walk), `umem_slab_create`, and the PTC/magazine miss path; the metal
+`perf-umem-frag-*` captures from this run are the first cut. (ii) The
+cheapest structural fix is **batching at the slab layer**: `umem_slab_alloc`
+already has `umem_cache_alloc_batch()` next to it (`umem.c:3328`) which
+takes `cc_lock` once for N objects; the PTC refill path should use it and
+`umem_slab_alloc` should hand out a whole magazine's worth per `cache_lock`
+acquisition when the freelist has them. (iii) The trylock miss rate says the
+per-CPU depot stripes are contended at 8 threads on 8 stripes; with
+`get_cached_cpu_hint()` returning the real CPU under rseq this should not
+happen unless threads migrate -- check `rseq_rstrt` (0 here) and whether the
+stripe is `cpu & (ncpus-1)` with `ncpus` rounded up to 8 -> 8 stripes for 8
+threads, so any two threads that share a CPU momentarily collide. Measured
+first, then fixed.
 
 ### 5.8 Regressions against the last defensible numbers
 
