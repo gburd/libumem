@@ -14,7 +14,9 @@
 static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("\nOptions:\n");
-    printf("  -a ALLOCATOR  Test specific allocator (libc,umem,jemalloc,tcmalloc,mimalloc,snmalloc,scudo,rpmalloc,all)\n");
+    printf("  -a ALLOCATOR  Test specific allocator (libc,umem,umem-preload,jemalloc,tcmalloc,mimalloc,snmalloc,scudo,rpmalloc,all)\n");
+    printf("                umem-preload = plain malloc()/free() with LD_PRELOAD=libumem_malloc.so,\n");
+    printf("                i.e. what a drop-in user gets; umem = the API + 16-byte wrapper header.\n");
     printf("  -w WORKLOAD   Run specific workload (single,multi,prodcons,frag,all)\n");
     printf("  -t THREADS    Thread count for multithreaded workloads (default: CPU count)\n");
     printf("  -n TOTAL_OPS  TOTAL operations across ALL threads (default: 1000000).\n");
@@ -142,6 +144,7 @@ int main(int argc, char *argv[]) {
     allocator_ops_t *allocators[] = {
         &allocator_libc,
         &allocator_umem,
+        &allocator_umem_preload,
         &allocator_jemalloc,
         &allocator_tcmalloc,
         &allocator_mimalloc,

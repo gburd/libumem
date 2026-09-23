@@ -233,6 +233,10 @@ void workload_fragmentation(allocator_ops_t *ops, bench_stats_t *stats, void *co
  * probe_alloc() detects it) -- there is no compile-time HAVE_* gate. */
 extern allocator_ops_t allocator_libc;
 extern allocator_ops_t allocator_umem;
+/* umem through libumem_malloc.so's malloc()/free(); non-NULL only when that
+ * library is LD_PRELOADed.  Distinct from allocator_umem (API + 16-byte
+ * wrapper header) and labelled separately in every result. */
+extern allocator_ops_t allocator_umem_preload;
 extern allocator_ops_t allocator_jemalloc;
 extern allocator_ops_t allocator_tcmalloc;
 extern allocator_ops_t allocator_mimalloc;

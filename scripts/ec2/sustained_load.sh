@@ -46,6 +46,11 @@ THREADS="${3:-$NCPU}"
 # Windows per allocator.  The run is split into WINDOWS measured segments so
 # the tail and RSS can be read as a time series.
 WINDOWS="${SUSTAINED_WINDOWS:-6}"
+# frag size range.  16:4096 (the historical default) at 192 threads holds
+# ~10 GB live at the 100k/thread floor, which is above umem's ~5 GB Linux
+# heap ceiling -- so every umem window measured the ceiling (39% alloc
+# failures, 2026-09-22), not fragmentation.  The comparison run sets 64:256.
+IFS=: read -r FRAG_MIN FRAG_MAX <<< "${SUSTAINED_FRAG_SIZES:-16:4096}"
 WARMUPS="${SUSTAINED_WARMUPS:-1}"
 BENCH_BIN="${BENCH_BIN:-test/bench/.libs/bench_main}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -85,10 +90,16 @@ preload_for_musl() {
 preload_of() {
     local a="$1"
     [[ $a == libc || $a == umem ]] && return 0
+    if [[ $a == umem-preload ]]; then
+        ls .libs/libumem_malloc.so.*.*.* 2>/dev/null | head -1; return 0
+    fi
     if [[ $IS_MUSL -eq 1 ]]; then preload_for_musl "$a"
     elif [[ $a == scudo ]]; then preload_for scudo
     fi
 }
+# "name@tag" = null-control alias: same allocator, rows labelled with the tag
+# (see matrix.sh).  The binary only ever sees the base name.
+alloc_base() { echo "${1%%@*}"; }
 
 digest() {
     [[ -r "$1" ]] || { echo missing; return; }
@@ -149,6 +160,8 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
     echo "duration_target_sec_per_window = $DURATION"
     echo "windows_per_allocator = $WINDOWS"
     echo "warmup_windows_discarded = $WARMUPS"
+    echo "frag_sizes = \"$FRAG_MIN:$FRAG_MAX\""
+    echo "prodcons_sizes = \"64:256\""
     echo "allocators = [$(printf '"%s",' "${ALLOCS[@]}" | sed 's/,$//')]"
     echo "order = \"interleaved\""
     echo "git_sha = \"$GIT_SHA\""
@@ -162,17 +175,20 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
     echo "libumem_so = \"${LIBUMEM_SO:-missing}\""
     echo "libumem_so_digest = \"$(digest "$LIBUMEM_SO")\""
     for a in "${ALLOCS[@]}"; do
-        p="$(preload_of "$a" || true)"
+        b="$(alloc_base "$a")"
+        p="$(preload_of "$b" || true)"
         echo ""
-        echo "[allocator_identity.$a]"
+        echo "[allocator_identity.\"$a\"]"
+        [[ "$a" == *@* ]] && echo "null_control_alias_of = \"$b\""
         if [[ -n ${p:-} ]]; then
             echo "path = \"$p\""
             echo "realpath = \"$(readlink -f "$p" 2>/dev/null || echo "$p")\""
             echo "digest = \"$(digest "$p")\""
-        elif [[ $a == umem ]]; then
+            [[ $b == umem-preload ]] && echo "libumem_digest = \"$(digest "$LIBUMEM_SO")\""
+        elif [[ $b == umem ]]; then
             echo "path = \"${LIBUMEM_SO:-unknown}\""
             echo "digest = \"$(digest "$LIBUMEM_SO")\""
-        elif [[ $a == libc ]]; then
+        elif [[ $b == libc ]]; then
             echo "path = \"(process libc)\""
             echo "version = \"$({ ldd --version 2>&1 || true; } | head -1 | tr -d '"')\""
         else
@@ -200,7 +216,7 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
 # was the P2.1 double division).
 declare -A TARGET_N
 calibrate() {
-    local a="$1" w="$2" min="$3" max="$4"
+    local a; a="$(alloc_base "$1")"; local w="$2" min="$3" max="$4"
     local calib_n=2000000 t0 t1 sec n
     local pre; pre="$(preload_of "$a" || true)"
     t0=$(date +%s.%N)
@@ -219,7 +235,7 @@ calibrate() {
 
 emit_windows() {
     # $1=allocator $2=workload $3=min $4=max $5=label
-    local a="$1" w="$2" min="$3" max="$4" label="$5"
+    local label_a="$1" a; a="$(alloc_base "$1")"; local w="$2" min="$3" max="$4" label="$5"
     local pre; pre="$(preload_of "$a" || true)"
     local n="${TARGET_N["$w"]}"
     local out rc
@@ -230,12 +246,12 @@ emit_windows() {
     rc=$?
     set -e
     if [[ $rc -ne 0 ]]; then
-        echo "  CRASH: $a $w rc=$rc (window not recorded)" | tee -a "$LOG"
+        echo "  CRASH: $label_a $w rc=$rc (window not recorded)" | tee -a "$LOG"
         return
     fi
     local row
-    row=$(printf '%s\n' "$out" | grep "^$a," | tail -1)
-    [[ -z "$row" ]] && { echo "  (no row: $a $w)" | tee -a "$LOG"; return; }
+    row=$(printf '%s\n' "$out" | grep "^$a," | tail -1 | sed "s/^$a,/$label_a,/")
+    [[ -z "$row" ]] && { echo "  (no row: $label_a $w)" | tee -a "$LOG"; return; }
     IFS=',' read -ra f <<< "$row"
     # Field order from bench_print_csv_header (0-based):
     #  0 allocator 1 workload 2 threads 3 total_ops 4 ops_per_thread
@@ -278,8 +294,8 @@ emit_windows() {
         echo "ops_floor_raised = $([[ "${f[27]:-0}" == "1" ]] && echo true || echo false)"
         echo "alloc_failures = ${f[28]:-0}"
     } >> "$OUT"
-    printf '  %-10s %-18s w=%-2s ops=%-9s mops=%8.3f p99=%9s p999=%10s rss@peak=%s%s\n' \
-        "$a" "$label" "$WINDOW_INDEX" "${f[3]}" \
+    printf '  %-12s %-18s w=%-2s ops=%-9s mops=%8.3f p99=%9s p999=%10s rss@peak=%s%s\n' \
+        "$label_a" "$label" "$WINDOW_INDEX" "${f[3]}" \
         "$(awk "BEGIN{print ${f[6]}/1e6}")" "${f[10]}" "${f[11]}" "${f[14]}" \
         "$([[ "${f[28]:-0}" != "0" ]] && echo "  ALLOC_FAILURES=${f[28]}" || echo "")"
 }
@@ -293,7 +309,7 @@ echo "  sha=$GIT_SHA ($SHA_SRC) -> $OUT"
 for w in prodcons frag; do
     case "$w" in
         prodcons) mn=64; mx=256 ;;
-        frag)     mn=16; mx=4096 ;;
+        frag)     mn=$FRAG_MIN; mx=$FRAG_MAX ;;
     esac
     best=0
     for a in "${ALLOCS[@]}"; do
@@ -309,13 +325,14 @@ done
 # Matched warm-up: every allocator gets the same number of discarded windows
 # before any measured window is recorded.
 for (( wu = 0; wu < WARMUPS; wu++ )); do
-    for a in "${ALLOCS[@]}"; do
-        echo "  warmup window $wu: $a (discarded)"
+    for a0 in "${ALLOCS[@]}"; do
+        a="$(alloc_base "$a0")"
+        echo "  warmup window $wu: $a0 (discarded)"
         pre="$(preload_of "$a" || true)"
         LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w prodcons -t "$THREADS" \
             -n "${TARGET_N["prodcons"]}" -s 64:256 -c >/dev/null 2>>"$LOG" || true
         LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w frag -t "$THREADS" \
-            -n "${TARGET_N["frag"]}" -s 16:4096 -c >/dev/null 2>>"$LOG" || true
+            -n "${TARGET_N["frag"]}" -s "$FRAG_MIN:$FRAG_MAX" -c >/dev/null 2>>"$LOG" || true
     done
 done
 
@@ -323,7 +340,7 @@ done
 for (( WINDOW_INDEX = 0; WINDOW_INDEX < WINDOWS; WINDOW_INDEX++ )); do
     for a in "${ALLOCS[@]}"; do
         emit_windows "$a" prodcons 64 256 "prodcons-sustained"
-        emit_windows "$a" frag 16 4096 "frag-sustained"
+        emit_windows "$a" frag "$FRAG_MIN" "$FRAG_MAX" "frag-sustained"
     done
 done
 

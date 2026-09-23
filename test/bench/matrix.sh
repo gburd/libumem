@@ -32,6 +32,7 @@ set -euo pipefail
 OPERATIONS=10000000
 RUNS=5
 WARMUPS=1
+REPLICATES=1
 PIN=1
 WORKLOADS=(single multi prodcons frag)
 THREAD_LADDER=(1 2 4 8 16 32 64 128 192)
@@ -53,15 +54,28 @@ OPTIONS:
                  BENCH_MIN_OPS_PER_THREAD is raised to it, and the point is
                  marked ops_floor_raised = true.
     -r RUNS      Measured runs per point; median + CoV (default: $RUNS)
+    -R N         Replicate PROCESSES per point (default: $REPLICATES).  bench_main's
+                 CoV only sees within-process variance; between-process
+                 variance (layout, placement, which cores) is invisible to it
+                 and was measured at +/-4% on metal.  With -R N every
+                 allocator's point is run N times in a fresh process, arms
+                 still alternating at the innermost loop (A B C A B C ...), and
+                 each replicate is its own [[point]] with replicate = k.
     -W WARMUPS   Warm-up runs discarded per point (default: $WARMUPS)
     -o DIR       Output dir (default: docs/results/<date>-<instance>-<arch>)
     -t LIST      Comma-separated thread ladder override (default: $(IFS=,; echo "${THREAD_LADDER[*]}"))
     -s LIST      Comma-separated size-range override (default: $(IFS=,; echo "${SIZE_RANGES[*]}"))
+    -w LIST      Comma-separated workload override (default: $(IFS=,; echo "${WORKLOADS[*]}"))
     --no-pin     Do not pin threads / skip governor check (NOT authoritative)
     --quick      Small smoke sweep (few threads/sizes, 2 runs)
     -h           Help
 
-ALLOCATORS: default = libc umem (+ jemalloc/tcmalloc auto-detected if present)
+ALLOCATORS: default = libc umem (+ umem-preload/jemalloc/tcmalloc/... auto-detected)
+    umem          umem_alloc/umem_free API through the bench's 16-byte wrapper header
+    umem-preload  plain malloc/free with LD_PRELOAD=libumem_malloc.so (drop-in path)
+    NAME@tag      null-control alias: same allocator, rows labelled NAME@tag.
+                  "umem umem@null" alternates umem against itself = the rig's
+                  own resolution; a cross-allocator delta inside it is noise.
 EOF
     exit "${1:-1}"
 }
@@ -71,10 +85,12 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -n) OPERATIONS="$2"; shift 2 ;;
         -r) RUNS="$2"; shift 2 ;;
+        -R) REPLICATES="$2"; shift 2 ;;
         -W) WARMUPS="$2"; shift 2 ;;
         -o) OUTDIR="$2"; shift 2 ;;
         -t) IFS=',' read -ra THREAD_LADDER <<< "$2"; shift 2 ;;
         -s) IFS=',' read -ra SIZE_RANGES <<< "$2"; shift 2 ;;
+        -w) IFS=',' read -ra WORKLOADS <<< "$2"; shift 2 ;;
         --no-pin) PIN=0; shift ;;
         --quick)
             OPERATIONS=1000000; RUNS=2; WARMUPS=1
@@ -134,16 +150,33 @@ preload_for_musl() {
 # On glibc, dlopen already works for everything except scudo (see
 # allocators.c); LD_PRELOAD is opt-in per allocator there. On musl,
 # nothing dlopens cleanly, so every non-libc/umem allocator needs it.
+#
+# umem-preload is libumem's OWN interposer, libumem_malloc.so, preloaded so
+# that plain malloc()/free() in the process resolve to umem -- what a drop-in
+# user gets, as opposed to the API + wrapper-header path that `umem` measures.
 IS_MUSL=0
 { ldd --version 2>&1 || true; } | grep -qi musl && IS_MUSL=1
 allocator_preload() {
     if [[ "$1" == libc || "$1" == umem ]]; then return 0; fi
+    if [[ "$1" == umem-preload ]]; then
+        ls "$REPO_ROOT"/.libs/libumem_malloc.so.*.*.* 2>/dev/null | head -1
+        return 0
+    fi
     if [[ $IS_MUSL -eq 1 ]]; then
         preload_for_musl "$1"
     elif [[ "$1" == scudo ]]; then
         preload_for scudo
     fi
 }
+
+# NULL CONTROL: an allocator name may carry a "@<tag>" suffix, e.g.
+# "umem@null".  The tag is stripped before the binary sees it, so the point
+# runs the SAME allocator, and the row is recorded under the tagged name.
+# Alternating "umem umem@null" therefore measures the rig against itself --
+# the noise floor a cross-allocator delta must clear before it means anything
+# (see docs/results/2026-09-23-p54-mangle-throughput.md for why this is not
+# optional: between-process variance is invisible to bench_main's own CoV).
+alloc_base() { echo "${1%%@*}"; }
 
 if [[ ! -x "$BENCH_BIN" ]]; then
     echo "$BENCH_BIN missing; building test/bench/bench_main ..." >&2
@@ -190,16 +223,28 @@ fi
 # Probes with the SAME per-allocator LD_PRELOAD run_point will use, so
 # detection matches reality on musl (nothing dlopens) and for scudo.
 probe_alloc() {
-    local pre; pre="$(allocator_preload "$1")"
-    LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$1" -w single -n 1000 -s 16:16 -c 2>/dev/null \
-        | grep -q "^$1,"
+    local base pre; base="$(alloc_base "$1")"; pre="$(allocator_preload "$base")"
+    LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$base" -w single -n 1000 -s 16:16 -c 2>/dev/null \
+        | grep -q "^$base,"
 }
 if [[ ${#ALLOCATORS[@]} -eq 0 ]]; then
     ALLOCATORS=(libc umem)
-    for extra in jemalloc tcmalloc mimalloc snmalloc scudo rpmalloc; do
+    for extra in umem-preload jemalloc tcmalloc mimalloc snmalloc scudo rpmalloc; do
         if probe_alloc "$extra"; then ALLOCATORS+=("$extra"); fi
     done
 fi
+# A named allocator that does not load is a finding, not a silent gap: record
+# it in the log and in meta.toml rather than emitting no rows and saying
+# nothing.  Availability is checked with the same LD_PRELOAD run_point uses.
+AVAILABLE=(); UNAVAILABLE=()
+for a in "${ALLOCATORS[@]}"; do
+    if probe_alloc "$a"; then AVAILABLE+=("$a"); else UNAVAILABLE+=("$a"); fi
+done
+if [[ ${#UNAVAILABLE[@]} -gt 0 ]]; then
+    echo "WARNING: allocators requested but NOT loadable here: ${UNAVAILABLE[*]}" | tee -a "$LOG" >&2
+    echo "         (no rows will be produced for them; recorded in meta.toml)" >&2
+fi
+ALLOCATORS=("${AVAILABLE[@]}")
 
 # thread list capped at vCPU (always keep 1)
 THREADS=()
@@ -224,7 +269,7 @@ echo "matrix: instance=$INSTANCE arch=$ARCH vcpu=$NCPU governor=$GOV"
 echo "  allocators: ${ALLOCATORS[*]}"
 echo "  threads:    ${THREADS[*]}"
 echo "  sizes:      ${SIZE_RANGES[*]}"
-echo "  runs=$RUNS warmups=$WARMUPS pin=$PIN ops=$OPERATIONS"
+echo "  runs=$RUNS warmups=$WARMUPS replicates=$REPLICATES pin=$PIN ops=$OPERATIONS"
 echo "  -> $MATRIX"
 
 # --- provenance (meta.toml) -------------------------------------------------
@@ -265,14 +310,16 @@ bin_digest() {
         awk '{print $1}'
 }
 LIBUMEM_SO=$(ls ../../.libs/libumem.so.*.*.* 2>/dev/null | head -1)
+LIBUMEM_MALLOC_SO=$(ls ../../.libs/libumem_malloc.so.*.*.* 2>/dev/null | head -1)
 
 # Versions/paths of the third-party allocator libraries actually loaded, so a
 # shootout row can be traced to the library that produced it.
 alloc_identity() {
-    local a="$1" path=""
+    local a; a="$(alloc_base "$1")"; local path=""
     case "$a" in
         libc) echo "path=\"(process libc)\", version=\"$({ ldd --version 2>&1 || true; } | head -1 | tr -d '"')\""; return ;;
-        umem) echo "path=\"${LIBUMEM_SO:-unknown}\", digest=\"$(bin_digest "$LIBUMEM_SO")\""; return ;;
+        umem) echo "path=\"${LIBUMEM_SO:-unknown}\", digest=\"$(bin_digest "$LIBUMEM_SO")\", note=\"umem_alloc/umem_free API via the 16-byte bench wrapper header\""; return ;;
+        umem-preload) echo "path=\"${LIBUMEM_MALLOC_SO:-unknown}\", digest=\"$(bin_digest "$LIBUMEM_MALLOC_SO")\", libumem_digest=\"$(bin_digest "$LIBUMEM_SO")\", note=\"plain malloc/free via LD_PRELOAD=libumem_malloc.so (drop-in path)\""; return ;;
     esac
     path="$(preload_for "$a")"
     [[ -z "$path" && $IS_MUSL -eq 1 ]] && path="$(preload_for_musl "$a")"
@@ -298,6 +345,7 @@ alloc_identity() {
     echo "numa_balancing = \"$(cat /proc/sys/kernel/numa_balancing 2>/dev/null || echo unknown)\""
     echo "pinned = $([[ $PIN -eq 1 ]] && echo true || echo false)"
     echo "runs = $RUNS"
+    echo "replicates = $REPLICATES"
     echo "warmups = $WARMUPS"
     echo "# total operations per point, across ALL threads (never per-thread)"
     echo "operations_total_per_point = $OPERATIONS"
@@ -313,9 +361,12 @@ alloc_identity() {
     echo "libumem_so = \"${LIBUMEM_SO:-missing}\""
     echo "libumem_so_digest = \"$(bin_digest "$LIBUMEM_SO")\""
     echo "allocators = [$(printf '"%s",' "${ALLOCATORS[@]}" | sed 's/,$//')]"
+    echo "# requested but not loadable on this host (reported, never silently dropped)"
+    echo "allocators_unavailable = [$(printf '"%s",' "${UNAVAILABLE[@]}" | sed 's/,$//')]"
     echo ""
     for a in "${ALLOCATORS[@]}"; do
-        echo "[allocator_identity.$a]"
+        echo "[allocator_identity.\"$a\"]"
+        [[ "$a" == *@* ]] && echo "null_control_alias_of = \"$(alloc_base "$a")\""
         echo "$(alloc_identity "$a")" | tr ',' '\n' | sed 's/^ *//'
         echo ""
     done
@@ -389,6 +440,7 @@ emit_point() {
         # threads = what actually ran.  A 1-thread workload asked for 192
         # must report 1; these two differing is information, not an error.
         echo "threads = ${f[2]}"
+        echo "replicate = ${REPLICATE:-1}"
         echo "size = \"$SIZE\""
         echo "total_ops = ${f[3]}"
         echo "ops_per_thread = ${f[4]}"
@@ -435,17 +487,20 @@ run_point() {
     # -n is passed UNCHANGED: bench_main divides by the thread count.  This
     # function used to pass OPERATIONS/t for the multi workload, which
     # bench_main then divided again (P2.1).
-    local w="$1" t="$2" lbl="$3" out rc pre
-    pre="$(allocator_preload "$ALLOC")"
+    local w="$1" t="$2" lbl="$3" out rc pre base
+    base="$(alloc_base "$ALLOC")"
+    pre="$(allocator_preload "$base")"
     set +e
-    out=$(LD_PRELOAD="${pre:-}" $(pin_prefix "$t") "$BENCH_BIN" -a "$ALLOC" -w "$w" -t "$t" \
+    out=$(LD_PRELOAD="${pre:-}" $(pin_prefix "$t") "$BENCH_BIN" -a "$base" -w "$w" -t "$t" \
         -n "$OPERATIONS" -s "$SIZE" -r "$RUNS" -W "$WARMUPS" -c 2>>"$LOG")
     rc=$?
     set -e
     if [[ $rc -ne 0 ]]; then
         echo "  CRASH: $ALLOC $w t=$t $SIZE rc=$rc (skipped)" | tee -a "$LOG"
     fi
-    printf '%s\n' "$out" | { grep "^$ALLOC," || true; } | tail -1 | emit_point "$lbl" "$t"
+    # Re-label a null-control alias so the row carries the tagged name.
+    printf '%s\n' "$out" | { grep "^$base," || true; } | tail -1 \
+        | sed "s/^$base,/$ALLOC,/" | emit_point "$lbl" "$t"
 }
 
 # --- the sweep --------------------------------------------------------------
@@ -461,19 +516,18 @@ run_point() {
 for SIZE in "${SIZE_RANGES[@]}"; do
     for wl in "${WORKLOADS[@]}"; do
         case "$wl" in
-            single)
-                for ALLOC in "${ALLOCATORS[@]}"; do
-                    echo "  $ALLOC $wl $SIZE t=1"
-                    run_point "$wl" 1 "$wl"
-                done ;;
-            multi|prodcons|frag)
-                for t in "${THREADS[@]}"; do
-                    for ALLOC in "${ALLOCATORS[@]}"; do
-                        echo "  $ALLOC $wl $SIZE t=$t"
-                        run_point "$wl" "$t" "$wl"
-                    done
-                done ;;
+            single) TLIST=(1) ;;
+            multi|prodcons|frag) TLIST=("${THREADS[@]}") ;;
+            *) echo "unknown workload $wl" >&2; exit 1 ;;
         esac
+        for t in "${TLIST[@]}"; do
+            for (( REPLICATE = 1; REPLICATE <= REPLICATES; REPLICATE++ )); do
+                for ALLOC in "${ALLOCATORS[@]}"; do
+                    echo "  $ALLOC $wl $SIZE t=$t rep=$REPLICATE  $(date -u +%T)"
+                    run_point "$wl" "$t" "$wl"
+                done
+            done
+        done
     done
 done
 

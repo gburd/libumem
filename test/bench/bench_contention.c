@@ -54,10 +54,14 @@ int main(int argc, char *argv[])
 	uint64_t operation_count = 10000000;
 	size_t min_size = 64, max_size = 256;
 	const char *workload_name = "multi";
+	const char *alloc_name = "umem";
 
 	int opt;
-	while ((opt = getopt(argc, argv, "t:n:s:w:h")) != -1) {
+	while ((opt = getopt(argc, argv, "a:t:n:s:w:h")) != -1) {
 		switch (opt) {
+		case 'a':
+			alloc_name = optarg;
+			break;
 		case 't':
 			thread_count = atoi(optarg);
 			if (thread_count < 1)
@@ -80,13 +84,34 @@ int main(int argc, char *argv[])
 			break;
 		case 'h':
 		default:
-			printf("Usage: %s [-t threads] [-n ops] [-s min:max] "
-			    "[-w multi|prodcons]\n", argv[0]);
+			printf("Usage: %s [-a umem|umem-preload] [-t threads] "
+			    "[-n ops] [-s min:max] [-w multi|prodcons|frag]\n",
+			    argv[0]);
 			return (opt == 'h' ? 0 : 1);
 		}
 	}
 
 	int is_prodcons = !strcmp(workload_name, "prodcons");
+	int is_frag = !strcmp(workload_name, "frag");
+
+	/*
+	 * -a umem-preload: measure through libumem_malloc.so's malloc()/free()
+	 * (requires LD_PRELOAD of that library; allocators.c detects it).  The
+	 * contention counters live in libumem.so either way, so the dump below
+	 * attributes the drop-in path too.
+	 */
+	allocator_ops_t *ops = &allocator_umem;
+	if (!strcmp(alloc_name, "umem-preload")) {
+		ops = &allocator_umem_preload;
+		if (ops->alloc == NULL) {
+			fprintf(stderr, "umem-preload not available: run with "
+			    "LD_PRELOAD=.libs/libumem_malloc.so\n");
+			return (77);
+		}
+	} else if (strcmp(alloc_name, "umem") != 0) {
+		fprintf(stderr, "-a must be umem or umem-preload\n");
+		return (1);
+	}
 
 	/*
 	 * operation_count is the TOTAL budget; workload_multi_thread and
@@ -95,9 +120,10 @@ int main(int argc, char *argv[])
 	 * was the P2.1 double division.
 	 */
 	workload_config_t wl = {
-		.name = is_prodcons ? "producer-consumer" : "multi-thread",
+		.name = is_prodcons ? "producer-consumer" :
+		    is_frag ? "fragmentation" : "multi-thread",
 		.fn = is_prodcons ? workload_producer_consumer :
-		    workload_multi_thread,
+		    is_frag ? workload_fragmentation : workload_multi_thread,
 		.thread_count = thread_count,
 		.operation_count = operation_count,
 		.min_size = min_size,
@@ -106,14 +132,15 @@ int main(int argc, char *argv[])
 	};
 
 	bench_stats_t stats;
-	if (bench_run_n(&allocator_umem, &wl, &stats, 0, 1) != 0) {
+	if (bench_run_n(ops, &wl, &stats, 0, 1) != 0) {
 		fprintf(stderr, "bench run failed\n");
 		return (1);
 	}
 
-	printf("# umem %s t=%d size=%zu:%zu ops=%llu\n",
-	    workload_name, thread_count, min_size, max_size,
-	    (unsigned long long)stats.total_operations);
+	printf("# %s %s t=%d size=%zu:%zu ops=%llu alloc_failures=%llu\n",
+	    alloc_name, workload_name, thread_count, min_size, max_size,
+	    (unsigned long long)stats.total_operations,
+	    (unsigned long long)stats.alloc_failures);
 	printf("throughput_mops = %.3f\n", stats.ops_per_second / 1e6);
 	printf("lat_p50_ns = %.0f\n", stats.latency_p50);
 	printf("lat_p99_ns = %.0f\n", stats.latency_p99);

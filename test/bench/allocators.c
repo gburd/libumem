@@ -189,6 +189,45 @@ allocator_ops_t allocator_umem = {
     .cleanup = NULL
 };
 
+/* ========== libumem via its LD_PRELOAD interposer ==========
+ * What a drop-in user actually gets: plain malloc()/free() resolved to
+ * libumem_malloc.so (8-byte malloc_data_t header, ownership classification
+ * on every free()), NOT the 16-byte-header API wrapper above.  The two are
+ * different code paths and must be labelled separately in any result.
+ *
+ * Available only when libumem_malloc.so is LD_PRELOADed (matrix.sh does
+ * this for -a umem-preload); detected by its exported fork hook, which
+ * libumem.so only references weakly, so RTLD_DEFAULT finds it iff the
+ * interposer is loaded.  Under that preload the process-wide malloc IS
+ * umem, so the "libc" entry is disabled in this process rather than left
+ * to report umem's numbers under libc's name (the same contamination the
+ * file header describes for statically linked competitors). */
+static void* umem_preload_alloc(size_t size) { return malloc(size); }
+static void* umem_preload_calloc(size_t n, size_t size) { return calloc(n, size); }
+static void* umem_preload_realloc(void *p, size_t size) { return realloc(p, size); }
+static void umem_preload_free(void *p) { free(p); }
+
+allocator_ops_t allocator_umem_preload = {
+    .name = "umem-preload (not available: LD_PRELOAD libumem_malloc.so)",
+    .alloc = NULL, .calloc = NULL, .realloc = NULL, .free = NULL, .cleanup = NULL
+};
+
+__attribute__((constructor))
+static void umem_preload_try_load(void) {
+    if (dlsym(RTLD_DEFAULT, "umem_interpose_lockup") == NULL)
+        return;
+    allocator_umem_preload.name = "umem-preload";
+    allocator_umem_preload.alloc = umem_preload_alloc;
+    allocator_umem_preload.calloc = umem_preload_calloc;
+    allocator_umem_preload.realloc = umem_preload_realloc;
+    allocator_umem_preload.free = umem_preload_free;
+    allocator_libc.name = "libc (not available: LD_PRELOAD=libumem_malloc.so owns malloc)";
+    allocator_libc.alloc = NULL;
+    allocator_libc.calloc = NULL;
+    allocator_libc.realloc = NULL;
+    allocator_libc.free = NULL;
+}
+
 /* ========== shared loader for every third-party allocator below =========
  * Each one just needs a path list to try with dlopen (first match wins,
  * so packaged and from-source locations both work), a marker symbol
