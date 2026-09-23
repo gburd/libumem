@@ -284,31 +284,33 @@ poison_and_walk(struct walk_ctx *ctx)
 	}
 
 	/*
-	 * The link the walk will follow out of victim_frame is the one holding
-	 * victim_frame's OWN caller-frame value.  We do not know the exact
-	 * offset, so find the slot that actually holds ctx->frame's successor by
-	 * searching a small window at and above victim_frame's frame address for
-	 * a value that looks like a frame link pointing further up the stack.
+	 * WHICH SLOT.  The walk starts in THIS frame and reads a link to climb
+	 * out of it, so the slot to poison is in OUR frame, not victim_frame's.
+	 * Poisoning victim_frame's frame address was the bug: dumping the real
+	 * aarch64 -O2 layout showed that address is not its frame record, so the
+	 * poison landed where nothing read it and the arm silently tested nothing
+	 * while still reporting PASS -- twice.
 	 *
-	 * Concretely: the walk arrived at victim_frame's frame from ours, so the
-	 * slot we want is the one whose value the walk would read as the NEXT
-	 * frame -- i.e. the first plausible up-stack pointer at/above
-	 * ctx->frame.  Poison that.
+	 * Search this frame for the first slot whose value looks like a frame
+	 * link (aligned, above us, within one stack's reach) and poison that.
+	 * The dump confirms the link out of the innermost frame is at index 0 on
+	 * both arches; the search exists so a layout change degrades to
+	 * INCONCLUSIVE rather than to a silent pass.
 	 */
 	{
 		int i;
 		slot = NULL;
 		for (i = 0; i < 8; i++) {
-			uintptr_t v = ctx->frame[i];
+			uintptr_t v = myfp[i];
 			/* A frame link points up-stack and is aligned. */
-			if (v > (uintptr_t)ctx->frame &&
-			    v < (uintptr_t)ctx->frame + (1u << 20) &&
+			if (v > (uintptr_t)myfp &&
+			    v < (uintptr_t)myfp + (1u << 20) &&
 			    (v & (sizeof (uintptr_t) - 1)) == 0) {
-				slot = &ctx->frame[i];
+				slot = &myfp[i];
 				break;
 			}
 		}
-		(void) myfp;
+		(void) ctx->frame;
 	}
 
 	if (slot == NULL) {
@@ -323,7 +325,12 @@ poison_and_walk(struct walk_ctx *ctx)
 
 	ctx->depth = getpcstack(pcstack, 20, 0);
 
-	*slot = saved;		/* before victim_frame's epilogue runs */
+	/*
+	 * Restore at once: this frame is live, so the slot must be valid again
+	 * before we return.  The walk is already done, so the only window is the
+	 * getpcstack() call itself, and nothing inside it depends on this slot.
+	 */
+	*slot = saved;
 }
 
 static int
