@@ -5035,8 +5035,18 @@ umem_cache_create(
 				bestfit = slabsize;
 			}
 		}
-		if (cflags & UMC_QCACHE)
+		if (cflags & UMC_QCACHE) {
 			bestfit = MAX(1 << highbit(3 * vmp->vm_qcache_max), 64);
+			/*
+			 * Second half of the heap-ceiling fix: see
+			 * UMEM_MIN_QCACHE_SLAB in umem_impl.h.  Small (<= 512 B)
+			 * objects' one-page slabs are served through umem_va's
+			 * qcache, whose 128 KiB slabs each cost a VMA; 4 MiB slabs
+			 * cost 57x fewer at zero measured RSS cost.
+			 */
+			if (bestfit < UMEM_MIN_QCACHE_SLAB)
+				bestfit = UMEM_MIN_QCACHE_SLAB;
+		}
 
 		/*
 		 * Span-density floor (see UMEM_MIN_SLAB_OBJECTS in umem_impl.h).

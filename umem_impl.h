@@ -735,6 +735,53 @@ typedef struct umem_cpu {
 #define	UMEM_MIN_SLAB_CEILING	(64 * 1024)
 
 /*
+ * Minimum slab size for a vmem QUANTUM CACHE (UMC_QCACHE).
+ *
+ * This is the second half of the heap-ceiling fix, and the half the first one
+ * missed.  UMEM_MIN_SLAB_OBJECTS above covers the hashed best-fit path, which
+ * is what 1-4 KiB objects take.  Objects of <= 512 B take a different path:
+ * their slabs are one page each, and a page-sized span request is <= the
+ * umem_va arena's qcache_max (8 pages), so it is served FROM A QCACHE.  The
+ * qcache slab rule at that time was
+ *
+ *     bestfit = MAX(1 << highbit(3 * vm_qcache_max), 64)
+ *
+ * which for qcache_max = 32 KiB gives 128 KiB -- and each qcache slab is its
+ * own mmap(MAP_FIXED) that the kernel does not merge.  One VMA per 128 KiB of
+ * small-object heap, so vm.max_map_count (65530) is reached at about 8 GB.
+ * Measured on c7i.2xlarge: 512 B objects failed at 16.77M objects / 8.2 GB
+ * with 63,323 VMAs; 64 B objects were at 48,218 VMAs by 100M objects.  glibc
+ * on the same box: 54 VMAs.  The first fix's own regression passed at 9 GB of
+ * 4 KiB objects and so did not see this, because it tested only the class
+ * that fix repaired.
+ *
+ * Levers were measured, not argued (2 GB of 512 B objects, VMAs):
+ *   base                          15,702
+ *   qcache_max 16 pages            7,891
+ *   qcache_max -> 1 MiB slabs      2,034   (+1 MB RSS on a 5 MB heap)
+ *   qcache slab floor 1 MiB        2,026
+ *   qcache slab floor 4 MiB          274   (zero small-heap cost: 5.1 MB either way)
+ *   mprotect instead of mmap      15,789   (no contiguous reservation to merge into)
+ *   + 64 MiB reservations         15,706   (hand-out not address-ordered)
+ *
+ * So: a 4 MiB floor on qcache slabs.  Cost is address space, not RSS -- a
+ * qcache slab is MAP_NORESERVE and only touched as it fills -- which is why the
+ * small-heap RSS did not move.
+ *
+ * PORTABILITY, checked rather than assumed: this is not gated on platform and
+ * does not need to be.  On illumos the heap quantum is 64 KiB (MAP_ALIGN) but
+ * umem_va's requested qcache_max is still 8 * pagesize = 32 KiB, which is
+ * SMALLER than one quantum, so vmem_create() computes nqcache = 0 and umem_va
+ * has no quantum caches at all there.  The floor is a no-op on illumos because
+ * the path it floors does not exist on illumos.  (With 8 KiB pages nqcache is
+ * 1 and the single qcache slab grows 256 KiB -> 4 MiB, which is the same
+ * address-space-only cost as on Linux.)  The qcache arm of test_slab_floor
+ * pins the Linux behaviour; a 64 KiB-quantum arena in that test has no qcache
+ * to check, which is itself the illumos fact.
+ */
+#define	UMEM_MIN_QCACHE_SLAB	(4 * 1024 * 1024)
+
+/*
  * For 64 bits, buffers >= 16 bytes must be 16-byte aligned
  */
 #ifdef _LP64
