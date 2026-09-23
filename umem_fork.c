@@ -313,6 +313,30 @@ umem_do_release(int as_child)
 		 */
 		if (umem_introspect_fork_child != NULL)
 			umem_introspect_fork_child();
+
+		/*
+		 * Recreate the update thread (P6.9).  Threads do not survive
+		 * fork(), and the block above zeroed umem_update_thr to say
+		 * so; before this, nothing put it back, so a forked child's
+		 * periodic maintenance -- depot reaping, slab reclaim, hash
+		 * rescale, magazine resize -- was dead until the child called
+		 * umem_reap() or failed an allocation.  For a pre-fork server
+		 * that is every worker for its whole life.
+		 *
+		 * Done here, after every allocator lock has been released
+		 * and the interposer/introspection child hooks have run,
+		 * because umem_create_update_thread() calls pthread_create,
+		 * which allocates.  Only if the parent had a thread (so a
+		 * process that never initialised does not gain one here),
+		 * and only if the library is up.  Failure is non-fatal:
+		 * umem_reap() retries.
+		 */
+		if (umem_ready == UMEM_READY && cleanup_update) {
+			(void) mutex_lock(&umem_update_lock);
+			if (umem_update_thr == 0)
+				(void) umem_create_update_thread();
+			(void) mutex_unlock(&umem_update_lock);
+		}
 	} else {
 		if (umem_interpose_release != NULL)
 			umem_interpose_release();
