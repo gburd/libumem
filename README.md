@@ -249,12 +249,14 @@ Where libumem **does not win**:
   wrong quantity). Under `frag` churn umem is also 20-33 % slower than the
   size-class allocators and 2-3x slower sustained (P8.5, open).
 - **Tail latency.** Cross-thread handoff (`prodcons`) p999 is umem's
-  strongest number -- 0.9 us sustained at 8 threads, second only to
-  rpmalloc, 5-13x better than glibc -- and the 2026-09-09 depot trylock fix
-  that produced it holds at HEAD. Under `frag` churn the p999 is 22 us
-  sustained against 0.3-2.2 us for every other allocator (P8.5). The old
-  attribution of a residual tail gap to the inert rseq reload path was a
-  hypothesis and is dropped: the rseq layer serves zero hits either way.
+  strongest number at 8 threads -- 0.9 us sustained, second only to
+  rpmalloc, 5-13x better than glibc. At 192 threads sustained it is
+  240-270 us (x86_64 metal) against 5-25 us for jemalloc/mimalloc/rpmalloc
+  and 83 us for glibc: not the tens-of-microseconds tier. Under `frag`
+  churn the p999 is 22 us at 8 threads and **6-10 ms at 192**, against
+  0.3 us-0.7 ms for every other allocator (P8.5). The old attribution of a
+  residual tail gap to the inert rseq reload path was a hypothesis and is
+  dropped: the rseq layer serves zero hits either way.
 - **Sandboxed / security-hardened allocations.**  mimalloc-secure
   and `scudo` add explicit hardening (segregated metadata, randomized
   freelists, double-free detection by design).  libumem's defenses
@@ -604,18 +606,23 @@ ownership checks) and is tracked as P8.3.
   (`umem_ptc_maxsize`) and hit the per-CPU lock with 31-round magazines. This
   is the largest fixable gap in the allocator itself.
 - **`frag` (grow a live set, free half at random, repeat): 1.2-2.3x glibc
-  but 20-33 % behind jemalloc/mimalloc/snmalloc/rpmalloc at 16..1024 B,**
-  at every thread count including one, and **2-3x behind all of them
-  including glibc under sustained load** (8.7 vs 19-22 Mops at 8 threads,
-  p999 22 us vs 0.3-2.2 us). The slab layer serves one object per
-  `cache_lock` acquisition and the depot trylock fails on more than half of
-  attempts at 8 threads (P8.5).
-- **`prodcons` p999 (cross-thread handoff) is umem's best number:** 0.9 us
-  sustained at 8 threads, second only to rpmalloc, 5-13x better than
-  glibc/scudo/mimalloc; the 2026-09-09 depot trylock fix holds at HEAD.
-  `prodcons` *throughput* on 8-vCPU boxes is bimodal (identical processes
-  land in a 4 or a 13 Mops regime; the null control reached +244 %) and is
-  not reported.
+  but 20-42 % behind jemalloc/mimalloc/snmalloc/rpmalloc at 16..1024 B,**
+  at every thread count including one, and **under sustained load the
+  worst allocator in the field on every box: 2-3x behind at 8 threads
+  (8.7 vs 19-22 Mops, p999 22 us vs 0.3-2.2 us) and 8-19x behind at 192
+  threads (2.0 / 1.2 Mops vs 15-24 for everything else including glibc,
+  p999 6-10 ms).** Freed objects go to the freeing CPU's depot stripe and
+  are wanted by whichever CPU allocates next, so at N threads the depot is
+  an N-way exchange through per-stripe mutexes; `perf` at 192 threads puts
+  13 % of all cycles in those mutexes (P8.5).
+- **`prodcons` p999 (cross-thread handoff) is umem's best number at 8
+  threads:** 0.9 us sustained, second only to rpmalloc, 5-13x better than
+  glibc/scudo/mimalloc. At 192 threads it is 240-270 us, between tcmalloc
+  and scudo; the 2026-09-09 figure of 84-93 us was taken with the
+  double-divided budget and is not comparable, so this is neither confirmed
+  nor a regression (P8.5 follow-up). `prodcons` *throughput* on 8-vCPU
+  boxes is bimodal (identical processes land in a 4 or a 13 Mops regime;
+  the null control reached +244 %) and is not reported.
 - **Memory: umem holds 1.55-1.6x its live set at 64..256 B and 2.6x at
   16..63 B; glibc holds 1.25x / 1.85x**, jemalloc/mimalloc 1.2x / 1.65x,
   scudo (the other headered size-class allocator) 1.5x / 2.6x. RSS at the
