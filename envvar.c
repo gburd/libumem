@@ -330,6 +330,18 @@ static umem_env_item_t umem_debug_items[] = {
 		 * privileged target must not be able to disarm its abort. */
 		1
 	},
+	{ "abort",		"Private",	ITEM_FLAG,
+		"umem WILL abort when a recoverable error occurs.  The "
+		    "default everywhere except under LD_PRELOAD, where the "
+		    "interposer clears it so foreign pointers are logged, not "
+		    "fatal; this is how a preloaded program gets glibc-like "
+		    "abort-on-invalid-free back.",
+		&umem_abort,	1, NULL, NULL, NULL,
+		/* Arming the abort is the SAFE direction: it can only turn
+		 * continued execution into a crash, never the reverse, so it
+		 * is honoured in secure mode. */
+		0
+	},
 	{ "mtbf",		"Private",	ITEM_UINT,
 		"=mtbf, the mean time between injected failures.  Works best "
 		    "if prime.\n",
