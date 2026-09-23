@@ -2324,15 +2324,37 @@ umem_ptc_probe_observe(umem_magazine_t *mp, int recorded)
 /*
  * Count the objects still in `mp` as its shell is freed.  See the ledger
  * comment above.  Observation only: frees nothing, changes no decision.
+ *
+ * Two things about WHERE and WHAT this counts, both learned the hard way:
+ *
+ * WHERE: it is called AFTER umem_mag_drain() has run, and is handed the
+ * count the drain was given.  What it measures is "objects the drain did
+ * not take out", i.e. owned slots still non-NULL when the shell goes.  Put
+ * before the drain it would count every object in every stale magazine,
+ * fixed or not.
+ *
+ * WHAT: only slots below `rounds`.  The alloc paths pop mag_round[--rounds]
+ * without clearing the slot, so a magazine that was once full carries a
+ * tail of stale pointers to objects that are live elsewhere.  This ledger
+ * used to scan all `cap` slots and count that tail as lost -- 127 or 254
+ * at a time, exactly the size of the real defect it was written to catch.
+ * It went unseen because the pre-fix magazines it was validated against
+ * were full (rounds == cap, no tail), and because until the update thread
+ * was started at init, magazine resizes -- the only thing that makes a PTC
+ * shell stale -- ran only under umem_reap().  Once resizes ran routinely,
+ * the false positive fired in ~1 run in 8 and was about to be filed as a
+ * P1.3c regression.
  */
 static void
-umem_ptc_probe_shell_free(umem_magazine_t *mp)
+umem_ptc_probe_shell_free(umem_magazine_t *mp, int rounds)
 {
 	int cap = umem_mag_capacity(mp);
 	long live = 0;
 	int r;
 
-	for (r = 0; r < cap; r++) {
+	if (rounds > cap)
+		rounds = cap;
+	for (r = 0; r < rounds; r++) {
 		if (mp->mag_round[r] != NULL)
 			live++;
 	}
@@ -2343,11 +2365,11 @@ umem_ptc_probe_shell_free(umem_magazine_t *mp)
 }
 #define	UMEM_PTC_RESIZE_PROBE_POINT()	umem_ptc_resize_probe()
 #define	UMEM_PTC_PROBE_OBSERVE(mp, cap)	umem_ptc_probe_observe((mp), (cap))
-#define	UMEM_PTC_PROBE_SHELL_FREE(mp)	umem_ptc_probe_shell_free(mp)
+#define	UMEM_PTC_PROBE_SHELL_FREE(mp, n)	umem_ptc_probe_shell_free((mp), (n))
 #else
 #define	UMEM_PTC_RESIZE_PROBE_POINT()	((void)0)
 #define	UMEM_PTC_PROBE_OBSERVE(mp, cap)	((void)0)
-#define	UMEM_PTC_PROBE_SHELL_FREE(mp)	((void)0)
+#define	UMEM_PTC_PROBE_SHELL_FREE(mp, n)	((void)0)
 #endif
 
 /*
@@ -2797,7 +2819,7 @@ umem_ptc_mag_return(umem_cache_t *cp, umem_maglist_t *mlp,
 	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
 		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
-		UMEM_PTC_PROBE_SHELL_FREE(mp);
+		UMEM_PTC_PROBE_SHELL_FREE(mp, rounds);
 		_umem_cache_free(umem_mag_source_cache(mp), mp);
 		return;
 	}
@@ -2825,7 +2847,7 @@ umem_ptc_mag_return_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
 	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
 		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
-		UMEM_PTC_PROBE_SHELL_FREE(mp);
+		UMEM_PTC_PROBE_SHELL_FREE(mp, rounds);
 		_umem_cache_free(umem_mag_source_cache(mp), mp);
 		return;
 	}
