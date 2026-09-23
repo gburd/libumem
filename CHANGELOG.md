@@ -3,6 +3,66 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **The ~5 GB heap ceiling on Linux is removed -- in two halves, the second of
+  which corrected the first.** Root cause was never the mmap backend (three
+  attempts there failed and were reverted) but slab density: under Linux's 4 KiB
+  heap quantum, libumem created far smaller slabs than under Solaris's 64 KiB
+  quantum, and each slab span is its own `mmap(MAP_FIXED)` that the kernel does
+  not merge, so the heap exhausted `vm.max_map_count` (65,530) long before
+  memory ran out.
+  - Half one (`3f2e67c`): the hashed best-fit path gave 1 object per 4 KiB slab
+    for 4 KiB chunks (Solaris: 16). `UMEM_MIN_SLAB_OBJECTS` (16, capped at a
+    64 KiB slab) restores Solaris density. VMAs at 2 GB of 4 KiB objects:
+    16,283 -> 75. A 9 GB regression went from 9 failures / 65,532 VMAs to 0 / 74.
+  - Half two (`cf3f762`): that fix was declared complete and was not. The
+    Phase 6 hard-limit hunt found 512 B objects still failing at **8.2 GB** with
+    63,323 VMAs (glibc: 54). Objects <= 512 B take a different path -- one-page
+    slabs served through `umem_va`'s quantum cache, whose slabs were 128 KiB, one
+    VMA each. The first floor explicitly excluded that path. `UMEM_MIN_QCACHE_SLAB`
+    (4 MiB) floors quantum-cache slabs: VMAs at 2 GB of 512 B objects
+    15,702 -> 274, at zero measured small-heap RSS cost (5 MB either way; the
+    slabs are `MAP_NORESERVE` and touched only as they fill). The lever was
+    chosen from a measured table of six alternatives, not argued.
+  - Both floors are arithmetically no-ops at a 64 KiB quantum, and on illumos
+    `umem_va` has no quantum caches at all (its requested `qcache_max` of
+    8 pages is smaller than one 64 KiB quantum). This is checked, not assumed:
+    `test/unit/test_slab_floor` simulates a 64 KiB-quantum arena on Linux and
+    asserts every slab size equals unfloored best-fit.
+  - `test_heap_ceiling` gained a 512 B arm (`test_heap_ceiling_512.sh`). The 4 KiB
+    arm passed at 9 GB throughout the second defect; a test of one path was blind
+    to the other.
+- **Interposer `free()` ~500x collapse** (`a74065e`). `interpose_owner_of()` took
+  a global lock and scanned 512 slots on every `free()` -- a table that is empty
+  after bootstrap -- plus decoded the header twice. An atomic `libc_ptr_live`
+  gate skips the scan once READY. Regression `repro_interpose_free_scaling`:
+  pre-fix 0.29x of API throughput, post 4.10x; on 192-vCPU metal, t=192
+  0.80 -> 313 Mops/s, null-controlled.
+- **P5.4 mangling evidence gap closed.** The original regression could not
+  distinguish freelist-link mangling from slab containment, because its target
+  was outside the victim slab and containment caught it first. A new `inslab`
+  case targets the *live neighbour* -- inside the slab, aligned, so only
+  mangling stands in the way -- and FAILs with `-DUMEM_NO_LINK_MANGLE` (the
+  allocator hands back a still-allocated buffer: a double allocation) while
+  PASSing by default. Both controls are now independently demonstrated.
+
+### Changed
+
+- `test_inspect_e2e` walks with `-n 0` (unlimited). It passed at `-n 200` only
+  because the whole heap was 74 entries; the walk lists internal metadata
+  caches first, so any real process would have shown 200 bufctls and none of
+  the user's buffers. The 4 MiB qcache slab, which pre-creates ~1,100 bufctls
+  (~35 KB) at startup, turned the latent assumption red.
+
+### Known
+
+- Startup allocates ~1,100 more bufctl records (~35 KB) than before, for the
+  `umem_va_4096` and `umem_va_32768` quantum-cache slabs. This is fixed cost,
+  not per-object.
+
 ## [3.1.0] - 2026-09-23
 
 Security hardening. An adversarial audit of v3.0.0 (2026-09-22) found one

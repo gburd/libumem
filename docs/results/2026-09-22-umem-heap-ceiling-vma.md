@@ -325,3 +325,57 @@ request per object, and no backend can coalesce what it is asked for one page at
 a time. The `strace` count said so; the lesson recorded above ("the fix belongs
 in span sizing") was right, and the fix is a floor on how few objects a slab may
 hold.
+
+## 2026-09-23, later: the resolution above was half of it
+
+The section above declared the ceiling closed on the strength of a 9 GB run of
+**4 KiB** objects. The Phase 6 hard-limit hunt (P6.1) then ran 512 B objects
+and hit `vm.max_map_count` at **8.2 GB** with 63,323 VMAs; 64 B objects were
+at 48,218 VMAs by 100M objects. glibc: 54.
+
+The two sizes take different paths, and the fix above touched one:
+
+| object size | slab path | span request | served by | pre-fix slab | VMA per |
+|---|---|---|---|---|---|
+| 1–4 KiB (hashed) | best-fit loop | slab size | heap arena directly | 4 KiB → **64 KiB** (`3f2e67c`) | 64 KiB |
+| ≤ 512 B (non-hash) | `cache_slabsize = vm_quantum` | 4 KiB | **`umem_va` quantum cache** | qcache slab **128 KiB** | 128 KiB |
+
+A page-sized span request is ≤ `umem_va`'s `qcache_max` (8 pages), so it is
+served *from a quantum cache*, and the quantum cache's own slab size is set by a
+separate rule at `umem.c:5038`, `MAX(1 << highbit(3 * vm_qcache_max), 64)` =
+128 KiB. The `UMEM_MIN_SLAB_OBJECTS` floor is guarded by `!(cflags & UMC_QCACHE)`
+and so could not reach it. One VMA per 128 KiB of small-object heap gives
+65,530 VMAs at 8.2 GB, which is the number observed.
+
+The lever was chosen from measurement (2 GB of 512 B objects, `c7i.2xlarge`):
+
+| lever | VMAs | cost |
+|---|---|---|
+| base | 15,702 | — |
+| `qcache_max` 8 → 16 pages | 7,891 | — |
+| 1 MiB qcache slabs via `VMEM_NQCACHE_MAX=64` | 2,034 | +1 MB RSS on a 5 MB heap |
+| qcache slab floor 1 MiB | 2,026 | — |
+| **qcache slab floor 4 MiB** | **274** | **none measured** (1000×64 B = 5.1 MB either way) |
+| `mprotect` instead of `mmap` on the qcache path | 15,789 | no contiguous reservation to merge into |
+| … plus 64 MiB reservations | 15,706 | hand-out is not address-ordered; free's `PROT_NONE` splits |
+
+`UMEM_MIN_QCACHE_SLAB` (4 MiB) is now applied in the `UMC_QCACHE` branch
+(`cf3f762`). The cost is address space, not RSS: qcache slabs are
+`MAP_NORESERVE` and are touched only as they fill. The one measurable fixed
+cost is ~1,100 additional bufctl records (~35 KB) created at startup for the
+`umem_va_4096` and `umem_va_32768` slabs.
+
+Portability, checked: on illumos the heap quantum is 64 KiB but `umem_va`
+requests `qcache_max = 8 * pagesize = 32 KiB`, smaller than one quantum, so
+`vmem_create()` computes `nqcache = 0` and `umem_va` has **no quantum caches**
+there. The path this floors does not exist on illumos.
+
+Before/after on `c7i.2xlarge`, 9 GB target, `vm.max_map_count = 65530`:
+
+| arm | pre (`a62b31c`) | post (`cf3f762`) |
+|---|---|---|
+| 4 KiB (`test_heap_ceiling`) | PASS, 74 VMAs | PASS, 77 VMAs |
+| **512 B** (`test_heap_ceiling_512.sh`) | **FAIL at 8185 MB, 65,532 VMAs, 9 failures** | **PASS, 994 VMAs (1.5 %)** |
+
+The 512 B arm now exists because the 4 KiB arm was blind to this. A test of one
+path is not a test of the allocator.

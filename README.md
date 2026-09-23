@@ -5,16 +5,16 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v3.1.0): usable for heaps under ~5 GB on Linux, including after a
-> security-hardening pass; still not a hardened allocator in the sense a
-> security-critical deployment would want.** Ten reachable correctness and
-> lifetime defects found by the 2026-09-21 design review, and ten security
-> findings from the 2026-09-22 adversarial audit, are fixed — each with a
-> regression that fails before the fix and passes after, on x86_64 and aarch64.
-> The remaining functional blocker is a hard **~5 GB heap ceiling on Linux**
-> (`vm.max_map_count` exhaustion); raising `vm.max_map_count` works around it,
-> and an attempt to fix it properly **failed**, documented with the measurements
-> that narrow it to slab/va-arena span sizing. Several diagnostic features now
+> **Status (unreleased, after v3.1.0): the ~5 GB Linux heap ceiling is gone,
+> including after a security-hardening pass; still not a hardened allocator in
+> the sense a security-critical deployment would want.** Ten reachable
+> correctness and lifetime defects found by the 2026-09-21 design review, and
+> ten security findings from the 2026-09-22 adversarial audit, are fixed — each
+> with a regression that fails before the fix and passes after, on x86_64 and
+> aarch64. The heap ceiling was fixed in two halves: the first was declared
+> complete and was not (512 B objects still failed at 8.2 GB), and a systematic
+> hard-limit hunt caught it; 9 GB of 4 KiB objects now uses 77 VMAs and 9 GB of
+> 512 B objects uses 994, of 65,530. Several diagnostic features now
 > have contracts documented honestly rather than optimistically — including that
 > `UMEM_DEBUG=audit` captures only ~2 frames in a default build — and several
 > performance conclusions previously published in this file were **withdrawn**
@@ -208,30 +208,28 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 
 Where libumem **does not win**:
 
-- **Heap size on Linux: a hard ~5 GB ceiling by default.** This is the most
-  important limitation on this page. libumem's mmap heap uses a
-  page-sized quantum on Linux (Solaris, which this code was written for, got
-  64 KiB), so it consumes one kernel VMA per ~76 KiB of address space and runs
-  into `vm.max_map_count` (default **65530**) at roughly **5 GB**. Past that
-  point `umem_alloc()` returns NULL. Measured: ~39 % of allocations failing at
-  192 threads while glibc on the same box, same workload, reached 96 GB without
-  a single failure — and libumem was using *less* memory (~5 GB vs ~9.4 GB)
-  when it began failing.
+- **Heap size on Linux: a ~5 GB ceiling — now fixed, in two halves.** Until
+  this release libumem hit `vm.max_map_count` (default **65530**) at roughly
+  5 GB and `umem_alloc()` returned NULL; on the same box glibc reached 96 GB.
+  The cause was slab density, not the mmap backend (three attempts there failed
+  and are documented): under Linux's 4 KiB heap quantum libumem built far
+  smaller slabs than under Solaris's 64 KiB one, and each slab span is its own
+  `mmap(MAP_FIXED)` the kernel does not merge. Two floors restore Solaris
+  density — `UMEM_MIN_SLAB_OBJECTS` for the hashed best-fit path (4 KiB objects:
+  16,283 → 75 VMAs at 2 GB) and `UMEM_MIN_QCACHE_SLAB` for the quantum-cache
+  path that objects ≤ 512 B take (15,702 → 274 VMAs at 2 GB, zero measured RSS
+  cost). The first was shipped as a complete fix and was not; the second came
+  from a hard-limit hunt that tested the class the first fix's own regression
+  did not. Both arms are now gated (`test_heap_ceiling`, `..._512.sh`), and a
+  64 KiB-quantum simulation (`test_slab_floor`) checks both floors are no-ops on
+  illumos. Details:
+  [`docs/results/2026-09-22-umem-heap-ceiling-vma.md`](docs/results/2026-09-22-umem-heap-ceiling-vma.md).
 
-  If you need more than a few GB from libumem on Linux today, raise the limit:
+  If you run an older release, raise the limit:
 
   ```sh
   sysctl -w vm.max_map_count=1048576     # or a value suited to your heap
   ```
-
-  An aggravating bug made this hard to diagnose for years:
-  `vmem_mmap_top_alloc()` restored `errno` over its failure paths, so callers
-  saw NULL with a stale `errno` and the symptom looked like "libumem is slower"
-  rather than "libumem could not get memory". Root cause, evidence, and the
-  proposed fix:
-  [`docs/results/2026-09-22-umem-heap-ceiling-vma.md`](docs/results/2026-09-22-umem-heap-ceiling-vma.md).
-  **Not yet fixed** — the fix changes address-space layout and is waiting on its
-  own regression test.
 - **Raw malloc / free throughput.** Through the `umem_alloc` API, libumem
   is at or above glibc single-threaded and within 3-13 % of the fastest
   allocator (mimalloc, usually); at 128-192 threads on x86_64 it is 8-24 %
@@ -324,15 +322,13 @@ with a regression that demonstrates the pre-fix exposure:
 
 ### What is still open
 
-- **The ~5 GB Linux heap ceiling** (`vm.max_map_count`). Raise
-  `vm.max_map_count` to work around it. An attempt to fix it failed and is
-  documented with the measurements that narrow it to slab/va-arena span sizing:
-  [`docs/results/2026-09-22-umem-heap-ceiling-vma.md`](docs/results/2026-09-22-umem-heap-ceiling-vma.md).
-- **One evidence gap in the freelist fix.** Isolating the two controls shows the
-  *containment check* blocks the tested attack by itself, because that test's
-  target is outside the victim slab. Mangling covers an in-slab target, which no
-  test currently exercises — so the verified claim is "this attack shape is
-  blocked", not "mangling stops it":
+- **One evidence gap in the freelist fix — now closed.** Isolating the two
+  controls showed the *containment check* blocks the original test's attack by
+  itself, because that test's target is outside the victim slab. A new `inslab`
+  case targets the *live neighbour* — inside the slab, aligned, so only the
+  mangling stands in the way — and fails with `-DUMEM_NO_LINK_MANGLE` (the
+  allocator hands back a still-allocated buffer) while passing by default. Both
+  controls are now independently demonstrated:
   [`docs/results/2026-09-23-p54-which-control-blocks.md`](docs/results/2026-09-23-p54-which-control-blocks.md).
 - **`umem_may_own()` is a convex hull**, so a forged header landing *between*
   heap spans passes the range check; size and layout validation still apply.
