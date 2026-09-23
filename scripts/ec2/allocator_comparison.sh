@@ -46,6 +46,8 @@ SIZES="${SIZES:-16:64,64:256,256:1024,1024:4096}"
 OPS="${OPS:-20000000}"                            # single
 MULTI_OPS="${MULTI_OPS:-$OPS}"                    # multi (metal: raise so t=192 is not a 50 ms point)
 MULTI_THREADS="${MULTI_THREADS:-$THREADS}"
+MULTI_HI_OPS="${MULTI_HI_OPS:-}"                  # optional 2nd multi pass with a bigger budget
+MULTI_HI_THREADS="${MULTI_HI_THREADS:-}"          #   at the high thread counts only (metal)
 PRODCONS_OPS="${PRODCONS_OPS:-10000000}"          # divided by producers (= t/2); >= 100k/producer at t=192
 PRODCONS_THREADS="${PRODCONS_THREADS:-$THREADS}"
 PRODCONS_SIZES="${PRODCONS_SIZES:-$SIZES}"
@@ -104,7 +106,7 @@ INSTANCE=$( { TOK=$(curl -s --max-time 2 -X PUT "http://169.254.169.254/latest/a
         http://169.254.169.254/latest/meta-data/instance-type 2>/dev/null; } || true )
 [[ -z "$INSTANCE" ]] && INSTANCE=unknown
 DATE=$(date +%Y-%m-%d)
-OUT="docs/results/${DATE}-${INSTANCE}-${ARCH}"
+OUT="$REPO_ROOT/docs/results/${DATE}-${INSTANCE}-${ARCH}"   # absolute: matrix.sh cds into test/bench
 mkdir -p "$OUT"
 cp /tmp/install_allocators.log "$OUT/install_allocators.log" 2>/dev/null || true
 
@@ -199,6 +201,10 @@ echo "== 1a. single  ops=$OPS  arms: ${ARMS[*]}  ($(date -u +%T))"
 run_matrix single "$OPS" 1 "$SIZES" single "$REPS"
 echo "== 1a'. multi  ops=$MULTI_OPS threads=$MULTI_THREADS  ($(date -u +%T))"
 run_matrix multi "$MULTI_OPS" "$MULTI_THREADS" "$SIZES" multi "$REPS"
+if [[ -n "$MULTI_HI_OPS" && -n "$MULTI_HI_THREADS" ]]; then
+    echo "== 1a''. multi-hi  ops=$MULTI_HI_OPS threads=$MULTI_HI_THREADS  ($(date -u +%T))"
+    run_matrix multi-hi "$MULTI_HI_OPS" "$MULTI_HI_THREADS" "$SIZES" multi "$REPS"
+fi
 echo "== 1b. prodcons  ops=$PRODCONS_OPS threads=$PRODCONS_THREADS sizes=$PRODCONS_SIZES  ($(date -u +%T))"
 run_matrix prodcons "$PRODCONS_OPS" "$PRODCONS_THREADS" "$PRODCONS_SIZES" prodcons "$REPS"
 echo "== 1c. frag 16:64,64:256  ops=$FRAG_OPS  ($(date -u +%T))"
