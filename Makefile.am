@@ -745,7 +745,8 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	test/bench/test_bench_accounting.c \
 	test/bench/bench_profile_test.c test/bench/expected_profile.txt \
 	test/bench/verify_profile.sh \
-	test/property/prop_alloc_free.c
+	test/property/prop_alloc_free.c \
+	test/limits/limits.h test/limits/run_all.sh test/limits/README.md
 
 # Installed headers.  Every header listed here must be compilable by an
 # external consumer with nothing but the install prefix on its include
@@ -896,6 +897,58 @@ noinst_PROGRAMS += test/integration/heap_density
 test_integration_heap_density_SOURCES = test/integration/heap_density.c
 test_integration_heap_density_LDADD = libumem.la
 test_integration_heap_density_CPPFLAGS = -I$(srcdir)
+
+# Phase 6 hard-limit probes (docs/plans/2026-09-21-production-readiness.md,
+# "Hard limits").  Measurement instruments, slow and memory-hungry, NEVER in
+# TESTS.  Each is built twice from one source: <probe> against the libumem API
+# and <probe>_glibc as a plain libc binary (-DLIM_GLIBC), so the glibc
+# comparison is the same program.  probe_caches is umem-only (no libc
+# equivalent).  See test/limits/run_all.sh.
+LIMITS_CPPFLAGS = -I$(srcdir) -I$(srcdir)/test/limits
+noinst_PROGRAMS += test/limits/probe_objcount test/limits/probe_objcount_glibc \
+	test/limits/probe_objsize test/limits/probe_objsize_glibc \
+	test/limits/probe_threads test/limits/probe_threads_glibc \
+	test/limits/probe_caches \
+	test/limits/probe_fork test/limits/probe_fork_glibc \
+	test/limits/probe_rlimit test/limits/probe_rlimit_glibc \
+	test/limits/probe_reclaim test/limits/probe_reclaim_glibc
+test_limits_probe_objcount_SOURCES = test/limits/probe_objcount.c
+test_limits_probe_objcount_LDADD = libumem.la
+test_limits_probe_objcount_CPPFLAGS = $(LIMITS_CPPFLAGS)
+test_limits_probe_objcount_glibc_SOURCES = test/limits/probe_objcount.c
+test_limits_probe_objcount_glibc_CPPFLAGS = $(LIMITS_CPPFLAGS) -DLIM_GLIBC
+test_limits_probe_objsize_SOURCES = test/limits/probe_objsize.c
+test_limits_probe_objsize_LDADD = libumem.la
+test_limits_probe_objsize_CPPFLAGS = $(LIMITS_CPPFLAGS)
+test_limits_probe_objsize_glibc_SOURCES = test/limits/probe_objsize.c
+test_limits_probe_objsize_glibc_CPPFLAGS = $(LIMITS_CPPFLAGS) -DLIM_GLIBC
+test_limits_probe_threads_SOURCES = test/limits/probe_threads.c
+test_limits_probe_threads_LDADD = libumem.la
+test_limits_probe_threads_LDFLAGS = -pthread
+test_limits_probe_threads_CPPFLAGS = $(LIMITS_CPPFLAGS)
+test_limits_probe_threads_glibc_SOURCES = test/limits/probe_threads.c
+test_limits_probe_threads_glibc_LDFLAGS = -pthread
+test_limits_probe_threads_glibc_CPPFLAGS = $(LIMITS_CPPFLAGS) -DLIM_GLIBC
+test_limits_probe_caches_SOURCES = test/limits/probe_caches.c
+test_limits_probe_caches_LDADD = libumem.la
+test_limits_probe_caches_CPPFLAGS = $(LIMITS_CPPFLAGS)
+test_limits_probe_fork_SOURCES = test/limits/probe_fork.c
+test_limits_probe_fork_LDADD = libumem.la
+test_limits_probe_fork_LDFLAGS = -pthread
+test_limits_probe_fork_CPPFLAGS = $(LIMITS_CPPFLAGS)
+test_limits_probe_fork_glibc_SOURCES = test/limits/probe_fork.c
+test_limits_probe_fork_glibc_LDFLAGS = -pthread
+test_limits_probe_fork_glibc_CPPFLAGS = $(LIMITS_CPPFLAGS) -DLIM_GLIBC
+test_limits_probe_rlimit_SOURCES = test/limits/probe_rlimit.c
+test_limits_probe_rlimit_LDADD = libumem.la
+test_limits_probe_rlimit_CPPFLAGS = $(LIMITS_CPPFLAGS)
+test_limits_probe_rlimit_glibc_SOURCES = test/limits/probe_rlimit.c
+test_limits_probe_rlimit_glibc_CPPFLAGS = $(LIMITS_CPPFLAGS) -DLIM_GLIBC
+test_limits_probe_reclaim_SOURCES = test/limits/probe_reclaim.c
+test_limits_probe_reclaim_LDADD = libumem.la
+test_limits_probe_reclaim_CPPFLAGS = $(LIMITS_CPPFLAGS)
+test_limits_probe_reclaim_glibc_SOURCES = test/limits/probe_reclaim.c
+test_limits_probe_reclaim_glibc_CPPFLAGS = $(LIMITS_CPPFLAGS) -DLIM_GLIBC
 
 # NOTE which PTC variants are gated above: the _probe ones, which use exact
 # in-library counters (objects still in a bin when the PTC is freed; objects
