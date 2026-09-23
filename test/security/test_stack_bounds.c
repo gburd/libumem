@@ -233,56 +233,97 @@ struct thread_arg {
  * Returns the depth getpcstack() reported.
  */
 struct walk_ctx {
-	uintptr_t	*slot;		/* frame-pointer slot to poison */
-	uintptr_t	target;		/* what to poison it with */
-	int		depth;		/* out */
+	uintptr_t	*frame;		/* victim_frame's frame address */
+	uintptr_t	target;		/* what to poison the link with */
+	int		depth;		/* out: depth getpcstack returned */
+	int		poisoned;	/* out: 1 if the link was found+poisoned */
 };
 
 /*
  * Establish a frame, hand its frame-pointer slot up, and return.  The frame is
  * dead from here on, which is what makes poisoning it safe.
  *
- * NOTE ON __builtin_frame_address UNDER SANITIZERS.  This assumes
- * __builtin_frame_address(0) is the address of the saved-frame-pointer slot,
- * which is the ABI layout on x86_64 and aarch64 in an ordinary build.  Under
- * ASan it is NOT reliable: ASan rewrites the frame to interpose redzones around
- * locals, so slot[0] can land in a redzone rather than on the saved fp, and
- * ASan then reports a stack-buffer-overflow READ inside this test.  Observed on
- * aarch64 exactly that way -- the report named poison_and_walk's own pcstack,
- * not the allocator.
+ * FINDING THE SLOT.  __builtin_frame_address(0) is NOT reliably the address of
+ * the saved-frame-pointer slot:
  *
- * So the corrupted arms are skipped under ASan (see asan_active()): the value
- * of the ASan run is that it watches the LIBRARY's reads, and the control arm
- * plus the non-sanitized run already cover the corrupted ones.  Claiming a pass
- * from an arm whose own premise ASan has invalidated would be a false green.
+ *   - on aarch64 at -O2 it pointed somewhere the walk never read, so the poison
+ *     had no effect and the arm silently tested nothing (depth stayed equal to
+ *     the control's) -- and still "passed" with the fix reverted;
+ *   - under ASan, frame rewriting inserts redzones and slot[0] can land in one.
+ *
+ * So rather than assume a layout, this records both the frame address AND the
+ * value the walk will find there, and the caller SEARCHES a small window for the
+ * slot actually holding that value.  If it cannot find it, the arm reports
+ * inconclusive instead of passing.
  */
 __attribute__((noinline))
 static void
 victim_frame(struct walk_ctx *ctx, void (*next)(struct walk_ctx *))
 {
-	ctx->slot = (uintptr_t *)__builtin_frame_address(0);
+	ctx->frame = (uintptr_t *)__builtin_frame_address(0);
 	next(ctx);
 }
 
-/* Called from inside victim_frame: poison the caller's slot, then walk. */
+
+/* Called from inside victim_frame: poison the caller's link, then walk. */
 __attribute__((noinline))
 static void
 poison_and_walk(struct walk_ctx *ctx)
 {
 	uintptr_t pcstack[32];
-	uintptr_t saved = ctx->slot[0];
+	uintptr_t *myfp = (uintptr_t *)__builtin_frame_address(0);
+	uintptr_t *slot;
+	uintptr_t saved;
 
-	if (ctx->target != 0)
-		ctx->slot[0] = ctx->target;
+	ctx->poisoned = 0;
+
+	if (ctx->target == 0) {
+		/* Control walk: nothing to poison. */
+		ctx->depth = getpcstack(pcstack, 20, 0);
+		return;
+	}
 
 	/*
-	 * The walk starts in THIS frame and climbs into victim_frame's, whose
-	 * saved-fp link now points at `target`.
+	 * The link the walk will follow out of victim_frame is the one holding
+	 * victim_frame's OWN caller-frame value.  We do not know the exact
+	 * offset, so find the slot that actually holds ctx->frame's successor by
+	 * searching a small window at and above victim_frame's frame address for
+	 * a value that looks like a frame link pointing further up the stack.
+	 *
+	 * Concretely: the walk arrived at victim_frame's frame from ours, so the
+	 * slot we want is the one whose value the walk would read as the NEXT
+	 * frame -- i.e. the first plausible up-stack pointer at/above
+	 * ctx->frame.  Poison that.
 	 */
+	{
+		int i;
+		slot = NULL;
+		for (i = 0; i < 8; i++) {
+			uintptr_t v = ctx->frame[i];
+			/* A frame link points up-stack and is aligned. */
+			if (v > (uintptr_t)ctx->frame &&
+			    v < (uintptr_t)ctx->frame + (1u << 20) &&
+			    (v & (sizeof (uintptr_t) - 1)) == 0) {
+				slot = &ctx->frame[i];
+				break;
+			}
+		}
+		(void) myfp;
+	}
+
+	if (slot == NULL) {
+		/* Cannot locate the link: report, do not fabricate a pass. */
+		ctx->depth = -2;
+		return;
+	}
+
+	saved = *slot;
+	*slot = ctx->target;
+	ctx->poisoned = 1;
+
 	ctx->depth = getpcstack(pcstack, 20, 0);
 
-	/* Restore before victim_frame's epilogue runs. */
-	ctx->slot[0] = saved;
+	*slot = saved;		/* before victim_frame's epilogue runs */
 }
 
 static int
@@ -290,9 +331,10 @@ walk_with_frame_aimed_at(uintptr_t target)
 {
 	struct walk_ctx ctx;
 
-	ctx.slot = NULL;
+	ctx.frame = NULL;
 	ctx.target = target;
 	ctx.depth = -1;
+	ctx.poisoned = 0;
 	victim_frame(&ctx, poison_and_walk);
 	return (ctx.depth);
 }
@@ -400,6 +442,14 @@ child_status_for(enum aim aim, int *depth_out, int *signalled)
 		return (-1);
 	if (pid == 0) {
 		int d = run_on_own_stack(aim);
+		/*
+		 * d == -2 means poison_and_walk could not locate the frame link
+		 * to poison (see there).  Distinguished from a setup failure so
+		 * the parent can say which happened; both are "arm did not run",
+		 * and neither is ever reported as a pass.
+		 */
+		if (d == -2)
+			_exit(101);
 		if (d < 0)
 			_exit(100);		/* setup failed */
 		if (d > 99)
@@ -414,6 +464,8 @@ child_status_for(enum aim aim, int *depth_out, int *signalled)
 	}
 	if (!WIFEXITED(status))
 		return (-1);
+	if (WEXITSTATUS(status) == 101)
+		return (-2);		/* could not find the link to poison */
 	if (WEXITSTATUS(status) == 100)
 		return (-1);		/* setup failed in the child */
 	*depth_out = WEXITSTATUS(status);
@@ -421,11 +473,18 @@ child_status_for(enum aim aim, int *depth_out, int *signalled)
 }
 
 static void
-run_arm(enum aim aim, const char *what)
+run_arm(enum aim aim, int control_depth, const char *what)
 {
-	int depth, sig;
+	int depth, sig, rc;
 
-	if (child_status_for(aim, &depth, &sig) != 0) {
+	rc = child_status_for(aim, &depth, &sig);
+	if (rc == -2) {
+		printf("  INCONCLUSIVE: %s -- could not locate the frame link "
+		    "to poison in this build, so the arm tested nothing\n", what);
+		failures++;
+		return;
+	}
+	if (rc != 0) {
 		printf("  (skipped: %s -- could not set up the arm)\n", what);
 		return;
 	}
@@ -436,8 +495,38 @@ run_arm(enum aim aim, const char *what)
 		failures++;
 		return;
 	}
-	printf("  PASS: %s (walk returned depth %d and read nothing "
-	    "off-stack)\n", what, depth);
+
+	/*
+	 * PER-ARM VACUITY GUARD.
+	 *
+	 * Surviving is not enough: the walk must actually have REACHED the
+	 * poisoned link and stopped there.  If it did, the chain is truncated at
+	 * the victim frame and the depth is SHORTER than the control walk's.  If
+	 * the depth equals the control depth, the walk never crossed the
+	 * poisoned link at all -- the arm exercised nothing and its PASS would
+	 * be meaningless.
+	 *
+	 * This is not hypothetical.  Measured: on x86_64 the corrupted arms
+	 * return depth 2 against a control of 3 (truncation, arm live), while on
+	 * aarch64 at -O2 they returned depth 3 -- equal to control -- because the
+	 * compiler did not lay out victim_frame's frame record where
+	 * __builtin_frame_address(0) pointed, so the poison landed somewhere the
+	 * walk never read.  With the fix REVERTED that build still passed, i.e.
+	 * it was an arch-dependent false green of exactly the kind that made the
+	 * first version of this whole test worthless.  Report it as inconclusive
+	 * instead of green.
+	 */
+	if (depth >= control_depth) {
+		printf("  INCONCLUSIVE: %s -- walk returned depth %d, the same "
+		    "as the uncorrupted control (%d), so it never crossed the "
+		    "poisoned link and this arm tested nothing\n",
+		    what, depth, control_depth);
+		failures++;
+		return;
+	}
+
+	printf("  PASS: %s (walk truncated to depth %d vs control %d, and "
+	    "read nothing off-stack)\n", what, depth, control_depth);
 }
 
 int
@@ -502,7 +591,7 @@ main(void)
 		    "TEST, not the walk.  Run it in a non-ASan build; the "
 		    "control arm above still exercises the walk here.)\n");
 	} else {
-		run_arm(AIM_GUARD,
+		run_arm(AIM_GUARD, control_depth,
 		    "corrupted frame pointer in a guard page was not "
 		    "dereferenced");
 	}
@@ -512,7 +601,7 @@ main(void)
 	if (asan_active()) {
 		printf("  (skipped under ASan: same reason as [A])\n");
 	} else {
-		run_arm(AIM_PAST_MAPPING,
+		run_arm(AIM_PAST_MAPPING, control_depth,
 		    "frame pointer past the whole mapping was not "
 		    "dereferenced");
 	}
