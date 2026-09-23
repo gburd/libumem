@@ -611,6 +611,48 @@ imply, and that is a documentation accuracy issue independent of hardening.
   LLDB helper has no equivalent, but `tools/umem.c` only ever generates gdb
   command files, so LLDB is not reachable through that path.
 
+### Phase 5 status (2026-09-23)
+
+| Item | State | Evidence |
+|---|---|---|
+| P5.1 `execlp` on the init path | **FIXED** (deleted) | hostile-PATH sentinel ran pre-fix; verified the tier resolved nothing |
+| P5.2 no privilege gating | **FIXED** | `umem_secure_mode()` before parsing; gate test |
+| P5.3 symlink-following writers | **FIXED** | victim 54 -> 5472 bytes pre-fix |
+| P5.4 unmangled freelist links | **FIXED** | abort pre-fix; see the control-isolation note below |
+| P5.5 incomplete errno fix | **FIXED** | two erasures, second on the exhaustion path |
+| P5.6 socket path + reclaim TOCTOU | **FIXED** | victim socket unlinked pre-fix |
+| P5.7 `SO_PEERCRED` real uid | **FIXED** | decision function tested directly |
+| P5.8 foreign header decode | **FIXED** | writes preceded validation; now after acceptance |
+| P5.9 unbounded frame walk | **FIXED** | SIGSEGV pre-fix both arches |
+| P5.10 minor / verified-good | **DONE** | gdb whitelist confirmed sound, left alone |
+
+Qualified at `56dbe8d` on x86_64 and aarch64, isolated builds, both configs:
+default **31 total / 27 PASS / 4 SKIP / 0 FAIL**, `--enable-introspect`
+**31 / 30 PASS / 1 SKIP / 0 FAIL**, gate failures 0.
+
+**Sharper mechanisms than the audit identified**, found by the agents fixing them:
+
+- **P5.6 was worse than "predictable path".** `stat(2)` *follows symlinks*, so a
+  symlink aimed at another process's socket satisfied `S_ISSOCK`, the probe
+  `connect` failed, and the target then unlinked a directory entry it never
+  created. Fixed with `lstat`, a euid-private directory created by atomic
+  `mkdir(0700)`, and a bind-then-`rename()` reclaim that removes nobody else's
+  entry.
+- **P5.8's answer to "does any write precede validation" is yes.** Every
+  successful-magic branch wrote `malloc_stat = UMEM_FREE_PATTERN_32` before any
+  size check, and the oversize/memalign branches wrote one tag before validating
+  the other. All mutation now happens after acceptance.
+- **P5.9's exposure is narrower and in the opposite direction** from the audit
+  text. See the correction in the P5.9 entry above.
+
+**One evidence gap, recorded not closed.** P5.4's regression cannot distinguish
+mangling from validation: isolating the two controls shows
+`umem_slab_link_valid()`'s containment check blocks the tested attack on its own,
+because the target is outside the victim slab. Mangling covers an in-slab target,
+which no test exercises. Details and the isolation table:
+`docs/results/2026-09-23-p54-which-control-blocks.md`. This is why P5.4 ships as
+v3.1.0 with the claim stated narrowly rather than as "mangling stops the attack".
+
 ### Phase 5 exit criteria
 
 1. P5.1, P5.2, P5.3, P5.5, P5.6, P5.7 fixed, each with a regression that
