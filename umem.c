@@ -6004,6 +6004,37 @@ umem_init(void)
 	umem_introspect_start();
 
 	/*
+	 * Start the update thread.
+	 *
+	 * Until now nothing did: the only creator was umem_reap(), which is
+	 * called by the application or by a *failed* backend allocation.  So
+	 * in a process that never ran out of memory and never called
+	 * umem_reap() -- i.e. almost every process -- there was no update
+	 * thread at all, and the periodic pass (umem_cache_update: hash
+	 * rescale, magazine resize, depot working-set bookkeeping, slab page
+	 * reclaim) never ran.  Every feature that documents itself as
+	 * "background" or "periodic" was in fact dead until the first
+	 * allocation failure.  The reclaim feature's own tests drove the pass
+	 * by hand (repro_reclaim_reuse.c: update_pass()), which is how this
+	 * stayed unseen.  Found by P6.8: a freed 128 MB heap, 0 bytes back in
+	 * 20 s, gdb showing one thread in the process.
+	 *
+	 * Done here, after the caches exist and before READY, because
+	 * pthread_create must not run under umem_update_lock held across a
+	 * fork handler (umem_create_update_thread drops and retakes it) and
+	 * because the thread's first act is umem_process_updates(), which
+	 * needs the cache list.  Failure is non-fatal: the library works
+	 * without the thread exactly as it always did, and umem_reap() will
+	 * retry creation.  UMEM_STANDALONE is single-threaded by definition.
+	 */
+#ifndef UMEM_STANDALONE
+	(void) mutex_lock(&umem_update_lock);
+	if (umem_update_thr == 0)
+		(void) umem_create_update_thread();
+	(void) mutex_unlock(&umem_update_lock);
+#endif
+
+	/*
 	 * initialization done, ready to go
 	 */
 	(void) mutex_lock(&umem_init_lock);
