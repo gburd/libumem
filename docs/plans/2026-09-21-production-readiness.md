@@ -1164,6 +1164,65 @@ per-cache count from `2*ncpus+ncpus+3` to `2*ncpus+3` (still ncpus-bound via
 the depot arrays) or, with per-cache depot arrays reduced to one lock, to a
 handful.
 
+### P6.7 Kernel knobs: clean NULL+ENOMEM everywhere -- FINE; no recovery after failure -- MEDIUM; `max_map_count`=4096 confirms P6.1 -- BLOCKING
+`vmem_mmap.c:108-150` (`vmem_mmap_alloc`, errno preserved per P5.5);
+`vmem.c:1047` (`vk_fail`, NULL return); `umem.c:3832` (oversize NULL path)
+
+Provenance: `a2548b8`, `c7g.2xlarge` (16 GB), `probe_rlimit <as|data|none>
+<mb>` -- 4 KiB objects until failure, then 1 MiB until failure, every
+returned pointer written, then one 64 B allocation to see whether the
+allocator still works. Signals trapped and reported. `rlimit`, `knobs` jobs.
+
+| knob | umem: first failure | umem: errno | glibc: first failure | glibc: errno | umem 64 B after failure | glibc |
+|---|---:|---|---:|---|---|---|
+| `RLIMIT_AS` 1 GB | 987 MB | 12 ENOMEM | 1015 MB | 12 | **NULL (12)** | ok |
+| `RLIMIT_AS` 4 GB | 3994 MB | 12 | 4075 MB | 12 | **NULL (12)** | ok |
+| `RLIMIT_DATA` 1 GB | 983 MB | 12 | 1019 MB | 12 | **NULL (12)** | ok |
+| `RLIMIT_DATA` 4 GB | 4004 MB | 12 | 4079 MB | 12 | **NULL (errno 0)** | ok |
+| `overcommit_memory=2`, CommitLimit 7.65 GB | 5239 MB | 12 | 5332 MB | 12 | **NULL (12)** | ok |
+| `overcommit_memory=2`, 1000 x 64 B (init) | ok, 4.4 MB | -- | ok, 2.0 MB | -- | -- | -- |
+| `max_map_count=4096`, 4 KiB + 1 MiB to 3 GB | none, 107 VMAs | -- | none, 74 | -- | ok | ok |
+| **`max_map_count=4096`, 512 B** | **NULL at 1,022,464 objects = 500 MB** | 12 | none at 2 GB | -- | -- | -- |
+
+**FINE:** every hard cap produces a clean `NULL` with `errno = ENOMEM` and
+no abort, no signal, no corrupted pointer, on both the slab path and the
+oversize path. The P5.5 errno fix holds on all five forcing mechanisms.
+umem reaches the cap 30-90 MB earlier than glibc (its reservation
+granularity is coarser), which is not a defect. Under strict overcommit
+(`mode 2`, where `MAP_NORESERVE` is *not* exempt) libumem initialises and
+runs a small heap normally, and fails at the CommitLimit exactly like glibc:
+it does not over-reserve at startup.
+
+**MEDIUM: after the first failure, libumem cannot allocate 64 B while glibc
+can.** In four of five capped runs the post-failure `umem_alloc(64)` returned
+NULL. The heap is at the cap and every cache's magazine layer is empty, so a
+64 B request needs a new slab, which needs a new 4 KiB span, which needs a
+128 KiB va-arena qcache slab import, which needs `mmap` -- and that is what
+is capped. glibc's 64 B comes from a bin inside memory it already has. The
+one `errno 0` case (`RLIMIT_DATA` 4 GB) is a stale-errno report on a real
+failure -- the failing path there did not set it, so **one errno hole
+remains**: probably the `umem_alloc_retry`/`umem_reap` loop returning NULL
+after a reap without a fresh syscall. Needs a `RLIMIT_DATA` regression
+alongside the `RLIMIT_AS` one in `test_errno_preserved`. A process that
+handles ENOMEM by logging and continuing will find that libumem has nothing
+left for the log line; glibc typically does.
+
+**BLOCKING (confirms P6.1 under a tighter cap):** with `vm.max_map_count`
+lowered to 4,096, 4 KiB and 1 MiB objects reach 3 GB at 107 VMAs -- the
+`3f2e67c` fix holds for its class -- but **512 B objects fail at 500 MB**,
+1,668 VMAs at 400k objects, 4,096 at ~1M. glibc reaches 2 GB. Same mechanism
+as P6.1 (one VMA per 128 KiB qcache slab); the tighter cap just moves the
+cliff from 8.2 GB to 500 MB. Containers routinely run with lowered
+`max_map_count`.
+
+**Required fix.** (1) P6.1's qcache slab floor removes the `max_map_count`
+cliff for 512 B. (2) For post-failure recovery: keep a small emergency
+reserve (one qcache slab's worth, 128 KiB-4 MiB) that `umem_alloc` may draw
+on only after a backend failure, released back on the next successful
+import -- glibc gets this for free from its existing arena; libumem has to
+choose to. (3) Find and close the `RLIMIT_DATA` errno-0 path; add
+`RLIMIT_DATA` to `test_errno_preserved`.
+
 ## Exit criteria
 
 **Verified 2026-09-22 at `4ba7d00`** by `scripts/ec2/exit_criteria_gate.sh`,
