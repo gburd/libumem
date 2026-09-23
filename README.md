@@ -232,46 +232,31 @@ Where libumem **does not win**:
   [`docs/results/2026-09-22-umem-heap-ceiling-vma.md`](docs/results/2026-09-22-umem-heap-ceiling-vma.md).
   **Not yet fixed** — the fix changes address-space layout and is waiting on its
   own regression test.
-- **Raw malloc / free throughput on tiny allocations.** jemalloc and
-  mimalloc are faster on `malloc(8)` / `free` micro-benchmarks,
-  primarily because their fast paths are smaller and they don't pay
-  for object-cache machinery you may not be using.
-- **Fragmentation / memory overhead under sustained load — no supportable
-  number either way.** The
-  [8-allocator shootout](docs/results/2026-09-08-allocator-shootout.md)
-  reported libumem worst-in-field on RSS/allocated ratio, and v2.7.0
-  reported that fixed. **Both conclusions are withdrawn as of 2026-09-21**:
-  a review of the harness found the fragmentation measurement itself
-  invalid, so neither the original finding nor the claimed fix is
-  supported by it. Three independent defects, any one of which breaks the
-  ratio: the live-bytes denominator accumulated bytes that had already been
-  freed; `peak_rss_bytes` was sampled after cleanup, so it is not the peak;
-  and the workload labelled "192-thread fragmentation" runs on exactly one
-  thread (`test/bench/bench_main.c` sets `thread_count = 1` for it). The
-  underlying `umem_max_ncpus` doubling bug *was* real and is fixed — that
-  part stands on the code, not on the benchmark. What the fix does to
-  fragmentation is simply not measured yet. See
-  [`docs/results/2026-09-09-fragmentation-diagnosis.md`](docs/results/2026-09-09-fragmentation-diagnosis.md)
-  for the original analysis, read with that caveat, and P2.2 in
-  [the readiness plan](docs/plans/2026-09-21-production-readiness.md).
-- **Tail latency at very high core counts under sustained load — improved,
-  measured narrowly.** The shootout found libumem worst-or-tied-worst p999
-  at 192 threads sustained for 3 minutes (157us vs jemalloc's 24.6us).
-  Root cause in the code: the depot refill scanned other CPUs' stripes with
-  a **blocking** mutex on failure while holding the caller's own per-CPU
-  lock — a lock convoy that compounds only under sustained pressure.
-  Switched to the already-existing non-blocking trylock primitive over the
-  same scan breadth. Measured p999 156.7-163.2us → 83.8-92.6us, and
-  independently re-verified at 86,974ns on a from-scratch build — **on
-  x86_64 (`c7i.metal-48xl`) only**, with the operation-budget defect
-  described in P2.1 of the readiness plan present in the harness at the
-  time. The improvement is large and reproducible; treat the exact
-  percentage as provisional until re-measured on the corrected harness, and
-  note it was not re-measured on aarch64. It does not reach
-  jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier. The residual gap
-  has been *attributed* to the inert rseq reload path; that is an untested
-  hypothesis, not a finding — nothing has isolated it. See
-  [`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`](docs/results/2026-09-09-sustained-depot-contention-diagnosis.md).
+- **Raw malloc / free throughput.** Through the `umem_alloc` API, libumem
+  is at or above glibc single-threaded and within 3-13 % of the fastest
+  allocator (mimalloc, usually); at 128-192 threads on x86_64 it is 8-24 %
+  behind the best. **Through `LD_PRELOAD` before `a74065e` it was 2x slower
+  at one thread and 500x slower at 192** -- a global mutex on every
+  `free()`, now fixed (P8.1). Objects above 2 KB bypass the per-thread cache
+  and collapse to 0.06x glibc under threads (P8.2, open). Measured with a
+  null control in
+  [`docs/results/2026-09-23-allocator-comparison.md`](docs/results/2026-09-23-allocator-comparison.md).
+- **Memory overhead.** Measured 2026-09-23 with the repaired pair
+  (RSS at the live-set peak / live bytes at that instant, plus `VmHWM`):
+  libumem holds **1.55-1.6x** its live set at 64-1024 B objects and **2.6x**
+  at 16-63 B, where glibc holds 1.07-1.25x / 1.85x and jemalloc/mimalloc
+  1.1-1.2x / 1.65x. scudo lands where umem does. This is the size-class +
+  warm-cache trade and is accepted; the earlier "worst-in-field 2.3x" and
+  "fixed to 2.7" claims both remain withdrawn (they measured a different,
+  wrong quantity). Under `frag` churn umem is also 20-33 % slower than the
+  size-class allocators and 2-3x slower sustained (P8.5, open).
+- **Tail latency.** Cross-thread handoff (`prodcons`) p999 is umem's
+  strongest number -- 0.9 us sustained at 8 threads, second only to
+  rpmalloc, 5-13x better than glibc -- and the 2026-09-09 depot trylock fix
+  that produced it holds at HEAD. Under `frag` churn the p999 is 22 us
+  sustained against 0.3-2.2 us for every other allocator (P8.5). The old
+  attribution of a residual tail gap to the inert rseq reload path was a
+  hypothesis and is dropped: the rseq layer serves zero hits either way.
 - **Sandboxed / security-hardened allocations.**  mimalloc-secure
   and `scudo` add explicit hardening (segregated metadata, randomized
   freelists, double-free detection by design).  libumem's defenses
@@ -562,119 +547,108 @@ actually enforce. Each header repeats the specific limitation.
 
 ## Performance
 
-Measured with the `test/bench/` harness (CPU-pinned, warm-up discarded,
-median of 5, coefficient-of-variation reported) on real AWS EC2 hardware —
-never local, never a single quick run.
+Measured on EC2 through `scripts/ec2/verify-isolated.sh` (committed content
+only), never locally, with a fixed total work budget per point, allocators
+alternating at the innermost loop, and **a null control at every grid point**:
+libumem is run against a relabelled copy of itself so the rig's own resolution
+is known before any cross-allocator delta is read. A delta inside that band is
+reported as noise. Full method, tables, and mechanisms:
+[`docs/results/2026-09-23-allocator-comparison.md`](docs/results/2026-09-23-allocator-comparison.md).
 
-> **Read this first (2026-09-21).** A review of the harness found defects
-> that invalidate part of what is reported below, so the numbers are not all
-> equally trustworthy:
->
-> - **The operation budget was divided by thread count twice**
->   (`test/bench/matrix.sh` and `test/bench/bench_main.c` each did it). The
->   192-thread points therefore measured ~52k total operations in ~3.8 ms
->   with >27% coefficient of variation — far too little work, far too much
->   noise, to support a scaling conclusion. **All 192-thread
->   throughput/scaling conclusions are withdrawn** pending re-measurement.
-> - **The fragmentation metric is wrong in three independent ways**: freed
->   bytes stayed in the live denominator, "peak" RSS was sampled after
->   cleanup, and the workload labelled 192-thread runs on one thread.
->   **All fragmentation conclusions are withdrawn**, in both directions —
->   the original worst-in-field finding and the claimed fix.
-> - 8-vCPU points, single-thread latency, and the sustained-load *tail
->   latency* comparison do not depend on the double division and are
->   reported below with their provenance.
->
-> Tracked as P2.1/P2.2 in
-> [the readiness plan](docs/plans/2026-09-21-production-readiness.md).
-> Reproduce on your own target rather than trusting any table here.
+### Two libumem paths, two very different results
 
-### The 8-allocator shootout
+Every earlier comparison in this repository measured libumem through the
+`umem_alloc()` API (with the benchmark's own size header). The 2026-09-23
+comparison also measured the `LD_PRELOAD=libumem_malloc.so` drop-in path, and
+they are not the same thing:
 
-[`docs/results/2026-09-08-allocator-shootout.md`](docs/results/2026-09-08-allocator-shootout.md)
-compares umem against **libc, jemalloc, tcmalloc, mimalloc, snmalloc,
-scudo, and rpmalloc** on x86_64 and aarch64 at 8 and 192 vCPU, plus musl
-(Alpine) and illumos (umem's own lineage) — ~9,600 benchmark runs including
-3-minute *sustained* 192-thread loads. Read it with the caveat box above:
-its 8-vCPU and latency findings stand, its 192-thread scaling and
-fragmentation findings do not.
-
-**What still stands:**
-
-| Finding | Detail |
-|---|---|
-| illumos (its own lineage) | Up to **4×** faster than illumos's own libc malloc under concurrency (16.4M vs 4.1M ops/s at 4 threads); dramatically tighter tail latency. The clearest win in the report — and the most meaningful comparison, since illumos ships the allocator umem re-implements. Low thread count, so unaffected by the budget defect. |
-| 8-vCPU multi-thread scaling | Beats glibc by 25–30% on x86_64 through 8 threads; roughly ties glibc on aarch64. |
-| Single-thread latency | Competitive but not a winner anywhere against x86_64/aarch64 glibc; mimalloc is fastest almost everywhere. |
-
-**What is withdrawn pending re-measurement:**
-
-| Withdrawn | Why |
-|---|---|
-| 192-thread `multi` scaling ("10–25% below the top allocators", falloff percentages) | Measured under the double-divided budget: ~52k ops in ~3.8 ms, CoV >27%. Not enough work to conclude anything. |
-| Fragmentation, original finding ("worst-in-field, ~2.3× the next-worst") | The ratio's denominator counted freed bytes; "peak" RSS was post-cleanup; the workload is single-threaded. |
-| Fragmentation, claimed v2.7.0 fix ("4.19→2.70 / 4.12→2.63, in the competitive 2.2-2.5 range") | Same broken metric — and 2.63-2.70 is not inside 2.2-2.5 in any case. The `umem_max_ncpus` doubling bug behind it was real and is fixed; its effect on fragmentation is unmeasured. |
-| Short-burst `prodcons` falloff win (x86_64) | Falloff is computed across the same high-thread-count points as the scaling numbers. |
-
-**Sustained tail latency — improved, narrowly measured.** The shootout found
-umem worst-or-tied-worst p999 at 192 threads sustained for 3 minutes
-(157us; jemalloc 24.6us). The mechanism was identified in the code, not just
-correlated: the depot's cross-CPU steal scan blocked on a mutex while
-holding the caller's own per-CPU lock. Replacing that with the existing
-non-blocking trylock took p999 from 156.7-163.2us to 83.8-92.6us,
-independently re-verified at 86,974ns on a from-scratch build — on x86_64
-`c7i.metal-48xl`, with the budget defect present in the harness. Sustained
-p999 is a tail-latency distribution rather than a throughput count, so it is
-less sensitive to the total-operations error than the scaling numbers are,
-but the exact percentage should be treated as provisional and it was not
-re-measured on aarch64. It does not reach
-jemalloc/mimalloc/rpmalloc's tens-of-microseconds tier; the residual gap has
-been *attributed* to the inert rseq reload path, which is a hypothesis
-nobody has isolated, not a finding. See
-[`docs/results/2026-09-09-sustained-depot-contention-diagnosis.md`](docs/results/2026-09-09-sustained-depot-contention-diagnosis.md).
-
-**Verdict, as narrowly as the evidence allows:** umem clearly outperforms
-the traditional coarse-locked malloc it descends from under concurrency
-(strongest on illumos, its own lineage), and holds its own against modern
-allocators on 8-vCPU boxes. Its sustained 192-thread tail latency improved
-substantially in v2.7.0 and still trails the purpose-built
-high-concurrency allocators. How it scales at 192 threads, and what its
-memory overhead is, are currently **unknown** — the measurements that
-claimed to answer both were invalid.
-
-### Prior umem-vs-glibc-only baselines (superseded, kept for provenance)
-
-**x86_64** (`c7i.metal-48xl`, 192 vCPU, performance governor). Full data:
-[`docs/results/2026-07-23-baseline.md`](docs/results/2026-07-23-baseline.md),
-[`docs/results/2026-07-23-d2-fix-validation.md`](docs/results/2026-07-23-d2-fix-validation.md).
-
-| Workload | umem vs glibc | Notes |
+| `c7i.metal-48xl`, 192 vCPU, `multi` 16:64, 20M ops | Mops at 1 thread | at 192 threads |
 |---|---|---|
-| Single-thread (16–64 B) | ~1.2× throughput | p50 ~21 ns vs ~16 ns (glibc) |
-| `multi`, 8 threads | 33.8 Mops/s | scales past 4 threads after the 2.1.0 PTC fix; p999 sub-µs |
-| `multi`, 192 threads | 320 Mops/s | p999 ~299 ns (was 1.83 ms pre-fix) |
-| `prodcons`, 4 threads | ~245% of glibc | ~10× lower p99 (cross-thread handoff) |
+| glibc 2.34 malloc | 6.2 | 431 |
+| best competitor (jemalloc 5.2.1 / mimalloc 3.x) | 8.1 | 517 |
+| **libumem, `umem_alloc` API** (what `-lumem` callers get) | 6.7 | **394** |
+| **libumem, `LD_PRELOAD` at `v3.1.0`** (what drop-in users got) | 3.0 | **0.82** |
+| libumem, `LD_PRELOAD` at `a74065e` (post-v3.1.0) | 6.1 | **314** |
 
-**aarch64** (`c8g.metal-48xl` Graviton4, 192 vCPU, same harness). Full data:
-[`docs/results/2026-09-08-aarch64-baseline.md`](docs/results/2026-09-08-aarch64-baseline.md).
+The `v3.1.0` interposer took a **process-global mutex on every `free()`**
+(`malloc_interpose.c`, `is_libc_pointer()`: lock + 512-slot scan of a table
+that is empty for the entire steady-state life of every process), so the
+drop-in path scaled *negatively* with threads: 500x slower than the allocator
+underneath at 192 threads, and 2x slower even at one thread. Fixed in
+`a74065e`; the A/B on the same box, with a +/-3.5 % null control at 192
+threads, shows **0.79 -> 314 Mops (396x)**. If you use libumem as a drop-in
+malloc, you need that fix. The residual ~20 % between the fixed interposer
+and the API is per-call validation cost (`process_free()` header decode and
+ownership checks) and is tracked as P8.3.
 
-| Workload | umem vs glibc | Notes |
-|---|---|---|
-| Single-thread (64–256 B) | ~1.03–1.06× throughput | p50 ~36 ns vs ~35 ns (glibc) — smaller latency gap than x86_64's ~1.3× |
-| `multi` (same-size-class 160 B), 8 threads | 49.5 Mops/s | ~99% of glibc; p999 39 ns |
-| `multi` (same-size-class 160 B), 192 threads | 457.5 Mops/s | ~99% of glibc; p999 43 ns (flat — no cliff at any thread count measured) |
-| `prodcons`, 4 threads | ~120% of glibc | mixed across thread counts (49–120%); does **not** reproduce x86_64's decisive ~245%/10×-lower-p99 win |
+### What the API path does, against the field (null-controlled)
 
-These isolated umem-vs-glibc baselines were taken with the same harness as
-the shootout, so their 192-thread rows carry the same double-divided-budget
-defect and are withdrawn on the same grounds. The single-thread and
-8-thread rows are unaffected. Both umem and glibc were measured under the
-identical (wrong) budget, so the *relative* 192-thread ratios may well
-survive re-measurement — but "may well" is not evidence, and the absolute
-Mops/s figures at that thread count are not meaningful.
+- **Single-thread: at or above glibc everywhere** (0.97-1.22x, all four
+  boxes, all four size ranges), within 3-13 % of the best allocator at each
+  point against a +/-2-5 % resolution. Not the fastest anywhere; never the
+  slowest.
+- **`multi` scaling to 192 threads is within noise of glibc** on aarch64
+  metal (0.87-1.43x across sizes and thread counts, null sd 13 %) and
+  **8-24 % behind the best allocator on x86_64 metal** at 128-192 threads
+  (null sd 8.5 %). Mechanism not yet established (P8.4).
+- **`multi` at 1k:4k object sizes collapses under threads: 0.06-0.10x
+  glibc at 64+ threads on both metals**, p999 32-68 us, deterministic
+  (P8.2). Objects above 2048 bytes bypass the per-thread cache
+  (`umem_ptc_maxsize`) and hit the per-CPU lock with 31-round magazines. This
+  is the largest fixable gap in the allocator itself.
+- **`frag` (grow a live set, free half at random, repeat): 1.2-2.3x glibc
+  but 20-33 % behind jemalloc/mimalloc/snmalloc/rpmalloc at 16..1024 B,**
+  at every thread count including one, and **2-3x behind all of them
+  including glibc under sustained load** (8.7 vs 19-22 Mops at 8 threads,
+  p999 22 us vs 0.3-2.2 us). The slab layer serves one object per
+  `cache_lock` acquisition and the depot trylock fails on more than half of
+  attempts at 8 threads (P8.5).
+- **`prodcons` p999 (cross-thread handoff) is umem's best number:** 0.9 us
+  sustained at 8 threads, second only to rpmalloc, 5-13x better than
+  glibc/scudo/mimalloc; the 2026-09-09 depot trylock fix holds at HEAD.
+  `prodcons` *throughput* on 8-vCPU boxes is bimodal (identical processes
+  land in a 4 or a 13 Mops regime; the null control reached +244 %) and is
+  not reported.
+- **Memory: umem holds 1.55-1.6x its live set at 64..256 B and 2.6x at
+  16..63 B; glibc holds 1.25x / 1.85x**, jemalloc/mimalloc 1.2x / 1.65x,
+  scudo (the other headered size-class allocator) 1.5x / 2.6x. RSS at the
+  live-set peak and `VmHWM` agree to 1 %. About a third of the 16-63 B
+  overhead is the size header pushing requests one class up; the rest is warm
+  slab/magazine retention. This is the slab-allocator trade and is accepted
+  as such.
+- **`alloc_failures` was zero on every row** of every matrix except the
+  deliberate ceiling probe, which reproduced the ~5 GB `vm.max_map_count`
+  ceiling at 4.45-4.55 GB on 16 GiB boxes (6.2-6.9M failures out of 12M
+  attempts) at `f2a8267`. `3f2e67c` landed after the run and is unmeasured
+  here.
 
-Numbers vary substantially with workload and hardware; reproduce with the
-harness on your own target rather than trusting a single table.
+Every one of these has a table with the null control beside it in the
+results document, and every gap in the "fixable" category has a task with the
+mechanism and a fix approach in Phase 8 of
+[the readiness plan](docs/plans/2026-09-21-production-readiness.md).
+
+### Provenance of older numbers on this page
+
+- The **2026-09-08 8-allocator shootout**
+  ([`docs/results/2026-09-08-allocator-shootout.md`](docs/results/2026-09-08-allocator-shootout.md))
+  measured only the API path. Its 8-vCPU and single-thread API findings are
+  consistent with the 2026-09-23 run; its "holds its own against modern
+  allocators on 8-vCPU boxes" was **not true of the drop-in path**, which it
+  never measured. Its 192-thread scaling and fragmentation findings remain
+  withdrawn (P2.1/P2.2). The illumos-lineage result (4x its own libc under
+  concurrency) is unaffected and stands.
+- The **2026-07-23 / 2026-09-08 umem-vs-glibc baselines**
+  ([x86_64](docs/results/2026-07-23-baseline.md),
+  [aarch64](docs/results/2026-09-08-aarch64-baseline.md)) are superseded by
+  the 2026-09-23 run for every point they cover; their 192-thread rows carry
+  the double-divided budget and were withdrawn.
+- The **sustained p999 157 -> 84-93 us** figure for the depot trylock fix
+  (x86_64 metal, budget defect present) is superseded by the per-window,
+  matched-work sustained tables in the 2026-09-23 document.
+
+Numbers vary with workload and hardware; reproduce with
+`scripts/ec2/allocator_comparison.sh` on your own target rather than trusting
+a table.
 
 ---
 
