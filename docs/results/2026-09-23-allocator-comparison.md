@@ -217,9 +217,57 @@ jemalloc/mimalloc -- this is the cross-thread handoff path the depot exists
 for, and it is doing its job. `umem-preload` p999 is 10-30x umem's on the
 same points (the §5.1 lock).
 
-**Metal:**
+**Metal (192 vCPU), 9.6M ops per point divided over t/2 producers, 2
+replicates x median-of-2 runs.** Null (umem vs umem@null) on this workload:
+x86_64 n=48 median -0.1 %, **sd 11.9 %, |delta| p90 17.5 %**, range
+-28..+36 %; aarch64 sd 14.9 %, range -28..+52 %. Bimodality was rarer than
+on 8 vCPU (flagged points: 9 of 48 per box, spread across allocators) but
+the resolution is still +/-15-20 %, so only the largest gaps below mean
+anything.
 
-<!-- PRODCONS-METAL -->
+Throughput (Mops); "umem vs best" bold only where it exceeds the point's
+null and 20 %:
+
+| box | size | t | libc | **umem** | umem-preload | jemalloc | tcmalloc | mimalloc | snmalloc | scudo | rpmalloc | umem/libc | umem vs best | null |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| c7i.metal | 16:64 | 8 | 11.4 | 12.5 | 3.9 | 11.7 | 8.7 | 12.0 | **14.2** | 6.2 | 13.9 | 1.10 | -12% | -7.2% |
+| c7i.metal | 16:64 | 64 | 4.6 | 4.2 | 1.9 | 4.7 | 4.1 | 4.9 | **5.0** | 2.7 | 4.8 | 0.91 | -16% | +1.7% |
+| c7i.metal | 16:64 | 192 | 2.1 | 1.8 | 1.5 | 1.7 | 2.1 | **2.8** | 2.4 | 2.6 | 2.3 | 0.87 | **-35%** | -3.2% |
+| c7i.metal | 64:256 | 8 | 7.0 | 10.9 | 3.6 | 12.3 | 11.1 | 13.7 | 13.2 | 5.9 | **14.3** | 1.55 | **-24%** | +2.5% |
+| c7i.metal | 64:256 | 64 | 4.4 | 4.1 | 1.9 | 4.8 | 4.4 | 4.5 | **5.0** | 2.8 | 4.7 | 0.93 | -18% | +6.6% |
+| c7i.metal | 64:256 | 192 | 1.7 | 1.7 | 1.4 | 1.8 | 1.9 | 2.2 | 2.0 | **2.5** | 2.3 | 0.99 | **-31%** | -6.6% |
+| c7i.metal | 256:1024 | 8 | 5.2 | 11.1 | 4.1 | 10.9 | 10.2 | 10.2 | **13.7** | 4.5 | 10.0 | 2.15 | -19% | +4.1% |
+| c7i.metal | 256:1024 | 192 | 1.6 | 1.7 | 1.5 | 1.7 | 1.7 | 1.8 | 1.9 | 1.4 | **2.0** | 1.05 | -17% | +0.0% |
+| c7i.metal | 1k:4k | 8 | 5.1 | 10.1 | 4.0 | 10.7 | 9.9 | 11.3 | 11.7 | 4.1 | **13.3** | 1.97 | **-24%** | +0.0% |
+| c7i.metal | 1k:4k | 192 | 1.6 | 1.7 | 1.6 | 1.8 | **2.1** | 1.9 | 1.8 | 1.6 | 1.8 | 1.03 | -20% | -2.2% |
+| c8g.metal | 16:64 | 8 | 12.9 | 9.4 | 3.7 | 12.7 | 12.3 | 13.3 | 10.6 | 8.3 | **13.4** | 0.73 | **-30%** | -9.8% |
+| c8g.metal | 16:64 | 32 | 17.5 | 16.8 | 3.3 | 17.9 | 13.3 | 17.8 | **19.8** | 7.4 | 17.6 | 0.96 | -15% | -0.7% |
+| c8g.metal | 16:64 | 192 | 2.4 | 2.7 | 1.8 | 2.9 | 2.0 | **3.3** | 2.5 | 1.9 | 2.5 | 1.15 | -16% | -9.2% |
+| c8g.metal | 64:256 | 8 | 11.2 | 11.4 | 3.7 | 15.5 | **16.6** | 11.4 | 9.7 | 8.2 | 8.1 | 1.02 | **-31%** | -8.8% |
+| c8g.metal | 64:256 | 128 | 6.1 | 4.4 | 2.1 | 5.1 | 4.4 | 3.5 | 4.0 | 2.4 | 3.8 | 0.73 | **-27%** vs libc | -3.5% |
+| c8g.metal | 256:1024 | 8 | 10.6 | 10.6 | 3.5 | 8.8 | **16.6** | 10.6 | 11.8 | 5.7 | 12.2 | 1.00 | **-36%** | -3.3% |
+| c8g.metal | 1k:4k | 8 | 12.1 | 10.3 | 3.8 | 12.0 | **16.2** | 13.1 | 12.4 | 5.1 | 11.4 | 0.86 | **-36%** | -11.0% |
+
+(All 24 thread/size points per box are in the raw data; rows shown are the
+ones where a gap clears the band or where all allocators converge.)
+
+Reading: `prodcons` is a workload the ring buffer, not the allocator,
+dominates above ~32 threads -- every allocator converges to 1.4-2.8 Mops at
+192 threads on both boxes, glibc included. umem is inside the band at most
+points; the points that clear it are -24..-36 % behind the leader (usually
+rpmalloc, snmalloc or tcmalloc, never the same one twice) at t=8, where umem
+is also 1.5-2.2x **ahead of glibc**. There is no single mechanism to name
+here; this is the depot's cross-CPU handoff cost against allocators whose
+remote free is a lock-free push to the owning thread's list.
+
+**p999 (ns), `prodcons`, metal.** The API arm's tail is 2-3x better than
+glibc's at 8-64 threads (x86_64: 3.3-5.8 us vs 1.6-28.9 us) and in the
+jemalloc/mimalloc tier there; at 128-192 threads it is 38-210 us against
+jemalloc's 14-27 us, mimalloc's 17-35 us and rpmalloc's 9-19 us -- the
+"tens-of-microseconds tier" the README said umem did not reach is still
+not reached at 192 threads on `prodcons`. The interposer arm's p999 is
+**1.1-1.4 ms** at 128-192 threads on x86_64 (the §5.1 lock convoy, exactly
+as predicted), 15-50x the API arm's.
 
 ### 4.4 `frag` (grow a live pool, free ~50% at random, repeat) and the ceiling probe
 
