@@ -1011,6 +1011,117 @@ the walk holds -- either publish via an RCU-style pointer swap, or have
 unlocked (the per-cache work already takes `cache_lock`). Regression:
 `probe_caches 50000` worst create < 5 ms and VMAs after destroy < 200.
 
+### P6.3 Thread count: 16,000 threads -- FINE on capacity; HIGH on exit drain and per-thread footprint
+`umem_ptc.h:107-123` (`umem_ptc_bin_t` = 128 slots x 8 B, `umem_ptc_t` =
+28 bins + 28 magazines = **30.9 KB**, allocated per thread by
+`umem_ptc_get()`, `umem_ptc.c:285`); `umem_ptc.c:539-611`
+(`umem_ptc_destroy`: 28 x `umem_ptc_bin_flush_all` -> `_umem_cache_free` per
+object, plus `umem_ptc_mag_flush_all` -> 56 depot `ml_lock` acquisitions);
+`umem.c:5798-5818` (`umem_max_ncpus` -> 256 on 192 CPUs, `umem_cpu_mask`)
+
+Provenance: `a2548b8`, `c7i.metal-48xl` (192 vCPU, `umem_max_ncpus` = 256,
+377 GB), `probe_threads <t> 1000`: each thread does 1,000 alloc/free across
+8 size classes (so its PTC and per-thread magazines are populated), parks on a
+barrier while main samples RSS, then all exit at once while main times its own
+allocations. 256 KiB stacks. glibc arm is the same binary against libc.
+
+| threads | umem RSS/thread | glibc RSS/thread | umem exit drain (all threads) | glibc | main's worst alloc during the exit storm: umem / glibc |
+|---:|---:|---:|---:|---:|---|
+| 1,000 | **62.2 KB** | 20.6 KB | 32 ms (32 us/thr) | 11 ms (10.5 us/thr) | 64 us / 39 us |
+| 4,000 | **56.8 KB** | 19.4 KB | **469 ms (117 us/thr)** | 45 ms (11 us/thr) | **914 us** / 56 us |
+| 16,000 | **56.5 KB** | 17.5 KB | **6.77 s (423 us/thr)** | 185 ms (11.6 us/thr) | **36.6 ms** / 1.0 ms |
+
+**Fine:** no cap, no wrap, no failure. `max_cpu_seen` reached 191 on every
+run, i.e. `sched_getcpu()` returned every CPU and none exceeded
+`umem_max_ncpus` (256, the power-of-two round-up of 192); the `CPU(mask)`
+index cannot wrap on this box. `nthreads >> ncpus` (16,000 threads on 192
+CPUs) does not cap anything. Spawn cost is 4x glibc (1.54 s vs 0.40 s for
+16k) but linear.
+
+**Per-thread footprint is 3x glibc and it is the PTC struct.** 56.5 KB per
+idle thread against glibc's 17.5 KB (which is mostly the 256 KiB stack's
+touched pages plus tcache's 576 B). `umem_ptc_t` is 30.9 KB: 28 bins each
+sized for the *maximum* capacity of 128 slots (`PTC_NSLOTS`) even though bins
+13-27 use 64 or 32 (`PTC_NSLOTS_MEDIUM`/`_LARGE`), so 20 KB of the 31 is
+padding that is never indexed. The rest of the 56 KB is the 8 populated bins'
+retained objects (up to 128 x 64 B ... 32 x 2 KB) and the two per-thread
+magazines per bin. 16,000 threads x 39 KB of umem-only overhead = 620 MB
+resident for idle threads; a 4,000-thread server carries 150 MB. `smaps` of
+the parked 4,000-thread process: one 335 MB anonymous mapping holds it all
+(the `umem_default` heap), nothing else above 2 MB. MEDIUM-HIGH: it is a
+constant, not a cliff, but 3x glibc for idle threads is what a thread-pool
+user notices first.
+
+**Exit drain is super-linear and stalls other threads: 32 us/thread at 1k,
+117 us at 4k, 423 us at 16k; glibc flat at 11 us.** Total 6.77 s for 16,000
+exits, and during it main's `umem_alloc` saw a **36.6 ms** worst (glibc 1.0
+ms). `umem_ptc_destroy` returns every retained object one at a time through
+`_umem_cache_free` (up to ~600 objects per thread across the 8 populated
+bins), each taking the per-CPU `cc_lock` for that cache -- so 16,000 exiting
+threads on 192 CPUs contend for 8 caches x 256 `cc_lock`s and the depot
+`ml_lock`s behind them, and the contention grows with exiting-thread count.
+The yield every 64 objects (`umem_ptc.c:~595`) bounds each hold but not the
+queue. glibc's `tcache` free-at-exit is a handful of pointer stores into
+per-thread bins that the arena reclaims lazily. HIGH for anything that
+creates and destroys threads at scale (per-request threads, thread-pool
+resize); the 36 ms stall lands on unrelated allocating threads.
+
+**Required fix.** (1) Size `umem_ptc_bin_t` per bin, not at `PTC_NSLOTS`
+max: either a flexible layout with the 28 bins packed at their real
+capacities (128/64/32 -> ~11 KB instead of 31 KB), or drop `PTC_NSLOTS` to
+64 for all bins and measure the hit rate. Regression: `probe_threads 4000`
+umem RSS/thread < 35 KB. (2) Bulk-return at exit: hand each bin's slots to
+the depot as a *magazine* (they already are one in shape -- an array of
+rounds) instead of `_umem_cache_free` per object, taking `ml_lock` once per
+bin instead of `cc_lock` once per object. Regression: `probe_threads 16000`
+exit drain < 20 us/thread and main's worst alloc during it < 2 ms.
+
+### P6.4b Cache count on 192 CPUs: 117 KB per cache, 415 ms creates, 3 s fork -- HIGH
+Same mechanisms as P6.4; provenance `a2548b8`, `c7i.metal-48xl`,
+`umem_max_ncpus` = 256.
+
+| | 10,000 caches | 50,000 caches | 8-CPU (P6.4, arm) at 50k |
+|---|---:|---:|---:|
+| create wall | 2.14 s (214 us/cache) | **135.8 s (2.7 ms/cache)** | 36 s |
+| worst single create | **45 ms** | **415 ms** | 40 ms |
+| RSS per cache | **116.8 KB** | 116.8 KB | 18.6 KB |
+| RSS at 50k | -- | **5.7 GB** | 907 MB |
+| worst `umem_alloc` over 25 s | 3.1 ms (2 stalls > 1 ms) | 0.1 ms | 0.0 ms |
+| create/destroy cycle worst | 90 ms | **430 ms** | 42 ms |
+| `fork()` | **605-718 ms** | **2.99-3.03 s** | 80 ms (10k) |
+| VMAs after destroying all | 10,431 | **51,803** | 29,159 |
+| RSS after destroying all | 371 MB | **1.81 GB** | 131 MB |
+
+Everything `umem_max_ncpus`-proportional scales 32x from 8 to 256 CPUs:
+descriptor `UMEM_CACHE_SIZE(256)` = 256 x 128 B `cache_cpu` + header = 33 KB;
+two depot arrays of 256 x 64 B = 16 KB each; `cache_rseq` 192 x 64 B = 12
+KB; total **~80 KB of the 117 KB is per-CPU state, for a cache with one live
+object**. 50,000 caches cost 5.7 GB. Creating one takes 3 x 256 `mutex_init`
++ 3 `mmap`s, and the 415 ms worst is the create waiting on
+`umem_cache_lock` while `umem_cache_applyall` walks 50k caches each with 256
+`cc_lock`s worth of `umem_depot_ws_update`. `fork()` takes 771 mutexes per
+cache (`umem_lockup_cache`: 256 `cc_lock` + 2 + 512 depot + 1) = **38.5M
+lock/unlock pairs, 3.0 s, per fork at 50k caches**; at 10k it is 0.6-0.7 s.
+And after destroying all 50k, **51,803 VMAs remain (79 % of
+`vm.max_map_count`) and 1.8 GB of RSS** -- the same destroy leak as P6.4,
+scaled: the three per-cache `munmap`s punch holes in the merged region and
+`umem_cache_arena` keeps the descriptor spans.
+
+Allocation itself is still unaffected (0.1 ms worst at 50k). glibc: not
+applicable.
+
+**Required fix:** P6.4 (1) and (2), plus: (3) size `cache_cpu[]`,
+`cache_depot_*[]` and `cache_rseq[]` by *online* CPUs (192) rather than the
+power-of-two round-up (256) -- the mask indexing needs a power of two only
+if `CPU(mask)` uses `&`; a modulo or a 192-entry indirection table costs
+nothing on the fast path and saves 25 % of per-cache state. (4) Make
+`umem_lockup` per-cache cost independent of `ncpus`: mark the cache "forking"
+under `cache_lock` and have the per-CPU paths check it, or take only the
+depot locks and re-init `cc_lock`s in the child (they are `USYNC_THREAD`
+mutexes over per-CPU state the child owns outright). Regression:
+`probe_caches 50000 --fork` on 192 CPUs: create worst < 20 ms, fork < 200
+ms, VMAs after destroy < 500.
+
 ### P6.6 Fork with a 4 GB heap -- FINE
 `umem_fork.c:187-228` (`umem_lockup`: walks every cache, `ncpus + 2 * depot
 + 3` mutexes each); `umem_fork.c:230-330` (`umem_do_release`)
