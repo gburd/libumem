@@ -98,11 +98,17 @@ if [[ "$SKIP_INSTALL" != 1 ]]; then
 fi
 
 # ---- build -----------------------------------------------------------------
+# SKIP_BUILD=1: resume in a tree that already holds the build the earlier
+# phases measured, so binary identity is unchanged across phases.
+if [[ "${SKIP_BUILD:-0}" == 1 && -x test/bench/.libs/bench_main && -x test/bench/.libs/bench_contention ]]; then
+    echo "== build: SKIPPED (resume; using existing binaries)"
+else
 echo "== build"
 ./scripts/ec2/clean-regen.sh > /tmp/regen.log 2>&1 || { echo "clean-regen FAILED"; tail -20 /tmp/regen.log; exit 1; }
 ./configure > /tmp/configure.log 2>&1 || { echo "configure FAILED"; tail -20 /tmp/configure.log; exit 1; }
 make -j"$NCPU" > /tmp/make.log 2>&1 || { echo "make FAILED"; tail -40 /tmp/make.log; exit 1; }
 make -j"$NCPU" test/bench/bench_main test/bench/bench_contention > /tmp/make2.log 2>&1 || { echo "make bench FAILED"; tail -40 /tmp/make2.log; exit 1; }
+fi
 ls -la .libs/libumem.so.*.*.* .libs/libumem_malloc.so.*.*.* test/bench/.libs/bench_main
 
 ARCH=$(uname -m)
