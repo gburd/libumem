@@ -1122,6 +1122,59 @@ mutexes over per-CPU state the child owns outright). Regression:
 `probe_caches 50000 --fork` on 192 CPUs: create worst < 20 ms, fork < 200
 ms, VMAs after destroy < 500.
 
+### P6.5 Fragmentation over time: 18 minutes of repaired `frag` churn -- FINE (plateaus); MEDIUM on the level
+`test/bench/bench_framework.c:965-1071` (`frag_worker`, P2.2 live-byte
+accounting: `peak_rss / live_bytes_at_peak` sampled together); `umem.c:1903`
+(empty slab retained `SLAB_DIRTY` for reclaim rather than destroyed)
+
+Provenance: `a2548b8`, `c7i.2xlarge`, `bench_main -a <umem|libc> -w frag -t
+8 -n 4000000 -s 64:4096 -c -A -r <N>` -- 1,800 consecutive umem windows (1,097
+s of workload, 18.3 min) and 984 libc windows (1,124 s, 18.7 min), each
+window a full fill / free-half / refill cycle over a ~1.9 GB live pool with
+a fresh RSS/live pair. Asked for 30 min; each window is ~0.6 s for umem and
+the run was sized at 1,800 windows, so it came out at 18. Both arms ran
+long enough to show the shape. `frag30` job, `/tmp/frag_{umem,libc}.csv` on
+the box (not fetched: 1 MB each; the summaries below are from `awk` over
+the full series).
+
+| | umem | glibc |
+|---|---:|---:|
+| RSS at live-peak, window 0 | 2,221 MB | 1,951 MB |
+| RSS at live-peak, window 150 | 2,276 MB | 1,968 MB |
+| RSS at live-peak, window 600 | 2,283 MB | 1,953 MB |
+| RSS at live-peak, window 1,650 / 900 | 2,287 MB | 1,814 MB |
+| max RSS over the run | **2,287 MB** | 2,023 MB |
+| RSS drift, first -> last window | **+50 MB (+2.2 %), all of it in the first 150 windows, then +11 MB over the next 1,650** | -- (tracks the live set, 1,814-2,023) |
+| frag ratio (RSS / live at peak) | 1.13 -> 1.20 -> 1.29 -> 1.31-1.37 | **1.017-1.018, flat** |
+| live bytes at peak | 1,958 -> 1,901 -> 1,772 -> 1,670-1,746 MB | 1,918 -> 1,782-1,934 MB |
+| window time | 0.59-0.64 s | 1.12-1.26 s |
+| p99 / p999 alloc latency (ns) | 590-670 / 850-970 | **9,500-10,800 / 13,000-14,600** |
+| alloc failures | 0 | 0 |
+
+**FINE: RSS plateaus.** umem's RSS at the live-set peak rises 50 MB over the
+first 150 windows (90 s) as the slab pool and depot fill out, and then
+**+11 MB over the following 1,650 windows (17 min)** -- 0.6 %/17 min, i.e. it
+has stopped. There is no unbounded growth. glibc's RSS tracks its live set
+down and up (1,814-2,023 MB) because it trims the top of the heap.
+
+**MEDIUM: the level.** umem's fragmentation *ratio* climbs from 1.13 to
+~1.33 while RSS is flat, because the **live set shrinks** (1,958 -> 1,670
+MB) as the random-half frees leave more holes across the run while RSS
+stays where the peak put it: retained empty slabs (`SLAB_DIRTY`, kept for
+the reclaim delay) and depot magazines hold the pages. So the ratio's rise
+is the denominator, not the numerator. Against glibc at 1.018 flat, umem
+holds ~330 MB (17 %) more than its live bytes at the same instant. That is
+the cost of the retention policy (`umem_reclaim_delay` 30 s, and see P6.8
+for why the reclaim does not fire here either), not a leak. The 2x latency
+and 2x window-time advantage over glibc on this workload is the other side
+of the same policy.
+
+**Required fix:** none for correctness. P6.8's reclaim fix would let the
+ratio settle nearer glibc's on a long-lived process; whether to trade the
+latency for it is a policy question, not a defect. Record the 18-minute
+plateau as the baseline: a future run whose RSS at window 1,650 exceeds
+~2,400 MB on this workload is a regression.
+
 ### P6.6 Fork with a 4 GB heap -- FINE
 `umem_fork.c:187-228` (`umem_lockup`: walks every cache, `ncpus + 2 * depot
 + 3` mutexes each); `umem_fork.c:230-330` (`umem_do_release`)
