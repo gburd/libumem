@@ -713,6 +713,18 @@ typedef struct umem_cpu {
  * Solaris too, stay one-per-slab and do not balloon).  16 and 64 KiB are
  * exactly the Solaris figures for a 4 KiB chunk.
  *
+ * PORTABILITY: this is deliberately NOT gated on the platform, and it does not
+ * need to be.  It is arithmetically a no-op wherever the heap quantum is
+ * already 64 KiB (illumos/Solaris via MAP_ALIGN): there, best-fit yields
+ * >= 16 objects for every chunk small enough for the floor to matter, and for
+ * larger chunks the ceiling equals the slab size best-fit already chose --
+ * verified for chunks 64 B through 64 KiB, every one unchanged.  The floor
+ * only changes behaviour where the quantum is smaller than 64 KiB, which is
+ * exactly the case it exists to correct.  A third platform with some other
+ * quantum gets the same rule applied to its own numbers, which is the intent:
+ * the invariant is "at least 16 objects per slab up to 64 KiB", not "do
+ * something Linux-specific".
+ *
  * Cost: a hashed cache whose objects are 1-4 KiB now reserves a 16-64 KiB slab
  * on first use instead of one page.  That is more address space held per
  * lightly-used cache; it is NOT more RSS until the pages are touched, since

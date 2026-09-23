@@ -662,6 +662,15 @@ test_unit_test_hash_partition_SOURCES = test/unit/test_hash_partition.c \
 	umem_hash_partition.c umem_hash_partition.h
 test_unit_test_hash_partition_CPPFLAGS = -I$(srcdir)
 test_unit_test_hash_partition_LDADD =
+
+# Slab-sizing floor (the ~5GB heap-ceiling fix).  Checks the floor applies at a
+# 4K quantum AND is a no-op at a 64K quantum -- the illumos case, simulated with
+# a caller-supplied arena -- so a Linux-only change cannot silently alter illumos
+# slab sizes without failing here on x86_64 CI first.
+noinst_PROGRAMS += test/unit/test_slab_floor
+test_unit_test_slab_floor_SOURCES = test/unit/test_slab_floor.c
+test_unit_test_slab_floor_LDADD = libumem.la
+test_unit_test_slab_floor_CPPFLAGS = -I$(srcdir)
 test_unit_test_hash_partition_LDFLAGS = -lm
 
 # P2.2/P2.5 diagnostic: why does umem_alloc return NULL under the 192-thread
@@ -788,6 +797,7 @@ TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_aligned_contracts \
 	test/unit/test_hash_partition \
+	test/unit/test_slab_floor \
 	test/unit/test_hook_contracts \
 	test/unit/test_inspect_contracts \
 	test/stress/interpose_regress.sh \
