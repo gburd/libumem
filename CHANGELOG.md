@@ -75,6 +75,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **P1.3c's exact ledger counted stale pops as lost objects.** The oracle
+  behind `test_ptc_resize_no_loss_probe` scanned all `cap` slots of a freed
+  magazine shell; the alloc paths pop `mag_round[--rounds]` without clearing
+  the slot, so a once-full magazine carries a tail of stale pointers, and the
+  ledger counted that tail -- 127 or 254 at a time, the size of the real
+  defect. Latent until the update thread ran routinely (resizes are what make
+  a shell stale), then ~1 in 8 runs on x86_64. It counts only owned slots now;
+  discrimination re-verified: with the P1.3c drain disabled it reports exactly
+  127 per shell (635, 1016, 635 over three runs), fixed 0/12.
 - `test_inspect_e2e` walks with `-n 0` (unlimited). It passed at `-n 200` only
   because the whole heap was 74 entries; the walk lists internal metadata
   caches first, so any real process would have shown 200 bufctls and none of
