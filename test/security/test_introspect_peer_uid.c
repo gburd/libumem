@@ -31,9 +31,12 @@
  *      nothing).
  *   3. An unrelated uid is refused.
  *   4. THE PRE-FIX CASE: a peer equal to the REAL uid but NOT the effective
- *      uid is REFUSED.  This is the arm that fails against v3.0.0.
- *   5. The rule does not consult getuid() at all, checked by driving it with
- *      an euid that differs from this process's real uid.
+ *      uid is REFUSED.  This is the arm that fails against v3.0.0.  It uses
+ *      the LIVE getuid() as the "real uid", so the pre-fix rule's internal
+ *      getuid() call reproduces the acceptance on any machine rather than only
+ *      on one whose uid matches an invented constant.
+ *   5. The shipped rule genuinely differs from the v3.0.0 expression, checked
+ *      against a copy of it kept in this file.
  *
  * PRE-FIX DEMONSTRATION: build this against v3.0.0's umem_introspect.c and
  * arm 4 fails -- the old expression accepts cred.uid == getuid().  (The
@@ -91,11 +94,22 @@ prefix_rule(uid_t peer, uid_t ruid, uid_t euid)
 int
 main(void)
 {
-	const uid_t euid = 4242;	/* pretend effective uid */
-	const uid_t ruid = 1000;	/* pretend real uid (the invoker) */
-	const uid_t other = 31337;
+	/*
+	 * The REAL uid is this process's own, and the effective uid is made
+	 * deliberately different -- which is the setuid situation.  Using the
+	 * live getuid() rather than an invented constant is what makes arm 4
+	 * discriminating on any machine: the pre-fix rule consulted getuid()
+	 * internally, so an invented "real uid" would only reproduce the
+	 * pre-fix acceptance on a box where that constant happened to be the
+	 * real uid.
+	 */
+	const uid_t ruid = getuid();		/* the unprivileged invoker */
+	const uid_t euid = ruid + 1000;		/* what a setuid target runs as */
+	const uid_t other = ruid + 31337;
 
 	printf("P5.7: control-channel peer authorization is euid-based\n");
+	printf("  (real uid %ld, pretending an effective uid of %ld)\n",
+	    (long)ruid, (long)euid);
 
 	/* 1. same euid: allowed. */
 	check(umem_introspect_peer_authorized(euid, euid), 1,
@@ -112,6 +126,7 @@ main(void)
 	/*
 	 * 4. THE P5.7 ARM.  In a setuid target the real uid is the
 	 * unprivileged invoker.  It must not be able to drive the channel.
+	 * This is the arm that fails when the getuid() term is present.
 	 */
 	check(umem_introspect_peer_authorized(ruid, euid), 0,
 	    "the REAL uid of a setuid target is refused (P5.7)");
@@ -128,13 +143,20 @@ main(void)
 	}
 
 	/*
-	 * 6. Vacuity guard.  The arms above use invented uids; make sure the
-	 * function is actually looking at its arguments and not, say, calling
-	 * geteuid() itself.  A real euid of 0 would make arm 3 pass for the
-	 * wrong reason, so assert the refusal holds for a non-root euid too.
+	 * 6. Vacuity guard.  If the function ignored its euid argument and
+	 * called geteuid() itself, arm 1 would fail -- but arm 3 could still
+	 * pass for the wrong reason.  Assert a refusal for a pair unrelated to
+	 * this process, and an acceptance that can ONLY come from the euid
+	 * argument being honoured.
 	 */
-	check(umem_introspect_peer_authorized(getuid() + 1, getuid() + 2), 0,
+	check(umem_introspect_peer_authorized(other, euid + 7), 0,
 	    "vacuity: two uids unrelated to this process still refuse");
+	check(umem_introspect_peer_authorized(euid + 7, euid + 7), 1,
+	    "vacuity: the euid ARGUMENT is what grants access");
+
+	if (ruid == 0)
+		printf("  NOTE: running as root, so arm 4's peer is also root; "
+		    "arm 5 is the load-bearing one here\n");
 
 	printf("\n");
 	if (failures != 0) {
