@@ -232,31 +232,29 @@ main(void)
 
 	if (failed != 0) {
 		/*
-		 * EXPECTED at present: the ceiling is a KNOWN OPEN defect whose
-		 * cause is one page-sized span per allocation in the slab/va
-		 * arena layer, upstream of the mmap backend -- see
-		 * docs/results/2026-09-22-umem-heap-ceiling-vma.md.  Report
-		 * SKIP (77) with the numbers rather than FAIL, so this does not
-		 * red the suite for a defect nobody has fixed yet, and does not
-		 * silently pass either.  Flip this to rc = 1 the moment the
-		 * span sizing is fixed; that is the point of keeping it.
+		 * FIXED (UMEM_MIN_SLAB_OBJECTS in umem_impl.h): hashed caches now
+		 * hold at least 16 objects per slab, so a 4 KiB object no longer
+		 * costs a VMA.  Measured: 2 GB of 4 KiB objects went from 16,283
+		 * VMAs to 75.  This used to return 77 (SKIP) while the defect was
+		 * open; it is now a hard FAIL, because a return of the ceiling is
+		 * a regression.
 		 */
-		printf("SKIP: KNOWN-OPEN heap ceiling -- %llu allocation(s) "
-		    "failed below the %lluMB target (vmas=%ld of %ld). See "
-		    "docs/results/2026-09-22-umem-heap-ceiling-vma.md\n",
+		printf("RESULT: FAIL (%llu allocation(s) failed below the "
+		    "%lluMB target, vmas=%ld of %ld -- the heap ceiling is back; "
+		    "see UMEM_MIN_SLAB_OBJECTS)\n",
 		    failed, TARGET_BYTES / (1024 * 1024), vmas_after, limit);
-		rc = 77;
+		rc = 1;
 	} else if (vmas_after > limit / 2) {
 		/* Same reasoning as above: density is still poor by design. */
 		/*
 		 * We reached the target, but only by coming close to the VMA
-		 * cap -- the density problem is not actually fixed, and a
-		 * slightly larger heap would fail.
+		 * cap -- the density fix has regressed, and a slightly larger heap
+		 * would fail.
 		 */
-		printf("SKIP: KNOWN-OPEN heap ceiling -- reached the target but "
-		    "used %ld of %ld VMAs; address-space density is still "
-		    "poor\n", vmas_after, limit);
-		rc = 77;
+		printf("RESULT: FAIL (reached the target but used %ld of %ld "
+		    "VMAs; address-space density has regressed)\n",
+		    vmas_after, limit);
+		rc = 1;
 	} else {
 		printf("RESULT: PASS (%lluMB allocated with %ld VMAs, %.1f%% "
 		    "of the %ld limit)\n", (ok * CHUNK) / (1024 * 1024),
