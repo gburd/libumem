@@ -439,6 +439,31 @@ glibc does. This touches the allocation hot path, so it needs before/after
 throughput on both architectures — which is why it is scheduled separately from
 the rest of this phase.
 
+**FIXED** (`5c6c342`, v3.1.0 track). Stored form is
+`ptr ^ umem_link_cookie ^ (&slot >> 12)`; cookie from `AT_RANDOM` via
+`getauxval` (no syscall, no allocation — `umem_init()` cannot allocate), mixed
+with a static's load address and the pid. `umem_slab_alloc()` validates the
+demangled link (`UMEM_ALIGN` alignment plus slab containment) and routes
+failures through `umem_error(UMERR_BADADDR)` instead of dereferencing.
+Regression `test/unit/test_freelist_mangle`; pre-fix it SIGABRTs on the attack
+case (the allocator returned the attacker-chosen address, then aborted walking
+the corrupted chain) and reports nothing on the detect case.
+
+The UMF_HASH allocated-address chain is deliberately **not** mangled: those
+bufctls come from `cache_bufctl_cache`, outside any user buffer, where the
+overflow class cannot reach them.
+
+**OPEN follow-up, required before `--enable-introspect` is usable:**
+`umem_introspect.c:228` (`is_allocated()`, the free-list fallback) walks
+`sp->slab_head` and follows `bcp->bc_next` **without demangling**, so it now
+dereferences a mangled value — a wild read. It needs the same
+`UMEM_LINK_DEMANGLE(&bcp->bc_next, bcp->bc_next)` that `umem_inspect.c:316`
+and `:500` received. Not fixed here only because that file belongs to another
+agent's in-flight work; it is not reached by a default build (it is inside
+`#ifdef UMEM_INTROSPECT`, and `test_introspect_contracts` is one of the two
+known `make check` SKIPs), so the default gate is unaffected. Line `:249` in
+the same file is the hash chain and is correctly left plain.
+
 ### P5.5 `errno` erasure fix was not merely incomplete — it was ineffective (MEDIUM)
 `vmem_mmap.c` — `vmem_mmap_alloc()` erases `errno` on failure **twice**, and
 the second erasure sits on the exhaustion path the v3.0.0 fix was written for
