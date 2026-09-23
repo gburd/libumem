@@ -940,6 +940,119 @@ allocations into slab-cached objects with no syscall, and closes the
 slabs would be >= 4 MiB spans. This is the same lever as glibc's dynamic
 mmap threshold, done statically.
 
+### P6.4 Cache count: 50,000 caches -- FINE on allocation stall; MEDIUM on create cost and per-cache footprint
+`umem.c:884-893` (`umem_cache_applyall`, holds `umem_cache_lock` for the
+whole walk); `umem.c:4849` (`csize = UMEM_CACHE_SIZE(umem_max_ncpus)`);
+`umem.c:5124-5135` (two `mmap()`s of `umem_max_ncpus * 64 B` per cache for
+the depot arrays); `umem.c:5165` (one `mmap()` for `cache_rseq`);
+`umem.c:5196` (create takes `umem_cache_lock` to link)
+
+Provenance: `a2548b8`, `c7g.2xlarge` (8 vCPU, `umem_max_ncpus` = 8),
+`probe_caches 10000 --fork` and `probe_caches 50000`. The 192-CPU figures
+are P6.4b below, from `intel-hi`.
+
+| | 10,000 caches | 50,000 caches |
+|---|---:|---:|
+| create wall | 1.21 s (121 us/cache) | **35.98 s (720 us/cache)** |
+| worst single `umem_cache_create` | 3.0 ms | **39.8 ms** |
+| RSS delta | 181 MB | 907 MB |
+| per cache | **18.6 KB** | 18.6 KB |
+| VMAs added | 318 (0.04/cache) | 1,577 (0.03/cache) |
+| worst `umem_alloc` over 25 s (2+ `applyall` passes) | 0.1 ms, 0 stalls > 1 ms | **0.0 ms, 0 stalls** |
+| create/destroy cycle while the walk may run, worst | 8.4 ms | 42.1 ms |
+| destroy all | 0.23 s | 1.16 s |
+| RSS after destroying all | 29.6 MB (from 4.5) | 130.6 MB (from 4.4) |
+| VMAs after destroying all | **5,930** | **29,159** |
+| `fork()` with 10k caches | 80-83 ms (x3) | not run |
+
+**Fine:** the thing item 4 asked about most -- does `umem_cache_applyall`
+holding `umem_cache_lock` across a 50k-cache walk stall allocation -- is
+answered no. The allocation fast path never takes `umem_cache_lock`, and
+`umem_cache_update` takes each cache's own `cache_lock` briefly; 187M probe
+allocations over 25 s with 50k caches saw a 0.0 ms worst. glibc has no cache
+API; the comparison is not applicable and this entry is umem-only.
+
+**Not fine, and growing with count:**
+
+1. **Create cost is super-linear: 121 -> 720 us per cache from 10k to 50k,
+   worst 3 -> 40 ms.** The 40 ms worst matches the `applyall` interval: a
+   create that lands during the update thread's walk waits on
+   `umem_cache_lock` for the whole walk (`umem.c:5196`), and the walk is
+   O(caches) with a `cache_lock` + `cache_full.ml_lock` + reclaim scan each.
+   The steady-state per-cache cost also grows: each create does three
+   `mmap()`s and 3 x `umem_max_ncpus` `mutex_init`s, and `vmem_alloc` from
+   `umem_cache_arena` for a 1.2 KB+ descriptor. So *cache creation* stalls
+   behind the walk even though *allocation* does not. MEDIUM: a program that
+   creates caches at runtime (per-connection, per-tenant) pays 40 ms tails.
+2. **Per-cache footprint is 18.6 KB on an 8-CPU box, and most of it is
+   `umem_max_ncpus`-proportional.** Descriptor `UMEM_CACHE_SIZE(8)` is ~1.2
+   KB + 8 x 128 B `cache_cpu` = 2.2 KB; two depot arrays 8 x 64 B each in
+   their own pages = 8 KB (two `mmap`s, page-rounded); `cache_rseq` 8 x 64 B
+   in its own page = 4 KB; hash table 64 x 8 B = 512 B; one live object's
+   slab 4 KB. **12 KB of the 18.6 KB is three page-rounded `mmap`s holding
+   512 B each.** On 192 CPUs (`umem_max_ncpus` = 256) the descriptor becomes
+   33 KB and the depot arrays 16 KB each -- see P6.4b.
+3. **Destroy leaks VMAs: 5,930 after destroying 10k caches, 29,159 after
+   50k.** Each destroy `munmap`s its three per-cache mappings, which punches
+   holes in whatever the kernel had merged them into (adjacent
+   `MAP_PRIVATE|MAP_ANON` mappings from consecutive `mmap(NULL, ...)` calls
+   do merge, which is why create added only 0.03 VMAs/cache), and the
+   `vmem_free` of the descriptor to `umem_cache_arena` retains the span.
+   29,159 VMAs is 44 % of `vm.max_map_count` **left behind by caches that no
+   longer exist**. A create/destroy churn of 100k caches over a process
+   lifetime would hit the ceiling. MEDIUM-HIGH.
+
+**Required fix.** (1) Allocate the depot arrays and `cache_rseq` from
+`umem_cache_arena` (or one `mmap` per cache, carved) instead of three
+page-rounded `mmap`s: 18.6 -> ~7 KB per cache on 8 CPUs, and no per-cache VMA
+churn on destroy. (2) Move the create-time link (`umem.c:5196`) off the lock
+the walk holds -- either publish via an RCU-style pointer swap, or have
+`umem_cache_applyall` snapshot the list under the lock and walk the snapshot
+unlocked (the per-cache work already takes `cache_lock`). Regression:
+`probe_caches 50000` worst create < 5 ms and VMAs after destroy < 200.
+
+### P6.6 Fork with a 4 GB heap -- FINE
+`umem_fork.c:187-228` (`umem_lockup`: walks every cache, `ncpus + 2 * depot
++ 3` mutexes each); `umem_fork.c:230-330` (`umem_do_release`)
+
+Provenance: `a2548b8`, `c7i.2xlarge`, `probe_fork 4 6` (4 GB heap: 524,288 x
+4 KiB + 2,048 x 1 MiB, all touched; forks 3-5 with two allocating threads
+running), and `probe_caches 10000 --fork` on `c7g.2xlarge`.
+
+| | umem | glibc |
+|---|---:|---:|
+| heap RSS before fork | 4.04 GB, 77 VMAs | 4.02 GB, 54 VMAs |
+| `fork()` latency, quiet parent (#1, #2) | 23.6, 23.4 ms | 21.8, 21.0 ms |
+| `fork()` latency, 2 churn threads (#3-5) | 23.6, 23.0, 22.7 ms | 23.6, 21.6, 21.3 ms |
+| first fork (page-table warm-up, both) | 36.7 ms | 35.4 ms |
+| child RSS at entry -> after 100k allocs + 1 MiB | 4139.5 -> 4139.9 MB (+0.4 MB) | 4116.7 -> 4117.3 MB (+0.6 MB) |
+| child work time | 1.3 ms | 1.4 ms |
+| `fork()` with 10,000 caches (arm) | 80-83 ms | n/a |
+
+**The atfork handlers cost ~2 ms over glibc at 4 GB** (the difference is
+constant, not proportional to heap size: it is the lock walk over the ~40
+default caches, not the pages). The kernel's page-table copy is the 21 ms
+both share. Under allocation load the handlers do not stall: 22.7-23.6 ms
+with two threads allocating, the same as quiet. The child's first
+allocations touch 0.4 MB of parent pages (copy-on-write), less than glibc's
+0.6 MB. Child-side release works: every child ran to completion and exited
+0, six times, with and without concurrent allocators in the parent.
+
+With 10,000 caches the handler walk is visible -- **80 ms, of which ~60 ms
+is umem** (each `umem_lockup_cache` takes 8 + 2 + 16 + 1 = 27 mutexes on 8
+CPUs; 270k lock/unlock pairs per fork). On 192 CPUs that is 256 + 2 + 512 +
+1 = 771 per cache, so 10k caches would be ~7.7M lock operations per fork;
+see P6.4b. MEDIUM only for cache-heavy programs that also fork; the
+common case is FINE.
+
+**Required fix:** none for the default configuration. For the cache-heavy
+case, the same fix as P6.4 (2): `umem_lockup` need not take every per-CPU
+`cc_lock` if the child is going to re-initialise them anyway; taking
+`cache_lock` + the depot locks and marking the cache "forking" would cut the
+per-cache count from `2*ncpus+ncpus+3` to `2*ncpus+3` (still ncpus-bound via
+the depot arrays) or, with per-cache depot arrays reduced to one lock, to a
+handful.
+
 ## Exit criteria
 
 **Verified 2026-09-22 at `4ba7d00`** by `scripts/ec2/exit_criteria_gate.sh`,
