@@ -5037,6 +5037,27 @@ umem_cache_create(
 		}
 		if (cflags & UMC_QCACHE)
 			bestfit = MAX(1 << highbit(3 * vmp->vm_qcache_max), 64);
+
+		/*
+		 * Span-density floor (see UMEM_MIN_SLAB_OBJECTS in umem_impl.h).
+		 * The best-fit loop above minimises waste per object but is blind
+		 * to how many objects share a span.  With a page-sized quantum it
+		 * happily picks one 4 KiB object per 4 KiB slab, and every such slab
+		 * then costs a kernel VMA -- the ~5 GB Linux heap ceiling.  Raise
+		 * the slab to hold at least UMEM_MIN_SLAB_OBJECTS objects unless
+		 * that would exceed UMEM_MIN_SLAB_CEILING; large objects stay
+		 * one-per-slab as they always did.  QCACHE slabs are sized by the
+		 * arena and are left alone.
+		 */
+		if (!(cflags & UMC_QCACHE) &&
+		    bestfit / chunksize < UMEM_MIN_SLAB_OBJECTS) {
+			size_t want = P2ROUNDUP(chunksize * UMEM_MIN_SLAB_OBJECTS,
+			    vmp->vm_quantum);
+
+			if (want / chunksize >= UMEM_MIN_SLAB_OBJECTS &&
+			    want <= UMEM_MIN_SLAB_CEILING)
+				bestfit = want;
+		}
 		cp->cache_slabsize = bestfit;
 		cp->cache_mincolor = 0;
 		cp->cache_maxcolor = bestfit % chunksize;

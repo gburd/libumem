@@ -694,6 +694,35 @@ typedef struct umem_cpu {
 #define	UMEM_VOID_FRACTION	8	/* never waste more than 1/8 of slab */
 
 /*
+ * Minimum objects per slab for hashed caches, and the slab size ceiling that
+ * floor may push up to.
+ *
+ * The best-fit loop in umem_cache_create() picks the slab size with the least
+ * per-object waste, trying 1..UMEM_VOID_FRACTION objects.  On Solaris, whose
+ * heap quantum is 64 KiB, that yields 16 objects per slab for a 4 KiB chunk.
+ * On Linux the quantum is the 4 KiB page, so the same loop yields ONE object
+ * per slab: every 4 KiB allocation is its own span, its own mprotect(), and
+ * its own kernel VMA.  vm.max_map_count (default 65530) is then exhausted at
+ * roughly 5-8 GB of heap and umem_alloc() returns NULL -- measured 65,532 VMAs
+ * at failure, and 64,270 of 64,275 mprotect calls being exactly 4096 bytes.
+ * See docs/results/2026-09-22-umem-heap-ceiling-vma.md.
+ *
+ * This floor restores Solaris-like span density: a slab holds at least
+ * UMEM_MIN_SLAB_OBJECTS objects, provided that does not push the slab above
+ * UMEM_MIN_SLAB_CEILING (so large objects, which were already one-per-slab on
+ * Solaris too, stay one-per-slab and do not balloon).  16 and 64 KiB are
+ * exactly the Solaris figures for a 4 KiB chunk.
+ *
+ * Cost: a hashed cache whose objects are 1-4 KiB now reserves a 16-64 KiB slab
+ * on first use instead of one page.  That is more address space held per
+ * lightly-used cache; it is NOT more RSS until the pages are touched, since
+ * spans are MAP_NORESERVE.  Measured on a small workload before/after in the
+ * commit that introduced this.
+ */
+#define	UMEM_MIN_SLAB_OBJECTS	16
+#define	UMEM_MIN_SLAB_CEILING	(64 * 1024)
+
+/*
  * For 64 bits, buffers >= 16 bytes must be 16-byte aligned
  */
 #ifdef _LP64
