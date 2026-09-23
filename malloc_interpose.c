@@ -608,7 +608,14 @@ umem_interpose_init(void)
 	 *
 	 * The remaining gap versus glibc is DETECTION LOUDNESS, not corruption:
 	 * a program with a double-free bug gets a log line from us where glibc
-	 * would kill it.  Set UMEM_OPTIONS=abort=1 to get the abort back.
+	 * would kill it.  Set UMEM_OPTIONS=abort to get the abort back --
+	 * the option exists as of this comment; the earlier text named
+	 * "abort=1", which no option table entry ever implemented and which
+	 * the flag parser would have rejected for taking a value.
+	 *
+	 * ORDER: this constructor runs at load; umem_init() parses
+	 * UMEM_OPTIONS on the first allocation, after it.  So the env
+	 * setting wins, which is the intent.
 	 */
 	extern uint_t umem_abort;
 	umem_abort = 0;

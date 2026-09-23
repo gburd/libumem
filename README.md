@@ -334,7 +334,7 @@ with a regression that demonstrates the pre-fix exposure:
   heap spans passes the range check; size and layout validation still apply.
 - **`umem_abort = 0`** remains the interpose-mode default, which logs and
   continues where glibc aborts. Defensible now that a rejected pointer leaves
-  state untouched; `UMEM_OPTIONS=abort=1` restores aborting.
+  state untouched; `UMEM_OPTIONS=abort` restores aborting (the option was previously documented as `abort=1`, which did not exist).
 - **Leading-component symlinks** in output paths are not defended.
 
 ### Honest framing

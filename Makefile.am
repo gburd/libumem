@@ -827,6 +827,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_writer_nofollow.sh \
 	test/security/test_errno_preserved \
 	test/security/test_forged_free \
+	test/security/test_abort_option.sh \
 	test/security/test_stack_bounds.sh \
 	test/security/test_introspect_sock_path.sh \
 	test/security/test_introspect_peer_uid
@@ -983,6 +984,7 @@ test_test_inspect_live_SOURCES = test/test_inspect_live.c
 test_test_inspect_live_LDADD = libumem.la
 
 dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
+	test/security/test_abort_option.sh \
 	test/integration/test_heap_ceiling_512.sh \
 	test/integration/test_reclaim_returns.sh \
 	test/debugger/test_lldb_e2e.sh \
