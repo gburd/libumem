@@ -89,11 +89,13 @@ setsid bash -c '
 	# consuming a possibly 192-vCPU box -- verified happening before this.
 	# Kill every process in our group EXCEPT this supervisor and its own
 	# pgrep/sleep helpers, so recording above always completes.
+	# By SESSION, not process group: timeout(1) puts its child in a new
+	# group, so a pgid sweep misses the whole job tree (2026-09-23).
 	me=$$
-	victims=$(ps -eo pid=,pgid= | awk -v g="$me" -v s="$me" '"'"'$2==g && $1!=s {print $1}'"'"')
+	victims=$(ps -eo pid=,sid= | awk -v g="$me" -v s="$me" '"'"'$2==g && $1!=s {print $1}'"'"')
 	[ -n "$victims" ] && kill -TERM $victims 2>/dev/null
 	sleep 2
-	victims=$(ps -eo pid=,pgid= | awk -v g="$me" -v s="$me" '"'"'$2==g && $1!=s {print $1}'"'"')
+	victims=$(ps -eo pid=,sid= | awk -v g="$me" -v s="$me" '"'"'$2==g && $1!=s {print $1}'"'"')
 	[ -n "$victims" ] && kill -KILL $victims 2>/dev/null
 	rm -f "$D/pgid"
 ' _ "$D" "$TMO" "$REPODIR" "$CMD" < /dev/null > "$D/sup.log" 2>&1 &
@@ -148,7 +150,23 @@ kill)
 	JOB="${3:?job name}"
 	# Kill the whole process group, not just the supervisor: otherwise
 	# make -j / stress binaries keep running (and keep costing money).
-	rsh "D=~/$JOBROOT/$JOB; if [ -f \$D/pgid ]; then kill -TERM -\$(cat \$D/pgid) 2>/dev/null; sleep 2; kill -KILL -\$(cat \$D/pgid) 2>/dev/null; echo KILLED; else echo 'not running'; fi"
+	# ROOT CAUSE (2026-09-23): the supervisor records its own pid as "pgid",
+	# but timeout(1) runs its child in a NEW process group, so kill -TERM
+	# -<pgid> never reached the actual work.  A matrix.sh sweep survived a
+	# job.sh kill for 1h40m and ran alongside its replacement, so both
+	# measured a box under double load.  Everything the job started shares
+	# the supervisor's SESSION (setsid), so kill by session id: every
+	# process whose sid equals the recorded pid, TERM then KILL, then verify
+	# and report what is still alive rather than printing KILLED on faith.
+	rsh "D=~/$JOBROOT/$JOB; if [ ! -f \$D/pgid ]; then echo 'not running'; exit 0; fi; \
+		SID=\$(cat \$D/pgid); \
+		victims() { ps -eo pid=,sid= | awk -v s=\$SID '\$2==s && \$1!=s {print \$1}'; }; \
+		v=\$(victims); [ -n \"\$v\" ] && kill -TERM \$v 2>/dev/null; kill -TERM -\$SID 2>/dev/null; sleep 2; \
+		for i in 1 2 3; do v=\$(victims); [ -z \"\$v\" ] && break; kill -KILL \$v 2>/dev/null; sleep 1; done; \
+		kill -KILL -\$SID 2>/dev/null; kill -KILL \$SID 2>/dev/null; \
+		left=\$(victims | wc -l); \
+		echo KILLED-manual > \$D/rc; date -u +%Y-%m-%dT%H:%M:%SZ > \$D/ended; rm -f \$D/pgid; \
+		if [ \"\$left\" = 0 ]; then echo KILLED; else echo \"KILL INCOMPLETE: \$left processes still in session \$SID\"; ps -eo pid,sid,etime,args | awk -v s=\$SID '\$2==s'; exit 1; fi"
 	;;
 list)
 	rsh "for d in ~/$JOBROOT/*/; do [ -d \$d ] || continue; n=\$(basename \$d); \
