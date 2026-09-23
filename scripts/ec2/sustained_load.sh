@@ -136,8 +136,10 @@ INSTANCE=$( { TOK=$(curl -s --max-time 2 -X PUT "http://169.254.169.254/latest/a
 DATE=$(date +%Y-%m-%d)
 OUTDIR="docs/results/${DATE}-${INSTANCE}-${ARCH}"
 mkdir -p "$OUTDIR"
-OUT="$OUTDIR/sustained.toml"
-LOG="$OUTDIR/sustained.log"
+# SUSTAINED_OUT names the file inside OUTDIR (default sustained.toml) so two
+# groups of allocators can be run separately without overwriting each other.
+OUT="$OUTDIR/${SUSTAINED_OUT:-sustained.toml}"
+LOG="$OUTDIR/${SUSTAINED_OUT:-sustained.toml}.log"
 LIBUMEM_SO=$(ls .libs/libumem.so.*.*.* 2>/dev/null | head -1)
 GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown)
 

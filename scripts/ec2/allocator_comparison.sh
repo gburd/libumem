@@ -264,11 +264,29 @@ fi
 
 # ---- 3. SUSTAINED ----------------------------------------------------------
 if phase sustained; then
-echo "== 3. SUSTAINED at t=$HI_T: ${ARMS[*]}  ($(date -u +%T))"
+# Two groups, because matched work is calibrated to the SLOWEST arm in the
+# group and the interposer arm is ~500x slower than the rest at 192 threads
+# (see the 2026-09-23 comparison): one group would hand every fast arm a
+# 60 ms "sustained" window.  Group A is every non-interposer arm, matched
+# among themselves; group B is the interposer against its own null control.
+# Per-window p999 is a latency distribution, so B's rows are comparable to
+# A's umem rows at the same thread count; throughput across groups is not.
+GA=(); GB=()
+for a in "${ARMS[@]}"; do case "$a" in umem-preload*) GB+=("$a") ;; *) GA+=("$a") ;; esac; done
+echo "== 3a. SUSTAINED group A at t=$HI_T: ${GA[*]}  ($(date -u +%T))"
 SUSTAINED_WINDOWS="$SUSTAINED_WINDOWS" SUSTAINED_WARMUPS=1 SUSTAINED_FRAG_SIZES="$SUSTAINED_FRAG_SIZES" \
-    ./scripts/ec2/sustained_load.sh "$(IFS=,; echo "${ARMS[*]}")" "$SUSTAINED_SEC" "$HI_T" \
+    SUSTAINED_OUT=sustained.toml \
+    ./scripts/ec2/sustained_load.sh "$(IFS=,; echo "${GA[*]}")" "$SUSTAINED_SEC" "$HI_T" \
     > "$OUT/sustained.log" 2>&1
 echo "   rc=$? -> $OUT/sustained.toml ($(grep -c '^\[\[window\]\]' "$OUT/sustained.toml" 2>/dev/null) windows)"
+if [[ ${#GB[@]} -gt 0 ]]; then
+    echo "== 3b. SUSTAINED group B (interposer) at t=$HI_T: ${GB[*]}  ($(date -u +%T))"
+    SUSTAINED_WINDOWS="$SUSTAINED_WINDOWS" SUSTAINED_WARMUPS=1 SUSTAINED_FRAG_SIZES="$SUSTAINED_FRAG_SIZES" \
+        SUSTAINED_OUT=sustained-preload.toml \
+        ./scripts/ec2/sustained_load.sh "$(IFS=,; echo "${GB[*]}")" "$SUSTAINED_SEC" "$HI_T" \
+        > "$OUT/sustained-preload.log" 2>&1
+    echo "   rc=$? -> $OUT/sustained-preload.toml ($(grep -c '^\[\[window\]\]' "$OUT/sustained-preload.toml" 2>/dev/null) windows)"
+fi
 fi
 
 # ---- 4. DIAGNOSTICS (umem only) --------------------------------------------
