@@ -1,0 +1,106 @@
+# P5.4 mangle A/B  vcpu=96  2026-09-23T00:00:04Z
+# sha=6c8fabd13575a58467f90d23cc396162bfffadaa
+# runs=5 warmups=1 total_ops=40000000 replicates=5 gcc=11
+# instance=c7i.metal-24xl
+
+## builds
+  built nomangle: cppflags='-DUMEM_NO_LINK_MANGLE' soname=libumem.so.1 sha256=240ff4b665728082
+  built mangle: cppflags='<none>' soname=libumem.so.1 sha256=a28bf62809a8678a
+  built nullB: cppflags='-DUMEM_NO_LINK_MANGLE' soname=libumem.so.1 sha256=240ff4b665728082
+  mangle vs nomangle differ: yes (required)
+  nullB vs nomangle differ: no (bit-identical rebuild)
+  nomangle resolves: 	libumem.so.1 => /tmp/lib_nomangle/libumem.so.1 (0x00007f62b9a84000)
+  mangle resolves: 	libumem.so.1 => /tmp/lib_mangle/libumem.so.1 (0x00007ff3cb539000)
+  nullB resolves: 	libumem.so.1 => /tmp/lib_nullB/libumem.so.1 (0x00007f464ae42000)
+
+## NULL CONTROL: nomangle vs an independent build of the SAME source
+##   Any delta here is build/layout/placement noise.  A mangle delta
+##   inside this spread is not evidence of a cost.
+  null-single-1-16:64  workload=single threads=1 sizes=16:64  (5 pairs)
+    pair 1: nomangle      7.123 Mops (cov  0.86%)   nullB         7.197 Mops (cov  0.47%)   delta   +1.03%
+    pair 2: nomangle      7.004 Mops (cov  0.57%)   nullB         7.290 Mops (cov  0.35%)   delta   +4.08%
+    pair 3: nomangle      7.042 Mops (cov  0.85%)   nullB         7.019 Mops (cov  0.46%)   delta   -0.34%
+    pair 4: nomangle      7.201 Mops (cov  0.55%)   nullB         7.156 Mops (cov  0.54%)   delta   -0.63%
+    pair 5: nomangle      7.193 Mops (cov  0.23%)   nullB         7.036 Mops (cov  0.46%)   delta   -2.19%
+    => null-single-1-16:64: median delta -0.34%  (min -2.19%, max +4.08%, n=5)
+  null-multi-8-64:256  workload=multi threads=8 sizes=64:256  (5 pairs)
+    pair 1: nomangle     45.907 Mops (cov  4.23%)   nullB        45.743 Mops (cov  6.92%)   delta   -0.36%
+    pair 2: nomangle     44.403 Mops (cov  3.61%)   nullB        44.860 Mops (cov  4.78%)   delta   +1.03%
+    pair 3: nomangle     43.401 Mops (cov  3.84%)   nullB        44.407 Mops (cov  5.79%)   delta   +2.32%
+    pair 4: nomangle     45.525 Mops (cov  5.53%)   nullB        46.756 Mops (cov  4.26%)   delta   +2.70%
+    pair 5: nomangle     46.305 Mops (cov  4.33%)   nullB        44.426 Mops (cov  3.21%)   delta   -4.06%
+    => null-multi-8-64:256: median delta +1.03%  (min -4.06%, max +2.70%, n=5)
+
+## MANGLE vs NOMANGLE
+  single-1-16:64  workload=single threads=1 sizes=16:64  (5 pairs)
+    pair 1: nomangle      7.146 Mops (cov  0.44%)   mangle        7.222 Mops (cov  0.28%)   delta   +1.06%
+    pair 2: nomangle      7.216 Mops (cov  0.39%)   mangle        7.236 Mops (cov  0.47%)   delta   +0.27%
+    pair 3: nomangle      7.231 Mops (cov  0.40%)   mangle        7.137 Mops (cov  0.82%)   delta   -1.30%
+    pair 4: nomangle      7.266 Mops (cov  0.25%)   mangle        6.955 Mops (cov  0.43%)   delta   -4.29%
+    pair 5: nomangle      7.164 Mops (cov  0.56%)   mangle        7.150 Mops (cov  0.18%)   delta   -0.19%
+    => single-1-16:64: median delta -0.19%  (min -4.29%, max +1.06%, n=5)
+  multi-8-16:64  workload=multi threads=8 sizes=16:64  (5 pairs)
+    pair 1: nomangle     43.311 Mops (cov  3.16%)   mangle       41.216 Mops (cov  5.18%)   delta   -4.84%
+    pair 2: nomangle     42.367 Mops (cov  6.71%)   mangle       41.839 Mops (cov  7.13%)   delta   -1.25%
+    pair 3: nomangle     42.650 Mops (cov  2.53%)   mangle       44.289 Mops (cov  5.71%)   delta   +3.84%
+    pair 4: nomangle     44.419 Mops (cov  3.26%)   mangle       43.395 Mops (cov  2.42%)   delta   -2.30%
+    pair 5: nomangle     42.458 Mops (cov  2.48%)   mangle       42.748 Mops (cov  1.17%)   delta   +0.68%
+    => multi-8-16:64: median delta -1.25%  (min -4.84%, max +3.84%, n=5)
+  multi-32-16:64  workload=multi threads=32 sizes=16:64  (5 pairs)
+    pair 1: nomangle    157.670 Mops (cov  7.13%)   mangle      157.027 Mops (cov  6.22%)   delta   -0.41%
+    pair 2: nomangle    144.216 Mops (cov  5.42%)   mangle      138.137 Mops (cov  8.23%)   delta   -4.22%
+    pair 3: nomangle    149.137 Mops (cov  3.11%)   mangle      156.482 Mops (cov  6.42%)   delta   +4.93%
+    pair 4: nomangle    157.108 Mops (cov  2.17%)   mangle      137.898 Mops (cov  8.90%)   delta  -12.23%
+    pair 5: nomangle    155.258 Mops (cov  2.62%)   mangle      157.095 Mops (cov  5.95%)   delta   +1.18%
+    => multi-32-16:64: median delta -0.41%  (min -12.23%, max +4.92%, n=5)
+  multi-96-16:64  workload=multi threads=96 sizes=16:64  (5 pairs)
+    pair 1: nomangle    367.557 Mops (cov  4.02%)   mangle      354.804 Mops (cov  3.54%)   delta   -3.47%
+    pair 2: nomangle    362.972 Mops (cov  3.39%)   mangle      367.409 Mops (cov  2.11%)   delta   +1.22%
+    pair 3: nomangle    376.614 Mops (cov  4.53%)   mangle      358.163 Mops (cov  1.85%)   delta   -4.90%
+    pair 4: nomangle    376.906 Mops (cov  4.44%)   mangle      356.591 Mops (cov  2.57%)   delta   -5.39%
+    pair 5: nomangle    351.599 Mops (cov  4.09%)   mangle      375.484 Mops (cov  1.10%)   delta   +6.79%
+    => multi-96-16:64: median delta -3.47%  (min -5.39%, max +6.79%, n=5)
+  single-1-64:256  workload=single threads=1 sizes=64:256  (5 pairs)
+    pair 1: nomangle      7.486 Mops (cov  0.22%)   mangle        7.542 Mops (cov  0.18%)   delta   +0.74%
+    pair 2: nomangle      7.564 Mops (cov  0.26%)   mangle        7.538 Mops (cov  0.27%)   delta   -0.34%
+    pair 3: nomangle      7.529 Mops (cov  0.38%)   mangle        7.563 Mops (cov  0.18%)   delta   +0.45%
+    pair 4: nomangle      7.544 Mops (cov  0.31%)   mangle        7.154 Mops (cov  0.12%)   delta   -5.17%
+    pair 5: nomangle      7.567 Mops (cov  0.19%)   mangle        7.534 Mops (cov  0.25%)   delta   -0.43%
+    => single-1-64:256: median delta -0.34%  (min -5.17%, max +0.74%, n=5)
+  multi-8-64:256  workload=multi threads=8 sizes=64:256  (5 pairs)
+    pair 1: nomangle     46.066 Mops (cov  4.00%)   mangle       46.371 Mops (cov  8.75%)   delta   +0.66%
+    pair 2: nomangle     45.803 Mops (cov  4.12%)   mangle       46.699 Mops (cov  5.48%)   delta   +1.96%
+    pair 3: nomangle     45.372 Mops (cov  2.30%)   mangle       45.978 Mops (cov  2.29%)   delta   +1.34%
+    pair 4: nomangle     46.197 Mops (cov  4.57%)   mangle       43.278 Mops (cov  5.07%)   delta   -6.32%
+    pair 5: nomangle     45.367 Mops (cov  3.54%)   mangle       46.497 Mops (cov  3.46%)   delta   +2.49%
+    => multi-8-64:256: median delta +1.34%  (min -6.32%, max +2.49%, n=5)
+  multi-32-64:256  workload=multi threads=32 sizes=64:256  (5 pairs)
+    pair 1: nomangle    170.797 Mops (cov  5.18%)   mangle      162.288 Mops (cov  5.18%)   delta   -4.98%
+    pair 2: nomangle    169.175 Mops (cov  7.76%)   mangle      172.185 Mops (cov  6.23%)   delta   +1.78%
+    pair 3: nomangle    171.556 Mops (cov  2.45%)   mangle      169.209 Mops (cov  5.42%)   delta   -1.37%
+    pair 4: nomangle    155.583 Mops (cov  4.48%)   mangle      170.283 Mops (cov  3.45%)   delta   +9.45%
+    pair 5: nomangle    171.193 Mops (cov  6.58%)   mangle      168.581 Mops (cov  5.42%)   delta   -1.53%
+    => multi-32-64:256: median delta -1.37%  (min -4.98%, max +9.45%, n=5)
+  multi-96-64:256  workload=multi threads=96 sizes=64:256  (5 pairs)
+    pair 1: nomangle    371.800 Mops (cov  3.58%)   mangle      374.054 Mops (cov  2.08%)   delta   +0.61%
+    pair 2: nomangle    371.485 Mops (cov  3.19%)   mangle      360.086 Mops (cov  7.80%)   delta   -3.07%
+    pair 3: nomangle    381.616 Mops (cov  2.63%)   mangle      362.708 Mops (cov  3.09%)   delta   -4.95%
+    pair 4: nomangle    385.256 Mops (cov  5.42%)   mangle      353.805 Mops (cov  4.32%)   delta   -8.16%
+    pair 5: nomangle    369.317 Mops (cov  2.81%)   mangle      370.328 Mops (cov  4.15%)   delta   +0.27%
+    => multi-96-64:256: median delta -3.07%  (min -8.16%, max +0.61%, n=5)
+  prodcons-8-64:256  workload=prodcons threads=8 sizes=64:256  (5 pairs)
+    pair 1: nomangle     10.908 Mops (cov  1.32%)   mangle        9.877 Mops (cov  1.64%)   delta   -9.45%
+    pair 2: nomangle      8.985 Mops (cov  3.59%)   mangle        9.636 Mops (cov  1.84%)   delta   +7.24%
+    pair 3: nomangle      9.688 Mops (cov  1.89%)   mangle       13.208 Mops (cov  4.07%)   delta  +36.34%
+    pair 4: nomangle     12.849 Mops (cov  2.19%)   mangle       13.013 Mops (cov  4.60%)   delta   +1.28%
+    pair 5: nomangle     12.733 Mops (cov  6.11%)   mangle       11.078 Mops (cov  5.67%)   delta  -13.00%
+    => prodcons-8-64:256: median delta +1.28%  (min -13.00%, max +36.34%, n=5)
+  prodcons-32-64:256  workload=prodcons threads=32 sizes=64:256  (5 pairs)
+    pair 1: nomangle      5.320 Mops (cov  2.31%)   mangle        6.610 Mops (cov  1.85%)   delta  +24.25%
+    pair 2: nomangle      5.803 Mops (cov  2.76%)   mangle        6.057 Mops (cov  5.38%)   delta   +4.37%
+    pair 3: nomangle      6.649 Mops (cov  1.00%)   mangle        6.485 Mops (cov  2.06%)   delta   -2.46%
+    pair 4: nomangle      5.510 Mops (cov  3.17%)   mangle        6.469 Mops (cov  2.83%)   delta  +17.41%
+    pair 5: nomangle      6.458 Mops (cov  2.92%)   mangle        5.585 Mops (cov  1.85%)   delta  -13.52%
+    => prodcons-32-64:256: median delta +4.37%  (min -13.52%, max +24.25%, n=5)
+
+A/B done -> docs/results/p54-mangle-ab.csv / docs/results/p54-mangle-ab.txt
