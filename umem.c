@@ -42,18 +42,15 @@
  *
  * \section Nuances
  *
- * There is a nuance in the behaviour of the umem port compared
- * with umem on Solaris.
- *
- * On Linux umem will not return memory back to the OS until umem fails
- * to allocate a chunk. On failure, umem_reap() will be called automatically,
- * to return memory to the OS. If your code is going to be running
- * for a long time on Linux and mixes calls to different memory allocators
- * (e.g.: malloc()) and umem, your code will need to call
- * umem_reap() periodically.
- *
- * This doesn't happen on Solaris, because malloc is replaced
- * with umem calls, meaning that umem_reap() is called automatically.
+ * Returning memory to the OS.  On Solaris the kernel's low-memory callback
+ * drives kmem_reap(); a user process has no such signal, so for a long time
+ * this port only reaped when the application called umem_reap() or a backend
+ * allocation failed, and freed objects parked in depot magazines were never
+ * returned.  That is no longer the case: when reclaim is enabled (the
+ * default) the periodic update pass reaps the depot's working-set excess
+ * and the slab reclaimer then advises away pages of slabs that have been
+ * empty for reclaim_delay seconds and destroys them after twice that.
+ * umem_reap() remains available to force an immediate reap.
  *
  * \section References
  *
@@ -2960,6 +2957,30 @@ umem_maglist_ws_update(umem_maglist_t *mlp)
 }
 
 /*
+ * Does any of cp's depot lists hold magazines beyond its working set?
+ * (i.e. would a ws_reap right now reap anything.)  Read without ml_lock:
+ * a stale answer costs one interval either way and the reap itself
+ * re-derives the count under the lock.
+ */
+static int
+umem_depot_ws_excess(umem_cache_t *cp)
+{
+	int i;
+
+	if (MIN(cp->cache_full.ml_reaplimit, cp->cache_full.ml_min) > 0 ||
+	    MIN(cp->cache_empty.ml_reaplimit, cp->cache_empty.ml_min) > 0)
+		return (1);
+	for (i = 0; i < cp->cache_depot_ncpus; i++) {
+		if (MIN(cp->cache_depot_full[i].ml_reaplimit,
+		    cp->cache_depot_full[i].ml_min) > 0 ||
+		    MIN(cp->cache_depot_empty[i].ml_reaplimit,
+		    cp->cache_depot_empty[i].ml_min) > 0)
+			return (1);
+	}
+	return (0);
+}
+
+/*
  * Update the working set statistics for cp's depot.
  */
 static void
@@ -3065,8 +3086,19 @@ umem_maglist_mark_excess(umem_maglist_t *mlp)
 		long excess = mlp->ml_total - UMEM_DEPOT_PERCPU_MAX;
 		if (mlp->ml_reaplimit < excess)
 			mlp->ml_reaplimit = excess;
-		if (mlp->ml_min > UMEM_DEPOT_PERCPU_MAX)
-			mlp->ml_min = UMEM_DEPOT_PERCPU_MAX;
+		/*
+		 * Do NOT lower ml_min here.  The next reap takes
+		 * MIN(ml_reaplimit, ml_min); with ml_min clamped to
+		 * UMEM_DEPOT_PERCPU_MAX (8) that reaped at most 8 magazines
+		 * per list per pass -- 8 lists x 8 x 31 rounds x 4 KiB = 8 MB
+		 * per 10 s interval against a 2 GB surplus (measured: 5 MB in
+		 * 100 s; ~40 minutes to drain).  The clamp inverted the intent
+		 * of the comment above: it was written to make the excess
+		 * reapable and instead bounded how much of it could ever be
+		 * reaped.  ml_min is the working-set trough the depot_pop
+		 * paths maintain; leave it, and let the excess drain at the
+		 * rate ws_update already computed.
+		 */
 	}
 	(void) mutex_unlock(&mlp->ml_lock);
 }
@@ -4586,6 +4618,32 @@ umem_cache_update(umem_cache_t *cp)
 	 * Update the depot working set statistics.
 	 */
 	umem_depot_ws_update(cp);
+
+	/*
+	 * Reap the depot's working-set excess on the periodic pass.
+	 *
+	 * The ws_update above is only bookkeeping: after two idle passes
+	 * ml_reaplimit holds the number of magazines this list did not touch
+	 * for a whole interval.  Nothing acted on that number unless the
+	 * application called umem_reap() or a backend allocation failed --
+	 * the Solaris kmem model, where the kernel's lowmem callback is the
+	 * pressure signal.  A user process has no such signal, so on Linux a
+	 * process that freed a heap and never ran out of memory kept every
+	 * freed object in a depot magazine forever: slab_refcnt never reached
+	 * zero, umem_cache_reclaim_pages() below skipped every slab, and the
+	 * reclaim feature -- reclaim=1 by default, reclaim_delay documented --
+	 * could not fire on the most ordinary shape of "free a big heap".
+	 * Measured: 2 GB of freed 4 KiB objects 100 % resident at t = 100 s,
+	 * 16,911 full depot magazines, update thread confirmed running.
+	 *
+	 * So when reclaim is on, request UMU_REAP whenever some list is above
+	 * its working set.  The request is cheap (a flag; umem_process_updates
+	 * does the work off the applyall walk), it reaps only the excess the
+	 * bookkeeping already identified, and it turns the depot into the
+	 * feeder that reclaim_pages was always waiting on.
+	 */
+	if (umem_reclaim_enabled && umem_depot_ws_excess(cp))
+		update_flags |= UMU_REAP;
 
 	/*
 	 * If there's a lot of contention in the depot,
