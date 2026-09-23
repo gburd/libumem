@@ -1,0 +1,66 @@
+# which allocators loaded on this host, with identity
+captured = "2026-09-23T12:18:56Z"
+instance_type = "c7g.2xlarge"
+arch = "aarch64"
+vcpu = 8
+git_sha = "f2a8267df7586db9e5e6b7dd052bda90e5cea571"
+glibc = "ldd (GNU libc) 2.34"
+gcc = "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)"
+kernel = "6.12.103-129.197.amzn2023.aarch64"
+mem_total_kb = 16049580
+vm_max_map_count = 65530
+
+[allocator."libc"]
+loaded = true
+path = "(process glibc)"
+version = "ldd (GNU libc) 2.34"
+digest16 = "n/a"
+
+[allocator."umem"]
+loaded = true
+path = ".libs/libumem.so.1.0.0"
+version = "libumem f2a8267df7586db9e5e6b7dd052bda90e5cea571"
+digest16 = "63ed91a71d5424f5"
+
+[allocator."umem-preload"]
+loaded = true
+path = ".libs/libumem_malloc.so.1.0.0"
+version = "libumem f2a8267df7586db9e5e6b7dd052bda90e5cea571"
+digest16 = "ce83e99f3f867590"
+
+[allocator."jemalloc"]
+loaded = true
+path = "/lib64/libjemalloc.so.2"
+version = "jemalloc-5.2.1-7.amzn2023.aarch64"
+digest16 = "2fe586e31a07042a"
+
+[allocator."tcmalloc"]
+loaded = true
+path = "/lib64/libtcmalloc_minimal.so.4"
+version = "gperftools-libs-2.9.1-1.amzn2023.0.3.aarch64"
+digest16 = "4bb4db8bc718771f"
+
+[allocator."mimalloc"]
+loaded = true
+path = "/usr/local/lib/libmimalloc.so.3"
+version = "git 31d034d 2026-09-16"
+digest16 = "00658c10868830dc"
+
+[allocator."snmalloc"]
+loaded = true
+path = "/usr/local/lib/libsnmallocshim.so"
+version = "git e9f7b2e 2026-09-21"
+digest16 = "9f3ccf1e24c3b69e"
+
+[allocator."scudo"]
+loaded = true
+path = "/usr/local/lib/libclang_rt.scudo_standalone-aarch64.so"
+version = "compiler-rt-15.0.7-3.amzn2023.0.1.aarch64"
+digest16 = "3916051dcebd968f"
+
+[allocator."rpmalloc"]
+loaded = true
+path = "/usr/local/lib/librpmalloc.so"
+version = "git 5dacae8 2026-07-15"
+digest16 = "5dc268e35fd61899"
+
