@@ -362,7 +362,7 @@ alloc_identity() {
     echo "libumem_so_digest = \"$(bin_digest "$LIBUMEM_SO")\""
     echo "allocators = [$(printf '"%s",' "${ALLOCATORS[@]}" | sed 's/,$//')]"
     echo "# requested but not loadable on this host (reported, never silently dropped)"
-    echo "allocators_unavailable = [$(printf '"%s",' "${UNAVAILABLE[@]}" | sed 's/,$//')]"
+    echo "allocators_unavailable = [$( ((${#UNAVAILABLE[@]})) && printf '"%s",' "${UNAVAILABLE[@]}" | sed 's/,$//')]"
     echo ""
     for a in "${ALLOCATORS[@]}"; do
         echo "[allocator_identity.\"$a\"]"
