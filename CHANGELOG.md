@@ -3,6 +3,138 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [3.1.0] - 2026-09-23
+
+Security hardening. An adversarial audit of v3.0.0 (2026-09-22) found one
+critical and three high-severity issues; all ten findings are fixed, each with a
+regression that demonstrates the pre-fix exposure and passes after, on x86_64 and
+aarch64.
+
+**Read this if you deploy libumem:** v3.0.0 and earlier should not be used in
+setuid/setgid processes, as root, or with an attacker-influenced environment.
+This release closes those holes. See "Security status" in README.md.
+
+### Security — fixed
+
+- **Critical: `execlp("addr2line")` ran on the allocator's startup path with no
+  privilege gate.** `umem_stacktrace_init()` is called unconditionally from
+  `umem_init()`, and `execlp` resolves through `PATH`, so a setuid binary *linked*
+  against libumem (`AT_SECURE` blocks `LD_PRELOAD`, not linkage) executed whatever
+  `addr2line` the attacker's `PATH` named, as the elevated user, before `main()`.
+  Demonstrated with a hostile `addr2line` that ran and left a sentinel.
+
+  **Deleted rather than gated**, because it never worked: it passed
+  `-e /proc/self/exe`, which after the exec names *addr2line itself*, not the
+  target. Verified empirically — the tier resolved `?? ??:0` where a correct
+  invocation resolved `main at demo.c:38`. `dladdr` and `libdw` remain;
+  `UMEM_STACKTRACE_ADDR2LINE` is gone.
+
+- **High: no privilege gating on option parsing at all.** `UMEM_OPTIONS`,
+  `UMEM_DEBUG` and `UMEM_LOGGING` were honoured unconditionally, so a hostile
+  environment could make a privileged process create and truncate files
+  (`profile=record:/path`), open a control socket (`introspect=1`), or change
+  memory-safety behaviour. Adds `umem_secure_mode()`
+  (`issetugid() || getauxval(AT_SECURE)`), consulted in `process_item()` — the
+  single point every option flows through — *before* argument parsing. Options
+  with file, socket, or exec side effects are ignored in secure mode; pure tuning
+  options still work. `UMEM_PROFILE`, which bypasses the option table, is gated at
+  its own call site.
+
+- **High: library file writers followed symlinks.** Snapshot and profile writers
+  used `open(..., O_CREAT|O_TRUNC)` and `fopen(path, "w")` with no `O_EXCL` and no
+  `O_NOFOLLOW`. Pre-fix a symlinked victim file went from 54 to 5472 bytes. Now
+  one shared `umem_open_write()`: `O_NOFOLLOW`, `S_ISREG`, `st_nlink == 1`,
+  `st_uid == geteuid()`, mode 0600, and `ftruncate` only *after* the checks so a
+  hardlinked victim is not destroyed first. Leading-component symlinks remain
+  out of scope and are documented.
+
+- **High: slab freelist links sat inside freed user buffers, unmangled.** For
+  non-hash caches — the default for small objects — `bc_next` occupies the last 8
+  bytes of the user buffer, so a one-buffer overflow into an adjacent freed buffer
+  set the link and the allocation after next returned an attacker-chosen address.
+  glibc has mangled these since 2.32. Pre-fix the attack returned the target
+  address and then aborted walking the corrupted chain.
+
+  Two controls now: links are stored as `ptr ^ cookie ^ (&slot >> 12)` (cookie
+  from `AT_RANDOM` via `getauxval` — no syscall, no allocation, since
+  `umem_init()` cannot allocate), and `umem_slab_alloc()` validates alignment and
+  slab containment before dereferencing, reporting `UMERR_BADADDR` instead.
+
+  **Honest scope:** isolating the two controls shows the *containment check*
+  blocks the tested attack on its own, because that test's target lies outside the
+  victim slab. Mangling covers an in-slab target, which no test currently
+  exercises. So the verified claim is "this attack shape is blocked", not
+  "mangling stops it".
+  `docs/results/2026-09-23-p54-which-control-blocks.md`
+
+- **Control socket: predictable path and a reclaim TOCTOU.** The path was
+  `/tmp/umem.<pid>.sock`, and the stale-path reclaim used `stat` — which *follows
+  symlinks* — so a symlink aimed at another process's socket satisfied
+  `S_ISSOCK`, the probe `connect` failed, and the target unlinked a directory
+  entry it never created. Demonstrated: the victim socket was removed. Now
+  `lstat`, a euid-private directory (`$XDG_RUNTIME_DIR` when it passes an
+  `O_NOFOLLOW` ownership check, else `/tmp/umem-<euid>` created by atomic
+  `mkdir(0700)`), and a bind-then-`rename()` reclaim that removes nothing it did
+  not create.
+
+- **Control socket accepted the real uid.** `SO_PEERCRED` checking
+  `cred.uid == getuid()` hands an unprivileged invoker control of a setuid target
+  — including `break`, which parks allocating threads and is therefore a DoS
+  against the host process. Now `geteuid()` or root only.
+
+- **Interposed `free()` mutated state before validating a foreign pointer.**
+  `process_free()` decoded `buf[-1]` for any non-bootstrap pointer, and the magic
+  is a fixed constant, hence forgeable. Worse, every successful-magic branch wrote
+  `malloc_stat = UMEM_FREE_PATTERN_32` *before* any size check, and the
+  oversize/memalign branches wrote one tag before validating the other — so a
+  forged header left a half-applied free behind. Adds `umem_may_own()` (a
+  refreshed convex hull of the heap's spans, CAS-widened so a stale read can only
+  false-miss), checked before the header read and again after decode, with all
+  mutation moved after acceptance.
+
+  `umem_abort = 0` in interpose mode is retained but the comment claiming it
+  "matches glibc" was false — glibc aborts. It is defensible now only because a
+  rejected pointer leaves state untouched; `UMEM_OPTIONS=abort=1` restores
+  aborting.
+
+- **`getpcstack()`'s frame walk had no stack bounds.** It validated alignment, a
+  16 MiB ceiling and monotonic frames, then dereferenced. Under
+  `UMEM_DEBUG=audit` a corrupted chain made the allocator read arbitrary
+  addresses — SIGSEGV demonstrated pre-fix on both architectures. Now consults
+  the real stack bounds (`pthread_getattr_np`/`pthread_attr_getstack`, cached per
+  thread); the 16 MiB heuristic remains only as a documented fallback. Read-only:
+  independently confirmed the only writes are into the caller's own bounded
+  buffer.
+
+- **`errno` erasure: the v3.0.0 fix was ineffective, not merely partial.**
+  Corrected claim. `vmem_mmap_alloc()` erased `errno` **twice**, and the second
+  one is on the address-space-exhaustion path: it is reached with `ret == NULL`
+  whenever `vmem_alloc(src)` fails, which overwrote the `ENOMEM` that v3.0.0
+  carefully preserved one frame below in `vmem_mmap_top_alloc()`. So the
+  "errno=0 Success" symptom that fix was written for would still have occurred.
+  Both now restore `errno` only on success. Siblings in `vmem_sbrk.c:275` and
+  `vmem_stand.c` are reported, not fixed (sbrk is non-default and secure-gated;
+  `vmem_stand.c` is not built).
+
+### Documentation — corrected
+
+- **`UMEM_DEBUG=audit` captures only ~2 frames in a default build**, and the
+  cause is *libumem's own* compilation, not the application's. `AM_CFLAGS` has no
+  `-fno-omit-frame-pointer`, so the walk stops at the first allocator frame:
+  measured depth 2 through `umem_alloc()` versus 7 from a frame-pointer-having
+  caller. `umem_debugging.7` previously blamed "aggressively-stripped" application
+  binaries, so its advice did not work. README's "alloc-site tracebacks" is now
+  "alloc-site capture" with the limitation stated and the actual remedy given.
+
+### Notes
+
+- No API or ABI break. `libumem.so.1` unchanged.
+- Minor version, not patch: the secure-mode gate changes observable behaviour for
+  callers that relied on `UMEM_OPTIONS` taking effect in a privileged process.
+- Still open, unchanged: the ~5 GB Linux heap ceiling
+  (`docs/results/2026-09-22-umem-heap-ceiling-vma.md`), and the P5.4 evidence gap
+  above.
+
 ## [3.0.0] - 2026-09-22
 
 ### Compatibility

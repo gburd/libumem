@@ -5,19 +5,21 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v3.0.0): suitable for heaps under ~5 GB on Linux; not yet for
-> general-purpose use above that.** The ten reachable correctness and lifetime
-> defects the 2026-09-21 design review found in *default* code paths are fixed,
-> each with a regression that fails before the fix and passes after, on x86_64
-> and aarch64. The remaining blocker is a hard **~5 GB heap ceiling on Linux**
-> (`vm.max_map_count` exhaustion — see "Where libumem does not win" below);
-> raising `vm.max_map_count` works around it today. An attempt to fix it
-> properly **failed**, and that failure is documented along with the measurements
+> **Status (v3.1.0): usable for heaps under ~5 GB on Linux, including after a
+> security-hardening pass; still not a hardened allocator in the sense a
+> security-critical deployment would want.** Ten reachable correctness and
+> lifetime defects found by the 2026-09-21 design review, and ten security
+> findings from the 2026-09-22 adversarial audit, are fixed — each with a
+> regression that fails before the fix and passes after, on x86_64 and aarch64.
+> The remaining functional blocker is a hard **~5 GB heap ceiling on Linux**
+> (`vm.max_map_count` exhaustion); raising `vm.max_map_count` works around it,
+> and an attempt to fix it properly **failed**, documented with the measurements
 > that narrow it to slab/va-arena span sizing. Several diagnostic features now
-> have contracts that are documented honestly rather than optimistically, and
-> several performance conclusions previously published in this file were
-> **withdrawn** because the harness that produced them was measuring the wrong
-> thing. Work, evidence, and exit criteria:
+> have contracts documented honestly rather than optimistically — including that
+> `UMEM_DEBUG=audit` captures only ~2 frames in a default build — and several
+> performance conclusions previously published in this file were **withdrawn**
+> because the harness that produced them was measuring the wrong thing. Work,
+> evidence, and exit criteria:
 > [`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
 > Claims below are qualified by what has actually been measured; where
 > something is unknown, it says so.
@@ -34,18 +36,11 @@ Drop-in malloc replacement:
 LD_PRELOAD=/usr/local/lib/libumem_malloc.so ./myapp
 ```
 
-> **Do not do this to a setuid, setgid, or root-owned process, and do not use
-> libumem in a network-facing process yet.** A security audit of v3.0.0
-> (2026-09-22) found one critical and three high-severity issues, tracked as
-> Phase 5 of
-> [the readiness plan](docs/plans/2026-09-21-production-readiness.md):
-> a `PATH`-resolved `addr2line` exec on the allocator's own startup path with no
-> privilege gate; no `issetugid`/`AT_SECURE` gating on `UMEM_OPTIONS` at all, so
-> a hostile environment can make a privileged process create and truncate files;
-> library file writers with neither `O_EXCL` nor `O_NOFOLLOW`; and unmangled
-> freelist pointers stored inside freed user buffers, which makes an ordinary
-> application heap overflow **more** exploitable under libumem than under glibc
-> (which has had safe-linking since 2.32). See "Security status" below.
+> **Privileged use:** v3.0.0 and earlier must not be preloaded into setuid,
+> setgid, or root processes. **v3.1.0 fixes the four issues behind that** — a
+> `PATH`-resolved exec on the startup path, ungated `UMEM_OPTIONS`,
+> symlink-following file writers, and a control socket that trusted the real uid.
+> See "Security status" below for what is now hardened and what is still open.
 
 Or link directly for full performance and access to the C API:
 
@@ -326,39 +321,50 @@ jemalloc or mimalloc.  If it's the other way around, pick libumem.
 
 ## Security status
 
-**Audited 2026-09-22 against v3.0.0. Not hardened for hostile input yet.**
+**Audited 2026-09-22 against v3.0.0; hardened in v3.1.0.**
 
-The correctness work in v3.0.0 is real — ten reachable defects in default code
-paths, each with a regression that fails before the fix and passes after, on two
-architectures. But correctness and hardening are different disciplines, and this
-code was written for a trusted environment. An adversarial audit found:
+The audit found one critical and three high-severity issues, all now fixed, each
+with a regression that demonstrates the pre-fix exposure:
 
-| Severity | Issue | Affects |
-|---|---|---|
-| **Critical** | `execlp("addr2line")` resolves through `PATH` on the unconditional `umem_init()` path, gated only by an ungated `getenv`. A setuid binary *linked* against libumem (`AT_SECURE` blocks `LD_PRELOAD`, not linkage) runs the attacker's `addr2line` before `main()`. The `-e /proc/self/exe` argument also names *addr2line itself* after exec, so the feature cannot work as written. | setuid targets; any process with an untrusted `PATH` |
-| **High** | No `issetugid`/`AT_SECURE` gating on option parsing at all. `UMEM_OPTIONS=profile=record:/path` creates and truncates a caller-chosen file as the target's UID. | privileged processes with an untrusted environment |
-| **High** | No `O_EXCL` or `O_NOFOLLOW` in any library file writer, so snapshot and profile paths follow symlinks. | root daemons writing to shared directories |
-| **High** | Freelist links (`bc_next`) are stored **inside freed user buffers**, unmangled. A one-buffer overflow into an adjacent freed buffer yields an arbitrary-address allocation. glibc has mangled these since 2.32. | any process with an ordinary heap overflow |
+| Was | Now |
+|---|---|
+| `execlp("addr2line")` ran on the unconditional `umem_init()` path, resolving through `PATH`, gated only by an ungated `getenv` — arbitrary code execution as the elevated user in a setuid binary *linked* against libumem, before `main()` | **Deleted.** It never worked anyway: `-e /proc/self/exe` names *addr2line itself* after exec, verified to resolve nothing. `dladdr` and `libdw` remain |
+| No `issetugid`/`AT_SECURE` gating on option parsing at all, so a hostile environment could make a privileged process create and truncate files | `umem_secure_mode()` consulted before parsing; options with file, socket, or exec side effects ignored in secure mode, tuning options unaffected |
+| No `O_EXCL` or `O_NOFOLLOW` in any library writer — snapshot and profile paths followed symlinks (a victim file went 54 → 5472 bytes) | One `umem_open_write()`: `O_NOFOLLOW`, `S_ISREG`, single-link, euid-owned, 0600, truncate only after the checks |
+| Freelist links stored **inside freed user buffers**, unmangled — a one-buffer overflow yielded an arbitrary-address allocation | Links mangled with an `AT_RANDOM` cookie and the slot address, plus alignment and slab-containment validation that reports rather than dereferences |
+| Control socket at `/tmp/umem.<pid>.sock`, reclaimed via `stat` — which follows symlinks, so it could unlink another process's socket | euid-private directory, `lstat`, and a bind-then-`rename()` reclaim that removes nothing it did not create |
+| `SO_PEERCRED` accepted the **real** uid, handing a setuid target's unprivileged invoker full control including a thread-parking DoS | `geteuid()` or root only |
+| Interposed `free()` wrote to a foreign pointer's header *before* validating it, and the magic is forgeable | Ownership range checked before the header read and after decode; all mutation after acceptance |
+| `getpcstack()` walked frames with no stack bounds — arbitrary reads under `UMEM_DEBUG=audit`, SIGSEGV demonstrated | Real stack bounds consulted; the 16 MiB heuristic is a documented fallback only |
 
-Plus medium-severity issues: a predictable `/tmp` socket path with an unlink
-TOCTOU, a peer check that accepts the *real* uid (so for a setuid target the
-unprivileged invoker gets control), a forgeable interposer header whose failure
-path continues instead of aborting, and an unbounded frame-pointer walk under
-`UMEM_DEBUG=audit`.
+### What is still open
 
-**What is safe today:** a non-privileged process that trusts its own
-environment, is not directly exposed to untrusted input, and keeps its heap
-under ~5 GB on Linux (see the ceiling below).
+- **The ~5 GB Linux heap ceiling** (`vm.max_map_count`). Raise
+  `vm.max_map_count` to work around it. An attempt to fix it failed and is
+  documented with the measurements that narrow it to slab/va-arena span sizing:
+  [`docs/results/2026-09-22-umem-heap-ceiling-vma.md`](docs/results/2026-09-22-umem-heap-ceiling-vma.md).
+- **One evidence gap in the freelist fix.** Isolating the two controls shows the
+  *containment check* blocks the tested attack by itself, because that test's
+  target is outside the victim slab. Mangling covers an in-slab target, which no
+  test currently exercises — so the verified claim is "this attack shape is
+  blocked", not "mangling stops it":
+  [`docs/results/2026-09-23-p54-which-control-blocks.md`](docs/results/2026-09-23-p54-which-control-blocks.md).
+- **`umem_may_own()` is a convex hull**, so a forged header landing *between*
+  heap spans passes the range check; size and layout validation still apply.
+- **`umem_abort = 0`** remains the interpose-mode default, which logs and
+  continues where glibc aborts. Defensible now that a rejected pointer leaves
+  state untouched; `UMEM_OPTIONS=abort=1` restores aborting.
+- **Leading-component symlinks** in output paths are not defended.
 
-**What is not:** setuid/setgid or root processes, processes with an
-attacker-influenced environment, and network-facing services — the last because
-of the freelist issue, which is an exploitability multiplier for bugs in *your*
-code, not libumem's.
+### Honest framing
 
-Tracking and exit criteria: Phase 5 of
-[`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
-One finding in that audit was a false claim in v3.0.0's own release notes, which
-is recorded there too rather than quietly corrected.
+This was a hardening pass, not a security proof. What it establishes is that the
+specific exposures found by one adversarial audit are closed and stay closed
+under test. It does not establish that none remain — and libumem is a
+`malloc` replacement, so the surface is broad. If you are deploying it somewhere
+hostile, read
+[the plan's Phase 5](docs/plans/2026-09-21-production-readiness.md) for the
+threat positions actually considered.
 
 ## Platform support
 
