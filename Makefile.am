@@ -870,6 +870,14 @@ test_integration_test_heap_ceiling_SOURCES = \
 test_integration_test_heap_ceiling_LDADD = libumem.la
 test_integration_test_heap_ceiling_CPPFLAGS = -I$(srcdir)
 
+# Measurement instrument, not a test: VMAs / RSS for a fixed workload.  The
+# before/after numbers for the ceiling fix and the small-heap RSS check come
+# from this.  Never in TESTS.
+noinst_PROGRAMS += test/integration/heap_density
+test_integration_heap_density_SOURCES = test/integration/heap_density.c
+test_integration_heap_density_LDADD = libumem.la
+test_integration_heap_density_CPPFLAGS = -I$(srcdir)
+
 # NOTE which PTC variants are gated above: the _probe ones, which use exact
 # in-library counters (objects still in a bin when the PTC is freed; objects
 # still in a magazine when its shell is freed).  The plain variants compare
