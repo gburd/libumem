@@ -1,0 +1,2 @@
+bench: WARNING -- 12297543 allocation(s) FAILED during the fragmentation workload.  This run completed less work than requested; its throughput is not comparable to a run that did not, and the ratio is not a measurement of a healthy allocator.
+bench: pthread_create failed at frag thread 186 of 192

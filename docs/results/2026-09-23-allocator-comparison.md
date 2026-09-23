@@ -297,6 +297,44 @@ live set is 0.2-2 GB and never near umem's ceiling.
 
 (t=2 and t=4 rows omitted here; same pattern, in the raw data.)
 
+**Metal** (frag null: x86_64 sd 10.6 %, aarch64 sd 7.7 %):
+
+| box | size | t | libc | **umem** | umem-preload | jemalloc | tcmalloc | mimalloc | snmalloc | scudo | rpmalloc | umem/libc | umem vs best | null |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| c7i.metal | 16:64 | 1 | 4.3 | 4.2 | 3.0 | 6.3 | 5.4 | **6.6** | 6.3 | 3.7 | 6.6 | 0.97 | **-37%** | -0.1% |
+| c7i.metal | 16:64 | 8 | 16.5 | 13.3 | 3.0 | **20.8** | 16.8 | 13.2 | 15.3 | 16.7 | 17.4 | 0.81 | **-36%** | +16.0% |
+| c7i.metal | 16:64 | 32 | 16.4 | 17.2 | 2.9 | 15.7 | **18.1** | 17.8 | 16.2 | 16.1 | 15.5 | 1.05 | -5% | +3.2% |
+| c7i.metal | 16:64 | 192 | 15.1 | 15.6 | 1.5 | 14.9 | 15.7 | 15.3 | 15.5 | 15.1 | **15.7** | 1.04 | -1% | +0.1% |
+| c7i.metal | 64:256 | 1 | 2.5 | 3.6 | 2.6 | **6.2** | 4.1 | 4.5 | 4.8 | 3.1 | 4.3 | 1.41 | **-42%** | +0.3% |
+| c7i.metal | 64:256 | 8 | 12.8 | 15.0 | 3.1 | 15.1 | 14.3 | **17.8** | 14.9 | 15.0 | 16.8 | 1.17 | -16% | -2.1% |
+| c7i.metal | 64:256 | 192 | 14.8 | 15.4 | 1.4 | 15.6 | **16.1** | 15.8 | 14.9 | 15.3 | 15.7 | 1.04 | -4% | +7.8% |
+| c7i.metal | 256:1024 | 1 | 2.3 | 3.1 | 2.4 | **4.2** | 3.2 | 3.6 | 3.9 | 2.3 | 3.2 | 1.36 | **-27%** | -0.1% |
+| c7i.metal | 256:1024 | 64 | 14.0 | 14.0 | 1.8 | 14.3 | 13.4 | 14.6 | **14.8** | 7.3 | 13.4 | 1.00 | -5% | +2.2% |
+| c7i.metal | 1k:4k | 8 | 6.0 | 10.8 | 3.1 | 10.1 | **10.9** | 10.4 | 10.5 | 9.4 | 10.2 | 1.80 | -1% | -2.2% |
+| c8g.metal | 16:64 | 1 | 4.9 | 4.4 | 2.7 | **6.3** | 5.5 | 5.8 | 6.0 | 4.1 | 5.7 | 0.89 | **-30%** | +0.1% |
+| c8g.metal | 16:64 | 8 | 21.9 | 24.1 | 3.0 | 23.3 | **25.3** | 25.3 | 23.1 | 23.5 | 24.7 | 1.10 | -5% | -4.0% |
+| c8g.metal | 16:64 | 192 | 21.6 | 22.5 | 2.1 | **23.4** | 22.9 | 22.2 | 22.5 | 22.3 | 22.7 | 1.04 | -4% | +0.2% |
+| c8g.metal | 64:256 | 1 | 3.2 | 4.0 | 2.5 | **5.6** | 4.5 | 4.9 | 5.0 | 3.6 | 4.6 | 1.26 | **-29%** | +0.0% |
+| c8g.metal | 64:256 | 8 | 15.6 | 20.9 | 3.1 | 24.1 | 20.8 | 22.4 | **24.3** | 21.1 | 23.8 | 1.34 | -14% | +9.5% |
+| c8g.metal | 256:1024 | 1 | 2.4 | 3.7 | 2.4 | **4.5** | 3.4 | 4.0 | 4.3 | 2.8 | 3.7 | 1.55 | -19% | +0.0% |
+| c8g.metal | 1k:4k | 8 | 7.3 | 15.8 | 3.0 | 15.1 | 14.1 | 16.3 | **17.3** | 11.3 | 13.7 | 2.17 | -9% | +0.4% |
+
+At t >= 32 on metal every allocator converges to 14-25 Mops (the workload's
+`memset` of every allocated buffer and the per-thread RNG saturate before the
+allocator does), so the frag signal is at t=1..8, where umem is **27-42 %
+behind the leader at 16..1024 B** with a t=1 null of +/-0.3 %. The lo-box and
+metal figures agree. umem's frag p999 at t=1..8 is again best-in-tier (330-
+870 ns); at 128-192 threads on x86_64 all allocators except snmalloc/jemalloc
+are at 20-31 us, umem included.
+
+Fragmentation pair on metal is the same as on the lo boxes to within 2 %
+(16:64: umem 2.65x, glibc 1.85x, jemalloc 1.66x; 64:256: 1.57 / 1.25 / 1.20;
+256:1024: 1.33 / 1.08 / 1.14; 1k:4k: 1.17 / 1.04 / 1.15). At 128-192 threads
+the live set desynchronises and every allocator's ratio rises (umem 3.3-3.8x
+at 16:64, glibc 2.1-2.2x, jemalloc 2.0-2.3x); `rss_at_live_peak` and `VmHWM`
+still agree within 12 %, so the RSS is real, the denominator moved (P2.2's
+documented artefact).
+
 Reading: on this workload umem beats glibc clearly (1.2-2.3x at 64 B and up;
 glibc's `free()` consolidation is the slow path here, its p999 is 10-16 us)
 but trails the modern size-class allocators by a consistent **20-33% at
@@ -620,9 +658,15 @@ Ceiling probe (`frag` 1k:4k, 12M ops, t=8, live set 7.5 GB, 16 GiB boxes):
 | c7g.2xlarge | libc | 23,062,582 | 0 | 7.72 GB | 7.62 GB | 7.95 GB |
 | c7g.2xlarge | umem | 9,975,603 | **6,741,130** | 4.45 GB | 3.84 GB | 4.45 GB |
 | both | umem-preload | -- (hung, killed) | 5.9-6.9M (stderr) | -- | -- | 4.47-4.55 GB |
+| c7i.metal (t=192, 19.2M ops) | libc | 19,200,000 | 0 | (in TOML) | | |
+| c7i.metal | umem | -- (hung: 188/192 threads created, killed after 8.6 min) | 12,297,543 (stderr) | -- | -- | 4.74 GB, 65,532 VMAs |
+| c7i.metal | umem-preload | -- (hung: 186/192, killed) | (stderr) | -- | -- | 4.73 GB, 65,532 VMAs |
+| c8g.metal (t=192) | umem | -- (hung: 178/192, killed) | 12,289,016 (stderr) | -- | -- | 4.71 GB, 65,531 VMAs |
+| c8g.metal | umem-preload | -- (hung: 192/192 created but pool `calloc` failed for some, killed after 15 min) | (stderr) | -- | -- | 4.85 GB, 65,531 VMAs |
 
-umem stops at 4.45-4.55 GB with 65,531-65,532 VMAs against `max_map_count`
-65,530 -- exactly the 2026-09-22 diagnosis. **This is the known-open item;
+umem stops at 4.45-4.85 GB with 65,531-65,532 VMAs against `max_map_count`
+65,530 on all four boxes (16 GiB and 377-384 GiB alike) -- exactly the
+2026-09-22 diagnosis, and independent of how much RAM the box has. **This is the known-open item;
 `3f2e67c` (span-density floor in `umem_cache_create()`) landed after this
 run and is not measured here.** It also caused a **harness hang**: once the
 VMA budget was gone, `pthread_create()` failed for the 5th-8th frag worker,

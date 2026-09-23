@@ -1,0 +1,3 @@
+umem: VmHWM=VmHWM:	 4710964 kB maps=65531 fails=12289016 threads_created=178/192
+preload: VmHWM=VmHWM:	 4848892 kB maps=65531 threads=Threads:	194
+22:18:48 bench_main -a umem-preload -w frag -t 192: etime=15:22 VmHWM: 4772464 kB Threads: 192  maps=65531 all-threads-in-barrier=192 -- HUNG on start barrier after pthread_create/pool-calloc failure; killed
