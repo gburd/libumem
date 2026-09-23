@@ -540,13 +540,31 @@ umem_interpose_init(void)
 
 	/*
 	 * Disable abort on recoverable errors in interpose mode.
-	 * When LD_PRELOAD is used, we may encounter pointers from:
-	 * - libc malloc (allocated before libumem loaded)
-	 * - Shared libraries with their own allocators
-	 * - System libraries (zlib, etc.)
 	 *
-	 * Rather than crashing on invalid frees, log errors and continue.
-	 * This matches glibc malloc's behavior and is safer for LD_PRELOAD.
+	 * WHY (the legitimate reason): under LD_PRELOAD we are handed pointers
+	 * from allocators that are not us -- libc malloc for anything allocated
+	 * before we loaded, shared libraries carrying their own allocator, and
+	 * plain application bugs.  Aborting the process on the first such
+	 * pointer makes libumem unusable as a drop-in.
+	 *
+	 * THIS IS NOT "THE SAME AS GLIBC", and the comment here used to say it
+	 * was.  glibc ABORTS on an invalid free ("free(): invalid pointer").
+	 * Continuing is strictly weaker than glibc for this case, and P5.8
+	 * examined exactly that: with umem_abort = 0, a pointer whose header
+	 * passed the magic check proceeded to free memory libumem does not own.
+	 *
+	 * WHAT MAKES CONTINUING DEFENSIBLE NOW, and it was not before: as of
+	 * P5.8, process_free() validates BEFORE it mutates -- ownership of the
+	 * header, ownership of [base, base+size), and the size against the
+	 * layout the magic named -- and a pointer that fails is refused having
+	 * changed nothing.  So "log and continue" now continues from a state
+	 * the allocator never touched, rather than from a half-applied free.
+	 * That is the difference between tolerating a foreign pointer and
+	 * acting on a forged one.
+	 *
+	 * The remaining gap versus glibc is DETECTION LOUDNESS, not corruption:
+	 * a program with a double-free bug gets a log line from us where glibc
+	 * would kill it.  Set UMEM_OPTIONS=abort=1 to get the abort back.
 	 */
 	extern uint_t umem_abort;
 	umem_abort = 0;
@@ -648,10 +666,12 @@ free(void *ptr)
 	/*
 	 * Unrecognized.  Before interposition is READY the pointer most
 	 * likely predates us, so libc owns it.  Once READY, hand it to umem,
-	 * which logs a recoverable error (umem_abort is 0 in interpose mode)
-	 * rather than crashing on a foreign pointer -- matching glibc's
-	 * tolerance and keeping LD_PRELOAD usable with libraries that carry
-	 * their own allocators.
+	 * which logs a recoverable error (umem_abort is 0 in interpose mode --
+	 * see umem_interpose_init() for why, and for why that is weaker than
+	 * glibc rather than "the same as") rather than crashing on a foreign
+	 * pointer.  Since P5.8, process_free() refuses such a pointer without
+	 * mutating allocator state, so continuing here cannot leave a
+	 * half-applied free behind.
 	 */
 	if (atomic_load(&interpose_state) != INTERPOSE_READY) {
 		if (libc_free != NULL)
