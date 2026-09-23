@@ -1473,6 +1473,137 @@ lazily on the child's first `umem_cache_update`-worthy event. Regression: fork
 after a fill, free in the child, RSS must return in the child without
 `umem_reap()`.
 
+## Phase 7 — Hardening properties: what is actually established
+
+**Origin:** the open items README listed after v3.1.0, plus a re-review of
+Phase 5. Position codes as in §7a of `AGENTS.md`. Two agents dispatched on
+this phase died on provider content filters; the coordinator did it directly.
+
+| Item | State | Evidence |
+|---|---|---|
+| P7.1 P5.4 mangling not independently tested | **CLOSED** | `inslab` case: FAIL with `-DUMEM_NO_LINK_MANGLE`, PASS default (`c8d83bd`) |
+| P7.2 `UMEM_OPTIONS=abort` documented but nonexistent | **FIXED** | `test_abort_option.sh`: pre rc=0, post SIGABRT (`1c604df`) |
+| P7.3 P1.3c ledger false positive | **FIXED** | stale-tail split 0/254/127; drain-disabled 635/1016/635 (`64ca9af`) |
+| P7.4 `umem_may_own()` convex hull | **OPEN, characterised** | below |
+| P7.5 leading-component symlinks | **OPEN, by design** | below |
+| P7.6 update thread never started | **FIXED** (found via P6.8) | `9bbe58b` |
+
+### P7.1 -- see P5.4 and `docs/results/2026-09-23-p54-which-control-blocks.md`.
+
+### P7.2 The documented escape hatch did not exist
+`malloc_interpose.c:611` (old comment), `README.md:337`, `envvar.c`
+
+The interposer clears `umem_abort` so foreign pointers under `LD_PRELOAD` are
+logged rather than fatal, and both the source comment and the README told users
+`UMEM_OPTIONS=abort=1` restores the abort. No option table had an `abort`
+entry; only `noabort` existed, an `ITEM_CLEARFLAG` in the `UMEM_DEBUG` table
+(a different variable), and `abort=1` would have been rejected by the flag
+parser for carrying a value. So a preloaded program had no way back to
+glibc-like abort-on-invalid-free, and the user who set the documented option
+believed they had one. Position D: the difference between a forged free that
+kills the process and one that logs to an in-memory buffer nobody reads
+(`umem_output` is 0 by default, so `umem_err_recoverable` writes nothing to
+stderr).
+
+Fixed: `abort` is an `ITEM_FLAG` in `umem_options_items`, secure-**safe**
+(arming can only turn continued execution into a crash). The first attempt put
+it next to `noabort` in the `UMEM_DEBUG` table and the regression caught it:
+`UMEM_OPTIONS=abort` parsed nothing, arm still exited 0. Regression
+`test/security/test_abort_option.sh`: control arm (default) refuses and
+completes; test arm (`UMEM_OPTIONS=abort`, same forged free) dies with
+SIGABRT. Pre-fix `d8a0984`: FAIL; post `1c604df`: PASS.
+
+### P7.3 -- see the `umem_ptc_probe_shell_free` comment in `umem.c` and the
+CHANGELOG entry. Recorded here because it is a hardening-*evidence* defect:
+an exact oracle that fires on a non-defect is worse than a statistical one,
+because it is believed.
+
+### P7.4 `umem_may_own()` is a convex hull -- characterised, left open
+`malloc.c:475-500` (`hull_refresh`, `umem_may_own`); `malloc.c:578,698`
+(`process_free` call sites)
+
+**What it does.** `[umem_heap_lo, umem_heap_hi)` is the min/max over
+`vmem_heap`'s spans, refreshed on a miss. A pointer strictly between two spans
+-- a gap the kernel gave to someone else -- passes.
+
+**What that buys an attacker (position D, the only one where this matters).**
+They need writable memory *inside the hull*, *outside every span*, whose
+address they can pass to `free()`. With ASLR and the heap reserved in large
+`PROT_NONE` ranges, the gaps are the kernel's choice, not theirs; the realistic
+case is a large `mmap` of their own that landed in a gap, which requires the
+heap to have grown around it. Given that, they forge a `MALLOC_MAGIC` header
+(the magic is a fixed constant) and a plausible size, and `process_free`
+accepts it and calls `_umem_free(base, size)`. For `size <= UMEM_MAXBUF` that
+is `umem_cache_free(cp, buf)` -> PTC bin push -- **no validation on that
+path** -- and the attacker's address is later returned by `malloc()`. That is
+a chosen-pointer return, the primitive P5.4 also defends against, reached
+without touching a slab.
+
+**Why it is not closed here.** The exact check is `vmem_contains(vmem_heap,
+addr)` -- a segment-hash lookup under `vm_lock` -- on **every** `free()`,
+because the hull passes the in-between case, so a check only on hull misses
+does not help. That is a lock on the interposer's free path, which P8.1 just
+took ~390x back from. The alternative, validating at the slab layer
+(`umem_slab_free`'s `UMEM_SLAB(cp, buf)` reads `sp->slab_cache` from a page the
+*pointer* names, so a forged page with `slab_cache = cp` passes), is the same
+class of problem.
+
+**What glibc does.** Nothing: `free()` reads the chunk header unconditionally
+and applies consistency checks; for the main arena there is no range check at
+all. jemalloc's `rtree` lookup **is** an exact ownership check (it is how
+jemalloc finds the extent), and scudo's checksummed header is an
+unforgeable one. So: strictly more than glibc, less than jemalloc/scudo.
+
+**What would close it.** Either a header that cannot be forged (a per-process
+secret folded into `malloc_stat`, the approach scudo takes -- this changes the
+on-heap format and the introspection tools that read it) or an exact
+ownership structure cheap enough for the free path (a radix over span bases,
+which is what jemalloc's `rtree` is). Both are real projects; neither is a
+line. Recorded as the honest boundary of the interposer's hardening:
+**a forged header inside the hull but outside every span is accepted.**
+
+### P7.5 Leading-component symlinks -- by design, stated
+`umem_open_write()` (`misc.c`); callers in `umem_profile.c`, `umem_inspect.c`
+
+`umem_open_write()` opens the **final** component with `O_NOFOLLOW|O_EXCL`
+semantics and verifies it is a regular file with one link owned by the
+effective uid. It does not resolve the directory path component by component,
+so `/tmp/attacker-symlink/out.log` follows the symlink into whatever
+directory it names and creates `out.log` there.
+
+This is the same boundary glibc's `MALLOC_TRACE`/`mtrace` and every
+"write a file at a user-supplied path" facility has, and the same one
+`O_NOFOLLOW` itself has by specification. The complete fix is `openat()`
+walking each component with `O_NOFOLLOW|O_DIRECTORY`, or refusing paths
+whose directories are writable by others. In secure mode these options are
+already **ignored** (P5.2), which is the case where a hostile path matters
+(position A/C). For an unprivileged process writing where its own
+environment says, the process owner controls both the path and the
+symlink. Left as documented behaviour.
+
+### P7.6 -- see P6.8. Recorded here because it is a hardening property too:
+every background self-check, rescale and reclaim documented as "periodic" was
+not running in any process that had not yet failed an allocation.
+
+### Property inventory vs. alternatives
+
+What is actually enforced, on which path, and how it is tested. "Tested"
+means a regression that fails when the control is removed.
+
+| Property | libumem | glibc | jemalloc | scudo |
+|---|---|---|---|---|
+| Header outside heap rejected before read | hull (`umem_may_own`), tested | no | rtree, exact | checksum, exact |
+| Header inside heap gap rejected | **no** (P7.4) | no | yes | yes |
+| Freelist link integrity (free chunk) | mangle + align + containment, each tested (P5.4, P7.1) | safe-linking (mangle only) | n/a (bitmap) | n/a |
+| Double free detected | buftag (`UMEM_DEBUG`) only | tcache key, default | opt | quarantine, default |
+| Env tunables ignored when setuid/AT_SECURE | yes, side-effect options, tested (P5.2) | yes | yes | yes |
+| Abort on detected corruption | default on; interposer off; `abort` re-arms, tested (P7.2) | on | on | on |
+| Writer file paths: symlink final component | refused, tested (P5.3) | n/a | n/a | n/a |
+| Writer file paths: symlink in directory | followed (P7.5) | n/a | n/a | n/a |
+| Control socket path predictable/shared | euid-private dir, `lstat`, rename reclaim, tested (P5.6) | n/a | n/a | n/a |
+| Stack-walk bounds | `pthread_getattr_np`, tested (P5.9) | n/a | n/a | n/a |
+| `PATH`-resolving exec in library | none, tested (P5.1) | none | none | none |
+
 ## Phase 8 — Performance gaps
 
 **Origin:** the 2026-09-23 allocator comparison,

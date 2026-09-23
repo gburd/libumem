@@ -331,11 +331,22 @@ with a regression that demonstrates the pre-fix exposure:
   controls are now independently demonstrated:
   [`docs/results/2026-09-23-p54-which-control-blocks.md`](docs/results/2026-09-23-p54-which-control-blocks.md).
 - **`umem_may_own()` is a convex hull**, so a forged header landing *between*
-  heap spans passes the range check; size and layout validation still apply.
+  heap spans passes the range check and, for sizes under 128 KiB, the pointer
+  goes onto a per-thread free list unvalidated and is later returned by
+  `malloc()`. More than glibc does (nothing), less than jemalloc's exact rtree
+  or scudo's checksummed header. Closing it means either an unforgeable header
+  or an exact ownership structure cheap enough for every `free()`; both are
+  projects, not lines. Characterised in the plan (P7.4).
 - **`umem_abort = 0`** remains the interpose-mode default, which logs and
   continues where glibc aborts. Defensible now that a rejected pointer leaves
-  state untouched; `UMEM_OPTIONS=abort` restores aborting (the option was previously documented as `abort=1`, which did not exist).
-- **Leading-component symlinks** in output paths are not defended.
+  state untouched. `UMEM_OPTIONS=abort` restores aborting — **this option did
+  not exist until now**; it was documented as `abort=1` and nothing implemented
+  it, so the escape hatch users were told about was a no-op. Regression:
+  `test/security/test_abort_option.sh`.
+- **Leading-component symlinks** in output paths are not defended: the final
+  component is opened `O_NOFOLLOW`, the directory path is not walked. Same
+  boundary as `O_NOFOLLOW` itself; in secure mode these options are ignored
+  entirely, which is where it would matter.
 
 ### Honest framing
 
