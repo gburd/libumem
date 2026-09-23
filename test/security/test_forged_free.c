@@ -77,6 +77,28 @@
 
 static int failures;
 
+/*
+ * Under ASan, free() is intercepted by ASan before it reaches the interposer,
+ * and a forged stack/static pointer is rejected there -- so the arms that hand
+ * one to free() cannot reach process_free() at all.  Skip them rather than
+ * claim a result the run did not produce.
+ */
+static int
+asan_active(void)
+{
+#if defined(__SANITIZE_ADDRESS__)
+	return (1);
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+	return (1);
+#else
+	return (0);
+#endif
+#else
+	return (0);
+#endif
+}
+
 static void
 pass(const char *what)
 {
@@ -109,6 +131,14 @@ typedef struct {
 /*
  * Lay a forged header in front of `payload` and hand the payload to free().
  * Returns 1 if the header's stat word was MUTATED by the call.
+ *
+ * ASAN NOTE.  Under --enable-asan, ASan interposes free() ahead of the
+ * interposer and rejects a non-malloc()-ed pointer itself
+ * ("attempting free on address which was not malloc()-ed"), aborting before
+ * libumem's process_free() is ever entered.  That is ASan doing its job, but it
+ * means the forgery never reaches the code under test, so these arms are
+ * skipped in an ASan build rather than reported.  The non-ASan run is the one
+ * that exercises process_free(); see asan_active() and main().
  */
 static int
 forge_and_free(void *region, size_t region_size, uint32_t size_field,
@@ -179,6 +209,21 @@ main(void)
 	}
 	free(p);
 
+	if (asan_active()) {
+		/*
+		 * Arms A-C hand a forged stack/static pointer to free().  ASan
+		 * intercepts that and aborts before libumem sees it, so those
+		 * arms cannot test process_free() here.  Arms E and F use only
+		 * real allocations and still mean something, so run those and
+		 * report the rest honestly as not covered by this build.
+		 */
+		printf("[A-C] SKIPPED under ASan: ASan interposes free() ahead "
+		    "of libumem and rejects a non-malloc()-ed pointer itself, "
+		    "so the forgery never reaches process_free().  The non-ASan "
+		    "run covers these.\n");
+		goto controls;
+	}
+
 	/* ---------------------------------------------- A: stack forgery */
 	printf("[A] forged MALLOC_MAGIC header on the stack\n");
 	(void) forge_and_free(stack_region, sizeof (stack_region),
@@ -209,6 +254,7 @@ main(void)
 	    0xFFFFFFF0u, MALLOC_MAGIC,
 	    "size ~4GB refused, header untouched");
 
+controls:
 	/* ---------------------------------------------- D: still healthy */
 	printf("[D] the allocator survived and still works\n");
 	for (i = 0; i < 64; i++) {

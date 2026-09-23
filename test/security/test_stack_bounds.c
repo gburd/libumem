@@ -156,6 +156,28 @@ main(void)
 
 static int failures;
 
+/*
+ * Is a sanitizer rewriting our frames?  If so the frame-pointer-slot assumption
+ * victim_frame() depends on does not hold, and the corrupted arms must be
+ * skipped rather than reported either way.  The control arm still runs: it only
+ * needs the walk to work, not the poisoning.
+ */
+static int
+asan_active(void)
+{
+#if defined(__SANITIZE_ADDRESS__)
+	return (1);
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+	return (1);
+#else
+	return (0);
+#endif
+#else
+	return (0);
+#endif
+}
+
 static void
 pass(const char *what)
 {
@@ -219,6 +241,20 @@ struct walk_ctx {
 /*
  * Establish a frame, hand its frame-pointer slot up, and return.  The frame is
  * dead from here on, which is what makes poisoning it safe.
+ *
+ * NOTE ON __builtin_frame_address UNDER SANITIZERS.  This assumes
+ * __builtin_frame_address(0) is the address of the saved-frame-pointer slot,
+ * which is the ABI layout on x86_64 and aarch64 in an ordinary build.  Under
+ * ASan it is NOT reliable: ASan rewrites the frame to interpose redzones around
+ * locals, so slot[0] can land in a redzone rather than on the saved fp, and
+ * ASan then reports a stack-buffer-overflow READ inside this test.  Observed on
+ * aarch64 exactly that way -- the report named poison_and_walk's own pcstack,
+ * not the allocator.
+ *
+ * So the corrupted arms are skipped under ASan (see asan_active()): the value
+ * of the ASan run is that it watches the LIBRARY's reads, and the control arm
+ * plus the non-sanitized run already cover the corrupted ones.  Claiming a pass
+ * from an arm whose own premise ASan has invalidated would be a false green.
  */
 __attribute__((noinline))
 static void
@@ -432,6 +468,21 @@ main(void)
 	if (control_depth >= 2) {
 		printf("  PASS: uncorrupted walk returned depth %d\n",
 		    control_depth);
+	} else if (asan_active()) {
+		/*
+		 * ASan's frame rewriting also changes what the walk can climb,
+		 * so a shallow control depth here is a property of the ASan
+		 * build, not evidence about the fix.  Say so and stop, rather
+		 * than reporting either pass or fail on it.
+		 */
+		printf("  (control depth %d under ASan: ASan's frame layout "
+		    "limits the walk, so this build cannot exercise the "
+		    "corrupted arms.  Not a failure, and not evidence -- the "
+		    "non-ASan run is the one that tests them.)\n",
+		    control_depth);
+		printf("\ntest_stack_bounds: SKIP (ASan build cannot drive the "
+		    "frame walk)\n");
+		return (77);
 	} else {
 		printf("  FAIL: uncorrupted walk returned depth %d -- the walk "
 		    "is not reaching the frames this test corrupts, so arms A "
@@ -444,13 +495,27 @@ main(void)
 	/* ------------------------------------------- A: aimed at a guard */
 	printf("[A] a frame pointer aimed into the guard page above the "
 	    "stack\n");
-	run_arm(AIM_GUARD,
-	    "corrupted frame pointer in a guard page was not dereferenced");
+	if (asan_active()) {
+		printf("  (skipped under ASan: __builtin_frame_address(0) is "
+		    "not the saved-fp slot when ASan inserts redzones, so this "
+		    "arm's own premise does not hold -- it would report on the "
+		    "TEST, not the walk.  Run it in a non-ASan build; the "
+		    "control arm above still exercises the walk here.)\n");
+	} else {
+		run_arm(AIM_GUARD,
+		    "corrupted frame pointer in a guard page was not "
+		    "dereferenced");
+	}
 
 	/* ------------------------------------ B: aimed past the mapping */
 	printf("[B] a frame pointer aimed past the mapping entirely\n");
-	run_arm(AIM_PAST_MAPPING,
-	    "frame pointer past the whole mapping was not dereferenced");
+	if (asan_active()) {
+		printf("  (skipped under ASan: same reason as [A])\n");
+	} else {
+		run_arm(AIM_PAST_MAPPING,
+		    "frame pointer past the whole mapping was not "
+		    "dereferenced");
+	}
 
 	printf("\n");
 	if (failures != 0) {
