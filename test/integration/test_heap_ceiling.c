@@ -76,7 +76,20 @@
  * So allocate past that. These are touched, so this needs real memory: the
  * target is kept just over the cliff rather than far beyond it.
  */
-#define CHUNK		4096
+/*
+ * CHUNK is a runtime argument (default 4096) because the two halves of the
+ * ceiling fix cover two DIFFERENT allocation paths, and a test of one is blind
+ * to the other:
+ *
+ *   4096 B  -> hashed best-fit slab path   (UMEM_MIN_SLAB_OBJECTS, 3f2e67c)
+ *    512 B  -> one-page slab via umem_va's qcache (UMEM_MIN_QCACHE_SLAB)
+ *
+ * This test passed at 9 GB of 4 KiB objects after 3f2e67c while 512 B objects
+ * still hit the cap at 8.2 GB -- found by the Phase 6 limit hunt, not by this
+ * test.  The 512 B arm exists so that cannot happen again.  Both arms are
+ * gated in make check (see Makefile.am).
+ */
+static size_t CHUNK = 4096;
 #define TARGET_BYTES	(9ULL * 1024 * 1024 * 1024)
 #define NCHUNKS		(TARGET_BYTES / CHUNK)
 
@@ -129,8 +142,15 @@ max_map_count(void)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
+	if (argc > 1) {
+		CHUNK = (size_t)strtoul(argv[1], NULL, 10);
+		if (CHUNK < 16 || CHUNK > (1 << 20)) {
+			printf("usage: %s [chunk_bytes 16..1048576]\n", argv[0]);
+			return (2);
+		}
+	}
 	long limit = max_map_count();
 	void **held;
 	unsigned long long i, ok = 0, failed = 0;
@@ -184,9 +204,9 @@ main(void)
 	}
 
 	vmas_before = count_vmas();
-	printf("target=%lluMB chunk=%dKB chunks=%llu "
+	printf("target=%lluMB chunk=%zuB chunks=%llu "
 	    "vm.max_map_count=%ld vmas_at_start=%ld\n",
-	    TARGET_BYTES / (1024 * 1024), CHUNK / 1024,
+	    TARGET_BYTES / (1024 * 1024), CHUNK,
 	    (unsigned long long)NCHUNKS, limit, vmas_before);
 
 	for (i = 0; i < NCHUNKS; i++) {

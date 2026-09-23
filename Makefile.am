@@ -809,7 +809,8 @@ TESTS += test/unit/test_overflow_contracts \
 	test/bench/check_budget.sh \
 	test/integration/test_ptc_thread_exit_drain_probe \
 	test/integration/test_ptc_resize_no_loss_probe \
-	test/integration/test_heap_ceiling
+	test/integration/test_heap_ceiling \
+	test/integration/test_heap_ceiling_512.sh
 
 # Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
 # P5.9).  Each demonstrates the exposure it closes and fails against v3.0.0 --
@@ -975,6 +976,7 @@ test_test_inspect_live_SOURCES = test/test_inspect_live.c
 test_test_inspect_live_LDADD = libumem.la
 
 dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
+	test/integration/test_heap_ceiling_512.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh \
