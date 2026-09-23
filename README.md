@@ -66,10 +66,11 @@ Three things that no mainstream allocator does as well:
 2. **vmem arenas** — first-class virtual address management with
    quantum caching and hierarchical sub-arenas.  Useful for memory
    regions, NUMA placement, mmap pools, etc.
-3. **Production-grade introspection** — alloc-site tracebacks,
+3. **Production-grade introspection** — alloc-site capture,
    allocation history ring buffer, per-cache statistics, leak
    detection, all queryable at runtime by `umem(1)`, `gdb`, or
-   `lldb` without restarting the target.
+   `lldb` without restarting the target. (Stack capture is shallow in a
+   default build — see the audit-mode note under Debug modes.)
 
 If you only ever call `malloc` / `free`, you do not need libumem.  If
 you maintain a long-running daemon (database, MTA, application
@@ -487,7 +488,7 @@ Controlled via environment variable; no recompile.
 |------|----------|-------------------|---------|
 | Lite | `UMEM_DEBUG=lite` | 28% (1.4× p99) | Cheaper subset of guards |
 | Guards | `UMEM_DEBUG=guards` | 32% (1.5× p99) | Buffer overruns, use-after-free |
-| Audit | `UMEM_DEBUG=audit` | 58% (2.4× p99) | Per-buffer alloc / free stack traces |
+| Audit | `UMEM_DEBUG=audit` | 58% (2.4× p99) | Per-buffer alloc / free stack capture — **~2 frames deep in a default build** (see below) |
 | Contents | `UMEM_DEBUG=contents` | not measured | Buffer contents logging (needs `audit`) |
 | Default | `UMEM_DEBUG=default` | 60% (2.4× p99) | All of the above |
 | Firewall | `UMEM_DEBUG=firewall` | not measured | Guard page per allocation (≥ `minfirewall`) |
@@ -503,6 +504,19 @@ below the default firewall threshold and do not engage `contents` either, so
 it reports ~0% for both, which is a property of the benchmark and not of the
 modes. Earlier revisions of this table published ~10%/~30%/~50%/~5% figures
 with no recorded measurement behind them.
+
+**Audit-mode stack depth is shallow by default.** Recorded stacks are only about
+**two frames** deep in a normal build, and that is a property of how *libumem*
+is compiled, not of your application: the library is built `-O2` without
+`-fno-omit-frame-pointer`, so `getpcstack()` begins its walk inside
+`umem_alloc()` and stops at the first frame-pointer-less allocator frame.
+Measured depth is 2 through `umem_alloc()` versus 7 when `getpcstack()` is
+called directly from a caller that keeps frame pointers — so rebuilding *your*
+application with `-fno-omit-frame-pointer` does not fix it. Build libumem with
+frame pointers (`--enable-asan` does this as a side effect, or add the flag to
+`CFLAGS`) for deeper capture; `libdw`-based capture, where available, is not
+affected. Details: P5.9 in
+[the readiness plan](docs/plans/2026-09-21-production-readiness.md).
 
 ### Per-Thread Cache (PTC)
 

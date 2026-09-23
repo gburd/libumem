@@ -250,16 +250,46 @@ cache flag on
 .BR umem_cache_create (3)
 to opt specific hot caches out of debug instrumentation.
 .SH TROUBLESHOOTING
-.SS Empty stack traces
-On Linux x86_64,
+.SS Short or empty stack traces
+Recorded stacks are normally only about
+.B two frames
+deep in a default build, and that is a property of how
+.B libumem itself
+is compiled, not of your application.
+.PP
+The library is built
+.B -O2
+without
+.BR -fno-omit-frame-pointer ,
+so the allocator's own frames carry no frame pointer.
 .BR getpcstack (3)
-falls back to
-.BR backtrace (3),
-which requires either frame pointers
-.RB ( -fno-omit-frame-pointer )
-or DWARF unwind info.  Distro-shipped binaries normally have one or
-the other; aggressively-stripped builds may not.  Without unwind
-info, recorded stacks are short or empty.
+begins its walk inside
+.BR umem_alloc (3)
+and terminates as soon as it reaches one of those frames — measured depth is
+2 through
+.BR umem_alloc (3)
+versus 7 when
+.BR getpcstack (3)
+is called directly from a caller that keeps frame pointers.  Rebuilding your
+application with
+.B -fno-omit-frame-pointer
+therefore does
+.B not
+fix this on its own.
+.PP
+To get deeper audit stacks, build libumem with frame pointers —
+.B --enable-asan
+does so as a side effect, or add
+.B -fno-omit-frame-pointer
+to
+.B CFLAGS
+when configuring.  DWARF-based capture via
+.BR libdw ,
+when available, is not subject to this limitation.
+.PP
+This means the per-buffer audit feature is materially weaker in a default build
+than its description above implies; it identifies the allocating call site
+shallowly rather than giving a full traceback.
 .SS findleaks reports more buffers than expected
 Check the
 .I cached_skipped
