@@ -1,0 +1,110 @@
+# interpose A/B  vcpu=192  2026-09-23T14:05:30Z  pre=5513c81 post=a74065e
+# runs=3 warmups=1 total_ops=20000000 replicates=3 gcc=11 instance=c7i.metal-48xl
+
+## builds
+  built pre from /home/ec2-user/libumem-ab/pre: libumem.so sha256=833bcdd883a60e08  libumem_malloc.so sha256=87f3e706e1575372
+  built post from /home/ec2-user/libumem-ab/post: libumem.so sha256=977ec0c97ba58a10  libumem_malloc.so sha256=e22e3869aee7a511
+  built nullB from /home/ec2-user/libumem-ab/pre2: libumem.so sha256=22080a83fd253956  libumem_malloc.so sha256=0cb9dcb51788a34b
+  pre vs post libumem_malloc.so differ: yes (required)
+  pre vs nullB libumem_malloc.so differ: yes (layout-only)
+  pre vs post libumem.so differ: yes
+  pre preload resolves: 	/tmp/ab_pre/libumem_malloc.so (0x00007f2e7e621000);	libumem.so.1 => /tmp/ab_pre/libumem.so.1 (0x00007f2e7d943000);
+  post preload resolves: 	/tmp/ab_post/libumem_malloc.so (0x00007fc43e4ca000);	libumem.so.1 => /tmp/ab_post/libumem.so.1 (0x00007fc43d7ec000);
+  nullB preload resolves: 	/tmp/ab_nullB/libumem_malloc.so (0x00007f71dcb97000);	libumem.so.1 => /tmp/ab_nullB/libumem.so.1 (0x00007f71dbeb9000);
+
+## NULL CONTROL (preload arm): pre vs an independent build of the same source
+  null-preload-multi-1-16:64  arm=umem-preload workload=multi threads=1 sizes=16:64  (3 pairs)
+    pair 1: pre         3.018 Mops p999=     25   nullB       3.031 Mops p999=     25   delta     +0.44%
+    pair 2: pre         3.039 Mops p999=     25   nullB       3.024 Mops p999=     25   delta     -0.52%
+    pair 3: pre         3.014 Mops p999=     25   nullB       3.025 Mops p999=     25   delta     +0.37%
+    => null-preload-multi-1-16:64: median delta +0.37%  (min -0.52%, max +0.44%, n=3)
+  null-preload-multi-8-16:64  arm=umem-preload workload=multi threads=8 sizes=16:64  (3 pairs)
+    pair 1: pre         1.941 Mops p999=    365   nullB       1.892 Mops p999=    390   delta     -2.57%
+    pair 2: pre         2.050 Mops p999=    560   nullB       1.752 Mops p999=    375   delta    -14.57%
+    pair 3: pre         1.899 Mops p999=    252   nullB       2.073 Mops p999=    473   delta     +9.16%
+    => null-preload-multi-8-16:64: median delta -2.57%  (min -14.57%, max +9.16%, n=3)
+  null-preload-multi-192-16:64  arm=umem-preload workload=multi threads=192 sizes=16:64  (3 pairs)
+    pair 1: pre         0.805 Mops p999=    263   nullB       0.818 Mops p999=    133   delta     +1.71%
+    pair 2: pre         0.799 Mops p999=    163   nullB       0.795 Mops p999=    155   delta     -0.51%
+    pair 3: pre         0.831 Mops p999=    239   nullB       0.802 Mops p999=    150   delta     -3.46%
+    => null-preload-multi-192-16:64: median delta -0.51%  (min -3.46%, max +1.71%, n=3)
+
+## PRELOAD ARM: pre (5513c81) vs post (a74065e)
+  preload-multi-1-16:64  arm=umem-preload workload=multi threads=1 sizes=16:64  (3 pairs)
+    pair 1: pre         2.968 Mops p999=     24   post        6.067 Mops p999=     24   delta   +104.37%
+    pair 2: pre         3.046 Mops p999=     25   post        6.079 Mops p999=     24   delta    +99.61%
+    pair 3: pre         3.030 Mops p999=     25   post        6.024 Mops p999=     24   delta    +98.79%
+    => preload-multi-1-16:64: median delta +99.61%  (min +98.80%, max +104.37%, n=3)
+  preload-multi-8-16:64  arm=umem-preload workload=multi threads=8 sizes=16:64  (3 pairs)
+    pair 1: pre         1.931 Mops p999=    448   post       28.672 Mops p999=     84   delta  +1384.98%
+    pair 2: pre         1.946 Mops p999=    260   post       29.586 Mops p999=     76   delta  +1420.19%
+    pair 3: pre         1.842 Mops p999=    378   post       28.836 Mops p999=    102   delta  +1465.22%
+    => preload-multi-8-16:64: median delta +1420.19%  (min +1384.98%, max +1465.22%, n=3)
+  preload-multi-32-16:64  arm=umem-preload workload=multi threads=32 sizes=16:64  (3 pairs)
+    pair 1: pre         1.520 Mops p999=    367   post      118.721 Mops p999=    103   delta  +7710.71%
+    pair 2: pre         1.636 Mops p999=    393   post      111.556 Mops p999=    110   delta  +6717.85%
+    pair 3: pre         1.583 Mops p999=    399   post      114.535 Mops p999=    102   delta  +7133.98%
+    => preload-multi-32-16:64: median delta +7133.98%  (min +6717.85%, max +7710.71%, n=3)
+  preload-multi-64-16:64  arm=umem-preload workload=multi threads=64 sizes=16:64  (3 pairs)
+    pair 1: pre         1.023 Mops p999=    754   post      154.706 Mops p999=     70   delta +15025.20%
+    pair 2: pre         1.068 Mops p999=    779   post      158.931 Mops p999=     78   delta +14780.95%
+    pair 3: pre         1.066 Mops p999=    828   post      149.390 Mops p999=    106   delta +13917.11%
+    => preload-multi-64-16:64: median delta +14780.95%  (min +13917.11%, max +15025.20%, n=3)
+  preload-multi-128-16:64  arm=umem-preload workload=multi threads=128 sizes=16:64  (3 pairs)
+    pair 1: pre         0.875 Mops p999=    789   post      231.347 Mops p999=    156   delta +26326.28%
+    pair 2: pre         0.882 Mops p999=    694   post      249.141 Mops p999=    189   delta +28156.07%
+    pair 3: pre         0.908 Mops p999=    693   post      229.322 Mops p999=    125   delta +25141.96%
+    => preload-multi-128-16:64: median delta +26326.28%  (min +25141.96%, max +28156.07%, n=3)
+  preload-multi-192-16:64  arm=umem-preload workload=multi threads=192 sizes=16:64  (3 pairs)
+    pair 1: pre         0.815 Mops p999=    120   post      317.385 Mops p999=    491   delta +38835.90%
+    pair 2: pre         0.794 Mops p999=    161   post      308.604 Mops p999=    323   delta +38757.73%
+    pair 3: pre         0.790 Mops p999=    154   post      314.153 Mops p999=    459   delta +39675.16%
+    => preload-multi-192-16:64: median delta +38835.90%  (min +38757.73%, max +39675.17%, n=3)
+  preload-multi-8-64:256  arm=umem-preload workload=multi threads=8 sizes=64:256  (3 pairs)
+    pair 1: pre         1.967 Mops p999=    359   post       32.965 Mops p999=     27   delta  +1575.64%
+    pair 2: pre         1.887 Mops p999=    523   post       34.532 Mops p999=     26   delta  +1730.40%
+    pair 3: pre         2.056 Mops p999=    590   post       34.896 Mops p999=     87   delta  +1597.26%
+    => preload-multi-8-64:256: median delta +1597.26%  (min +1575.64%, max +1730.40%, n=3)
+  preload-multi-192-64:256  arm=umem-preload workload=multi threads=192 sizes=64:256  (3 pairs)
+    pair 1: pre         0.826 Mops p999=    195   post      330.224 Mops p999=    411   delta +39872.17%
+    pair 2: pre         0.832 Mops p999=    196   post      325.098 Mops p999=    469   delta +38980.87%
+    pair 3: pre         0.831 Mops p999=    202   post      317.542 Mops p999=    438   delta +38096.56%
+    => preload-multi-192-64:256: median delta +38980.87%  (min +38096.56%, max +39872.17%, n=3)
+  preload-prodcons-8-64:256  arm=umem-preload workload=prodcons threads=8 sizes=64:256  (3 pairs)
+    pair 1: pre         4.062 Mops p999=  16292   post       10.030 Mops p999=   4401   delta   +146.94%
+    pair 2: pre         3.846 Mops p999=  15831   post       10.149 Mops p999=   4316   delta   +163.91%
+    pair 3: pre         3.810 Mops p999=  14889   post       10.484 Mops p999=   2801   delta   +175.14%
+    => preload-prodcons-8-64:256: median delta +163.91%  (min +146.94%, max +175.14%, n=3)
+  preload-prodcons-192-64:256  arm=umem-preload workload=prodcons threads=192 sizes=64:256  (3 pairs)
+    pair 1: pre         1.239 Mops p999=1776410   post        1.847 Mops p999=  50394   delta    +49.07%
+    pair 2: pre         0.977 Mops p999=2729638   post        1.768 Mops p999=  68335   delta    +81.02%
+    pair 3: pre         0.582 Mops p999=5638175   post        1.713 Mops p999=  40045   delta   +194.48%
+    => preload-prodcons-192-64:256: median delta +81.02%  (min +49.07%, max +194.48%, n=3)
+
+## REFERENCE at post: API arm vs PRELOAD arm, same build, alternating (delta = preload relative to API)
+  api-vs-preload multi t=1 16:64 (3 pairs)
+    pair 1: api      7.473 Mops p999=     24   preload      6.072 Mops p999=     24   preload/api = 0.813
+    pair 2: api      7.368 Mops p999=     23   preload      6.033 Mops p999=     24   preload/api = 0.819
+    pair 3: api      7.464 Mops p999=     24   preload      6.077 Mops p999=     24   preload/api = 0.814
+  api-vs-preload multi t=8 16:64 (3 pairs)
+    pair 1: api     43.927 Mops p999=    199   preload     30.492 Mops p999=    105   preload/api = 0.694
+    pair 2: api     44.179 Mops p999=    153   preload     30.090 Mops p999=     88   preload/api = 0.681
+    pair 3: api     43.188 Mops p999=    189   preload     30.308 Mops p999=    114   preload/api = 0.702
+  api-vs-preload multi t=32 16:64 (3 pairs)
+    pair 1: api    154.256 Mops p999=    182   preload    114.301 Mops p999=    106   preload/api = 0.741
+    pair 2: api    159.610 Mops p999=    205   preload    119.916 Mops p999=     99   preload/api = 0.751
+    pair 3: api    154.383 Mops p999=    167   preload    108.840 Mops p999=    104   preload/api = 0.705
+  api-vs-preload multi t=64 16:64 (3 pairs)
+    pair 1: api    195.284 Mops p999=    204   preload    146.674 Mops p999=    111   preload/api = 0.751
+    pair 2: api    179.960 Mops p999=    160   preload    148.320 Mops p999=    160   preload/api = 0.824
+    pair 3: api    203.900 Mops p999=    290   preload    159.498 Mops p999=     92   preload/api = 0.782
+  api-vs-preload multi t=128 16:64 (3 pairs)
+    pair 1: api    286.556 Mops p999=    184   preload    232.095 Mops p999=    422   preload/api = 0.810
+    pair 2: api    292.305 Mops p999=    287   preload    245.938 Mops p999=    192   preload/api = 0.841
+    pair 3: api    288.760 Mops p999=    192   preload    232.671 Mops p999=    135   preload/api = 0.806
+  api-vs-preload multi t=192 16:64 (3 pairs)
+    pair 1: api    398.223 Mops p999=    569   preload    331.774 Mops p999=    398   preload/api = 0.833
+    pair 2: api    476.624 Mops p999=    559   preload    316.303 Mops p999=    473   preload/api = 0.664
+    pair 3: api    409.171 Mops p999=    518   preload    331.760 Mops p999=    492   preload/api = 0.811
+
+A/B done -> /home/ec2-user/libumem-ab/results/interpose-ab.csv / /home/ec2-user/libumem-ab/results/interpose-ab.txt
