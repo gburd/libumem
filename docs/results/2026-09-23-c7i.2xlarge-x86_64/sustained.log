@@ -1,0 +1,129 @@
+sustained load: allocators=libc umem umem@null umem-preload umem-preload@null jemalloc tcmalloc mimalloc snmalloc scudo rpmalloc threads=8
+  windows=4 x ~20s each, interleaved; warmups=1
+  sha=f2a8267df7586db9e5e6b7dd052bda90e5cea571 (env) -> docs/results/2026-09-23-c7i.2xlarge-x86_64/sustained.toml
+  calibrate libc prodcons: would need total_n=66125976 (~20s/window, from 0.604906s @ 2000000)
+  calibrate umem prodcons: would need total_n=110763743 (~20s/window, from 0.361129s @ 2000000)
+  calibrate umem prodcons: would need total_n=109713182 (~20s/window, from 0.364587s @ 2000000)
+  calibrate umem-preload prodcons: would need total_n=28347885 (~20s/window, from 1.41104s @ 2000000)
+  calibrate umem-preload prodcons: would need total_n=28659454 (~20s/window, from 1.3957s @ 2000000)
+  calibrate jemalloc prodcons: would need total_n=111549873 (~20s/window, from 0.358584s @ 2000000)
+  calibrate tcmalloc prodcons: would need total_n=75281222 (~20s/window, from 0.531341s @ 2000000)
+  calibrate mimalloc prodcons: would need total_n=97724007 (~20s/window, from 0.409316s @ 2000000)
+  calibrate snmalloc prodcons: would need total_n=88410880 (~20s/window, from 0.452433s @ 2000000)
+  calibrate scudo prodcons: would need total_n=58314053 (~20s/window, from 0.685941s @ 2000000)
+  calibrate rpmalloc prodcons: would need total_n=118317641 (~20s/window, from 0.338073s @ 2000000)
+  -> prodcons: ALL allocators get total_n=28347885 (matched work; windows will
+     differ in duration, which is the honest result)
+  calibrate libc frag: would need total_n=250341089 (~20s/window, from 0.159782s @ 2000000)
+  calibrate umem frag: would need total_n=89607942 (~20s/window, from 0.446389s @ 2000000)
+  calibrate umem frag: would need total_n=93573818 (~20s/window, from 0.42747s @ 2000000)
+  calibrate umem-preload frag: would need total_n=24774551 (~20s/window, from 1.61456s @ 2000000)
+  calibrate umem-preload frag: would need total_n=23803289 (~20s/window, from 1.68044s @ 2000000)
+  calibrate jemalloc frag: would need total_n=255723409 (~20s/window, from 0.156419s @ 2000000)
+  calibrate tcmalloc frag: would need total_n=200511303 (~20s/window, from 0.19949s @ 2000000)
+  calibrate mimalloc frag: would need total_n=200787085 (~20s/window, from 0.199216s @ 2000000)
+  calibrate snmalloc frag: would need total_n=229183019 (~20s/window, from 0.174533s @ 2000000)
+  calibrate scudo frag: would need total_n=191869528 (~20s/window, from 0.208475s @ 2000000)
+  calibrate rpmalloc frag: would need total_n=221846315 (~20s/window, from 0.180305s @ 2000000)
+  -> frag: ALL allocators get total_n=23803289 (matched work; windows will
+     differ in duration, which is the honest result)
+  warmup window 0: libc (discarded)
+  warmup window 0: umem (discarded)
+  warmup window 0: umem@null (discarded)
+  warmup window 0: umem-preload (discarded)
+  warmup window 0: umem-preload@null (discarded)
+  warmup window 0: jemalloc (discarded)
+  warmup window 0: tcmalloc (discarded)
+  warmup window 0: mimalloc (discarded)
+  warmup window 0: snmalloc (discarded)
+  warmup window 0: scudo (discarded)
+  warmup window 0: rpmalloc (discarded)
+  libc         prodcons-sustained w=0  ops=56695768  mops=   6.840 p99=     6357 p999=     11340 rss@peak=13860864
+  libc         frag-sustained     w=0  ops=45374881  mops=  19.610 p99=     1177 p999=      2126 rss@peak=396570624
+  umem         prodcons-sustained w=0  ops=56695768  mops=  10.963 p99=      267 p999=       861 rss@peak=22724608
+  umem         frag-sustained     w=0  ops=45374881  mops=   8.289 p99=     8803 p999=     22021 rss@peak=509845504
+  umem@null    prodcons-sustained w=0  ops=56695768  mops=  10.698 p99=      275 p999=       916 rss@peak=20844544
+  umem@null    frag-sustained     w=0  ops=45374881  mops=   8.464 p99=     8561 p999=     22295 rss@peak=510238720
+  umem-preload prodcons-sustained w=0  ops=56695768  mops=   2.970 p99=    11270 p999=     18425 rss@peak=22519808
+  umem-preload frag-sustained     w=0  ops=45374881  mops=   2.342 p99=    20446 p999=     33315 rss@peak=510619648
+  umem-preload@null prodcons-sustained w=0  ops=56695768  mops=   3.082 p99=    10903 p999=     17859 rss@peak=22577152
+  umem-preload@null frag-sustained     w=0  ops=45374881  mops=   2.192 p99=    21866 p999=     35865 rss@peak=511610880
+  jemalloc     prodcons-sustained w=0  ops=56695768  mops=  11.273 p99=      768 p999=      1602 rss@peak=12709888
+  jemalloc     frag-sustained     w=0  ops=45374881  mops=  23.845 p99=      419 p999=      1326 rss@peak=365256704
+  tcmalloc     prodcons-sustained w=0  ops=56695768  mops=   9.219 p99=     2602 p999=      5003 rss@peak=13266944
+  tcmalloc     frag-sustained     w=0  ops=45374881  mops=  19.444 p99=     2025 p999=      8069 rss@peak=378294272
+  mimalloc     prodcons-sustained w=0  ops=56695768  mops=  13.167 p99=      317 p999=      8321 rss@peak=14028800
+  mimalloc     frag-sustained     w=0  ops=45374881  mops=  24.846 p99=      320 p999=      1145 rss@peak=378564608
+  snmalloc     prodcons-sustained w=0  ops=56695768  mops=  12.048 p99=      790 p999=      5072 rss@peak=13467648
+  snmalloc     frag-sustained     w=0  ops=45374881  mops=  21.053 p99=       90 p999=       382 rss@peak=359690240
+  scudo        prodcons-sustained w=0  ops=56695768  mops=   5.527 p99=     3918 p999=     13024 rss@peak=13516800
+  scudo        frag-sustained     w=0  ops=45374881  mops=  19.714 p99=      775 p999=      3217 rss@peak=541093888
+  rpmalloc     prodcons-sustained w=0  ops=56695768  mops=  11.501 p99=      328 p999=       448 rss@peak=13410304
+  rpmalloc     frag-sustained     w=0  ops=45374881  mops=  20.821 p99=      282 p999=      1170 rss@peak=388972544
+  libc         prodcons-sustained w=1  ops=56695768  mops=   6.646 p99=     6551 p999=     12164 rss@peak=13852672
+  libc         frag-sustained     w=1  ops=45374881  mops=  19.020 p99=     1172 p999=      2221 rss@peak=415260672
+  umem         prodcons-sustained w=1  ops=56695768  mops=   9.039 p99=      266 p999=       989 rss@peak=22798336
+  umem         frag-sustained     w=1  ops=45374881  mops=   9.415 p99=     8869 p999=     22634 rss@peak=509140992
+  umem@null    prodcons-sustained w=1  ops=56695768  mops=   9.809 p99=      276 p999=       862 rss@peak=22286336
+  umem@null    frag-sustained     w=1  ops=45374881  mops=   8.617 p99=     8452 p999=     21084 rss@peak=509206528
+  umem-preload prodcons-sustained w=1  ops=56695768  mops=   2.937 p99=    11720 p999=     19865 rss@peak=22495232
+  umem-preload frag-sustained     w=1  ops=45374881  mops=   2.204 p99=    21737 p999=     35888 rss@peak=511647744
+  umem-preload@null prodcons-sustained w=1  ops=56695768  mops=   2.868 p99=    11781 p999=     19443 rss@peak=22716416
+  umem-preload@null frag-sustained     w=1  ops=45374881  mops=   2.163 p99=    21969 p999=     35960 rss@peak=511508480
+  jemalloc     prodcons-sustained w=1  ops=56695768  mops=   7.948 p99=      836 p999=      1490 rss@peak=13336576
+  jemalloc     frag-sustained     w=1  ops=45374881  mops=  20.985 p99=      431 p999=      1307 rss@peak=376606720
+  tcmalloc     prodcons-sustained w=1  ops=56695768  mops=   9.162 p99=     2928 p999=      4925 rss@peak=12849152
+  tcmalloc     frag-sustained     w=1  ops=45374881  mops=  18.893 p99=     1734 p999=      8017 rss@peak=372604928
+  mimalloc     prodcons-sustained w=1  ops=56695768  mops=  13.726 p99=      361 p999=      7959 rss@peak=14077952
+  mimalloc     frag-sustained     w=1  ops=45374881  mops=  21.576 p99=      322 p999=      1014 rss@peak=371707904
+  snmalloc     prodcons-sustained w=1  ops=56695768  mops=  12.446 p99=      775 p999=      5970 rss@peak=13795328
+  snmalloc     frag-sustained     w=1  ops=45374881  mops=  20.729 p99=      106 p999=       435 rss@peak=382029824
+  scudo        prodcons-sustained w=1  ops=56695768  mops=   4.847 p99=     4368 p999=     13712 rss@peak=13426688
+  scudo        frag-sustained     w=1  ops=45374881  mops=  19.513 p99=      698 p999=      3110 rss@peak=544129024
+  rpmalloc     prodcons-sustained w=1  ops=56695768  mops=  11.023 p99=      329 p999=       452 rss@peak=13418496
+  rpmalloc     frag-sustained     w=1  ops=45374881  mops=  21.760 p99=      288 p999=      1146 rss@peak=378363904
+  libc         prodcons-sustained w=2  ops=56695768  mops=   6.832 p99=     6389 p999=     11648 rss@peak=13881344
+  libc         frag-sustained     w=2  ops=45374881  mops=  20.624 p99=     1182 p999=      2278 rss@peak=413728768
+  umem         prodcons-sustained w=2  ops=56695768  mops=   8.620 p99=      276 p999=       913 rss@peak=22827008
+  umem         frag-sustained     w=2  ops=45374881  mops=   8.439 p99=     8624 p999=     22181 rss@peak=510410752
+  umem@null    prodcons-sustained w=2  ops=56695768  mops=   9.632 p99=      262 p999=       892 rss@peak=22851584
+  umem@null    frag-sustained     w=2  ops=45374881  mops=   8.752 p99=     8670 p999=     21794 rss@peak=510320640
+  umem-preload prodcons-sustained w=2  ops=56695768  mops=   2.929 p99=    11502 p999=     19264 rss@peak=22061056
+  umem-preload frag-sustained     w=2  ops=45374881  mops=   2.206 p99=    21561 p999=     35431 rss@peak=512036864
+  umem-preload@null prodcons-sustained w=2  ops=56695768  mops=   2.895 p99=    11648 p999=     19342 rss@peak=22720512
+  umem-preload@null frag-sustained     w=2  ops=45374881  mops=   2.317 p99=    20397 p999=     33927 rss@peak=511332352
+  jemalloc     prodcons-sustained w=2  ops=56695768  mops=   8.822 p99=      766 p999=      1419 rss@peak=13225984
+  jemalloc     frag-sustained     w=2  ops=45374881  mops=  20.391 p99=      391 p999=      1276 rss@peak=385118208
+  tcmalloc     prodcons-sustained w=2  ops=56695768  mops=  11.971 p99=     3069 p999=      5849 rss@peak=12828672
+  tcmalloc     frag-sustained     w=2  ops=45374881  mops=  19.125 p99=     1650 p999=      7837 rss@peak=371732480
+  mimalloc     prodcons-sustained w=2  ops=56695768  mops=  13.222 p99=      307 p999=      7900 rss@peak=13930496
+  mimalloc     frag-sustained     w=2  ops=45374881  mops=  23.400 p99=      313 p999=       725 rss@peak=387878912
+  snmalloc     prodcons-sustained w=2  ops=56695768  mops=  12.622 p99=      795 p999=      5737 rss@peak=13877248
+  snmalloc     frag-sustained     w=2  ops=45374881  mops=  22.796 p99=       95 p999=       342 rss@peak=380039168
+  scudo        prodcons-sustained w=2  ops=56695768  mops=   6.803 p99=     3003 p999=     11409 rss@peak=13529088
+  scudo        frag-sustained     w=2  ops=45374881  mops=  20.479 p99=      658 p999=      2928 rss@peak=574967808
+  rpmalloc     prodcons-sustained w=2  ops=56695768  mops=   9.727 p99=      348 p999=       483 rss@peak=13312000
+  rpmalloc     frag-sustained     w=2  ops=45374881  mops=  23.634 p99=      283 p999=      1142 rss@peak=387764224
+  libc         prodcons-sustained w=3  ops=56695768  mops=   6.965 p99=     6277 p999=     11493 rss@peak=13836288
+  libc         frag-sustained     w=3  ops=45374881  mops=  18.594 p99=     1152 p999=      2222 rss@peak=436621312
+  umem         prodcons-sustained w=3  ops=56695768  mops=   7.704 p99=      225 p999=       978 rss@peak=20787200
+  umem         frag-sustained     w=3  ops=45374881  mops=   8.905 p99=     8692 p999=     22133 rss@peak=510730240
+  umem@null    prodcons-sustained w=3  ops=56695768  mops=   7.603 p99=      248 p999=       925 rss@peak=22478848
+  umem@null    frag-sustained     w=3  ops=45374881  mops=   9.023 p99=     8426 p999=     21283 rss@peak=509530112
+  umem-preload prodcons-sustained w=3  ops=56695768  mops=   2.999 p99=    10966 p999=     17733 rss@peak=22769664
+  umem-preload frag-sustained     w=3  ops=45374881  mops=   2.126 p99=    22309 p999=     36323 rss@peak=510689280
+  umem-preload@null prodcons-sustained w=3  ops=56695768  mops=   2.874 p99=    11575 p999=     19069 rss@peak=22626304
+  umem-preload@null frag-sustained     w=3  ops=45374881  mops=   2.261 p99=    21020 p999=     33913 rss@peak=511336448
+  jemalloc     prodcons-sustained w=3  ops=56695768  mops=  10.998 p99=      767 p999=      1439 rss@peak=12816384
+  jemalloc     frag-sustained     w=3  ops=45374881  mops=  21.310 p99=      412 p999=      1271 rss@peak=393842688
+  tcmalloc     prodcons-sustained w=3  ops=56695768  mops=  12.206 p99=     3063 p999=      5502 rss@peak=12845056
+  tcmalloc     frag-sustained     w=3  ops=45374881  mops=  21.032 p99=     1731 p999=      8012 rss@peak=372240384
+  mimalloc     prodcons-sustained w=3  ops=56695768  mops=  13.447 p99=      343 p999=      7935 rss@peak=13910016
+  mimalloc     frag-sustained     w=3  ops=45374881  mops=  19.178 p99=      313 p999=       895 rss@peak=390082560
+  snmalloc     prodcons-sustained w=3  ops=56695768  mops=  14.174 p99=      698 p999=      5762 rss@peak=12582912
+  snmalloc     frag-sustained     w=3  ops=45374881  mops=  22.225 p99=       88 p999=       376 rss@peak=368377856
+  scudo        prodcons-sustained w=3  ops=56695768  mops=   5.402 p99=     4076 p999=     13373 rss@peak=13459456
+  scudo        frag-sustained     w=3  ops=45374881  mops=  19.327 p99=      686 p999=      2915 rss@peak=573837312
+  rpmalloc     prodcons-sustained w=3  ops=56695768  mops=   9.492 p99=      356 p999=       488 rss@peak=13320192
+  rpmalloc     frag-sustained     w=3  ops=45374881  mops=  21.657 p99=      283 p999=      1138 rss@peak=379084800
+done: libc umem umem@null umem-preload umem-preload@null jemalloc tcmalloc mimalloc snmalloc scudo rpmalloc -> docs/results/2026-09-23-c7i.2xlarge-x86_64/sustained.toml

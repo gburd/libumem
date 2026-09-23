@@ -1,0 +1,6 @@
+bench: WARNING -- 6229564 allocation(s) FAILED during the fragmentation workload.  This run completed less work than requested; its throughput is not comparable to a run that did not, and the ratio is not a measurement of a healthy allocator.
+bench: pthread_create failed at frag thread 7 of 8
+  CRASH: umem frag t=8 1024:4096 rc=143 (skipped)
+bench: WARNING -- 6896572 allocation(s) FAILED during the fragmentation workload.  This run completed less work than requested; its throughput is not comparable to a run that did not, and the ratio is not a measurement of a healthy allocator.
+bench: pthread_create failed at frag thread 4 of 8
+  CRASH: umem-preload frag t=8 1024:4096 rc=143 (skipped)

@@ -1,0 +1,14 @@
+matrix: instance=c7i.2xlarge arch=x86_64 vcpu=8 governor=unknown
+  allocators: libc umem umem-preload
+  threads:    8
+  sizes:      1024:4096
+  runs=1 warmups=1 replicates=1 pin=1 ops=12000000
+  -> /home/ec2-user/libumem-iso-cmp-f2a8267df758/docs/results/2026-09-23-c7i.2xlarge-x86_64/ceiling/matrix.toml
+  libc frag 1024:4096 t=8 rep=1  17:11:06
+  umem frag 1024:4096 t=8 rep=1  17:11:15
+  CRASH: umem frag t=8 1024:4096 rc=143 (skipped)
+  (no row for frag t=8)
+  umem-preload frag 1024:4096 t=8 rep=1  17:48:53
+  CRASH: umem-preload frag t=8 1024:4096 rc=143 (skipped)
+  (no row for frag t=8)
+matrix complete -> /home/ec2-user/libumem-iso-cmp-f2a8267df758/docs/results/2026-09-23-c7i.2xlarge-x86_64/ceiling/matrix.toml

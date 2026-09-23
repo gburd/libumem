@@ -1,0 +1,61 @@
+# libumem allocator scaling matrix
+# instance=c7i.2xlarge arch=x86_64 vcpu=8 governor=unknown pinned=1
+# columns mirror bench CSV: ops_per_sec, latency percentiles (ns),
+# peak_rss_bytes, ops_cov (stddev/mean over 1 runs), unstable flag.
+#
+# UNITS (P2.1/P2.2 -- read before comparing to anything published
+# before 2026-09-22, which used different and partly wrong ones):
+#   total_ops           operations completed, summed over ALL threads
+#   ops_per_thread      total_ops / threads, as actually run
+#   threads             threads that RAN (may differ from requested)
+#   frag                rss_at_live_peak / live_bytes_at_peak, both
+#                       sampled at the SAME instant, at the LIVE-SET
+#                       PEAK (not at the worst ratio: maximising the
+#                       ratio finds the smallest denominator, which
+#                       once reported 505x while implied RSS was flat
+#                       at ~1.1GB).  frag_median summarises the
+#                       sampled series.  Absent for workloads with no
+#                       live set, or too few samples.  Read the PAIR
+#                       and vmhwm, never the quotient alone.
+#   ops_floor_raised    true => the per-thread budget was below the
+#                       minimum and was raised; the point ran MORE
+#                       work than -n asked for.
+date = "2026-09-23"
+instance_type = "c7i.2xlarge"
+arch = "x86_64"
+vcpu = 8
+git_sha = "f2a8267df7586db9e5e6b7dd052bda90e5cea571"
+operations_total_per_point = 12000000
+
+[[point]]
+allocator = "libc"
+workload = "frag"
+threads_requested = 8
+threads = 8
+replicate = 1
+size = "1024:4096"
+total_ops = 23062582
+ops_per_thread = 2882822
+elapsed_sec = 4.528445
+ops_per_sec = 5092825.49
+lat_min = 38
+lat_p50 = 421
+lat_p90 = 1835
+lat_p99 = 10617
+lat_p999 = 15396
+lat_max = 20020031
+lat_mean = 1163
+rss_at_live_peak = 7717560320
+vmhwm_bytes = 7952498688
+allocated_bytes = 30716790368
+live_bytes_at_peak = 7545304638
+live_bytes_median = 6933506171
+frag_samples = 62
+frag = 1.0228
+frag_median = 1.1522
+frag_definition = "rss_at_live_peak / live_bytes_at_peak, sampled together at the live-set peak; frag_median is the median of the sampled rss/live series. Report the PAIR (rss_at_live_peak, live_bytes_at_peak) and vmhwm, not the quotient alone."
+ops_cov = 0.0000
+runs = 1
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0

@@ -1,0 +1,124 @@
+# libumem benchmark matrix provenance
+captured = "2026-09-23T16:46:35Z"
+instance_type = "c7g.2xlarge"
+arch = "aarch64"
+vcpu = 8
+governor = "unknown"
+thp = "always madvise [never]"
+numa_balancing = "0"
+pinned = true
+runs = 3
+replicates = 2
+warmups = 1
+# total operations per point, across ALL threads (never per-thread)
+operations_total_per_point = 8000000
+min_ops_per_thread_floor = 100000
+uname = "Linux ip-172-31-40-31.us-east-2.compute.internal 6.12.103-129.197.amzn2023.aarch64 #1 SMP Wed Sep 16 22:54:17 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
+gcc = "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)"
+libc = "ldd (GNU libc) 2.34"
+git_sha = "f2a8267df7586db9e5e6b7dd052bda90e5cea571"
+git_sha_source = "env"
+configure_flags = " "
+bench_bin = ".libs/bench_main"
+bench_bin_digest = "c6e0bab5d79321e880fd02bc13bd0b41b82df03bf64af4fd5f3cd79514400080"
+libumem_so = "../../.libs/libumem.so.1.0.0"
+libumem_so_digest = "63ed91a71d5424f5099188bdb54f3770613e67d4ec700e99790949ab3845c2e8"
+allocators = ["libc","umem","umem@null","umem-preload","umem-preload@null","jemalloc","tcmalloc","mimalloc","snmalloc","scudo","rpmalloc"]
+# requested but not loadable on this host (reported, never silently dropped)
+allocators_unavailable = []
+
+[allocator_identity."libc"]
+path="(process libc)"
+version="ldd (GNU libc) 2.34"
+
+[allocator_identity."umem"]
+path="../../.libs/libumem.so.1.0.0"
+digest="63ed91a71d5424f5099188bdb54f3770613e67d4ec700e99790949ab3845c2e8"
+note="umem_alloc/umem_free API via the 16-byte bench wrapper header"
+
+[allocator_identity."umem@null"]
+null_control_alias_of = "umem"
+path="../../.libs/libumem.so.1.0.0"
+digest="63ed91a71d5424f5099188bdb54f3770613e67d4ec700e99790949ab3845c2e8"
+note="umem_alloc/umem_free API via the 16-byte bench wrapper header"
+
+[allocator_identity."umem-preload"]
+path="../../.libs/libumem_malloc.so.1.0.0"
+digest="ce83e99f3f8675902862794224da3e10bf5dc810c285b49e210dc7004a8654bf"
+libumem_digest="63ed91a71d5424f5099188bdb54f3770613e67d4ec700e99790949ab3845c2e8"
+note="plain malloc/free via LD_PRELOAD=libumem_malloc.so (drop-in path)"
+
+[allocator_identity."umem-preload@null"]
+null_control_alias_of = "umem-preload"
+path="../../.libs/libumem_malloc.so.1.0.0"
+digest="ce83e99f3f8675902862794224da3e10bf5dc810c285b49e210dc7004a8654bf"
+libumem_digest="63ed91a71d5424f5099188bdb54f3770613e67d4ec700e99790949ab3845c2e8"
+note="plain malloc/free via LD_PRELOAD=libumem_malloc.so (drop-in path)"
+
+[allocator_identity."jemalloc"]
+path="/lib64/libjemalloc.so.2"
+digest="2fe586e31a07042a4fa0611f07b3cf390904024c93ea40814e1ae86a206f6560"
+realpath="/usr/lib64/libjemalloc.so.2"
+
+[allocator_identity."tcmalloc"]
+path="/lib64/libtcmalloc_minimal.so.4"
+digest="4bb4db8bc718771fa0f278d45709b9a164324e1a0fb4508117103299764fadc4"
+realpath="/usr/lib64/libtcmalloc_minimal.so.4.5.9"
+
+[allocator_identity."mimalloc"]
+path="/usr/local/lib/libmimalloc.so.3"
+digest="00658c10868830dc9726eab65e4e1a748265cb9777d9bbd7dec29c153dc1fd77"
+realpath="/usr/local/lib/libmimalloc.so"
+
+[allocator_identity."snmalloc"]
+path="/usr/local/lib/libsnmallocshim.so"
+digest="9f3ccf1e24c3b69ea7998f375ff128ddf98ee1bc824bd2899e0f35662d0fd100"
+realpath="/usr/local/lib/libsnmallocshim.so"
+
+[allocator_identity."scudo"]
+path="/usr/local/lib/libclang_rt.scudo_standalone-aarch64.so"
+digest="3916051dcebd968f20a43a485fda19a0294e79d13773771e78f9d5c9f4b398d3"
+realpath="/usr/local/lib/libscudo_standalone.so"
+
+[allocator_identity."rpmalloc"]
+path="/usr/local/lib/librpmalloc.so"
+digest="5dc268e35fd6189943a3f50864eda6fd6e3a13f2ce69a4739129cf1d875817ec"
+realpath="/usr/local/lib/librpmalloc.so"
+
+[cpu]
+# Architecture:                            aarch64
+# CPU op-mode(s):                          32-bit, 64-bit
+# Byte Order:                              Little Endian
+# CPU(s):                                  8
+# On-line CPU(s) list:                     0-7
+# Vendor ID:                               ARM
+# Model:                                   1
+# Thread(s) per core:                      1
+# Core(s) per socket:                      8
+# Socket(s):                               1
+# Stepping:                                r1p1
+# BogoMIPS:                                2100.00
+# Flags:                                   fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm paca pacg dcpodp svei8mm svebf16 i8mm bf16 dgh rng
+# L1d cache:                               512 KiB (8 instances)
+# L1i cache:                               512 KiB (8 instances)
+# L2 cache:                                8 MiB (8 instances)
+# L3 cache:                                32 MiB (1 instance)
+# NUMA node(s):                            1
+# NUMA node0 CPU(s):                       0-7
+# Vulnerability Gather data sampling:      Not affected
+# Vulnerability Indirect target selection: Not affected
+# Vulnerability Itlb multihit:             Not affected
+# Vulnerability L1tf:                      Not affected
+# Vulnerability Mds:                       Not affected
+# Vulnerability Meltdown:                  Not affected
+# Vulnerability Mmio stale data:           Not affected
+# Vulnerability Reg file data sampling:    Not affected
+# Vulnerability Retbleed:                  Not affected
+# Vulnerability Spec rstack overflow:      Not affected
+# Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+# Vulnerability Spectre v1:                Mitigation; __user pointer sanitization
+# Vulnerability Spectre v2:                Mitigation; CSV2, BHB
+# Vulnerability Srbds:                     Not affected
+# Vulnerability Tsa:                       Not affected
+# Vulnerability Tsx async abort:           Not affected
+# Vulnerability Vmscape:                   Not affected
