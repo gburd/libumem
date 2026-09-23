@@ -3,7 +3,7 @@
 **Date:** 2026-09-22
 **Found by:** the Phase 2 evidence workstream, via a benchmark column that did
 not exist before (`alloc_failures`)
-**Status: OPEN.** Root-caused, not fixed. The fix belongs in `vmem_mmap.c`.
+**Status: FIXED (2026-09-23, `3f2e67c`).** Root cause was slab sizing, not the mmap backend -- see the 2026-09-23 resolution at the end.
 **Severity: high for any process wanting more than ~5 GB from umem on Linux.**
 
 ## Symptom
@@ -263,3 +263,65 @@ two `rc = 77` returns to `rc = 1` when span sizing is fixed — that is what the
 test is for.
 
 Workaround unchanged: raise `vm.max_map_count`.
+
+## 2026-09-23 resolution: fixed in slab sizing, where the failed attempt said it was
+
+The failed attempt's `strace` (64,270 of 64,275 `mprotect` calls exactly 4096
+bytes) pointed at the right layer; this closes it.
+
+### Cause, precisely
+
+`umem_cache_create()`'s best-fit loop (`for (chunks = 1; chunks <=
+UMEM_VOID_FRACTION; ...)`) picks the slab size with the least waste per object.
+On Solaris, whose heap quantum is 64 KiB, that yields **16 objects per slab** for
+a 4 KiB chunk. On Linux the quantum is the 4 KiB page, so the identical loop
+yields **one**:
+
+| chunk | Solaris (64K quantum) | Linux (4K quantum) |
+|---:|---:|---:|
+| 1024 | 65536 / 64 obj | 4096 / 4 obj |
+| 2048 | 65536 / 32 obj | 4096 / 2 obj |
+| **4096** | **65536 / 16 obj** | **4096 / 1 obj** |
+
+One object per slab means one span, one `mprotect`, one VMA per allocation. The
+code was correct for the platform it was written on and wrong for this one.
+
+### Fix
+
+`UMEM_MIN_SLAB_OBJECTS` (16) and `UMEM_MIN_SLAB_CEILING` (64 KiB) in
+`umem_impl.h`: after best-fit, if a hashed cache's slab would hold fewer than 16
+objects, raise it to hold 16 -- unless that exceeds 64 KiB, so large objects
+stay one-per-slab exactly as they did on Solaris. QCACHE slabs are arena-sized
+and untouched. These are the Solaris figures, i.e. this restores the density the
+allocator was designed for rather than inventing a new policy.
+
+### Measured
+
+| | before (`eaf1dbb`) | after (`3f2e67c`) |
+|---|---:|---:|
+| VMAs at 2 GB of 4 KiB objects | **16,283** | **75** |
+| `test_heap_ceiling` (9 GB of 4 KiB) | 9 failures, 65,532 VMAs, SKIP | **0 failures, 74 VMAs (0.1 %), PASS** |
+| small heap, 1000 x 4 KiB, RSS | 9 MB, 103 VMAs | 8 MB, 72 VMAs |
+| small heap, 1000 x 1 KiB, RSS | 5 MB | 5 MB |
+| small heap, 1000 x 64 B, RSS | 4 MB | 5 MB |
+
+217x fewer VMAs at 2 GB. The small-heap cost the change was expected to carry
+did not materialise in RSS: spans are `MAP_NORESERVE`, so a larger slab is
+address space held, not pages touched, until objects are actually allocated
+into it. The 64 B case shows +1 MB, within the granularity of `VmRSS`.
+
+Reclaim regressions (`repro_reclaim_destroy`, `repro_reclaim_reuse`), which
+exercise the multi-page-slab paths P1.5b had flagged as hazardous, pass on both
+architectures. Full gate: 31 entries, 28 PASS / 3 SKIP / 0 FAIL default,
+**31/31** with `--enable-introspect`, both architectures.
+
+`test_heap_ceiling` now returns FAIL, not SKIP, if the ceiling ever returns.
+
+### Why three earlier attempts missed it
+
+All three worked in `vmem_mmap.c` -- the layer that *receives* span requests --
+and tried to make spans merge. But with one object per slab there is one span
+request per object, and no backend can coalesce what it is asked for one page at
+a time. The `strace` count said so; the lesson recorded above ("the fix belongs
+in span sizing") was right, and the fix is a floor on how few objects a slab may
+hold.
