@@ -66,6 +66,12 @@ SUSTAINED_WINDOWS="${SUSTAINED_WINDOWS:-4}"
 SUSTAINED_FRAG_SIZES="${SUSTAINED_FRAG_SIZES:-16:64}"
 PERF="${PERF:-0}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
+# Which phases to run (comma list).  Lets a run be resumed after a kill
+# without redoing finished phases; the results of finished phases are merged
+# by hand from the earlier job's directory.
+PHASES="${PHASES:-single,multi,multi-hi,prodcons,frag,frag-mid,frag-big,ceiling,sustained,contention,perf}"
+PRODCONS_RUNS="${PRODCONS_RUNS:-$RUNS}"          # prodcons is the slowest workload
+phase() { [[ ",$PHASES," == *",$1,"* ]]; }
 NCPU=$(nproc)
 HI_T="${THREADS##*,}"
 threads_le() { local r; r=$(tr ',' '\n' <<< "$THREADS" | awk -v c="$1" '$1<=c' | paste -sd, -); echo "${r:-1}"; }
@@ -80,7 +86,7 @@ if [[ -z "${LIBUMEM_SHA:-}" && -r ISOLATED_PROVENANCE ]]; then
     LIBUMEM_SHA="$(sed -n 's/^sha=//p' ISOLATED_PROVENANCE | head -1)"
 fi
 export LIBUMEM_SHA="${LIBUMEM_SHA:-unknown}"
-echo "== allocator comparison  sha=$LIBUMEM_SHA  ncpu=$NCPU  threads=$THREADS  $(date -u +%FT%TZ)"
+echo "== allocator comparison  sha=$LIBUMEM_SHA  ncpu=$NCPU  threads=$THREADS  phases=$PHASES  $(date -u +%FT%TZ)"
 echo "   ops=$OPS multi_ops=$MULTI_OPS@t=$MULTI_THREADS prodcons_ops=$PRODCONS_OPS@t=$PRODCONS_THREADS/$PRODCONS_SIZES frag_ops=$FRAG_OPS frag_mid=$FRAG_MID_OPS@t=$FRAG_MID_THREADS frag_big=$FRAG_BIG_OPS@t=$FRAG_BIG_THREADS runs=$RUNS warm=$WARM reps=$REPS"
 
 # ---- 0. competitor allocators ---------------------------------------------
@@ -197,42 +203,70 @@ run_matrix() {  # $1=subdir $2=ops $3=threads $4=sizes $5=workloads $6=reps
 }
 
 # ---- 1. THE MATRIX ---------------------------------------------------------
-echo "== 1a. single  ops=$OPS  arms: ${ARMS[*]}  ($(date -u +%T))"
-run_matrix single "$OPS" 1 "$SIZES" single "$REPS"
-echo "== 1a'. multi  ops=$MULTI_OPS threads=$MULTI_THREADS  ($(date -u +%T))"
-run_matrix multi "$MULTI_OPS" "$MULTI_THREADS" "$SIZES" multi "$REPS"
-if [[ -n "$MULTI_HI_OPS" && -n "$MULTI_HI_THREADS" ]]; then
-    echo "== 1a''. multi-hi  ops=$MULTI_HI_OPS threads=$MULTI_HI_THREADS  ($(date -u +%T))"
-    run_matrix multi-hi "$MULTI_HI_OPS" "$MULTI_HI_THREADS" "$SIZES" multi "$REPS"
+if phase single; then
+    echo "== 1a. single  ops=$OPS  arms: ${ARMS[*]}  ($(date -u +%T))"
+    run_matrix single "$OPS" 1 "$SIZES" single "$REPS"
 fi
-echo "== 1b. prodcons  ops=$PRODCONS_OPS threads=$PRODCONS_THREADS sizes=$PRODCONS_SIZES  ($(date -u +%T))"
-run_matrix prodcons "$PRODCONS_OPS" "$PRODCONS_THREADS" "$PRODCONS_SIZES" prodcons "$REPS"
-echo "== 1c. frag 16:64,64:256  ops=$FRAG_OPS  ($(date -u +%T))"
-run_matrix frag "$FRAG_OPS" "$THREADS" 16:64,64:256 frag "$REPS"
-echo "== 1d. frag 256:1024  ops=$FRAG_MID_OPS threads=$FRAG_MID_THREADS  ($(date -u +%T))"
-run_matrix frag-mid "$FRAG_MID_OPS" "$FRAG_MID_THREADS" 256:1024 frag "$REPS"
-echo "== 1e. frag 1k:4k  ops=$FRAG_BIG_OPS threads=$FRAG_BIG_THREADS  ($(date -u +%T))"
-run_matrix frag-big "$FRAG_BIG_OPS" "$FRAG_BIG_THREADS" 1024:4096 frag "$REPS"
+if phase multi; then
+    echo "== 1a'. multi  ops=$MULTI_OPS threads=$MULTI_THREADS  ($(date -u +%T))"
+    run_matrix multi "$MULTI_OPS" "$MULTI_THREADS" "$SIZES" multi "$REPS"
+fi
+if phase multi-hi && [[ -n "$MULTI_HI_OPS" && -n "$MULTI_HI_THREADS" ]]; then
+    # A longer budget so the fast arms' high-thread points are not 50 ms
+    # measurements.  The preload arms are EXCLUDED here, deliberately: at
+    # 0.8 Mops their 20M-op points already run 25 s each (the longest in the
+    # matrix), a 200M-op point would be 250 s x 8 runs per arm, and the
+    # question this pass answers -- resolution among the fast arms -- does
+    # not involve them.  Their rows exist in multi/ at the same thread counts.
+    SAVE_ARMS=("${ARMS[@]}"); ARMS=()
+    for a in "${SAVE_ARMS[@]}"; do [[ $a == umem-preload* ]] || ARMS+=("$a"); done
+    echo "== 1a''. multi-hi  ops=$MULTI_HI_OPS threads=$MULTI_HI_THREADS arms: ${ARMS[*]}  ($(date -u +%T))"
+    run_matrix multi-hi "$MULTI_HI_OPS" "$MULTI_HI_THREADS" "$SIZES" multi "$REPS"
+    ARMS=("${SAVE_ARMS[@]}")
+fi
+if phase prodcons; then
+    echo "== 1b. prodcons  ops=$PRODCONS_OPS threads=$PRODCONS_THREADS sizes=$PRODCONS_SIZES runs=$PRODCONS_RUNS  ($(date -u +%T))"
+    RUNS_SAVE=$RUNS; RUNS=$PRODCONS_RUNS
+    run_matrix prodcons "$PRODCONS_OPS" "$PRODCONS_THREADS" "$PRODCONS_SIZES" prodcons "$REPS"
+    RUNS=$RUNS_SAVE
+fi
+if phase frag; then
+    echo "== 1c. frag 16:64,64:256  ops=$FRAG_OPS  ($(date -u +%T))"
+    run_matrix frag "$FRAG_OPS" "$THREADS" 16:64,64:256 frag "$REPS"
+fi
+if phase frag-mid; then
+    echo "== 1d. frag 256:1024  ops=$FRAG_MID_OPS threads=$FRAG_MID_THREADS  ($(date -u +%T))"
+    run_matrix frag-mid "$FRAG_MID_OPS" "$FRAG_MID_THREADS" 256:1024 frag "$REPS"
+fi
+if phase frag-big; then
+    echo "== 1e. frag 1k:4k  ops=$FRAG_BIG_OPS threads=$FRAG_BIG_THREADS  ($(date -u +%T))"
+    run_matrix frag-big "$FRAG_BIG_OPS" "$FRAG_BIG_THREADS" 1024:4096 frag "$REPS"
+fi
 
 # ---- 2. CEILING PROBE ------------------------------------------------------
 # Budget chosen so the live set is well past 5 GB: >= 12M ops => >= 3M live
 # objects * ~2.5 KB = 7.7 GB (libc RSS ~9 GB: fits a 16 GiB lo box).  At
 # t=192 the 100k/thread floor lifts it to 19.2M / 12 GB; never floor-raised.
 CEIL_OPS=$(( HI_T * 100000 )); (( CEIL_OPS < 12000000 )) && CEIL_OPS=12000000
+if phase ceiling; then
 echo "== 2. ceiling probe: frag 1k:4k t=$HI_T ops=$CEIL_OPS (live set >> 5 GB), libc vs umem vs umem-preload, 1 rep  ($(date -u +%T))"
 SAVE_ARMS=("${ARMS[@]}"); ARMS=(libc umem umem-preload)
 RUNS_SAVE=$RUNS; RUNS=1
 run_matrix ceiling "$CEIL_OPS" "$HI_T" 1024:4096 frag 1
 RUNS=$RUNS_SAVE; ARMS=("${SAVE_ARMS[@]}")
+fi
 
 # ---- 3. SUSTAINED ----------------------------------------------------------
+if phase sustained; then
 echo "== 3. SUSTAINED at t=$HI_T: ${ARMS[*]}  ($(date -u +%T))"
 SUSTAINED_WINDOWS="$SUSTAINED_WINDOWS" SUSTAINED_WARMUPS=1 SUSTAINED_FRAG_SIZES="$SUSTAINED_FRAG_SIZES" \
     ./scripts/ec2/sustained_load.sh "$(IFS=,; echo "${ARMS[*]}")" "$SUSTAINED_SEC" "$HI_T" \
     > "$OUT/sustained.log" 2>&1
 echo "   rc=$? -> $OUT/sustained.toml ($(grep -c '^\[\[window\]\]' "$OUT/sustained.toml" 2>/dev/null) windows)"
+fi
 
 # ---- 4. DIAGNOSTICS (umem only) --------------------------------------------
+if phase contention; then
 echo "== 4. contention dumps at t=$HI_T  ($(date -u +%T))"
 last=$((HI_T-1)); (( last >= NCPU )) && last=$((NCPU-1))
 PIN="numactl --physcpubind=0-$last --localalloc --"
@@ -250,8 +284,9 @@ done
 test/bench/.libs/bench_contention -a umem -w multi -t 1 -n "$OPS" -s 16:64 > "$OUT/contention-umem-multi-t1-16_64.txt" 2>&1
 LD_PRELOAD="$PRELOAD_SO" test/bench/.libs/bench_contention -a umem-preload -w multi -t 1 -n "$OPS" -s 16:64 > "$OUT/contention-umem-preload-multi-t1-16_64.txt" 2>&1
 echo "   $(ls "$OUT"/contention-*.txt | wc -l) dumps"
+fi
 
-if [[ "$PERF" == 1 ]] && command -v perf >/dev/null; then
+if phase perf && [[ "$PERF" == 1 ]] && command -v perf >/dev/null; then
     echo "== 4b. perf record  ($(date -u +%T))"
     sudo sysctl -w kernel.perf_event_paranoid=-1 >/dev/null 2>&1 || true
     sudo sysctl -w kernel.kptr_restrict=0 >/dev/null 2>&1 || true

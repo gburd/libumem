@@ -229,8 +229,13 @@ calibrate() {
     else
         n=$((calib_n * 20))
     fi
+    # Never below bench_framework.h's per-thread floor, or bench_main raises
+    # it internally and flags every window ops_floor_raised.  prodcons splits
+    # the budget over t/2 producers, so its floor is half.
+    local floor=$(( THREADS * 100000 ))
+    (( n < floor )) && n=$floor
     CALIB_N="$n"
-    echo "  calibrate $a $w: would need total_n=$n (~${DURATION}s/window, from ${sec}s @ $calib_n)"
+    echo "  calibrate $a $w: would need total_n=$n (~${DURATION}s/window, from ${sec}s @ $calib_n; floor $floor)"
 }
 
 emit_windows() {
