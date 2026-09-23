@@ -216,6 +216,76 @@ run_attack(void)
 }
 
 /*
+ * Case "inslab": the target is INSIDE the victim slab, so containment passes
+ * and only the mangling stands between the overwrite and a chosen-address
+ * return.
+ *
+ * WHY THIS CASE EXISTS.  The "attack" case above aims at a static in the test
+ * binary, far outside the slab, and umem_slab_link_valid()'s containment check
+ * rejects it before the mangling is ever consulted -- verified by building with
+ * -DUMEM_NO_LINK_MANGLE: "attack" still PASSES.  So "attack" proves the
+ * combination of controls works; it does not prove mangling does.  This case
+ * does: it must FAIL with mangling compiled out and PASS by default.
+ *
+ * THE TARGET is `first`, the live neighbour.  It is inside the slab (so
+ * containment passes), UMEM_ALIGN-aligned (so the alignment check passes),
+ * and currently allocated -- handing it out again is a double allocation, the
+ * exact primitive a heap exploit wants.  Pre-fix/unmangled, an overwrite of
+ * the freed neighbour's link with (first + cache_bufctl) makes the allocation
+ * after next return `first` while it is still live.  Mangled, the same
+ * overwritten bytes demangle to garbage that almost surely fails containment
+ * or alignment and is reported instead.
+ */
+static int
+run_inslab(void)
+{
+	umem_cache_t *cp;
+	void *first = NULL, *second = NULL;
+	void **link;
+	void *p1, *p2;
+	int rc = 0;
+
+	cp = make_victim_cache("p54_inslab");
+	if (cp == NULL)
+		return (77);
+
+	if (alloc_adjacent_pair(cp, &first, &second) != 0) {
+		printf("SKIP: could not obtain two adjacent chunks\n");
+		umem_cache_destroy(cp);
+		return (77);
+	}
+
+	umem_cache_free(cp, second);
+
+	/*
+	 * Point the freed buffer's link at the LIVE neighbour.  UMEM_BUF()
+	 * subtracts cache_bufctl, so aim at first + cache_bufctl to have the
+	 * allocator hand back `first` itself.
+	 */
+	link = (void **)((char *)second + cp->cache_bufctl);
+	*link = (void *)((char *)first + cp->cache_bufctl);
+
+	p1 = umem_cache_alloc(cp, UMEM_DEFAULT);	/* pops `second` */
+	p2 = umem_cache_alloc(cp, UMEM_DEFAULT);	/* follows the link */
+
+	printf("  inslab: live=%p  alloc1=%p  alloc2=%p\n", first, p1, p2);
+
+	if (p1 == first || p2 == first) {
+		printf("FAIL: allocator returned the LIVE neighbour %p "
+		    "(double allocation via an in-slab freelist overwrite; "
+		    "containment cannot catch this, only mangling can)\n",
+		    first);
+		rc = 1;
+	} else {
+		printf("ok: in-slab target %p was not returned; mangling "
+		    "defeated a containment-passing overwrite\n", first);
+	}
+
+	/* Corrupted cache, no cleanup -- see run_attack. */
+	return (rc);
+}
+
+/*
  * Case "detect": the corruption must be reported, not dereferenced.
  *
  * Captures fd 2 into a temp file, because that is where umem_error() ->
@@ -310,8 +380,10 @@ main(int argc, char **argv)
 		return (run_attack());
 	if (strcmp(which, "detect") == 0)
 		return (run_detect());
+	if (strcmp(which, "inslab") == 0)
+		return (run_inslab());
 	if (strcmp(which, "all") != 0) {
-		printf("usage: %s [attack|detect|all]\n", argv[0]);
+		printf("usage: %s [attack|detect|inslab|all]\n", argv[0]);
 		return (2);
 	}
 
@@ -325,6 +397,10 @@ main(int argc, char **argv)
 	else if (r == 77 && rc == 0)
 		rc = 77;
 	if ((r = run_detect()) == 1)
+		rc = 1;
+	else if (r == 77 && rc == 0)
+		rc = 77;
+	if ((r = run_inslab()) == 1)
 		rc = 1;
 	else if (r == 77 && rc == 0)
 		rc = 77;
