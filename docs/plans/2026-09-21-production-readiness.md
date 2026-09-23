@@ -576,10 +576,29 @@ would abort; this continues into silent corruption. Position **D**.
 `getpcstack.c:83–100`
 
 Validates alignment, a 16 MiB ceiling, and monotonically increasing frames, then
-dereferences `fp[0]`/`fp[1]`. Under `UMEM_DEBUG=audit`, a corrupted chain — or
-simply a caller compiled without frame pointers, which is the `-O2` default —
-makes the allocator **read** arbitrary addresses. Read-only: no write path was
-found. Crash or info-leak, not code execution.
+dereferences `fp[0]`/`fp[1]`. Under `UMEM_DEBUG=audit` a corrupted chain makes
+the allocator **read** arbitrary addresses. Read-only: no write path was found.
+Crash or info-leak, not code execution.
+
+**CORRECTION (2026-09-23), measured by the agent fixing it.** My original text
+said "or simply a caller compiled without frame pointers, which is the `-O2`
+default" — implying `-O2` widens the exposure. **The opposite is true.** The
+library is built `-O2` with no `-fno-omit-frame-pointer` (`CFLAGS = "-g -O2
+-std=c17 ..."`; `objdump` shows `_umem_alloc` opening with `push %r15` and no
+frame setup), so a walk entered through `umem_alloc` terminates after about two
+frames and never reaches a corrupted frame at all. Measured depth: **7** from a
+frame-pointer-having caller, **2** through `umem_alloc`.
+
+So the arbitrary-read exposure requires the *library itself* to keep frame
+pointers (`--enable-asan` adds `-fno-omit-frame-pointer`) or a caller chain that
+does. The regression therefore drives `getpcstack()` directly from such a caller;
+a test routed through `umem_alloc` in a default build **cannot fail**, which is
+how the first version of that regression was found to be vacuous.
+
+**This has a non-security consequence worth more than the finding itself:**
+`UMEM_DEBUG=audit` records are only ~2 frames deep in a default `-O2` build. The
+audit feature is substantially less useful than `umem_debugging.7` and the README
+imply, and that is a documentation accuracy issue independent of hardening.
 
 ### P5.10 Minor / verified-good (INFO)
 
