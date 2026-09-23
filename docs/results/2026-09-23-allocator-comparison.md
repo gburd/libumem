@@ -37,7 +37,7 @@ identified in source.
 
 | | |
 |---|---|
-| Commit measured | `f2a8267df7586db9e5e6b7dd052bda90e5cea571` via `scripts/ec2/verify-isolated.sh` (`git archive`, committed content only). Allocator sources identical to `v3.1.0` + `5513c81`; the interposer fix `a74065e` is measured separately in §5.1. |
+| Commit measured | `f2a8267df7586db9e5e6b7dd052bda90e5cea571` via `scripts/ec2/verify-isolated.sh` (`git archive`, committed content only). Allocator sources identical to `v3.1.0`. The interposer fix `a74065e` is measured separately in §5.1. **Master moved while this ran**; every number here predates all of: `a74065e` (interposer), `3f2e67c` + `cf3f762` (slab floors: the ~5 GB and ~8 GB VMA ceilings), `147d5ff` (periodic pass reaps the depot), and **`9bbe58b` (the update thread is now started at `umem_init()`; at `f2a8267` no process in this run had one, so no periodic reclaim ever ran)**. None of those touch the alloc/free fast path, but a re-run at HEAD would have a second thread doing a reap pass per interval and a different small-object span layout; the RSS figures in §5.5 in particular are pre-`147d5ff`/`9bbe58b`. Not re-run. |
 | Harness | `scripts/ec2/allocator_comparison.sh` -> `test/bench/matrix.sh`, `scripts/ec2/sustained_load.sh`, `test/bench/bench_contention`, `perf`. Analysis: `test/bench/analyze_comparison.py`. |
 | Boxes | `c7i.2xlarge` (8 vCPU x86_64, Xeon 8488C), `c7g.2xlarge` (8 vCPU aarch64 Graviton3), `c7i.metal-48xl` (192 vCPU x86_64 bare metal), `c8g.metal-48xl` (192 vCPU aarch64 Graviton4 bare metal). **All four obtained**; `arm-hi` metal had capacity this time. |
 | OS / toolchain | AL2023, kernel 6.12.103, gcc 11.5.0, glibc 2.34, `vm.max_map_count` 65530, THP `never`, `numa_balancing` 0, governor `performance` (metal; the 2xlarge boxes expose no governor). |
@@ -193,7 +193,77 @@ Single-thread p999 (ns): umem 23-43 on x86_64, 38-67 on aarch64; glibc
 
 ### 4.2 `multi` (every thread allocates and frees its own), all boxes
 
-<!-- MULTI TABLES -->
+20M total ops per point (metal `multi-hi` at 200M ops for the fast arms at
+64/128/192 threads is in §4.2.1). Mops; **bold** = best non-libumem; "umem vs
+best" = API arm; a gap is marked only when it clears the multi null (§2:
++/-8 % lo x86_64, +/-4 % lo aarch64, +/-12 % metal x86_64, +/-18 % metal
+aarch64) *and* the point's own null.
+
+**8 vCPU:**
+
+| box | size | t | libc | **umem** | umem-preload | jemalloc | tcmalloc | mimalloc | snmalloc | scudo | rpmalloc | umem/libc | umem vs best | null |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| c7i.2xlarge | 16:64 | 1 | 5.6 | 6.3 | 2.8 | 5.5 | 5.9 | 6.2 | 6.0 | 5.4 | 6.0 | 1.13 | **+1%** (best) | -0.3% |
+| c7i.2xlarge | 16:64 | 8 | 34.0 | 31.6 | 1.5 | 32.7 | 31.2 | **36.4** | 35.3 | 27.9 | 35.4 | 0.93 | -13% | +7.5% |
+| c7i.2xlarge | 64:256 | 8 | 31.1 | 30.6 | 1.4 | 31.7 | 30.9 | **35.9** | 34.9 | 26.5 | 32.9 | 0.98 | -15% | +2.2% |
+| c7i.2xlarge | 256:1024 | 8 | 33.0 | 32.1 | 1.4 | 31.6 | **35.7** | 33.0 | 33.9 | 25.2 | 31.6 | 0.97 | -10% | +5.8% |
+| c7i.2xlarge | 1k:4k | 1 | 5.3 | 5.3 | 2.6 | 5.2 | 6.0 | 6.0 | **6.1** | 4.6 | 6.0 | 1.00 | -13% | +0.0% |
+| c7i.2xlarge | 1k:4k | 2 | 8.6 | 4.4 | 2.1 | 9.7 | 9.4 | 8.8 | 10.2 | 7.5 | **10.6** | 0.52 | **-58%** | +1.5% |
+| c7i.2xlarge | 1k:4k | 8 | 23.5 | 6.0 | 1.4 | **30.9** | 30.2 | 25.7 | 28.0 | 23.4 | 29.4 | 0.26 | **-81%** | +1.3% |
+| c7g.2xlarge | 16:64 | 1 | 6.8 | 7.0 | 2.0 | **7.0** | 6.9 | 6.5 | 6.6 | 6.0 | 6.8 | 1.03 | -1% | -0.0% |
+| c7g.2xlarge | 16:64 | 8 | 47.2 | 50.6 | 1.5 | **52.0** | 49.6 | 49.0 | 48.9 | 41.9 | 49.7 | 1.07 | -3% | -2.0% |
+| c7g.2xlarge | 64:256 | 8 | 47.1 | 48.9 | 1.5 | **50.0** | 48.2 | 49.6 | 48.3 | 42.6 | 49.6 | 1.04 | -2% | +1.7% |
+| c7g.2xlarge | 256:1024 | 8 | 44.9 | 46.0 | 1.7 | 46.7 | 45.4 | **47.1** | 46.1 | 39.2 | 46.3 | 1.03 | -2% | +0.9% |
+| c7g.2xlarge | 1k:4k | 1 | 4.5 | 4.7 | 1.8 | 5.7 | 5.7 | 5.5 | **5.7** | 5.0 | 5.5 | 1.03 | -18% | -0.1% |
+| c7g.2xlarge | 1k:4k | 8 | 29.6 | 8.6 | 1.5 | **39.6** | 38.4 | 38.1 | 39.2 | 33.8 | 38.3 | 0.29 | **-78%** | +3.4% |
+
+(t=2, t=4 rows in the raw data; same pattern.)
+
+**192 vCPU metal:**
+
+| box | size | t | libc | **umem** | umem-preload | jemalloc | tcmalloc | mimalloc | snmalloc | scudo | rpmalloc | umem/libc | umem vs best | null |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| c7i.metal | 16:64 | 1 | 6.2 | 6.7 | 3.0 | 7.1 | 6.6 | **8.1** | 6.7 | 6.4 | 6.5 | 1.07 | -18% | -3.0% |
+| c7i.metal | 16:64 | 8 | 38.4 | 37.8 | 2.0 | 40.8 | 39.2 | **42.8** | 41.2 | 35.1 | 39.9 | 0.98 | -12% | -5.5% |
+| c7i.metal | 16:64 | 32 | 128.7 | 140.7 | 1.6 | 148.4 | 137.8 | **164.3** | 147.4 | 128.2 | 142.0 | 1.09 | -14% | +9.5% |
+| c7i.metal | 16:64 | 64 | 177.7 | 181.5 | 1.1 | 176.0 | 178.5 | **210.0** | 185.1 | 169.1 | 188.5 | 1.02 | -14% | +0.3% |
+| c7i.metal | 16:64 | 128 | 298.5 | 277.7 | 0.9 | 296.7 | 285.4 | **348.3** | 307.8 | 261.1 | 279.4 | 0.93 | **-20%** | +8.0% |
+| c7i.metal | 16:64 | 192 | 431.5 | 393.6 | **0.8** | **516.7** | 401.8 | 504.9 | 445.2 | 358.6 | 389.0 | 0.91 | **-24%** | +6.1% |
+| c7i.metal | 64:256 | 192 | 414.4 | 430.8 | 0.8 | 428.7 | 425.6 | **501.4** | 450.8 | 385.6 | 430.9 | 1.04 | -14% | +0.0% |
+| c7i.metal | 256:1024 | 192 | 409.4 | 431.6 | 0.8 | 409.6 | **467.6** | 452.9 | 445.3 | 372.0 | 287.6 | 1.05 | -8% | -6.8% |
+| c7i.metal | 1k:4k | 8 | 28.5 | 5.8 | 1.7 | 35.5 | 34.7 | 33.1 | 38.1 | 31.6 | **38.6** | 0.20 | **-85%** | -1.0% |
+| c7i.metal | 1k:4k | 64 | 146.2 | 9.0 | 1.0 | 185.1 | **204.1** | 168.0 | 199.7 | 147.3 | 192.3 | 0.06 | **-96%** | +0.1% |
+| c7i.metal | 1k:4k | 192 | 325.7 | 23.0 | 0.8 | 411.2 | **458.2** | 351.8 | 392.7 | 316.5 | 338.2 | 0.07 | **-95%** | -8.0% |
+| c8g.metal | 16:64 | 1 | 7.0 | 6.9 | 2.3 | 7.3 | 6.4 | **7.4** | 7.2 | 6.1 | 7.2 | 0.98 | -7% | -0.1% |
+| c8g.metal | 16:64 | 8 | 51.2 | 51.7 | 1.5 | **54.0** | 49.5 | 53.9 | 53.9 | 43.6 | 52.6 | 1.01 | -4% | +1.4% |
+| c8g.metal | 16:64 | 64 | 287.0 | 341.8 | 1.6 | 295.0 | 274.9 | 360.1 | 392.9 | 316.4 | **406.6** | 1.19 | -16% | +18.3% |
+| c8g.metal | 16:64 | 192 | 466.1 | 487.5 | **1.2** | 458.4 | 455.4 | **504.9** | 485.9 | 388.5 | 408.4 | 1.05 | -3% | -2.0% |
+| c8g.metal | 64:256 | 192 | 472.9 | 449.4 | 1.2 | 423.5 | 449.8 | 477.8 | **509.4** | 374.3 | 421.2 | 0.95 | -12% | -2.7% |
+| c8g.metal | 256:1024 | 192 | 467.3 | 405.9 | 1.2 | 409.1 | 435.4 | 458.7 | **487.0** | 358.3 | 388.4 | 0.87 | -17% | +11.1% |
+| c8g.metal | 1k:4k | 8 | 32.6 | 9.3 | 1.7 | 41.1 | 38.2 | 40.7 | **42.4** | 35.0 | 39.8 | 0.28 | **-78%** | -4.7% |
+| c8g.metal | 1k:4k | 64 | 215.4 | 14.9 | 1.7 | 282.1 | 256.3 | **309.0** | 244.6 | 252.7 | 305.1 | 0.07 | **-95%** | +0.0% |
+| c8g.metal | 1k:4k | 192 | 337.4 | 33.7 | 1.1 | 403.2 | 384.3 | 368.9 | **411.8** | 319.5 | 294.9 | 0.10 | **-92%** | -11.0% |
+
+Reading, size range by size range:
+
+- **16 B - 1 KB, API arm: within noise of glibc on every box** (0.87-1.43x,
+  medians ~1.03), and **inside the null on aarch64 metal** at every thread
+  count. On x86_64 metal it trails the best allocator by 8-24 % with the
+  same sign at every thread count; only the t=128/192 16:64 points clear
+  the +/-12 % band on their own (§5.4).
+- **1k:4k, API arm: collapses at t >= 2 on every box** to 0.06-0.29x glibc,
+  identically in the umem@null arm. §5.2.
+- **`umem-preload` at `f2a8267`: negative scaling everywhere**, 2.8-3.3
+  Mops at 1 thread down to 0.8-1.2 at 192, on all four boxes. §5.1.
+
+The p999 columns (raw data) tell the same story: API arm 24-40 ns at 1
+thread on par with the field; 130-640 ns at 8-192 threads for sizes under
+1 KB (jemalloc 30-80, mimalloc 45-90, glibc 18-450); **10-68 us at 1k:4k
+under threads** where everyone else is 40-900 ns.
+
+#### 4.2.1 `multi-hi`: 200M ops at 64/128/192 threads, fast arms only
+
+<!-- MULTI-HI -->
 
 ### 4.3 `prodcons` (half the threads allocate, half free)
 
@@ -418,9 +488,85 @@ within 10% on every row):
   trylock** -- plus `cc_alloc` 500-1100 (magazine-layer allocations that
   bypassed the PTC).
 
-**Metal (192 threads):**
+**Metal (192 threads), 4 windows x ~20 s, matched work (38.4M `prodcons`
+/ 36.5M `frag` ops per window, every arm), two groups: A = the nine fast
+arms interleaved; B = `umem-preload` vs its null control, separately
+(calibrating A's budget to the 500x-slower interposer would have given A
+60 ms windows). Throughput is not comparable across groups; p999 is.
+`ops_floor_raised` false, `alloc_failures` 0 on all 72 + 16 windows per box.**
 
-<!-- SUSTAINED-METAL -->
+| box | workload | arm | Mops | elapsed s | p50 | p99 | **p999 ns** (min..max) | rss@peak MB | frag |
+|---|---|---|---|---|---|---|---|---|---|
+| c7i.metal | prodcons 64:256 | libc | 1.56 | 24.6 | 746 | 23,920 | 82,786 (79k..93k) | 27 | -- |
+| | | **umem** | 1.95 | 19.8 | 490 | 62,236 | **273,189** (256k..325k) | 161 | -- |
+| | | umem@null | 1.87 | 20.6 | 586 | 65,545 | 240,454 (212k..285k) | 164 | -- |
+| | | jemalloc | 1.99 | 19.4 | 188 | 9,524 | 20,652 | 39 | -- |
+| | | tcmalloc | 1.73 | 22.3 | 252 | 29,516 | 77,675 | 18 | -- |
+| | | mimalloc | 1.93 | 19.9 | 190 | 8,576 | 23,567 | 34 | -- |
+| | | snmalloc | 1.87 | 20.6 | 31 | 7,238 | 53,414 | 51 | -- |
+| | | scudo | 2.21 | 17.4 | 1,073 | 617,406 | 1,184,402 | 16 | -- |
+| | | rpmalloc | 1.79 | 21.4 | 215 | 5,922 | **18,666** | 41 | -- |
+| | | umem-preload (group B) | 1.20 | 32 | 1,340 | 226k | 1.1-2.7 ms | 165 | -- |
+| c7i.metal | frag 16:64 | libc | 15.41 | 2.4 | 44 | 15,220 | 225,795 | 355 | 2.20 |
+| | | **umem** | **1.98** | **18.4** | 214 | 2,285,288 | **6,005,597** (5.7..6.0 ms) | 423 | 2.29 |
+| | | umem@null | 2.01 | 18.1 | 182 | 2,276,332 | 5,943,793 | 421 | 2.30 |
+| | | jemalloc | 15.49 | 2.4 | 28 | 11,683 | 24,746 | 335 | 2.23 |
+| | | tcmalloc | 15.79 | 2.3 | 43 | 17,754 | 687,192 | 314 | 1.80 |
+| | | mimalloc | 16.10 | 2.3 | 27 | 11,723 | 30,730 | 322 | 1.95 |
+| | | snmalloc | 15.58 | 2.3 | 24 | 12,010 | 29,324 | 329 | 2.05 |
+| | | scudo | 14.42 | 2.5 | 108 | 32,302 | 394,147 | 425 | 2.37 |
+| | | rpmalloc | 15.48 | 2.4 | 26 | 9,650 | 25,702 | 309 | 2.21 |
+| | | umem-preload (group B) | 0.77 | 47 | -- | 4.0 ms | 9.8 ms | 424 | 2.3 |
+| c8g.metal | prodcons 64:256 | libc | 2.09 | 18.5 | 233 | 7,514 | 30,844 (11k..53k) | 28 | -- |
+| | | **umem** | 1.41 | 27.2 | 741 | 27,997 | **113,000** (83k..398k) | 160 | -- |
+| | | umem@null | 1.43 | 26.9 | 708 | 27,234 | 404,140 (94k..467k) | 159 | -- |
+| | | jemalloc | 2.70 | 14.2 | 156 | 1,176 | 5,212 | 55 | -- |
+| | | mimalloc | 2.22 | 17.3 | 112 | 1,604 | 9,332 | 44 | -- |
+| | | snmalloc | 2.95 | 13.0 | 35 | 1,458 | 13,102 | 56 | -- |
+| | | rpmalloc | 2.32 | 16.5 | 143 | 1,086 | **4,833** | 45 | -- |
+| c8g.metal | frag 16:64 | libc | 23.01 | 1.6 | 48 | 624 | 3,206 | 339 | 2.37 |
+| | | **umem** | **1.17** | **31.2** | 162 | 3,947,146 | **9,874,842** (9.5..9.9 ms) | 423 | 2.28 |
+| | | umem@null | 1.17 | 31.3 | 178 | 3,951,588 | 9,750,920 | 421 | 2.28 |
+| | | jemalloc | 22.91 | 1.6 | 34 | 366 | 900 | 318 | 2.30 |
+| | | mimalloc | 22.43 | 1.6 | 33 | 158 | 1,831 | 315 | 2.01 |
+| | | snmalloc | 23.65 | 1.5 | 33 | 41 | **283** | 317 | 1.90 |
+| | | rpmalloc | 22.63 | 1.6 | 36 | 168 | 1,759 | 309 | 2.09 |
+
+Three results, each reproduced by umem@null to within 10 %:
+
+1. **Sustained `frag` 16:64 at 192 threads is umem's worst point in the
+   entire comparison: 2.0 Mops vs 15-16 for every other allocator (8x) on
+   x86_64, 1.2 vs 22-24 (19x) on aarch64, with p999 of 6 ms and 10 ms
+   against 0.3 us-0.7 ms for the field.** The window ran 18-31 s where every
+   competitor finished in 1.6-2.4 s. The 192-thread `perf` capture of this
+   point (`perf-umem-frag-t192-64_256.flat.txt`) puts **10 % of all cycles
+   in `pthread_mutex_trylock` + 3 % in `pthread_mutex_unlock`** with
+   `umem_depot_alloc` and `umem_depot_pop_trylock` as the callers, and the
+   contention dump (`contention-umem-frag-t192-64_256.txt`) shows, per
+   size class, `dep_remote` 4,800-13,900 against `dep_local` 2,000-5,000
+   and `dep_conten` 2,000-6,100: **2-3 of every 4 depot reloads steal
+   from another CPU's stripe, and roughly a third of trylocks fail.** With
+   192 threads each holding a 5M-object live set and freeing half at
+   random, freed objects land on the freeing CPU's stripe and are wanted
+   by whichever CPU allocates next; the depot is a 192-way all-to-all
+   exchange through per-stripe mutexes. glibc is 8x faster here because
+   its `free()` returns to a per-thread tcache and then an arena bin with
+   no cross-CPU stripe; jemalloc/mimalloc return to the owning thread's
+   page. This is the metal face of §5.7 / P8.5 and it is the strongest
+   evidence for that task.
+
+2. **Sustained `prodcons` p999 at 192 threads: umem 240-273 us on x86_64,
+   113-404 us on aarch64, against jemalloc/mimalloc/rpmalloc at 5-25 us.**
+   This is the point the 2026-09-09 depot trylock fix was measured on
+   (157 -> 84-93 us, whole-run, budget defect present). Per-window and
+   matched-work it reads **3x worse than the 84-93 us that was recorded**;
+   see §5.8 for why that is not a regression claim.
+
+3. **umem `prodcons` throughput at 192 threads is at parity** with the
+   field on x86_64 (1.95 Mops vs 1.56-2.21; the ring buffer dominates) and
+   0.5x jemalloc/snmalloc on aarch64 (1.41 vs 2.70/2.95) -- the latter
+   clears the aarch64 prodcons null (sd 15 %) and is the same depot cross-CPU
+   cost.
 
 ---
 
@@ -733,7 +879,34 @@ first, then fixed.
   on the same instance type.
 - **Depot trylock fix, sustained p999 157 -> 84-93 us at 192 threads
   (x86_64 metal, prodcons 64:256, whole-run, budget defect present).**
-  <!-- SUSTAINED-REGRESSION -->
+  This run's matched-work, per-window sustained `prodcons` at 192 threads
+  on the same instance type gives umem **p999 273 us (windows 256-325 us),
+  umem@null 240 us (212-285)** -- about 3x the 84-93 us on record. Whether
+  that is a regression **cannot be decided from this data**, and the doc
+  does not claim one: the two measurements are not the same measurement.
+  The 2026-09-09 figure was a whole-run p999 over a run whose budget was
+  divided twice (P2.1: ~52k total ops at 192 threads, so each thread did
+  ~270 operations and the "sustained" run was dominated by thread start-up);
+  this run's windows are 38.4M ops each with 200k per producer. A 3-minute
+  run of 270 ops per thread and a 20 s window of 200k per thread have
+  different tails by construction. What *can* be said: (a) the mechanism the
+  fix removed (a blocking mutex in the cross-CPU steal scan while holding
+  `cc_lock`) is still absent from the code at `f2a8267` -- `umem.c:2435`
+  `umem_depot_alloc_trylock` is trylock-only, and the blocking
+  `umem_depot_alloc` (`umem.c:2611`) is reached only after the trylock path
+  fails; (b) at 192 threads `prodcons` the field spans 5 us (rpmalloc) to
+  1.2 ms (scudo) with glibc at 83 us, and umem at 240-273 us sits between
+  tcmalloc (78 us) and scudo, i.e. it does **not** reach the
+  tens-of-microseconds tier and the README no longer implies it might.
+  **To settle regression-or-not**: run `scripts/ec2/sustained_load.sh umem`
+  at the depot-trylock fix's parent and child commits (`2026-09-09`) under
+  the current harness on metal, A/B with the null. That is a Phase 8 follow-
+  up under P8.5, since the mechanism (depot cross-CPU stripes under
+  all-to-all traffic) is the same one.
+- **The 8-thread sustained `prodcons` p999 (§4.5) is 0.84-0.95 us**, second
+  in the field, so the depot path is healthy where the stripes are not
+  oversubscribed. The 192-thread tail is a scaling property of the stripe
+  design, not a fast-path defect.
 
 ---
 
