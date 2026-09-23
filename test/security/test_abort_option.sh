@@ -5,9 +5,11 @@
 # THE DEFECT: malloc_interpose.c and README.md told users that
 # `UMEM_OPTIONS=abort=1` restores glibc-like abort-on-invalid-free under
 # LD_PRELOAD, where the interposer clears umem_abort.  No such option existed:
-# the table had only `noabort` (ITEM_CLEARFLAG), nothing could SET the flag,
-# and `abort=1` would have been rejected by the flag parser for carrying a
-# value anyway.  So the one documented way to make a preloaded program fail
+# the tables had only `noabort` (ITEM_CLEARFLAG, and in the UMEM_DEBUG table,
+# not UMEM_OPTIONS), nothing could SET the flag, and `abort=1` would have been
+# rejected by the flag parser for carrying a value anyway.  The first attempt
+# at this fix put `abort` next to `noabort` -- in UMEM_DEBUG -- and this test
+# caught it: UMEM_OPTIONS=abort parsed nothing and the arm still exited 0.  So the one documented way to make a preloaded program fail
 # loudly on a forged or foreign free did nothing, silently, and the program
 # went on logging where the user believed it would die.
 #

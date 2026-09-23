@@ -611,7 +611,9 @@ umem_interpose_init(void)
 	 * would kill it.  Set UMEM_OPTIONS=abort to get the abort back --
 	 * the option exists as of this comment; the earlier text named
 	 * "abort=1", which no option table entry ever implemented and which
-	 * the flag parser would have rejected for taking a value.
+	 * the flag parser would have rejected for taking a value.  (Its
+	 * inverse has always been UMEM_DEBUG=noabort -- a different
+	 * variable -- which is part of why nobody noticed.)
 	 *
 	 * ORDER: this constructor runs at load; umem_init() parses
 	 * UMEM_OPTIONS on the first allocation, after it.  So the env
