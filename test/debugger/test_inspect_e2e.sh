@@ -162,7 +162,15 @@ print(f"  OK: {n} records, {with_stack} with stack traces")
 # Test 5: walk allocated -- enumerate buffers
 # ---------------------------------------------------------------------------
 echo "[5/8] live walk allocated"
-"$TOOL" --pid "$TPID" walk allocated -f json -n 200 | python3 -c '
+# -n 0 = no truncation.  This used to be -n 200 and passed only because the
+# whole heap fit in 200 entries.  The walk lists caches in creation order,
+# internal metadata caches first, so a truncated walk of ANY real process
+# shows umem_bufctl_cache entries and nothing of the user's.  The 4 MiB qcache
+# slab floor (UMEM_MIN_QCACHE_SLAB) pre-creates ~1100 bufctls at startup and
+# turned that latent assumption into a red.  What this step must establish is
+# that the walk enumerates live buffers and includes the user's allocation,
+# so walk everything.
+"$TOOL" --pid "$TPID" walk allocated -f json -n 0 | python3 -c '
 import json, sys
 d = json.loads(sys.stdin.read())
 assert len(d["entries"]) > 0
