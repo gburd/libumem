@@ -826,14 +826,19 @@ test_security_test_forged_free_CPPFLAGS = -I$(srcdir)
 # reach the walk: the library is built -O2 without -fno-omit-frame-pointer, so
 # a walk starting inside the allocator stops after ~2 frames (measured: depth 2
 # through umem_alloc, 7 from an fp-having caller) and the first version of this
-# test passed with the fix reverted.  -O0 as well as -fno-omit-frame-pointer,
-# because the arm depends on THIS file's frames being real and walkable.
+# test passed with the fix reverted.
+#
+# -fno-omit-frame-pointer only.  NOT -O0: automake puts $(CFLAGS) AFTER these
+# flags, and CFLAGS carries -O2, so any -O here is overridden and merely looks
+# like it is doing something.  The test is therefore written to be correct at
+# -O2 -- it poisons a frame that has already stopped executing rather than its
+# own live frame; see the walk_with_frame_aimed_at comment for why the naive
+# version SEGVs at -O2 even with the fix in place.
 test_security_test_stack_bounds_SOURCES = test/security/test_stack_bounds.c
 test_security_test_stack_bounds_LDADD = libumem.la
 test_security_test_stack_bounds_LDFLAGS = -pthread
 test_security_test_stack_bounds_CPPFLAGS = -I$(srcdir)
-test_security_test_stack_bounds_CFLAGS = $(AM_CFLAGS) \
-	-fno-omit-frame-pointer -O0
+test_security_test_stack_bounds_CFLAGS = $(AM_CFLAGS) -fno-omit-frame-pointer
 
 # P5.7: tests the peer-authorization decision directly.  A real setuid target
 # is not creatable inside `make check` (it needs root, and would leave a setuid

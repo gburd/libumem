@@ -88,10 +88,22 @@
  *      have caught the first version of this test.
  *
  * PRE-FIX DEMONSTRATION: with the bounds consultation removed from
- * getpcstack.c, arm A's child dies with SIGSEGV.  Verified on x86_64:
- * instrumenting the walk prints
- *   DBG fp=0x7fc3619f0040 hb=1 lo=0x7fc3618f0000 hi=0x7fc3619f0000 ok=0
- * post-fix (frame rejected, depth 2 returned) and SEGVs pre-fix.
+ * getpcstack.c, arm A's child dies with SIGSEGV.  Verified on x86_64 AND
+ * aarch64 via scripts/ec2/p5_6_9_prefix_demo.sh: control arm depth 3, then
+ * "child died with signal 11 (the walk dereferenced an address off the stack)".
+ * Instrumenting the walk in-library prints
+ *   DBG fp=0x7fb6f91c5040 hb=1 lo=0x7fb6f90c5000 hi=0x7fb6f91c5000 ok=0
+ * post-fix -- the frame aimed into the guard page is rejected (ok=0) and never
+ * dereferenced.
+ *
+ * A NOTE ON WHAT THIS TEST DOES AND DOES NOT COVER.  It exercises the walk in
+ * the configuration where the defect is REACHABLE: getpcstack() entered from a
+ * caller that keeps frame pointers.  In a default -O2 build the allocator's own
+ * frames have no frame pointer, so a walk entered through umem_alloc() stops
+ * after ~2 frames and cannot reach a corrupted caller frame at all.  That makes
+ * the default build largely insulated from P5.9 by accident -- and also means
+ * UMEM_DEBUG=audit records are ~2 frames deep there, which is a separate,
+ * user-facing limitation recorded in umem_debugging.7.
  *
  * Run it under --enable-asan as well: ASan catches an out-of-bounds read that
  * lands in a mapped page, which a SEGV check cannot see.
@@ -174,33 +186,79 @@ struct thread_arg {
 };
 
 /*
- * Aim this frame's saved frame pointer at `target`, then walk.
+ * Aim a frame pointer at `target` and walk from a frame BELOW it.
  *
- * noinline so the frame genuinely exists; the saved fp is restored before
- * returning because the epilogue reloads from that slot -- leaving it
- * corrupted would crash the TEST rather than say anything about the walk.
+ * WHY TWO FUNCTIONS, and why the corrupted slot is not this frame's own:
+ *   The obvious shape -- overwrite __builtin_frame_address(0)[0], call
+ *   getpcstack(), put it back -- is not safe to compile at -O2.  The compiler
+ *   is entitled to keep the frame pointer in a register across the call, to
+ *   reorder the restore, or to use the slot itself; the test then corrupts its
+ *   own return path and dies of SIGSEGV in its epilogue, which looks exactly
+ *   like the defect it is supposed to be detecting.  It did: an -O0 in this
+ *   file's CFLAGS was overridden by the -O2 that CFLAGS appends later on the
+ *   command line, and both arms SEGVed with the FIX IN PLACE while
+ *   instrumentation proved the walk itself had correctly rejected the frame
+ *   (ok=0) and returned.
+ *
+ *   So the corruption goes in a frame that has already stopped executing:
+ *   victim_frame() records the address of its own frame-pointer slot and
+ *   returns; the caller then writes `target` into that slot and walks from a
+ *   DEEPER frame, so the walk climbs through the poisoned link while no live
+ *   function depends on it.  Nothing this test executes afterwards reads the
+ *   slot, so the arm cannot self-inflict a crash and any SIGSEGV is the
+ *   allocator's.
+ *
+ * Returns the depth getpcstack() reported.
+ */
+struct walk_ctx {
+	uintptr_t	*slot;		/* frame-pointer slot to poison */
+	uintptr_t	target;		/* what to poison it with */
+	int		depth;		/* out */
+};
+
+/*
+ * Establish a frame, hand its frame-pointer slot up, and return.  The frame is
+ * dead from here on, which is what makes poisoning it safe.
  */
 __attribute__((noinline))
+static void
+victim_frame(struct walk_ctx *ctx, void (*next)(struct walk_ctx *))
+{
+	ctx->slot = (uintptr_t *)__builtin_frame_address(0);
+	next(ctx);
+}
+
+/* Called from inside victim_frame: poison the caller's slot, then walk. */
+__attribute__((noinline))
+static void
+poison_and_walk(struct walk_ctx *ctx)
+{
+	uintptr_t pcstack[32];
+	uintptr_t saved = ctx->slot[0];
+
+	if (ctx->target != 0)
+		ctx->slot[0] = ctx->target;
+
+	/*
+	 * The walk starts in THIS frame and climbs into victim_frame's, whose
+	 * saved-fp link now points at `target`.
+	 */
+	ctx->depth = getpcstack(pcstack, 20, 0);
+
+	/* Restore before victim_frame's epilogue runs. */
+	ctx->slot[0] = saved;
+}
+
 static int
 walk_with_frame_aimed_at(uintptr_t target)
 {
-	uintptr_t pcstack[32];
-	uintptr_t *myfp = (uintptr_t *)__builtin_frame_address(0);
-	uintptr_t saved;
-	int depth;
+	struct walk_ctx ctx;
 
-	if (myfp == NULL)
-		return (-1);
-
-	if (target == 0)
-		return (getpcstack(pcstack, 20, 0));
-
-	saved = myfp[0];
-	myfp[0] = target;	/* the corruption a stack overflow would cause */
-	depth = getpcstack(pcstack, 20, 0);
-	myfp[0] = saved;
-
-	return (depth);
+	ctx.slot = NULL;
+	ctx.target = target;
+	ctx.depth = -1;
+	victim_frame(&ctx, poison_and_walk);
+	return (ctx.depth);
 }
 
 static void *
