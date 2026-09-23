@@ -43,6 +43,15 @@ out=$("$BIN" 2>&1)
 rc=$?
 echo "$out"
 
+# The binary itself reports SKIP (77) when its build cannot drive the frame walk
+# -- an ASan build, where ASan's frame rewriting both breaks the
+# frame-pointer-slot assumption and limits the walk.  Propagate that, rather
+# than treating a legitimate "this build cannot test it" as a failure.
+if [[ $rc -eq 77 ]]; then
+	echo "test_stack_bounds.sh: SKIP propagated from the binary"
+	exit 77
+fi
+
 # The test's own control arm is the vacuity guard (it fails the run if the walk
 # cannot produce a multi-frame chain).  Check for its line here too, so a build
 # that silently stopped running the arms cannot report green through this
@@ -57,9 +66,10 @@ if ! grep -q 'uncorrupted walk returned depth' <<<"$out"; then
 	exit 1
 fi
 
-# An ASan report anywhere in the output is a failure even if the binary's own
-# accounting was happy: the whole point of the ASan run is to catch a read that
-# lands in a mapped page and therefore does not SEGV.
+# An ASan report is a failure even if the binary's own accounting was happy:
+# the point of the ASan run is to catch a read that lands in a mapped page and
+# therefore does not SEGV.  Arms whose premise ASan invalidates are skipped
+# inside the binary, so a report here is about the LIBRARY.
 if grep -qE 'ERROR: AddressSanitizer|SUMMARY: AddressSanitizer' <<<"$out"; then
 	echo "test_stack_bounds.sh: FAIL -- AddressSanitizer reported an error"
 	exit 1

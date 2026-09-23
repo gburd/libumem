@@ -309,11 +309,18 @@ controls:
 
 	/*
 	 * And a foreign-but-plausible pointer must still be refused rather than
-	 * accepted just because it sits near the heap: a pointer one page past
-	 * a real allocation, with no header at all.
+	 * accepted just because it sits near the heap: a pointer one page into a
+	 * real allocation, with no header of its own.
+	 *
+	 * Skipped under ASan: ASan intercepts malloc_usable_size() and aborts on
+	 * an interior pointer ("bad-malloc_usable_size") before libumem's
+	 * classifier runs, so the arm cannot reach the code it is about.
 	 */
 	printf("[F] a pointer with no header is not accepted\n");
-	{
+	if (asan_active()) {
+		printf("  (skipped under ASan: ASan rejects an interior pointer "
+		    "in malloc_usable_size() itself)\n");
+	} else {
 		void *big = malloc(64 * 1024);
 
 		if (big == NULL) {
