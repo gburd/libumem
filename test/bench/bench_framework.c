@@ -263,6 +263,49 @@ typedef struct thread_context {
     pthread_barrier_t *start_barrier;
 } thread_context_t;
 
+/*
+ * Fill the start-barrier slots of worker threads that never started.
+ *
+ * The barrier is sized for nthreads workers + the driver.  When
+ * pthread_create() fails partway, `missing` slots will never be filled, and
+ * the old "absorb" loop had the DRIVER wait once per missing slot -- which
+ * cannot work: a single thread waiting sequentially blocks on its first wait
+ * with the barrier still short.  Observed 2026-09-23 (pthread_create failed
+ * at frag thread 7 of 8 once umem's heap ceiling had used up the VMA budget
+ * a thread stack needs): the run hung until killed.
+ *
+ * POSIX offers no way to shrink a barrier that may already have waiters, so
+ * each missing slot is filled by a throwaway thread that does exactly one
+ * wait.  Failure path only; if even those threads cannot be created the run
+ * exits with a message rather than hanging.
+ */
+static void *barrier_filler(void *b) {
+    pthread_barrier_wait((pthread_barrier_t *)b);
+    return NULL;
+}
+static void bench_barrier_shrink(pthread_barrier_t *b, int expected, int have) {
+    int missing = expected - have;
+    if (missing <= 0) return;
+    pthread_t *fill = calloc((size_t)missing, sizeof(*fill));
+    int made = 0;
+    for (int i = 0; fill && i < missing; i++) {
+        if (pthread_create(&fill[i], NULL, barrier_filler, b) != 0) break;
+        made++;
+    }
+    if (made < missing) {
+        /* Cannot even create filler threads: nothing can release the
+         * barrier.  Say so and exit rather than hang forever. */
+        fprintf(stderr, "bench: %d worker thread(s) never started and %d "
+                "filler thread(s) could not be created either; aborting the "
+                "run rather than deadlocking on the start barrier\n",
+                missing, missing - made);
+        exit(2);
+    }
+    /* Fillers are joined after the barrier releases; detach is enough. */
+    for (int i = 0; i < made; i++) pthread_detach(fill[i]);
+    free(fill);
+}
+
 /* Single-threaded workload: allocate, use, free in loop.
  * operation_count is the total budget; this workload runs one thread, so the
  * per-thread count equals it (subject to the work floor). */
@@ -458,10 +501,15 @@ void workload_multi_thread(allocator_ops_t *ops, bench_stats_t *stats, void *con
         }
         started++;
     }
-    /* Absorb the barrier slots of threads that never started, or the ones
-     * that did would wait forever. */
-    for (int i = started; i < nthreads; i++)
-        pthread_barrier_wait(&start_barrier);
+    /* Threads that never started own barrier slots nobody will fill.  The
+     * previous "absorb" loop had this thread wait once per missing slot --
+     * but a barrier of N+1 parties cannot be satisfied by ONE thread waiting
+     * sequentially: the first wait blocks forever with N parties arrived.
+     * Observed 2026-09-23: pthread_create failed at frag thread 7 of 8 (the
+     * umem heap ceiling had consumed the VMA budget the thread stack needed)
+     * and the run hung until killed.  Since no started worker has passed the
+     * barrier yet, it is safe to re-create it for the parties that exist. */
+    bench_barrier_shrink(&start_barrier, nthreads + 1, started + 1);
     stats->thread_count = started > 0 ? started : nthreads;
 
     uint64_t start = bench_get_ns();
@@ -758,8 +806,8 @@ void workload_producer_consumer(allocator_ops_t *ops,
         }
         started_c++;
     }
-    for (int i = started_p + started_c; i < total; i++)
-        pthread_barrier_wait(&barrier);
+    /* See bench_barrier_shrink(): a sequential absorb loop deadlocks. */
+    bench_barrier_shrink(&barrier, total + 1, started_p + started_c + 1);
 
     uint64_t start = bench_get_ns();
     pthread_barrier_wait(&barrier);
@@ -1137,8 +1185,8 @@ void workload_fragmentation(allocator_ops_t *ops,
         }
         started++;
     }
-    for (int i = started; i < nthreads; i++)
-        pthread_barrier_wait(&start_barrier);
+    /* See bench_barrier_shrink(): a sequential absorb loop deadlocks. */
+    bench_barrier_shrink(&start_barrier, nthreads + 1, started + 1);
 
     uint64_t start = bench_get_ns();
     pthread_barrier_wait(&start_barrier);
