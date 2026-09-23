@@ -90,3 +90,24 @@ compiled and reviewed is not the same as covered.
   threads can be neither confirmed nor excluded because the null was only run at
   1 and 8 threads. It also recorded that aarch64 metal was never measured
   (capacity errors), rather than quietly omitting it.
+
+## 2026-09-23 follow-up: the gap is closed
+
+A new `inslab` case in `test/unit/test_freelist_mangle.c` aims the overwritten
+link at the **live neighbour** -- inside the victim slab and `UMEM_ALIGN`-aligned,
+so both structural checks pass and only the mangling stands in the way. The
+target being a *live* buffer also makes the primitive precise: success means a
+double allocation.
+
+Isolated on `c7i.2xlarge` at `c8d83bd`, with the unmangled build confirmed via
+`objdump` (0 references to `umem_link_cookie` in `umem.o`):
+
+| Build | `inslab` |
+|---|---|
+| default (mangled) | **PASS** -- `alloc1=(nil)`, the demangled garbage was rejected; live buffer never returned |
+| `-DUMEM_NO_LINK_MANGLE` | **FAIL** -- `alloc2 == live`: the allocator handed back a buffer still allocated |
+
+So the verified claim is now the full one: **containment blocks out-of-slab
+targets, and mangling blocks in-slab targets**, each demonstrated by a test that
+fails when that specific control is removed. "Compiled and reviewed but not
+covered" no longer applies to the mangling.

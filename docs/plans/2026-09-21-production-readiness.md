@@ -645,13 +645,14 @@ default **31 total / 27 PASS / 4 SKIP / 0 FAIL**, `--enable-introspect`
 - **P5.9's exposure is narrower and in the opposite direction** from the audit
   text. See the correction in the P5.9 entry above.
 
-**One evidence gap, recorded not closed.** P5.4's regression cannot distinguish
-mangling from validation: isolating the two controls shows
-`umem_slab_link_valid()`'s containment check blocks the tested attack on its own,
-because the target is outside the victim slab. Mangling covers an in-slab target,
-which no test exercises. Details and the isolation table:
-`docs/results/2026-09-23-p54-which-control-blocks.md`. This is why P5.4 ships as
-v3.1.0 with the claim stated narrowly rather than as "mangling stops the attack".
+**The P5.4 evidence gap is closed (2026-09-23, `c8d83bd`).** The original
+regression could not distinguish mangling from containment, because its target
+was outside the victim slab and containment caught it first. A new `inslab` case
+targets the live neighbour -- inside the slab, aligned, so only mangling stands
+in the way -- and FAILs with `-DUMEM_NO_LINK_MANGLE` (the allocator returns a
+still-live buffer: a double allocation) while PASSing by default. Both controls
+are now independently demonstrated.
+`docs/results/2026-09-23-p54-which-control-blocks.md`
 
 ### Phase 5 exit criteria
 
