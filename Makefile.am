@@ -595,6 +595,15 @@ test_stress_repro_interpose_fork_LDADD = libumem.la
 test_stress_repro_interpose_fork_LDFLAGS = -pthread
 test_stress_repro_interpose_fork_CPPFLAGS = -I$(srcdir)
 
+# Interposer free() scaling (Phase 8).  Same LD_PRELOAD-only contract as the
+# fork test above; driven from interpose_regress.sh so it gates in make check.
+noinst_PROGRAMS += test/stress/repro_interpose_free_scaling
+test_stress_repro_interpose_free_scaling_SOURCES = \
+	test/stress/repro_interpose_free_scaling.c
+test_stress_repro_interpose_free_scaling_LDADD = libumem.la
+test_stress_repro_interpose_free_scaling_LDFLAGS = -pthread
+test_stress_repro_interpose_free_scaling_CPPFLAGS = -I$(srcdir)
+
 test_stress_stress_concurrency_oracle_SOURCES = test/stress/stress_concurrency_oracle.c
 test_stress_stress_concurrency_oracle_LDADD = libumem.la
 test_stress_stress_concurrency_oracle_LDFLAGS = -pthread

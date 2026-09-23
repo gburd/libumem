@@ -69,6 +69,14 @@ run_case "calloc race (LD_PRELOAD interposer)" "$PRELOAD" \
 run_case "aligned contracts (control, no preload)" "" "$ALIGN"
 run_case "aligned contracts (LD_PRELOAD interposer)" "$PRELOAD" "$ALIGN" --strict
 
+# free() must scale with threads.  Pre-fix, every free took a global mutex to
+# scan an empty 512-slot table, so aggregate throughput FELL as threads were
+# added (~500x below the API path at 192 threads on metal).  A ratio >= 1.0 at
+# 8 threads is the bar; the defect delivered ~0.3-0.7.
+SCALE=$(find_bin test/stress repro_interpose_free_scaling) || {
+	echo "FAIL: repro_interpose_free_scaling not built"; exit 1; }
+run_case "free() thread scaling (LD_PRELOAD interposer)" "$PRELOAD" "$SCALE"
+
 if [[ $rc -eq 0 ]]; then
 	echo "PASS: interposer regressions"
 else
