@@ -669,6 +669,124 @@ are now independently demonstrated.
 5. No security fix lands without its regression. A hardening change that cannot
    be shown to close the hole it claims to close is not a fix.
 
+## Phase 6 — Hard limits
+
+**Origin:** the 2026-09-23 hard-limit survey. The position this phase serves:
+a limit like "heap under 5 GB" cannot exist in this library. Two such limits
+were already fixed before this survey (the ~5 GB heap ceiling, `3f2e67c`; the
+interposer's ~500x `free()` collapse, `a74065e`) and are not re-examined here.
+This phase records every *remaining* point where libumem fails, aborts, or
+degrades sharply where glibc does not -- and, just as deliberately, every
+dimension that was pushed and found fine, so nobody re-runs it.
+
+**Method.** One probe per dimension under `test/limits/` (see its README),
+each built twice from one source -- against the libumem API and as a plain
+glibc binary -- so the glibc comparison is the same program. Every number is
+from an isolated build of a pinned sha via `verify-isolated.sh`; the box and
+sha are on each entry. Raw logs: `docs/results/jobs/<role>-limits3-<job>/`.
+This phase is measurement and diagnosis only; no allocator code changes here.
+
+**Severity scale.** BLOCKING = fails or aborts where glibc does not, or a
+cliff a general-purpose user would hit. HIGH = degrades sharply (>10x) vs
+glibc in a realistic regime. MEDIUM = measurable, bounded, worth fixing.
+FINE = pushed past the target with no cliff; recorded so it is not re-run.
+
+### P6.1 Object count: 100M live 64 B objects -- FINE on overhead, HIGH on VMAs and stalls
+`umem.c:1540-1620` (`umem_slab_create`, one span per 64 KiB slab via
+`umem_va_arena`); `vmem.c:1555-1567` (the va-arena qcaches);
+`umem.c:4218-4262` (`umem_hash_rescale`)
+
+**Tested to 100M objects, both architectures. No failure, no cliff in
+per-object overhead.** Provenance: `a2548b8`, `c7i.2xlarge` and
+`c7g.2xlarge`, `probe_objcount 100000000 64`.
+
+| | umem x86 | umem arm | glibc x86 | glibc arm |
+|---|---:|---:|---:|---:|
+| RSS at 100M | 7368 MB | 7350 MB | 8395 MB | 8394 MB |
+| bytes/object (incl. driver ptr) | 69.2 | 69.0 | 80.0 | 80.0 |
+| alloc phase | 47.4 s (444 ns mean) | 63.4 s (601 ns) | 9.0 s (61 ns) | 9.5 s (62 ns) |
+| worst single alloc | **94.9 ms** | **41.2 ms** | 0.25 ms | 1.6 ms |
+| allocs > 1 ms | 19 | 21 | 0 | 1 |
+| VMAs at 100M | **48,218** | **48,215** | 54 | 74 |
+| free phase | 25.1 s, worst 42 ms | 34.5 s, worst 15 ms | 5.8 s | 6.7 s |
+| RSS after freeing all | **9022 MB (+1.65 GB)** | **9005 MB (+1.65 GB)** | 8395 MB (flat) | 8394 MB |
+| stall while parked 25 s (update thread ran 2x) | 0.1 ms | 3.8 ms | 0.0 ms | 0.2 ms |
+
+What is fine: 64 B objects cost 61 B each (69.2 minus the 8 B driver pointer),
+**less than glibc's 72**, flat from 20M to 100M. Nothing on the update
+thread's periodic walk stalls the allocation path at this scale: the parked
+probe, which spans two `umem_cache_update` passes over a 7 GB heap, saw at
+worst 0.1 ms on x86 (3.8 ms once on arm). `umem_hash_rescale` is not
+involved -- a 64 B cache is not `UMF_HASH`, so it has no hash table; the
+objects live in 4 KiB single-page slabs with embedded bufctls.
+
+Three things are not fine:
+
+1. **VMA growth: 1 VMA per ~2,074 objects, 48,218 at 100M, 74 % of the
+   default `vm.max_map_count` (65,530).** At this rate the process fails at
+   ~136M live 64 B objects (~8.4 GB), exactly the class of cliff `3f2e67c`
+   removed for 4 KiB objects. Mechanism, read from `/proc/pid/maps` on the
+   live process: 1,470 `rw-p` VMAs of **132 KiB each**, adjacent, not merged.
+   `umem_va_arena` is created (`umem.c:5466`) with `qcache_max = 8 *
+   pagesize`, so 32 KiB-and-under span requests from the slab layer are
+   served from the va-arena's qcaches, whose slabs are 128 KiB
+   (`vmem_create` -> `umem_cache_create(..., UMC_QCACHE)`, `bestfit =
+   MAX(1 << highbit(3 * qcache_max), 64)`). Each 128 KiB qcache slab is one
+   `heap_alloc` -> `vmem_mmap_alloc` -> `mmap(MAP_FIXED, RW)` over the
+   PROT_NONE reservation, plus a 4 KiB `umem_slab_t`-holding page, giving the
+   132 KiB stride. Adjacent RW anonymous mappings created by separate
+   `MAP_FIXED` `mmap()` calls over a `MAP_NORESERVE` reservation **do not
+   merge** on this kernel (6.x, Amazon Linux 2023) -- the `anon_vma` differs
+   per call once pages are touched. `test/integration/vma_merge_probe.c`
+   (another agent's uncommitted probe) measures the same thing. glibc has 54
+   VMAs because it grows one `brk` heap and a few 64 MB arenas with
+   `mprotect`, which does merge.
+
+2. **Allocation stalls that grow with heap size: 9 ms at 10M, 25 ms at 30M,
+   52 ms at 50M, 74 ms at 70M, 95 ms at 90M (x86); 3 -> 41 ms on arm.** glibc's
+   worst is 0.25 ms and does not grow. The stalls are on the *alloc* path
+   during the fill (not while parked), they scale with the number of slabs
+   already created, and the parked-heap probe shows the update thread is not
+   the cause. Candidate: `vmem_hash_rescale` on `umem_default_arena` /
+   `umem_va_arena` (`vmem.c:1671`), which rehashes every allocated segment
+   under `vm_lock` -- at 50M objects the va arena holds ~24k qcache slab
+   segments and the default arena holds ~1.2M 4 KiB span segments, and each
+   power-of-two rescale walks all of them while every span import waits. The
+   stall count (19 over 100M) and the doubling pattern of when they happen
+   are consistent with this; **not yet confirmed by a stack sample**. A
+   `reclaim=0` control run is in `oc_ctl` (see below).
+
+3. **RSS grows by 1.65 GB while freeing.** Freeing 100M 64 B objects takes RSS
+   from 7368 MB to 9022 MB; glibc stays flat. The free path for a non-HASH
+   cache writes the mangled freelist link into the buffer tail
+   (`umem_slab_free`, `umem.c:~1747`), and the slab's `umem_slab_t` is at the
+   end of the page -- neither is a new page. The 1.65 GB is 22 % of the heap;
+   the likely source is the magazine layer (`umem_magazine_t` for 100M
+   objects flowing through depot magazines of 143 rounds: 700k magazines x
+   1.2 KB = 840 MB) plus the empty-slab retention list. **Unconfirmed;** the
+   free phase also took 25 s versus glibc's 5.8 s.
+
+**glibc comparison:** shares none of these. 54 VMAs, 0.25 ms worst, flat RSS
+on free.
+
+**Required fix.**
+(1) VMAs: the va-arena qcache slabs must come from larger spans. Raise
+`umem_va_arena`'s import granularity so one `mmap(MAP_FIXED)` covers many
+qcache slabs (e.g. import 2-4 MB from `heap_arena` at a time and carve the
+128 KiB slabs from that), or make `vmem_mmap_alloc` commit with `mprotect` on
+an already-RW-then-PROT_NONE'd region so the kernel merges. Either way the
+regression is `probe_objcount 100000000 64` asserting VMAs < 1,000; the
+number to beat is 48,218. This is `3f2e67c`'s sibling, one layer up.
+(2) Stalls: confirm with `perf record -g` on the fill phase; if
+`vmem_hash_rescale` it is, make the rescale incremental (rehash a bounded
+number of buckets per call, or double the table off-lock and swap) so no
+single import waits on a 1.2M-entry walk. Target: worst alloc < 1 ms at 100M.
+(3) RSS-on-free: `perf` the free phase and read `/proc/pid/smaps` before and
+after; if it is magazine metadata, cap depot growth relative to live objects
+(`umem_depot_ws_reap` already exists and should be running -- it is not
+keeping up, or is not reached because the free phase finishes inside one
+`umem_reap_interval`).
+
 ## Exit criteria
 
 **Verified 2026-09-22 at `4ba7d00`** by `scripts/ec2/exit_criteria_gate.sh`,
