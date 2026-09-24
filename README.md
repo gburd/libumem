@@ -591,10 +591,22 @@ drop-in path is measured alongside it, and they were not the same thing:
 The `v3.1.0` interposer took a **process-global mutex on every `free()`**
 (`is_libc_pointer()`: lock + 512-slot scan of a table that is empty for the
 steady-state life of every process), so the drop-in path scaled *negatively*
-with threads. Fixed in `a74065e`. The residual -- preload at 0.74-0.91x of the
-API, flat across thread counts on every box -- is per-call validation
-(`process_free()` header decode and two ownership checks) and is tracked as
-P8.3. If you use libumem as a drop-in malloc, you need `a74065e` or later.
+with threads. Fixed in `a74065e`. If you use libumem as a drop-in malloc,
+you need `a74065e` or later.
+
+The residual after that fix is per-call: `malloc`/`free` write, read and
+validate an 8- or 16-byte header that `umem_alloc`/`umem_free` do not, and
+pass through a second shared object. In `bench_main` that showed as preload
+at 0.74-0.91x of the API; in a bare alloc/free loop with one binary and the
+same `libumem.so` (`test/bench/bench_pairs -m`) it was **0.31x** on
+`c7i.2xlarge` -- 418 vs 147 instructions per pair -- because `bench_main`'s
+own per-op cost is most of what it measures at one thread. P8.3 removed a
+third of it (three out-of-line bootstrap-magic reads, two out-of-line hull
+checks, a `__errno_location` call and a general-purpose decoder frame on
+the common path): **277 instructions per pair, preload/API 0.59 at t=1 and
+0.55 at t=8 on `c7i.2xlarge`, 0.53 at t=8 on `c7g.2xlarge`**, each step
+measured on its own commit against a null control. The rest is the header
+design and is not on a list to be removed. Metal not re-measured.
 
 ### What the API path does, against the field (null-controlled)
 

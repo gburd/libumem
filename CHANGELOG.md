@@ -79,6 +79,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `test/integration/test_depot_empty_scan` (probe build): locked-empty pops
   <= 1 %, pre-fix 98.6 %. (P8.5, partial)
 
+- **The `LD_PRELOAD` interposer's per-call overhead is down by a third; the
+  gap it hid was 2.5x, not 20 %.** The 2026-09-24 comparison put preload at
+  0.74-0.91x of the `umem_alloc` API in `bench_main`; a bare loop with one
+  binary and the same `libumem.so` put it at **0.31x** (c7i.2xlarge, t=1,
+  16:64) -- 418 vs 147 instructions per pair -- because `bench_main`'s own
+  per-op cost (t-digest, two clock reads) is most of what it measures.
+  Five candidates, each measured on its own commit with a null control
+  (`scripts/ec2/interp_ab.sh`, 9 alternating pairs, t=1 and t=8):
+  `is_bootstrap_pointer()` called out of line three times per free, now one
+  inline read (-42 insn/pair, +30 %); the hull loaded once per free instead
+  of two out-of-line `umem_may_own()` calls (-47, +12..20 %); the thread's
+  `errno` address cached instead of a `__errno_location()` PLT call per free
+  (-7, +1.5 %, arm); the `libc_ptr_live` gate inline in `free()` and a
+  straight-line `umem_malloc_free()` for the two layouts `umem_malloc()`
+  produces below `UMEM_MAXBUF` (-51, +24 %). A live-count gate on the
+  bootstrap magic read was measured and dropped (+1.6 % instructions, no
+  throughput change on arm; the compare is against a line the decode loads
+  anyway). Net: **418 -> 277 instructions per pair, 35.6 -> 69.7 Mpairs/s
+  (+96 %) at t=1, 167 -> 265 at t=8**; preload/API 0.31 -> 0.59 (x86),
+  0.40 -> 0.53 (arm) in the bare loop. The P5.8 validation order is
+  unchanged in every path: header inside the hull before it is read, size
+  consistent with the layout the magic names and the whole object inside
+  the hull before anything is written; `test_forged_free`,
+  `test_abort_option.sh` and the new `test/security/test_free_errno` (free
+  leaves errno alone, every layout, both entry points, two threads) pass
+  on both arches. The remaining 130 instructions are what `malloc`/`free`
+  must do that `umem_alloc`/`umem_free` need not -- write, read and
+  validate a header, and the `umem_malloc()` wrapper's ready check,
+  recursion guard and size arithmetic -- so the plan's 0.95 target is not
+  reachable in a bare loop with this header design and the entry records
+  that. Regression `test/stress/repro_interpose_free_ratio` (via
+  `interpose_regress.sh` in `make check`): preload/API >= 0.48 at t=8
+  against an API/API null, pre-fix 0.41 / 0.40, post 0.61 / 0.53. One
+  correction on the record: `malloc.c` described `is_bootstrap_pointer()`
+  as a range check; it is a magic compare on `buf[-1]`, made before the
+  hull test by design (a bootstrap mmap can lie inside the hull's gaps),
+  and the comment now says so. (P8.3)
+
 ## [3.2.0] - 2026-09-24
 
 The theme of this release is *things that were never running*. Three of its

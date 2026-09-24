@@ -1850,7 +1850,7 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 | P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | **FIXED** `ae86536`: CPU hint was `pthread_self() & mask == 0` -- one `cc_lock` per process; 1.4 -> 16.4 Mops at t=8 |
 | P8.2b 1k:4k cliff at t>=128 on both metals (hidden by P8.2) | at `d6f04ab`: x86 105 -> 91 Mops t=64 -> 128 (libc 165 -> 253); arm 277 -> 77 (libc 255 -> 200); null falls with it; umem p999 11 us vs libc 0.4 | **FIXED** `ad72787` (PTC bins through 8192 B; `eb68575` 63-round magazines is inside the null): `c8g.metal` t=64/128/192 275/128/179 -> 314/352/429 Mops, 0.42x -> 1.24x libc at t=128, p999 2.8 us -> 39 ns; `c7i.2xlarge` t=8 0.69x -> 1.22x. x86 metal not re-measured (no capacity) |
 | P8.6 PTC per-thread magazines never primed | 28x cliff at the bin boundary, single thread (157 -> 5.5 Mpairs/s at N=64 -> 65 for 512 B); 39 % trylock + 34 % unlock | **FIXED** `a2177b9`: one magazine allocated on the first free-side miss; cliff 26.9x -> 1.16x (x86), 26.3x -> 1.05x (arm); depot trylocks per 200 rounds 25,600 -> 0; inside the bin within null |
-| P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; re-measured at `d6f04ab`: 0.74-0.91, flat; profile attributes it |
+| P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | fixed in part at `bc6c911`: bare-loop insn/pair 418 -> 277, preload/API 0.31 -> 0.59 (x86 t=1); 0.95 not reachable with this header design, see entry |
 | P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | **CLOSED** by `ae86536` (P8.2's fix): at `d6f04ab` x86 t=192 umem 528.8 = null 527.8 > libc 486.8 -- PTC misses had also gone to `cache_cpu[0]` |
 | P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | **PARTIAL** `0532c38`: at t=8 the cost was steal SCANS locking empty stripes (98.6 % of 17M pops), not steals (dep_remote/dep_local 0.11); unlocked head check -> dep_conten 434k -> 0, sustained 0.57x -> 0.72x (x86) / 0.77x (arm) glibc; p999 19 us unchanged (slab layer, plan's (1)); t=192 not re-measured (no metal) |
 
@@ -2296,6 +2296,99 @@ restore on the success path -- `process_free` sets `errno` only on the
 failure paths, so read it lazily there. Target: preload/API >= 0.95 at t=1
 and t=192 under the P8.1 A/B protocol; regression is that protocol's
 reference table.
+
+**STATUS: FIXED IN PART (`b29730f`..`bc6c911`, measured at each sha;
+target not met and, as set, not reachable -- see below).**
+
+*The instrument was wrong first.* The 0.74-0.91 above is `bench_main`,
+whose own per-op cost (t-digest, two clock reads) the team brief already
+puts at ~70 % of its cycles at t=1. A bare loop (`test/bench/bench_pairs
+-m`: one binary, same `libumem.so`, `malloc`/`free` under `LD_PRELOAD` vs
+`umem_alloc`/`umem_free`) at `6705310`, 16:64 N=64, `verify-isolated`:
+
+| box | arm | t=1 Mpairs/s | t=8 | insn/pair t=1 | preload/API t=1 / t=8 |
+|---|---|---:|---:|---:|---|
+| `c7i.2xlarge` | API | 117.5 | 498 | 147 | |
+| `c7i.2xlarge` | preload | 36.9 | 166 | 418 | **0.31 / 0.33** |
+| `c7g.2xlarge` | API | 75.0 | 597 | 152 | |
+| `c7g.2xlarge` | preload | 28.7 | 227 | 474 | **0.38 / 0.38** |
+
+So the per-call gap is 2.5-3x, not 20 %. Solving 0.79 = (X + 8.5 ns) /
+(X + 27 ns) for `bench_main`'s own per-op cost gives X ~60 ns, which is
+the brief's 70 %.
+
+*Candidates, one commit each, `scripts/ec2/interp_ab.sh`* (three
+`git archive` arms, pre / post / independent rebuild of pre as null, one
+`bench_pairs` from post, 9 alternating pairs, 16:64; insn/pair from
+`perf stat` at t=1; box is `c7i.2xlarge` unless marked):
+
+| # | commit | what | insn/pair N=64 | preload N=64 t=1 | N=64 t=8 | null t=1 (min..max) | kept |
+|---|---|---|---:|---:|---:|---|---|
+| a | `b29730f` | `is_bootstrap_pointer` 3x out of line -> 1 inline read | 418 -> 376 (-10.1 %) | +30.5 % | +19.9 % | -1.9..+1.9 % | yes |
+| b | `382c529` | live-count gate on the bootstrap magic read (arm) | 420 -> 427 (+1.6 %) | -1.4 % | -1.5 % | -0.2..+1.3 % | **no**, reverted `802c6ac` |
+| c | `e93380c` | hull loaded once; `umem_may_own` inline on hit | 379 -> 332 (-12.4 %) | +12.5 % | +14.3 % | -2.7..+3.1 % | yes |
+| d | `4324d5f` | cached `errno` slot, no `__errno_location` call (arm) | 382 -> 375 (-1.8 %) | +1.5 % | +1.6 % | -0.5..+0.5 % | yes |
+| e | `61c33af` + `bc6c911` | `libc_ptr_live` gate inline; straight-line `umem_malloc_free` for MALLOC/SECOND_MAGIC | 328 -> 277 (-15.6 %) | +23.7 % | +15.0 % | -2.2..+2.2 % | yes |
+| a+c+d | `802c6ac` vs `6705310` | | 418 -> 328 (-21.6 %) | +55.0 % | +37.4 % | -1.5..+0.7 % | |
+
+(b) was dropped on the arm measurement alone: the compare skips a read of
+a cache line the header decode loads next, and costs an acquire load of a
+different line plus a branch. Its security point stands and is recorded
+below.
+
+*Net at `bc6c911`* (`c7i.2xlarge`, 16:64 N=64): 418 -> **277 insn/pair**;
+t=1 **35.6 -> 69.7 Mpairs/s** (+96 %), t=8 167 -> 265; preload/API
+0.31 -> **0.59** (t=1), 0.34 -> **0.55** (t=8). `c7g.2xlarge`
+regression-test numbers (t=8, with a store per object): 0.395 -> **0.53**.
+
+*Why 0.95 is not reachable from `malloc.c`/`malloc_interpose.c`.* A direct
+decomposition (constructed loops, 128M pairs, `perf stat`, `e93380c`):
+`umem_alloc(24)`/`umem_free(24)` 107 insn; the same with `umem_malloc(16)`
+and a hand-written header plus `umem_malloc_free` 188 -- so 80 insn is the
+free side inside `libumem.so`, of which (e) then removed 30. The rest of
+the 130 that remain: `umem_malloc()`'s `umem_ready` load, recursion-guard
+TLS inc/dec, LP64 size arithmetic and header store (~33); the interposer's
+`malloc()`/`free()` state checks (~20); four PLT hops (~12); the header
+read, decode and two hull tests (~30). All are things `malloc`/`free` do
+that the API does not. A first note to the coordinator blamed
+`_umem_free` for a 2.7x per-call cost under preload from `perf record`
+symbol shares; a `perf stat` decomposition showed that was skid across
+the call boundary (API at 32:80, the sizes `malloc(16..63)` produces,
+costs 148 insn vs 147.5 at 16:64), and the note was withdrawn.
+
+*What did not change.* The P5.8 VALIDATION ORDER in every path: (a) step 1
+still precedes step 2 in `process_free()` and `umem_malloc_free()`; (c)
+makes each `umem_may_own` test a compare against a pair loaded once, sound
+because the hull only widens and a miss still refreshes; (e)'s fast path
+runs steps 2-5 for two layouts and falls through to `process_free_umem()`
+for everything else, so any refusal is decided by the same code as before.
+`test_forged_free` (all arms), `test_abort_option.sh`, and the new
+`test/security/test_free_errno` pass on both arches at `bc6c911`
+(`docs/results/jobs/arm-lo-interp-sec`).
+
+*Correction to the record.* `malloc.c` called `is_bootstrap_pointer()`
+"the range check the bootstrap allocator already has". It is not: each
+bootstrap allocation is its own mmap, and the function compares
+`buf[-1]` against `BOOTSTRAP_MAGIC` for every pointer, before the hull
+test. That order is deliberate (a bootstrap mmap can land inside the
+hull's gaps and would then be decoded as a `malloc_data_t`), so the read
+stays; the comment now says what it does. Consequence for a foreign
+pointer: `buf[-1]` is read before ownership is known, and if it equals
+`BOOTSTRAP_MAGIC` the pointer goes to `bootstrap_free()` ->
+`munmap(hdr, hdr->size)`. Attacker position D (controls buffer contents,
+not the environment); the same exposure existed before this work. Open
+as a P5 item; (b) would have closed it at steady state and cost 1.6 %.
+
+*Regression.* `test/stress/repro_interpose_free_ratio` (in `make check`
+via `interpose_regress.sh`): preload/API at t=8, 9 alternating pairs,
+API/API null first (SKIP if the null's own minimum is below the bar).
+Bar 0.48 = post-fix arm median 0.53 x null minimum 0.88; pre-fix 0.409 /
+0.395 fail it, post-fix 0.61 / 0.53 pass (3 runs each box). It resolves
+~10 %, not 5 %; that is stated in its header. `962a230` first gated it at
+0.90 and broke `make check` on master for ~25 minutes; `6705310` removed
+the gate and `24d5aa7` restored it at the derived bar.
+
+Not re-measured on metal.
 
 ### P8.4 API `multi` 16:64 is 8-24 % behind the best allocator at 128-192 threads on x86_64 metal -- DIAGNOSIS
 
