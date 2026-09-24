@@ -699,17 +699,19 @@ free(void *ptr)
 	 * for umem_malloc_free() to run process_free(ptr, 1, ...) and decode
 	 * the SAME header again.  Two decodes per free on the hot path.
 	 *
-	 * The static and bootstrap checks below are cheap range compares and
+	 * The static check is a range compare on this file's own buffer and
 	 * must stay first (those pointers have no umem header).  The libc
 	 * check is gated on the live count (see libc_ptr_live).  Everything
-	 * else goes straight to umem, whose process_free() validates and
-	 * either frees or reports -- exactly what the classify-then-free
-	 * sequence did, in one pass.  Since P5.8 a rejected pointer leaves
-	 * state untouched, so skipping the pre-classification loses no safety.
+	 * else goes to umem_malloc_free(), which itself does step 1 of
+	 * process_free()'s validation order (bootstrap pointer -> munmap) and
+	 * then validates and either frees or reports -- exactly what the
+	 * classify-then-free sequence did, in one pass.  Since P5.8 a rejected
+	 * pointer leaves state untouched, so skipping the pre-classification
+	 * loses no safety.  A bootstrap check here would be the same read of
+	 * ptr[-1] that umem_malloc_free() is about to make.
 	 */
 	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1) &&
-	    !is_static_pointer(ptr) && !is_bootstrap_pointer(ptr) &&
-	    !is_libc_pointer(ptr, NULL)) {
+	    !is_static_pointer(ptr) && !is_libc_pointer(ptr, NULL)) {
 		umem_malloc_free(ptr);
 		return;
 	}

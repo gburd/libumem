@@ -127,16 +127,26 @@ bootstrap_malloc(size_t size)
 	return (void *)(hdr + 1);
 }
 
+/*
+ * Reads the 8 bytes before buf.  Callers pass a pointer that is either
+ * known to be a heap pointer or has been handed to free() by the caller of
+ * free(); this is step 1 of process_free()'s validation order.
+ */
+static inline int
+bootstrap_pointer_p(const void *buf)
+{
+	const bootstrap_header_t *hdr = (const bootstrap_header_t *)buf - 1;
+
+	return (hdr->magic == BOOTSTRAP_MAGIC);
+}
+
+/* Exported for malloc_interpose.c's classifier. */
 int
 is_bootstrap_pointer(void *buf)
 {
-	bootstrap_header_t *hdr;
-
 	if (buf == NULL)
 		return (0);
-
-	hdr = (bootstrap_header_t *)buf - 1;
-	return (hdr->magic == BOOTSTRAP_MAGIC);
+	return (bootstrap_pointer_p(buf));
 }
 
 void
@@ -531,19 +541,18 @@ umem_may_own(const void *addr, size_t len)
  * Exposed for malloc_interpose.c
  */
 
+static int process_free_umem(void *, int, size_t *);
+
 int
 process_free(void *buf_arg,
     int do_free,		/* free the buffer, or just get its size? */
     size_t *data_size_arg)	/* output: bytes of data in buf_arg */
 {
-	malloc_data_t *buf;
-
 	/*
-	 * Check for bootstrap pointers first.
-	 * These have a different header format (bootstrap_header_t) and must
-	 * be handled separately to avoid misinterpreting their headers.
+	 * Step 1: bootstrap pointers carry a bootstrap_header_t, not a
+	 * malloc_data_t, and must not reach the decoder below.
 	 */
-	if (is_bootstrap_pointer(buf_arg)) {
+	if (buf_arg != NULL && bootstrap_pointer_p(buf_arg)) {
 		if (data_size_arg != NULL) {
 			bootstrap_header_t *hdr = (bootstrap_header_t *)buf_arg - 1;
 			*data_size_arg = hdr->size - sizeof(bootstrap_header_t);
@@ -551,7 +560,19 @@ process_free(void *buf_arg,
 		/* For do_free=1, bootstrap_free should be called instead */
 		return (1);
 	}
+	return (process_free_umem(buf_arg, do_free, data_size_arg));
+}
 
+/*
+ * Steps 2-5 of process_free().  PRECONDITION: the caller has already
+ * established that buf_arg is not a bootstrap pointer (step 1), so that
+ * check is not repeated here.  umem_malloc_free() and process_free() are
+ * the only callers and both do step 1 first.
+ */
+static int
+process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
+{
+	malloc_data_t *buf;
 	void *base;
 	size_t size;
 	size_t data_size;
@@ -739,18 +760,16 @@ umem_malloc_free(void *buf)
 		return;
 
 	/*
-	 * Check if this is a bootstrap allocation (from before umem was ready).
-	 * These use direct mmap and must be freed with munmap, not umem.
+	 * Step 1 of process_free()'s order, done here once: a bootstrap
+	 * allocation (from before umem was ready) is a direct mmap and is
+	 * released with munmap.  Everything else goes to steps 2-5.
 	 */
-	if (is_bootstrap_pointer(buf)) {
+	if (bootstrap_pointer_p(buf)) {
 		bootstrap_free(buf);
 		return;
 	}
 
-	/*
-	 * Process buf, freeing it if it is not corrupt.
-	 */
-	(void) process_free(buf, 1, NULL);
+	(void) process_free_umem(buf, 1, NULL);
 }
 
 /*
