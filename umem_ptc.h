@@ -42,20 +42,33 @@ extern "C" {
  * - Zero synchronization for cache hit
  * - Fallback to magazine layer when full/empty
  *
- * Footprint (P6.3).  The bins are the L1 of a two-level per-thread cache;
- * the per-thread magazines behind them (umem_ptc_mag_t, up to 2 x 255
- * rounds for small objects) are the lock-free L2.  A bin's capacity only
- * sets where an object crosses from L1 to L2 -- both are one store -- so
- * the capacities are sized for footprint, not hit rate.  The slot arrays
- * are packed at their real capacities in one pool inside umem_ptc_t
- * (below), not padded to a common maximum: the previous layout carried
- * 28 x 128 slots for every thread, 31 KB, of which 20 KB was never
- * indexed.
+ * Footprint (P6.3).  The slot arrays are packed at their real capacities
+ * in one pool inside umem_ptc_t (below), not padded to a common maximum:
+ * the previous layout carried 28 x 128 slots for every thread, 31 KB, of
+ * which 20 KB was never indexed.
+ *
+ * THE CAPACITIES ARE NOT A FREE VARIABLE.  The first version of this
+ * change also halved them (64/32/16) on the reasoning that the bins are
+ * only the L1 of a two-level per-thread cache and the per-thread magazines
+ * (umem_ptc_mag_t) are a lock-free L2, so a bin's size merely sets where
+ * an object crosses from one to the other.  That L2 does not exist in
+ * practice: nothing ever primes it.  It takes magazines from the depot by
+ * trylock only and never allocates one, and the CPU layer publishes an
+ * empty magazine to the depot only when its own loaded magazine drains --
+ * which a steady alloc/free workload never does.  So an object past the
+ * bin costs up to UMEM_DEPOT_STEAL_MAX failed trylock/unlock pairs on
+ * empty stripes and then cc_lock, every time.  Measured, single thread,
+ * 512 B, alloc-N-then-free-N: 157 Mpairs/s at N = 32, 63 at N = 33, 5.5
+ * at N = 64 -- a 28x cliff exactly at the bin boundary, and halving the
+ * medium bin moved that cliff from N = 64 to N = 32 (bench `single`
+ * 512 B: 5.72 -> 5.31 Mops).  The capacities stay at 128/64/32; the
+ * footprint win is the packing (31 -> 12 KB), not the halving.  The
+ * unprimed L2 is its own defect (P8.6).
  */
 
-#define PTC_NSLOTS_SMALL   64  /* bins 0-(PTC_BIN_MEDIUM-1): sizes <=256B */
-#define PTC_NSLOTS_MEDIUM  32  /* bins PTC_BIN_MEDIUM-(PTC_BIN_LARGE-1) */
-#define PTC_NSLOTS_LARGE   16  /* bins PTC_BIN_LARGE-(PTC_NBINS-1) */
+#define PTC_NSLOTS_SMALL  128  /* bins 0-(PTC_BIN_MEDIUM-1): sizes <=256B */
+#define PTC_NSLOTS_MEDIUM  64  /* bins PTC_BIN_MEDIUM-(PTC_BIN_LARGE-1) */
+#define PTC_NSLOTS_LARGE   32  /* bins PTC_BIN_LARGE-(PTC_NBINS-1) */
 #define PTC_NBINS 28           /* number of size classes (up to 2048B) */
 #define PTC_BIN_MEDIUM    13   /* first bin for medium sizes (257-1024B) */
 #define PTC_BIN_LARGE     21   /* first bin for large sizes (1025-2048B) */
@@ -133,7 +146,13 @@ typedef struct umem_ptc_bin {
 	void **slots;           /* -> umem_ptc_t.pool, ptc_bin_capacity() long */
 	uint16_t count;         /* current number of cached objects */
 	uint16_t low_water;     /* for auto-tuning (future) */
-} umem_ptc_bin_t;
+	/*
+	 * One record per cache line.  Packing 28 of these 16-byte records into
+	 * 7 lines measured 2 % slower than giving each its own (bench `multi`
+	 * 16:1024, t=1: 5.76 vs 5.88 Mops, median of 9, alternating builds);
+	 * 28 lines is 1.75 KB of the 12 KB struct.
+	 */
+} __attribute__((aligned(_UMEM_PTC_CACHE_LINE))) umem_ptc_bin_t;
 
 /*
  * Per-thread cache structure.  Everything before `pool` is zeroed at

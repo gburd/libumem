@@ -22,10 +22,16 @@
  *
  * WHAT THIS TESTS, exactly.  Two oracles, both exact; no timing threshold.
  *
- *   1. sizeof (umem_ptc_t) <= 12 KB.  The struct is the footprint the
- *      allocator adds per thread that never touches its L2; this bounds the
- *      slot pool at its packed size (pre-fix 30.9 KB).  A compile-time fact
- *      checked at run time so the test says which build it ran against.
+ *   1. sizeof (umem_ptc_t) <= 24 KB.  The struct is the footprint the
+ *      allocator adds per thread; this bounds the slot pool at its PACKED
+ *      size (pre-fix 30.9 KB, with 28 x 128 slots regardless of capacity).
+ *      The limit was 12 KB when the bin capacities were also halved; the
+ *      halving was reverted (see umem_ptc.h: the per-thread magazine layer
+ *      behind the bins is never primed, so a smaller bin is a 28x cliff at
+ *      its boundary), leaving packing alone: 128/64/32 slots = 19.2 KB pool
+ *      + 28 line-separated bin records + magazines ~= 22.8 KB.  A
+ *      compile-time fact checked at run time so the test says which build
+ *      it ran against.
  *
  *   2. Hand-offs per drained bin == 1.  Linked against the probe build
  *      (-DUMEM_PTC_RESIZE_PROBE), the library counts the lock-taking
@@ -57,7 +63,7 @@
 
 #define NTHREADS	1000
 #define PER_THREAD	1000
-#define STRUCT_MAX	(12 * 1024)
+#define STRUCT_MAX	(24 * 1024)
 
 static pthread_barrier_t ready, go;
 
