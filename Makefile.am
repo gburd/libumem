@@ -813,7 +813,8 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_heap_ceiling_512.sh \
 	test/integration/test_reclaim_returns.sh \
 	test/integration/test_fork_child_reclaim.sh \
-	test/integration/test_cpu_hint_spread
+	test/integration/test_cpu_hint_spread \
+	test/integration/test_cache_footprint
 
 # Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
 # P5.9).  Each demonstrates the exposure it closes and fails against v3.0.0 --
@@ -909,6 +910,12 @@ noinst_PROGRAMS += test/integration/test_cpu_hint_spread
 test_integration_test_cpu_hint_spread_SOURCES = test/integration/test_cpu_hint_spread.c
 test_integration_test_cpu_hint_spread_LDADD = libumem.la
 test_integration_test_cpu_hint_spread_CPPFLAGS = -I$(srcdir)
+
+# P6.4: per-cache footprint and VMAs left behind by destroy.
+noinst_PROGRAMS += test/integration/test_cache_footprint
+test_integration_test_cache_footprint_SOURCES = test/integration/test_cache_footprint.c
+test_integration_test_cache_footprint_LDADD = libumem.la
+test_integration_test_cache_footprint_CPPFLAGS = -I$(srcdir)
 test_integration_test_heap_ceiling_SOURCES = \
 	test/integration/test_heap_ceiling.c
 test_integration_test_heap_ceiling_LDADD = libumem.la
