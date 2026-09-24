@@ -57,8 +57,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Regression `test_reclaim_returns`: 128 MB freed with **no** `umem_reap()`
     call, RSS 135 -> 8 MB at t = 6 s (was 135 -> 135 over 20 s).
   - The `umem.c` header's "Nuance" section, which told Linux users to call
-    `umem_reap()` periodically, is rewritten. Fork children still lose the
-    thread (recorded as P6.9).
+    `umem_reap()` periodically, is rewritten.
+  - Forked children recreate the thread in the child atfork handler
+    (`cceae1d`); before, a pre-fork server's every worker was in the dead
+    state above for its whole life. Regression `test_fork_child_reclaim`.
+- **`UMEM_OPTIONS=abort` now exists.** The interposer clears `umem_abort` so
+  foreign pointers under `LD_PRELOAD` are logged rather than fatal, and both
+  the source and README told users `UMEM_OPTIONS=abort=1` restores the abort.
+  No such option existed -- only `noabort`, in the `UMEM_DEBUG` table -- and
+  `abort=1` would have been rejected for carrying a value. `abort` is now an
+  `UMEM_OPTIONS` flag, honoured in secure mode (arming can only make the
+  process crash, never continue). Regression `test_abort_option.sh`: default
+  refuses and completes, `UMEM_OPTIONS=abort` on the same forged free dies with
+  SIGABRT. The first attempt put it in the wrong table and the test caught it.
 - **Interposer `free()` ~500x collapse** (`a74065e`). `interpose_owner_of()` took
   a global lock and scanned 512 slots on every `free()` -- a table that is empty
   after bootstrap -- plus decoded the header twice. An atomic `libc_ptr_live`

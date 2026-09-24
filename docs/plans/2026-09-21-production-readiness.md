@@ -703,7 +703,8 @@ x86 16 GB, `c7g.2xlarge` arm 16 GB, `c7i.metal-48xl` 192 vCPU 377 GB)
 | P6.5 | fragmentation over time | FINE / MEDIUM | 18 min churn: RSS +11 MB over the last 17 min (plateau); ratio 1.13 -> 1.33 is the live set shrinking under a fixed RSS | 1.018 flat |
 | P6.6 | fork with 4 GB heap | FINE | 23 ms vs 21 ms; child COW +0.4 MB; handlers +2 ms constant, not heap-proportional | 21 ms |
 | P6.7 | kernel knobs | FINE / MEDIUM / BLOCKING | clean NULL + ENOMEM under `RLIMIT_AS`, `RLIMIT_DATA`, `overcommit=2`; but no 64 B allocation possible after the first failure (glibc: yes); one stale-errno path on `RLIMIT_DATA`; `max_map_count=4096` fails 512 B at **500 MB** (P6.1 again) | recovers; 2 GB |
-| P6.8 | reclaim under pressure | **FIXED** (`147d5ff`, `9bbe58b`; root: update thread never started) | a freed 2 GB slab heap is 100 % resident at t = 100 s with the update thread running: every freed object sits in a depot magazine, `slab_refcnt` never reaches 0, `umem_cache_reclaim_pages` skips them, and the periodic pass never reaps the depot. `umem_reap()` every 10 s: -5 MB / 100 s | keeps interior pages too, but claims nothing |
+| P6.8 | reclaim under pressure | **FIXED** (`147d5ff`, `9bbe58b`; root: update thread never started) |
+| P6.9 | fork child has no update thread | **FIXED** (`cceae1d`) | a freed 2 GB slab heap is 100 % resident at t = 100 s with the update thread running: every freed object sits in a depot magazine, `slab_refcnt` never reaches 0, `umem_cache_reclaim_pages` skips them, and the periodic pass never reaps the depot. `umem_reap()` every 10 s: -5 MB / 100 s | keeps interior pages too, but claims nothing |
 
 Two of the eight are BLOCKING and both are one-mechanism fixes with a
 measured lever (P6.1) or a named missing call (P6.8). The rest are
@@ -1472,6 +1473,20 @@ call `umem_create_update_thread()` after dropping the locks it holds), or
 lazily on the child's first `umem_cache_update`-worthy event. Regression: fork
 after a fill, free in the child, RSS must return in the child without
 `umem_reap()`.
+
+**STATUS: FIXED (`cceae1d`).** `umem_do_release(as_child=1)` recreates the
+thread after every allocator lock is released and the interposer/introspection
+child hooks have run, guarded on `umem_ready == UMEM_READY` and on the parent
+having had one. Regression `test_fork_child_reclaim` (parent initialises,
+forks; the child frees 64 MB and watches its own RSS, no `umem_reap()`):
+pre `fe0b48f` FAIL (child RSS flat), post PASS, both `c7i.2xlarge`; gate PASS
+both arches 36/33/3/0 default, 36/36 introspect; ASan arm PASS.
+`LD_PRELOAD` on `python3` with `os.fork()`: child has 2 tasks, allocates, exits 0.
+
+*Aside, recorded so nobody chases it:* under `--enable-asan` on aarch64 LSan
+reports one 56-byte direct leak from `umem_init -> umem_stacktrace_init ->
+backtrace_warm` (libgcc's one-time `dl_iterate_phdr` state). Identical at
+`3b170bc`, before any of this; unrelated to the update thread.
 
 ## Phase 7 — Hardening properties: what is actually established
 
