@@ -642,7 +642,13 @@ extern thread_t _thr_self(void);
 #endif
 #define CPUHINT_MAX()           INT_MAX
 
-#define CPU(mask)               (umem_cpus + (CPUHINT() & (mask)))
+/*
+ * Both go through get_cached_cpu_hint() (umem_impl.h): the raw CPUHINT()
+ * is pthread_self() on this port, whose low bits are always zero, so
+ * `CPUHINT() & mask` selected slot 0 for every thread.  See the comment on
+ * get_cached_cpu_hint for the measurement.
+ */
+#define CPU(mask)               (umem_cpus + (get_cached_cpu_hint() & (mask)))
 #define CPU_CACHED(mask)        (umem_cpus + (get_cached_cpu_hint() & (mask)))
 static umem_cpu_t umem_startup_cpu = {  /* initial, single, cpu */
 	UMEM_CACHE_SIZE(0),

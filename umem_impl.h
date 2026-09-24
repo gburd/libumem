@@ -147,9 +147,38 @@ extern "C" {
 	} while (0)
 
 /*
- * CPU hint caching to reduce overhead of repeated CPUHINT() calls.
- * The cached hint is thread-local and reset on magazine reload to detect
- * CPU migration. Initialized to -1 to force first load.
+ * Per-thread CPU hint: which per-CPU cache (cache_cpu[]) this thread uses.
+ *
+ * THE PORT BUG THIS REPLACES (P8.2's real mechanism).  On Solaris CPUHINT()
+ * is thr_self(), a small integer thread id, so `hint & cache_cpu_mask` spreads
+ * threads over the per-CPU caches.  This port defined CPUHINT() as
+ * pthread_self() cast to int -- a stack ADDRESS, page-aligned, whose low bits
+ * are always zero.  `hint & mask` was therefore 0 for EVERY thread, and the
+ * value was cached in TLS once, forever.  Measured on an 8-vCPU box with 8
+ * threads allocating 2560-byte objects: 7 threads on cache_cpu[0], one
+ * elsewhere (the one that happened to register rseq before its first
+ * allocation).  Every operation that reached the magazine layer -- every size
+ * above umem_ptc_maxsize, and every PTC miss below it -- serialised on ONE
+ * cc_lock for the whole process.  That is the 1k:4k collapse: 0.06x glibc at
+ * 64 threads, and 1.5 Mops/s at t=8 where 1536-byte objects (PTC-served) do
+ * 32.  Not the depot, not magazine size, not a missing size class.
+ *
+ * The old comment here claimed the hint was "reset on magazine reload to
+ * detect CPU migration".  Nothing reset it.
+ *
+ * WHAT THIS DOES NOW.  Prefer the kernel-maintained rseq cpu_id, registering
+ * the thread first if the caller has not (registration is idempotent and
+ * cheap; before, the first allocation computed its hint BEFORE the rseq block
+ * in _umem_cache_alloc registered, so the rseq path was never consulted for
+ * the value that got cached).  Without rseq, use sched_getcpu() -- a real CPU
+ * number -- and cache it.  Only as a last resort fall back to a thread-id
+ * hash, and then hash the address bits that vary (>> 12) rather than the
+ * ones that never do.
+ *
+ * The rseq value is re-read on every call: it is one TLS load and it tracks
+ * migration.  The sched_getcpu() value is cached, and that cache is stale
+ * after migration -- acceptable: a wrong-but-spread hint costs cache-line
+ * traffic, not serialisation.
  */
 extern __thread int cached_cpu_hint;
 
@@ -162,39 +191,42 @@ extern __thread int cached_cpu_hint;
 #include "umem_rseq.h"
 #endif
 
-/*
- * Get the cached CPU hint, refreshing if needed.
- * This inline function reduces overhead by avoiding repeated syscalls/TLS lookups.
- */
+#if defined(__linux__)
+#include <sched.h>
+#endif
+
 static inline int __attribute__((always_inline))
 get_cached_cpu_hint(void)
 {
-	int hint = cached_cpu_hint;
+	int hint;
 
-	/*
-	 * Use unlikely() to hint that the cache miss is the uncommon case.
-	 * This helps with branch prediction in the hot path.
-	 */
-	if (unlikely(hint == -1)) {
 #ifdef UMEM_RSEQ_AVAILABLE
-		/*
-		 * When rseq is registered, read the kernel-maintained
-		 * cpu_id directly via the pointer set during thread
-		 * registration. This is a simple memory load (~1ns)
-		 * instead of a vDSO call (~10-20ns).
-		 */
-		if (umem_rseq_enabled && umem_rseq_cpu_idp != NULL) {
+	if (likely(umem_rseq_enabled)) {
+		if (unlikely(!umem_rseq_registered))
+			(void) umem_rseq_register_thread();
+		if (likely(umem_rseq_cpu_idp != NULL)) {
 			hint = (int)*umem_rseq_cpu_idp;
-			cached_cpu_hint = hint;
-			return hint;
+			if (likely(hint >= 0))
+				return hint;
 		}
+	}
 #endif
+	hint = cached_cpu_hint;
+	if (unlikely(hint == -1)) {
+#if defined(__linux__)
+		hint = sched_getcpu();
+		if (hint < 0)
+#endif
+		{
 #ifdef CPUHINT
-		hint = CPUHINT();
+			hint = CPUHINT();
 #else
-		extern thread_t _thr_self(void);
-		hint = (int)(uintptr_t)(_thr_self());
+			extern thread_t _thr_self(void);
+			hint = (int)((uintptr_t)(_thr_self()) >> 12);
 #endif
+			if (hint < 0)
+				hint = -hint;
+		}
 		cached_cpu_hint = hint;
 	}
 	return hint;
