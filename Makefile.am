@@ -51,6 +51,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/bench/probe_reclaim_rss \
 		  test/security/test_secure_gate_helper \
 		  test/security/test_errno_preserved \
+		  test/security/test_free_errno \
 		  test/security/test_forged_free \
 		  test/security/test_stack_bounds \
 		  test/security/test_introspect_peer_uid \
@@ -851,6 +852,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_secure_env_gate.sh \
 	test/security/test_writer_nofollow.sh \
 	test/security/test_errno_preserved \
+	test/security/test_free_errno \
 	test/security/test_forged_free \
 	test/security/test_abort_option.sh \
 	test/security/test_stack_bounds.sh \
@@ -907,6 +909,13 @@ test_security_test_secure_gate_helper_CPPFLAGS = -I$(srcdir)
 test_security_test_errno_preserved_SOURCES = test/security/test_errno_preserved.c
 test_security_test_errno_preserved_LDADD = libumem.la
 test_security_test_errno_preserved_CPPFLAGS = -I$(srcdir)
+
+# free() leaves errno alone on every layout, through both the interposer's
+# free() and umem_malloc_free(), on two threads (P8.3 changed the mechanism).
+test_security_test_free_errno_SOURCES = test/security/test_free_errno.c
+test_security_test_free_errno_LDADD = libumem.la libumem_malloc.la
+test_security_test_free_errno_LDFLAGS = -pthread
+test_security_test_free_errno_CPPFLAGS = -I$(srcdir)
 
 # The heap-ceiling regression (docs/results/2026-09-22-umem-heap-ceiling-vma.md)
 # allocates past the old ~5GB vm.max_map_count ceiling.  It SKIPs (77) when the
