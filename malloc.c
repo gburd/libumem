@@ -31,6 +31,7 @@
 #include <unistd.h>
 
 #include <errno.h>
+#include <pthread.h>
 
 #include <string.h>
 
@@ -78,22 +79,115 @@ typedef struct bootstrap_header {
 static __thread int bootstrap_depth;
 
 /*
- * Number of live bootstrap allocations.  This is the gate for
- * bootstrap_pointer_p(): when it reads zero no bootstrap pointer exists, so
- * the 8-byte read of buf[-1] against BOOTSTRAP_MAGIC is skipped.  Same
- * construction and the same argument as libc_ptr_live in
- * malloc_interpose.c: the count goes UP before bootstrap_malloc() returns
- * the pointer (so a pointer that can be freed is always counted), and DOWN
- * after bootstrap_free() has unmapped it.  A stale nonzero costs one load
- * and one compare; a zero is true at the instant it is read for every
- * pointer the caller can hold.
+ * Registry of live bootstrap mappings.
  *
- * Steady state for nearly every process is zero: bootstrap allocations are
- * made only while umem is not READY or inside a recursive malloc, and the
- * few that survive (pthread TLS blocks, dlsym state) are counted until the
- * thread exits.  The relaxed read is on the free() fast path.
+ * WHY A REGISTRY AND NOT A HEADER (P5.10).  A bootstrap allocation is its
+ * own mmap() with a bootstrap_header_t at the front.  free() has to
+ * recognise one, and until this registry it did so by reading the 8 bytes
+ * BEFORE the caller's pointer and comparing them with BOOTSTRAP_MAGIC -- for
+ * every pointer, before anything had established the pointer was ours.  If
+ * they matched, bootstrap_free() did munmap(hdr, hdr->size) with both the
+ * address and the length taken from that same caller-controlled memory:
+ * attacker position D (controls buffer contents) gets an unmap of a chosen
+ * range.  test/security/test_forged_bootstrap.c demonstrates it.
+ *
+ * A live-count gate (382c529) skips the read when no bootstrap allocation is
+ * live, and was measured to close this for the "steady state of nearly every
+ * process".  It does not: 28 bootstrap allocations survive umem_init() in an
+ * ordinary process (libdw's proc_maps_report and init_libdw strdup/calloc,
+ * getpcstack's stack-bounds lookup, three dlsym) and are never freed, so the
+ * count never reaches zero and the header read runs on every free() for the
+ * life of the process.  The gate is kept as the fast-path short-circuit for
+ * processes where the count IS zero; what closes the exposure is below.
+ *
+ * The registry makes recognition a LOOKUP in memory we own, not a read of
+ * memory the caller owns: is_bootstrap_pointer(p) is "is p in the table",
+ * and bootstrap_free() unmaps the size the TABLE recorded.  A forged header
+ * is then just bytes.  Same construction as libc_ptrs[] in
+ * malloc_interpose.c: fixed table, one mutex, a live-count gate read
+ * lock-free on the fast path.  MAX_BOOTSTRAP_PTRS is sized from the
+ * measured steady state (28) with headroom for a deeper init or a
+ * dlopen()-heavy program; when it is full, bootstrap_malloc() FAILS rather
+ * than hand out an unregistered pointer that free() could then not
+ * recognise -- an unregistered bootstrap pointer would be treated as
+ * foreign and refused, leaking the mapping, which is the safe direction but
+ * still a leak, so the table is sized not to fill.
+ *
+ * THREAD SAFETY: table entries under bootstrap_ptr_lock; bootstrap_live is
+ * the lock-free gate (count up BEFORE the pointer is returned, down AFTER
+ * the entry is cleared and the mapping unmapped).
  */
+#define	MAX_BOOTSTRAP_PTRS	256
+struct bootstrap_ent {
+	void *ptr;		/* the pointer handed to the caller (hdr + 1) */
+	size_t size;		/* total mapping size, for munmap */
+};
+static struct bootstrap_ent bootstrap_ptrs[MAX_BOOTSTRAP_PTRS];
+static pthread_mutex_t bootstrap_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
 static _Atomic long bootstrap_live;
+
+/* Returns 1 and records the mapping, or 0 if the table is full. */
+static int
+bootstrap_register(void *buf, size_t total_size)
+{
+	size_t i;
+	int ok = 0;
+
+	(void) pthread_mutex_lock(&bootstrap_ptr_lock);
+	for (i = 0; i < MAX_BOOTSTRAP_PTRS; i++) {
+		if (bootstrap_ptrs[i].ptr == NULL) {
+			/* Count up BEFORE the pointer becomes findable. */
+			atomic_fetch_add_explicit(&bootstrap_live, 1,
+			    memory_order_release);
+			bootstrap_ptrs[i].ptr = buf;
+			bootstrap_ptrs[i].size = total_size;
+			ok = 1;
+			break;
+		}
+	}
+	(void) pthread_mutex_unlock(&bootstrap_ptr_lock);
+	return (ok);
+}
+
+/*
+ * If buf is a registered bootstrap pointer, clear its entry and return the
+ * mapping size (nonzero); else return 0.  Clearing and unmapping are the
+ * caller's two steps; the live count goes down after both.
+ */
+static size_t
+bootstrap_unregister(const void *buf)
+{
+	size_t i, sz = 0;
+
+	(void) pthread_mutex_lock(&bootstrap_ptr_lock);
+	for (i = 0; i < MAX_BOOTSTRAP_PTRS; i++) {
+		if (bootstrap_ptrs[i].ptr == buf) {
+			sz = bootstrap_ptrs[i].size;
+			bootstrap_ptrs[i].ptr = NULL;
+			bootstrap_ptrs[i].size = 0;
+			break;
+		}
+	}
+	(void) pthread_mutex_unlock(&bootstrap_ptr_lock);
+	return (sz);
+}
+
+static int
+bootstrap_registered(const void *buf)
+{
+	size_t i;
+	int found = 0;
+
+	(void) pthread_mutex_lock(&bootstrap_ptr_lock);
+	for (i = 0; i < MAX_BOOTSTRAP_PTRS; i++) {
+		if (bootstrap_ptrs[i].ptr == buf) {
+			found = 1;
+			break;
+		}
+	}
+	(void) pthread_mutex_unlock(&bootstrap_ptr_lock);
+	return (found);
+}
 
 /*
  * Exposed for malloc_interpose.c
@@ -141,46 +235,41 @@ bootstrap_malloc(size_t size)
 
 	hdr->magic = BOOTSTRAP_MAGIC;
 	hdr->size = total_size;
-	/* Count up BEFORE the pointer becomes freeable. */
-	atomic_fetch_add_explicit(&bootstrap_live, 1, memory_order_release);
+	if (!bootstrap_register(hdr + 1, total_size)) {
+		/*
+		 * Table full.  Fail the allocation rather than hand out a
+		 * pointer free() cannot recognise (see the registry comment).
+		 */
+#ifdef _WIN32
+		(void) VirtualFree(hdr, 0, MEM_RELEASE);
+#else
+		(void) munmap(hdr, total_size);
+#endif
+		bootstrap_depth--;
+		errno = ENOMEM;
+		return (NULL);
+	}
 	bootstrap_depth--;
 	return (void *)(hdr + 1);
 }
 
 /*
- * Step 1 of process_free()'s validation order.  Reads the 8 bytes before
- * buf ONLY when a bootstrap allocation is live; with bootstrap_live == 0
- * no pointer can be one, and nothing is read.  For a foreign pointer that
- * means buf[-1] is now never read before the hull check (step 2), which
- * before this gate it was, unconditionally.
+ * Step 1 of process_free()'s validation order: is buf a bootstrap pointer?
  *
- * THIS GATE IS A HARDENING CHANGE FIRST AND A PERFORMANCE CHANGE SECOND.
- * Without it, free(p) for any p reads p[-1] before anything has established
- * that p is ours, and if those 8 bytes equal BOOTSTRAP_MAGIC the pointer goes
- * to bootstrap_free() -> munmap(hdr, hdr->size) with both hdr and size taken
- * from memory the caller controls (attacker position D: controls buffer
- * contents, not the environment).  That is an unmap of a chosen range.  The
- * P5.8 work ordered every OTHER read after the ownership check and left this
- * one in front on the argument that a bootstrap mmap can land inside the
- * hull's gaps; the gate keeps that argument (the read still happens whenever
- * a bootstrap pointer can exist) and closes the exposure for the steady
- * state of every process, where bootstrap_live is zero.
- *
- * It was measured at +1.6 % instructions per free() on c7g.2xlarge
- * (P8.3 candidate (b), 382c529) and reverted for that reason in 802c6ac.
- * Reinstated: a 1.6 % microbench delta on one architecture does not buy back
- * an attacker-controlled munmap, and AGENTS.md 7a does not allow that trade
- * without a decision recorded here.  This is the decision.
+ * Answered from the registry, never from buf[-1].  The live-count gate makes
+ * the common case (no bootstrap allocation live) one relaxed load; a nonzero
+ * count means a locked table scan, which is the exact answer.  Nothing here
+ * reads memory the caller controls, so a forged BOOTSTRAP_MAGIC in front of
+ * a pointer is inert (P5.10).  The header's magic field is retained for the
+ * bootstrap_free() consistency check below and for debugger inspection; it
+ * is no longer consulted to decide anything.
  */
 static inline int
 bootstrap_pointer_p(const void *buf)
 {
-	const bootstrap_header_t *hdr;
-
 	if (atomic_load_explicit(&bootstrap_live, memory_order_acquire) == 0)
 		return (0);
-	hdr = (const bootstrap_header_t *)buf - 1;
-	return (hdr->magic == BOOTSTRAP_MAGIC);
+	return (bootstrap_registered(buf));
 }
 
 /* Exported for malloc_interpose.c's classifier. */
@@ -196,18 +285,35 @@ void
 bootstrap_free(void *buf)
 {
 	bootstrap_header_t *hdr;
+	size_t sz;
 
 	if (buf == NULL)
 		return;
 
-	hdr = (bootstrap_header_t *)buf - 1;
-	if (hdr->magic != BOOTSTRAP_MAGIC)
+	/*
+	 * The registry decides.  An unregistered pointer is refused here
+	 * without reading it; the size unmapped is the one the table recorded
+	 * at bootstrap_malloc() time, not whatever is in front of buf now.
+	 */
+	sz = bootstrap_unregister(buf);
+	if (sz == 0)
 		return;
+
+	hdr = (bootstrap_header_t *)buf - 1;
+	/*
+	 * Consistency check on OUR header, now that buf is known to be ours.
+	 * A mismatch is a corruption of a bootstrap mapping, reported like any
+	 * other; the mapping is unmapped either way using the recorded size.
+	 */
+	if (hdr->magic != BOOTSTRAP_MAGIC || hdr->size != sz)
+		umem_err_recoverable("bootstrap_free(%p): header corrupted "
+		    "(magic %#llx size %zu, expected size %zu)\n", buf,
+		    (unsigned long long)hdr->magic, hdr->size, sz);
 
 #ifdef _WIN32
 	(void) VirtualFree(hdr, 0, MEM_RELEASE);
 #else
-	(void) munmap(hdr, hdr->size);
+	(void) munmap(hdr, sz);
 #endif
 	/* Count down AFTER the mapping is gone. */
 	atomic_fetch_sub_explicit(&bootstrap_live, 1, memory_order_release);
