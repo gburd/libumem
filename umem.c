@@ -484,6 +484,11 @@ _Static_assert(sizeof(umem_cpu_cache_t) % UMEM_CACHE_LINE_SIZE == 0,
     "umem_cpu_cache_t size must be a multiple of cache line size");
 _Static_assert(_Alignof(umem_cpu_cache_t) >= UMEM_CACHE_LINE_SIZE,
     "umem_cpu_cache_t must be cache-line aligned");
+#ifdef UMEM_RSEQ_AVAILABLE
+/* Carved after the two depot arrays in cache_percpu_map; must tile. */
+_Static_assert(sizeof(umem_rseq_cache_t) % UMEM_CACHE_LINE_SIZE == 0,
+    "umem_rseq_cache_t must be a whole number of cache lines");
+#endif
 _Static_assert(sizeof(umem_maglist_t) % UMEM_CACHE_LINE_SIZE == 0,
     "umem_maglist_t size must be a multiple of cache line size");
 _Static_assert(_Alignof(umem_maglist_t) >= UMEM_CACHE_LINE_SIZE,
@@ -5212,33 +5217,51 @@ umem_cache_create(
 	cp->cache_empty.ml_reaplimit = 0;
 	cp->cache_empty.ml_alloc = 0;
 
+	for (mtp = umem_magtype; chunksize <= mtp->mt_minbuf; mtp++)
+		continue;
+
+	cp->cache_magtype = mtp;
+
 	/*
-	 * Allocate per-CPU depot arrays.
-	 * ncpus is already a power of 2 (rounded in umem_init).
+	 * Per-CPU arrays: the two depot lists and, with rseq, the rseq
+	 * caches -- carved from ONE mapping (P6.4; see cache_percpu_map in
+	 * umem_impl.h).  Each array is a whole number of cache lines
+	 * (asserted at file scope), so laying them end to end keeps every
+	 * element 64-byte aligned.  ncpus is a power of 2 (rounded in
+	 * umem_init).
 	 */
 	{
 		int ncpus = (int)umem_max_ncpus;
-		size_t arr_size = ncpus * sizeof (umem_maglist_t);
-
-		cp->cache_depot_ncpus = ncpus;
-		cp->cache_depot_full = (umem_maglist_t *)mmap(NULL,
-		    arr_size, PROT_READ | PROT_WRITE,
+		size_t depot_bytes = (size_t)ncpus * sizeof (umem_maglist_t);
+		size_t rseq_bytes = 0;
+		size_t len;
+		char *base;
+#ifdef UMEM_RSEQ_AVAILABLE
+		int rseq_ncpus = umem_rseq_enabled ? umem_rseq_get_ncpus() : 0;
+		rseq_bytes = (size_t)rseq_ncpus * sizeof (umem_rseq_cache_t);
+#endif
+		len = 2 * depot_bytes + rseq_bytes;
+		base = mmap(NULL, len, PROT_READ | PROT_WRITE,
 		    MAP_PRIVATE | MAP_ANON, -1, 0);
-		cp->cache_depot_empty = (umem_maglist_t *)mmap(NULL,
-		    arr_size, PROT_READ | PROT_WRITE,
-		    MAP_PRIVATE | MAP_ANON, -1, 0);
 
-		if (cp->cache_depot_full == MAP_FAILED ||
-		    cp->cache_depot_empty == MAP_FAILED) {
-			if (cp->cache_depot_full != MAP_FAILED)
-				(void) munmap(cp->cache_depot_full, arr_size);
-			if (cp->cache_depot_empty != MAP_FAILED)
-				(void) munmap(cp->cache_depot_empty, arr_size);
-			cp->cache_depot_full = NULL;
-			cp->cache_depot_empty = NULL;
-			cp->cache_depot_ncpus = 0;
+		cp->cache_depot_full = NULL;
+		cp->cache_depot_empty = NULL;
+		cp->cache_depot_ncpus = 0;
+#ifdef UMEM_RSEQ_AVAILABLE
+		cp->cache_rseq = NULL;
+#endif
+		if (base == MAP_FAILED) {
+			cp->cache_percpu_map = NULL;
+			cp->cache_percpu_len = 0;
 		} else {
 			int i;
+
+			cp->cache_percpu_map = base;
+			cp->cache_percpu_len = len;
+			cp->cache_depot_ncpus = ncpus;
+			cp->cache_depot_full = (umem_maglist_t *)base;
+			cp->cache_depot_empty =
+			    (umem_maglist_t *)(base + depot_bytes);
 			for (i = 0; i < ncpus; i++) {
 				(void) mutex_init(
 				    &cp->cache_depot_full[i].ml_lock,
@@ -5247,13 +5270,17 @@ umem_cache_create(
 				    &cp->cache_depot_empty[i].ml_lock,
 				    USYNC_THREAD, NULL);
 			}
+#ifdef UMEM_RSEQ_AVAILABLE
+			if (rseq_bytes != 0) {
+				int magsize = cp->cache_magtype->mt_magsize;
+				cp->cache_rseq = (umem_rseq_cache_t *)
+				    (base + 2 * depot_bytes);
+				for (i = 0; i < rseq_ncpus; i++)
+					cp->cache_rseq[i].magsize = magsize;
+			}
+#endif
 		}
 	}
-
-	for (mtp = umem_magtype; chunksize <= mtp->mt_minbuf; mtp++)
-		continue;
-
-	cp->cache_magtype = mtp;
 
 	/*
 	 * Initialize the CPU layer.
@@ -5265,25 +5292,6 @@ umem_cache_create(
 		ccp->cc_rounds = -1;
 		ccp->cc_prounds = -1;
 	}
-
-#ifdef UMEM_RSEQ_AVAILABLE
-	if (umem_rseq_enabled) {
-		int ncpus = umem_rseq_get_ncpus();
-		size_t rseq_size = ncpus * sizeof (umem_rseq_cache_t);
-		cp->cache_rseq = (umem_rseq_cache_t *)mmap(NULL, rseq_size,
-		    PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-		if (cp->cache_rseq == MAP_FAILED) {
-			cp->cache_rseq = NULL;
-		} else {
-			int i;
-			int magsize = cp->cache_magtype->mt_magsize;
-			for (i = 0; i < ncpus; i++)
-				cp->cache_rseq[i].magsize = magsize;
-		}
-	} else {
-		cp->cache_rseq = NULL;
-	}
-#endif
 
 	/*
 	 * Add the cache to the global list.  This makes it visible
@@ -5378,15 +5386,6 @@ umem_cache_destroy(umem_cache_t *cp)
 	cp->cache_destructor = (umem_destructor_t *)2;
 	(void) mutex_unlock(&cp->cache_lock);
 
-#ifdef UMEM_RSEQ_AVAILABLE
-	if (cp->cache_rseq != NULL) {
-		int ncpus = umem_rseq_get_ncpus();
-		(void) munmap(cp->cache_rseq,
-		    ncpus * sizeof (umem_rseq_cache_t));
-		cp->cache_rseq = NULL;
-	}
-#endif
-
 	if (cp->cache_hash_table != NULL)
 		vmem_free(umem_hash_arena, cp->cache_hash_table,
 		    (cp->cache_hash_mask + 1) * sizeof (void *));
@@ -5399,16 +5398,22 @@ umem_cache_destroy(umem_cache_t *cp)
 
 	if (cp->cache_depot_ncpus > 0) {
 		int i;
-		size_t arr_size = cp->cache_depot_ncpus *
-		    sizeof (umem_maglist_t);
 		for (i = 0; i < cp->cache_depot_ncpus; i++) {
 			(void) mutex_destroy(
 			    &cp->cache_depot_full[i].ml_lock);
 			(void) mutex_destroy(
 			    &cp->cache_depot_empty[i].ml_lock);
 		}
-		(void) munmap(cp->cache_depot_full, arr_size);
-		(void) munmap(cp->cache_depot_empty, arr_size);
+	}
+	/* Depot arrays and rseq caches together: one mapping, one munmap. */
+	if (cp->cache_percpu_map != NULL) {
+		(void) munmap(cp->cache_percpu_map, cp->cache_percpu_len);
+		cp->cache_percpu_map = NULL;
+		cp->cache_depot_full = NULL;
+		cp->cache_depot_empty = NULL;
+#ifdef UMEM_RSEQ_AVAILABLE
+		cp->cache_rseq = NULL;
+#endif
 	}
 
 	(void) mutex_destroy(&cp->cache_lock);

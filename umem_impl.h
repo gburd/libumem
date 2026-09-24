@@ -660,7 +660,20 @@ struct umem_cache {
 	umem_maglist_t	cache_full;		/* full magazines */
 	umem_maglist_t	cache_empty;		/* empty magazines */
 
-	/* Per-CPU depot layer — eliminates cross-CPU contention */
+	/*
+	 * Per-CPU depot layer — eliminates cross-CPU contention.
+	 *
+	 * cache_depot_full, cache_depot_empty and (with rseq) cache_rseq are
+	 * three arrays carved from ONE mapping, cache_percpu_map of
+	 * cache_percpu_len bytes (P6.4).  They used to be three separate
+	 * page-rounded mmap()s holding 512 B each on an 8-CPU box: 12 KB of
+	 * an 18.6 KB per-cache footprint was page rounding, and destroying a
+	 * cache munmap()ed three holes into whatever the kernel had merged
+	 * the mappings into -- 29,159 VMAs left behind by 50k destroyed
+	 * caches.  One mapping, one munmap, one hole at most.
+	 */
+	void		*cache_percpu_map;	/* the one mapping, or NULL */
+	size_t		cache_percpu_len;	/* its length */
 	int		cache_depot_ncpus;	/* number of per-CPU depot slots */
 	umem_maglist_t	*cache_depot_full;	/* array[ncpus] of full mag lists */
 	umem_maglist_t	*cache_depot_empty;	/* array[ncpus] of empty mag lists */
@@ -675,8 +688,8 @@ struct umem_cache {
 	/*
 	 * Per-CPU rseq layer
 	 * Each CPU has its own magazine cache accessed via rseq critical
-	 * sections. Array of umem_rseq_get_ncpus() entries, allocated
-	 * with mmap for page-aligned per-CPU access.
+	 * sections. Array of umem_rseq_get_ncpus() entries, carved from
+	 * cache_percpu_map (64-byte aligned; it never needed a page).
 	 */
 	umem_rseq_cache_t *cache_rseq;		/* per-CPU rseq caches */
 #endif
