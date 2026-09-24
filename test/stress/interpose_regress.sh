@@ -50,7 +50,9 @@ run_case() {
 		"$@"
 	fi
 	local s=$?
-	if [[ $s -ne 0 ]]; then
+	if [[ $s -eq 77 ]]; then
+		echo "SKIP: $label (77: the binary could not resolve the question)"
+	elif [[ $s -ne 0 ]]; then
 		echo "FAIL: $label exited $s"
 		rc=1
 	fi
@@ -76,6 +78,13 @@ run_case "aligned contracts (LD_PRELOAD interposer)" "$PRELOAD" "$ALIGN" --stric
 SCALE=$(find_bin test/stress repro_interpose_free_scaling) || {
 	echo "FAIL: repro_interpose_free_scaling not built"; exit 1; }
 run_case "free() thread scaling (LD_PRELOAD interposer)" "$PRELOAD" "$SCALE"
+
+# Per-call cost relative to the API (P8.3): preload/API >= 0.90 at t=8,
+# median of 9 alternating pairs, bounded against an API/API null control.
+# Post-P8.1 the ratio was 0.74-0.91 on every box, flat in threads.
+RATIO=$(find_bin test/stress repro_interpose_free_ratio) || {
+	echo "FAIL: repro_interpose_free_ratio not built"; exit 1; }
+run_case "free() per-call cost vs API (LD_PRELOAD interposer)" "$PRELOAD" "$RATIO"
 
 if [[ $rc -eq 0 ]]; then
 	echo "PASS: interposer regressions"

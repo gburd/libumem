@@ -605,6 +605,16 @@ test_stress_repro_interpose_free_scaling_LDADD = libumem.la
 test_stress_repro_interpose_free_scaling_LDFLAGS = -pthread
 test_stress_repro_interpose_free_scaling_CPPFLAGS = -I$(srcdir)
 
+# Interposer per-call cost relative to the API (P8.3): preload/API >= 0.90 at
+# t=8, bounded against a null control.  Same LD_PRELOAD-only contract; driven
+# from interpose_regress.sh.
+noinst_PROGRAMS += test/stress/repro_interpose_free_ratio
+test_stress_repro_interpose_free_ratio_SOURCES = \
+	test/stress/repro_interpose_free_ratio.c
+test_stress_repro_interpose_free_ratio_LDADD = libumem.la
+test_stress_repro_interpose_free_ratio_LDFLAGS = -pthread
+test_stress_repro_interpose_free_ratio_CPPFLAGS = -I$(srcdir)
+
 test_stress_stress_concurrency_oracle_SOURCES = test/stress/stress_concurrency_oracle.c
 test_stress_stress_concurrency_oracle_LDADD = libumem.la
 test_stress_stress_concurrency_oracle_LDFLAGS = -pthread
