@@ -2155,6 +2155,69 @@ magazines (and fix P8.6 so those magazines actually work), and raise
 depot counters at this point (a rig gap: `CONTENTION_SIZES` covers three
 size ranges and not this one).
 
+**STATUS: FIXED on the lo boxes (`ad72787` part a, `eb68575` part b);
+metal below.**  Two commits, measured separately.
+
+(a) `ad72787`: `PTC_NBINS` 28 -> 36, a fourth tier `PTC_NSLOTS_XLARGE` of
+16 slots for 2560..8192 B, `umem_ptc_maxsize` default 2048 -> 8192.
+`size_to_bin_table` was `PTC_NBINS * 32` = 896 entries indexed by
+`size / 8`; 8192 / 8 = 1024 would have overrun it, so it is now sized to
+the largest class.  `sizeof (umem_ptc_t)` 22,144 -> 24,000 B, under
+`test_ptc_footprint`'s 24 KB (24,576).  `test_cpu_hint_spread` moves its
+PTC-bypassing size from 2560 to 10240 and `test_fork_mt_load` its cc_lock
+classes from 8192 to 12288; `umem_ptc_test`'s class table gains the eight
+classes and passes (720,654 / 2,839,870 checks on x86 / arm).  With P8.6
+fixed these bins have a working L2.
+
+(b) `eb68575`: `umem_magtype` rows {15, 4096-8192}, {31, 2048-4096},
+{63, 1024-2048} become one {63, 1024-8192} row (two rows with the same
+magsize would create a duplicate `umem_magazine_63` cache at init).
+
+**Lo-box regression** (`multi` 1024:4096 t=8, `matrix.sh`, 10M ops, 5
+runs, 3 alternating replicates per arm; `verify-isolated` at each sha;
+median Mops and p999 ns):
+
+| box | build | libc | umem | umem@null | umem/libc | umem p999 | libc p999 | unstable |
+|---|---|---|---|---|---|---|---|---|
+| `c7i.2xlarge` | pre `71422fe` | 23.9 | **16.6** | 20.6 | **0.69** | **921** | 146 | 3/3 + 3/3 |
+| `c7i.2xlarge` | (a) `ad72787` | 23.8 | **29.3** | 29.2 | **1.23** | **152** | 152 | 0/3 + 0/3 |
+| `c7i.2xlarge` | (a)+(b) `eb68575` | 24.6 | **29.9** | 29.5 | **1.22** | **130** | 141 | 0/3 + 0/3 |
+| `c7g.2xlarge` | pre `71422fe` | 29.7 | 31.1 | 31.2 | 1.05 | 107 | 112 | 0/3 + 1/3 |
+| `c7g.2xlarge` | (a) `ad72787` | 30.2 | **39.3** | 38.8 | **1.30** | **41** | 103 | 0/3 |
+| `c7g.2xlarge` | (a)+(b) `eb68575` | 30.1 | **39.4** | 39.0 | **1.31** | **42** | 101 | 0/3 |
+
+x86: 0.69x -> 1.23x libc, p999 921 -> 152 ns, `unstable` gone; target
+was >= 0.8x and p999 < 500 ns.  arm had no t=8 deficit before and gains
+27 % anyway.  (b) on top of (a) is inside the null at t=8 on both boxes,
+as expected: with the PTC covering the band, the magazine layer sees only
+PTC overflow, and (b)'s effect is on the depot trip rate at scale.
+
+**Per-class bare loop** (`bench_pairs`, N=1, Mpairs/s; the PTC boundary
+was between 1536 and 2560):
+
+| box | build | t | 1536 | 2560 | 3072 | 4096 | 5120 | 8192 |
+|---|---|---|---|---|---|---|---|---|
+| `c7i.2xlarge` | pre | 8 | 602 | **22.9** | 66.3 | 62.2 | 23.0 | 30.4 |
+| `c7i.2xlarge` | (a) | 8 | 589 | **590** | 590 | 590 | 590 | 577 |
+| `c7i.2xlarge` | (a)+(b) | 8 | 619 | 609 | 616 | 614 | 616 | 604 |
+| `c7i.2xlarge` | pre | 1 | 154 | **22.8** | | 22.9 | | 22.9 |
+| `c7i.2xlarge` | (a)+(b) | 1 | 159 | **159** | | 159 | | 159 |
+| `c7g.2xlarge` | pre | 8 | 800 | **37.3** | 15.6 | 36.7 | 34.6 | 89.5 |
+| `c7g.2xlarge` | (a)+(b) | 8 | 800 | **800** | 805 | 806 | 801 | 799 |
+| `c7g.2xlarge` | pre | 1 | 100 | **15.2** | | 15.2 | | 15.1 |
+| `c7g.2xlarge` | (a)+(b) | 1 | 100 | **99.8** | | 101 | | 101 |
+
+Above the old ceiling the per-class cost was 6.6x (x86) / 6.6x (arm) that
+of the class just below it at t=1 -- `cc_lock` plus the rseq registration
+check on every op -- and 10-26x at t=8; the band is now level with 1536 B.
+`bench_pairs` 1040:4112 (the bench's post-header range) t=8 N=1: 59.9 ->
+478 (x86), 150 -> 577 (arm).
+
+**Oracles at `ad72787` and `eb68575`, both arches**:
+`test_ptc_mag_primed` PASS, `test_ptc_thread_exit_drain_probe` stranded 0,
+`test_ptc_resize_no_loss_probe` x12 rc 0, `test_cpu_hint_spread` 8/8 (at
+10240 B), `test_ptc_footprint` 24,000 <= 24,576 PASS.
+
 ### P8.3 Interposer per-call overhead after P8.1
 
 `malloc_interpose.c` `free()` fast path at `a74065e` (`is_static_pointer`,
