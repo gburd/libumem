@@ -4051,6 +4051,49 @@ _umem_free(void *buf, size_t size)
 					}
 					emp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_empty);
+					if (emp == NULL) {
+						/*
+						 * Prime the L2 (P8.6).  The
+						 * depot's empty list is fed only
+						 * when a CPU-layer magazine
+						 * drains, which a steady
+						 * alloc/free loop never does, so
+						 * on a cache this thread alone
+						 * cycles it stayed empty forever
+						 * and every object past the bin
+						 * paid the failed-trylock scan and
+						 * then cc_lock.  Allocate one
+						 * magazine, as _umem_cache_free
+						 * does for the CPU layer.  Once per
+						 * thread per class: after this the
+						 * loaded/previous pair cycles and
+						 * the depot is touched once per
+						 * magsize objects.
+						 *
+						 * No magtype-changed retry here,
+						 * unlike the CPU layer: capacity is
+						 * read from the magazine itself
+						 * (P1.3b), and if the cache has
+						 * moved past this magtype by the
+						 * time it is handed back,
+						 * umem_ptc_mag_return* drains and
+						 * frees the shell (P1.3c).  No lock
+						 * is held across the allocation.
+						 */
+						umem_cache_t *mtc =
+						    cp->cache_magtype->mt_cache;
+						emp = _umem_cache_alloc(mtc,
+						    UMEM_DEFAULT);
+						if (emp != NULL) {
+							atomic_add_64(
+							    &cp->cache_mag_total,
+							    1);
+							umem_mag_init_fast(
+							    emp->mag_round,
+							    umem_mag_capacity(
+							    emp));
+						}
+					}
 					if (emp != NULL) {
 						UMEM_PTC_RESIZE_PROBE_POINT();
 						/*
@@ -4074,9 +4117,10 @@ _umem_free(void *buf, size_t size)
 						return;
 					}
 					/*
-					 * No empty mag from depot —
-					 * loaded was already donated,
-					 * so fall through with none.
+					 * No empty magazine from the depot
+					 * and none could be allocated -- loaded
+					 * was already donated, so fall through
+					 * with none.
 					 */
 					}
 					}

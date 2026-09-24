@@ -122,7 +122,11 @@ main(int argc, char **argv)
 		total += (uint64_t)(uintptr_t)r;
 	}
 	t1 = now();
-	printf("size=%zu%s%zu N=%d t=%d %.2f Mpairs/s\n", lo, hi ? ":" : "",
-	    hi, nobj, nthreads, (double)total / (t1 - t0) / 1e6);
+	if (hi)
+		printf("size=%zu:%zu ", lo, hi);
+	else
+		printf("size=%zu ", lo);
+	printf("N=%d t=%d %.2f Mpairs/s\n", nobj, nthreads,
+	    (double)total / (t1 - t0) / 1e6);
 	return (0);
 }
