@@ -70,6 +70,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   process crash, never continue). Regression `test_abort_option.sh`: default
   refuses and completes, `UMEM_OPTIONS=abort` on the same forged free dies with
   SIGABRT. The first attempt put it in the wrong table and the test caught it.
+- **Per-cache footprint: three page-rounded `mmap`s became one exact mapping**
+  (`e00fdf2`). Each `umem_cache_create()` mapped two depot arrays and the rseq
+  array separately, 512 B each in a 4 KiB page on 8 CPUs: 12 KB of an 18.6 KB
+  per-cache footprint was page rounding. Now carved from one mapping sized to
+  its contents: 18,964 -> 10,708 B/cache. Regression `test_cache_footprint`.
+  The VMAs left behind by `umem_cache_destroy` (1,134 per 2,000 destroys)
+  turned out to be a different defect -- freed descriptor pages are
+  `PROT_NONE`-remapped by `vmem_mmap_free`, one VMA per page, the same
+  mechanism as freed oversize objects -- and are fixed where that is (P6.2);
+  the test's VMA arm reports SKIP with the live number until then.
 - **Every thread used the same per-CPU cache.** The per-thread CPU hint that
   selects `cache_cpu[]` was `pthread_self()` cast to `int` -- a page-aligned
   address whose low bits are always zero -- so `hint & cache_cpu_mask` was 0

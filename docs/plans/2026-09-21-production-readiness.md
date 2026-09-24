@@ -1042,6 +1042,42 @@ the walk holds -- either publish via an RCU-style pointer swap, or have
 unlocked (the per-cache work already takes `cache_lock`). Regression:
 `probe_caches 50000` worst create < 5 ms and VMAs after destroy < 200.
 
+**STATUS.** (1) **FIXED** (`e00fdf2`): the three arrays are carved from one
+mapping sized to their contents (`cache_percpu_map`). Footprint 18,964 ->
+**10,708 B/cache** on 8 CPUs (`test_cache_footprint`, 2,000 caches, pre
+`76812d0` FAIL / post PASS on that arm). Predicted "~7 KB" was optimistic:
+the remaining 10.7 KB is the descriptor (`UMEM_CACHE_SIZE(8)` = 2.2 KB), the
+hash table, one live 4 KiB slab, and the carved mapping (1.5 KB, still
+page-rounded to 4 KiB as a single mapping -- putting it *inside* the
+descriptor's vmem allocation would recover that page and is the next step if
+per-cache footprint matters further).
+
+**The VMA leak on destroy is NOT this defect** and did not move with (1):
+1,134 -> 1,216 for 2,000 destroys. `/proc/self/maps` after destroy: 1,236 of
+1,295 VMAs are single 4 KiB `PROT_NONE` mappings -- freed cache
+*descriptors*. `umem_cache_arena` (quantum 64) imports pages from
+`umem_internal_arena`; when a descriptor's page becomes wholly free it flows
+back to the heap and `vmem_mmap_free()` `mmap(PROT_NONE, MAP_FIXED)`s over
+it, splitting the RW range. That is P6.2's mechanism at 4 KiB granularity,
+on every span free of any kind. It is fixed where P6.2 is fixed;
+`test_cache_footprint`'s VMA arm SKIPs with the live number until then and
+then stands guard.
+
+(2) **Characterised, left open.** The 40 ms worst-case *create* at 50k caches
+is a create landing during the update thread's walk, which holds
+`umem_cache_lock` for O(caches). Making the walk lock-free is not a local
+change: `umem_cache_lock` is what keeps `cp` alive for the duration of
+`func(cp)` against a concurrent `umem_cache_destroy`, for every list walker
+-- `umem_cache_update`, `umem_cache_magazine_enable`, the fork handler,
+`umem_inspect.c` (3 walks), `umem_introspect.c`. A snapshot-and-walk needs a
+per-cache refcount or grace period so a snapshotted `cp` is not destroyed
+underneath the walker. That is P1.4/P1.5's lifetime problem again, one level
+up. The symptom is a cache-*create* tail, not an allocation stall
+(allocation never takes this lock: 0.0 ms worst over 187M allocs at 50k
+caches), and it needs 50k caches to reach 40 ms (3 ms at 10k). Recorded as
+the honest boundary; a program creating caches per connection at that scale
+should pool them.
+
 ### P6.3 Thread count: 16,000 threads -- FINE on capacity; HIGH on exit drain and per-thread footprint
 `umem_ptc.h:107-123` (`umem_ptc_bin_t` = 128 slots x 8 B, `umem_ptc_t` =
 28 bins + 28 magazines = **30.9 KB**, allocated per thread by
@@ -1152,6 +1188,35 @@ depot locks and re-init `cc_lock`s in the child (they are `USYNC_THREAD`
 mutexes over per-CPU state the child owns outright). Regression:
 `probe_caches 50000 --fork` on 192 CPUs: create worst < 20 ms, fork < 200
 ms, VMAs after destroy < 500.
+
+**STATUS.** (1) fixed as P6.4; on 256 slots the carve removes two 16 KB and
+one 12 KB page-rounded mapping per cache -- predicted 117 -> ~75 KB/cache,
+not re-measured on metal here. (3) and (4) **characterised, not done**:
+
+(3) The power-of-two round-up (192 -> 256) existed because the CPU hint was
+an arbitrary integer (`thr_self()` on Solaris, `pthread_self()` here) that
+had to be masked into range. Since `ae86536` the hint is a real CPU id in
+`[0, ncpus)` on Linux, so 192 slots would suffice **on that path** -- but
+eight depot-steal sites (`umem.c:2473-2764`) do `(cpu + i) & (ncpus - 1)`
+to walk stripes, `umem_cpu_mask` is used by the log layer, and the
+non-Linux/no-rseq fallback hint is still a hash that needs masking. A
+modulo on the steal loop is a `div` per step in a spin; an indirection
+table is a load. Either is a measured change to the depot's hottest miss
+path, and P6.3's agent is concurrently rewriting the PTC/depot hand-off. Not
+attempted in this pass; 25 % of per-cache state on wide boxes, nothing on
+8-CPU ones.
+
+(4) `fork()` at 3 s for 50k caches is 771 mutexes per cache. Those locks are
+what make the child's heap consistent: a parent thread mid-`_umem_cache_alloc`
+under `cc_lock` has `cc_loaded`/`cc_rounds` half-updated, and the child has no
+such thread to finish it. Skipping `cc_lock`s and re-initialising them in the
+child (the plan's option) means the child must also *discard* every per-CPU
+magazine's contents -- the objects in them are lost to the child, though not
+corrupted. glibc and jemalloc take every arena lock at fork too; they have
+8 x ncores arenas, not 50k. The cost here is structural to per-cache per-CPU
+layering, and the honest levers are (3) and P6.3's fewer-locks-per-drain,
+not a lock-skipping trick. A pre-fork server with 50k caches on 192 CPUs is
+a shape this allocator does not serve well; recorded as such.
 
 ### P6.5 Fragmentation over time: 18 minutes of repaired `frag` churn -- FINE (plateaus); MEDIUM on the level
 `test/bench/bench_framework.c:965-1071` (`frag_worker`, P2.2 live-byte
