@@ -5241,8 +5241,20 @@ umem_cache_create(
 		rseq_bytes = (size_t)rseq_ncpus * sizeof (umem_rseq_cache_t);
 #endif
 		len = 2 * depot_bytes + rseq_bytes;
-		base = mmap(NULL, len, PROT_READ | PROT_WRITE,
-		    MAP_PRIVATE | MAP_ANON, -1, 0);
+		/*
+		 * From umem_cache_arena, like the descriptor itself, NOT a
+		 * private mmap.  The first version of this consolidation
+		 * (e00fdf2) used one mmap() per cache and got the footprint,
+		 * but destroy then munmap()ed a 4 KiB hole between two heap
+		 * pages -- mmap(NULL) hands out addresses top-down, so the
+		 * per-cache mapping landed between consecutive heap growths
+		 * -- and 2,000 destroys left 940 orphaned single-page heap
+		 * VMAs.  vmem memory is never unmapped; a freed block is
+		 * reused.  This is also how the original Solaris code did it:
+		 * umem_cache_create() there has no mmap() in it at all.
+		 */
+		base = vmem_xalloc(umem_cache_arena, len,
+		    UMEM_CACHE_LINE_SIZE, 0, 0, NULL, NULL, VM_NOSLEEP);
 
 		cp->cache_depot_full = NULL;
 		cp->cache_depot_empty = NULL;
@@ -5250,10 +5262,11 @@ umem_cache_create(
 #ifdef UMEM_RSEQ_AVAILABLE
 		cp->cache_rseq = NULL;
 #endif
-		if (base == MAP_FAILED) {
+		if (base == NULL) {
 			cp->cache_percpu_map = NULL;
 			cp->cache_percpu_len = 0;
 		} else {
+			bzero(base, len);
 			int i;
 
 			cp->cache_percpu_map = base;
@@ -5405,9 +5418,10 @@ umem_cache_destroy(umem_cache_t *cp)
 			    &cp->cache_depot_empty[i].ml_lock);
 		}
 	}
-	/* Depot arrays and rseq caches together: one mapping, one munmap. */
+	/* Depot arrays and rseq caches together: one block, one free. */
 	if (cp->cache_percpu_map != NULL) {
-		(void) munmap(cp->cache_percpu_map, cp->cache_percpu_len);
+		vmem_xfree(umem_cache_arena, cp->cache_percpu_map,
+		    cp->cache_percpu_len);
 		cp->cache_percpu_map = NULL;
 		cp->cache_depot_full = NULL;
 		cp->cache_depot_empty = NULL;

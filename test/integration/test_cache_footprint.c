@@ -136,35 +136,24 @@ main(void)
 	}
 
 	/*
-	 * THE VMA ARM IS NOT A CONSEQUENCE OF THE PER-CACHE MMAPS.  With those
-	 * three mappings collapsed into one (e00fdf2) the count did not move:
-	 * 1,134 -> 1,216 for 2,000 destroys.  /proc/self/maps shows what they
-	 * are: 1,236 of 1,295 VMAs are single 4 KiB PROT_NONE mappings, i.e.
-	 * freed cache DESCRIPTORS.  A descriptor lives in umem_cache_arena
-	 * (quantum 64) which imports pages from umem_internal_arena, and when a
-	 * descriptor's page becomes wholly free it flows back to the heap and
-	 * vmem_mmap_free() mmap(PROT_NONE, MAP_FIXED)s over it, splitting the
-	 * RW range it came from -- one VMA per freed page, permanently.  That is
-	 * the same mechanism as P6.2's one-VMA-per-freed-oversize-object, at
-	 * 4 KiB granularity, on every span free of any kind.
-	 *
-	 * The fix belongs in vmem_mmap_free (P6.2).  Until it lands this arm
-	 * reports SKIP with the live number rather than PASS (false) or FAIL
-	 * (a known, attributed defect the footprint fix cannot reach).  When
-	 * vmem_mmap_free stops punching holes, the SKIP branch below becomes
-	 * unreachable and the FAIL branch stands guard.
+	 * THE VMA ARM took two fixes, and the first one's regression test
+	 * (this arm) is what showed it.  Collapsing the three per-cache mmaps
+	 * into one (e00fdf2) fixed footprint but NOT this: 1,134 -> 1,216.
+	 * /proc/self/maps showed two populations: (a) single 4 KiB PROT_NONE
+	 * holes -- freed cache DESCRIPTOR pages, remapped by vmem_mmap_free
+	 * (P6.2, fixed by MADV_DONTNEED below a guard size, ab8a73d); and
+	 * (b) single 4 KiB RW islands -- heap pages orphaned when the
+	 * per-cache mapping BETWEEN them was munmap()ed, because mmap(NULL)
+	 * hands out addresses top-down and interleaves everything.  Fixed by
+	 * taking the per-CPU block from umem_cache_arena, which never
+	 * unmaps.  Pre-both: 1,134.  After (a) only: 1,066.  After both: see
+	 * the RESULT line.
 	 */
 	if (leaked > VMA_LEAK_MAX) {
-		if (fails == 0) {
-			printf("SKIP: footprint PASS (%ld bytes/cache); but "
-			    "destroying %d caches left %ld VMAs behind (max %d) "
-			    "-- freed descriptor pages are PROT_NONE-remapped by "
-			    "vmem_mmap_free; see P6.2\n", per_cache_bytes,
-			    NCACHES, leaked, VMA_LEAK_MAX);
-			return (77);
-		}
-		printf("FAIL: destroying %d caches left %ld VMAs behind\n",
-		    NCACHES, leaked);
+		printf("FAIL: destroying %d caches left %ld VMAs behind -- "
+		    "either freed heap pages are PROT_NONE-remapped (P6.2) or "
+		    "per-cache state is being munmap()ed between heap pages "
+		    "(P6.4)\n", NCACHES, leaked);
 		fails++;
 	}
 	if (fails) {
