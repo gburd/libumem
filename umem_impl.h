@@ -164,7 +164,18 @@ extern "C" {
  * 32.  Not the depot, not magazine size, not a missing size class.
  *
  * The old comment here claimed the hint was "reset on magazine reload to
- * detect CPU migration".  Nothing reset it.
+ * detect CPU migration".  The 2026-09-23 rewrite of this comment said
+ * "Nothing reset it."  THAT WAS FALSE (comment review 2026-09-24, CB-1):
+ * umem_cpu_reload() has always called reset_cpu_hint_cache() below, so the
+ * hint IS re-derived on every CPU-layer magazine exchange.  Before the fix
+ * the reset was invisible because the re-derived value was again
+ * pthread_self() & mask == 0.  After it, the reset is live and the hint
+ * tracks migration at reload granularity -- one sched_getcpu()/rseq read
+ * per magazine reload, not per call.  That is the cost model this comment
+ * should have described; the 5 % t=1 figure below is for re-reading on
+ * EVERY call, which is a different thing.  Kept: a reload is where a
+ * migrated thread most plausibly is, and the cost is amortised over
+ * magsize operations.
  *
  * WHAT THIS DOES NOW.  On the one miss, prefer the kernel-maintained rseq
  * cpu_id, registering the thread first if the caller has not (registration
