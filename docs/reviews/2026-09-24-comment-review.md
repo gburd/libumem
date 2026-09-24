@@ -254,3 +254,70 @@ In-scope comment lines: 401. Contract blocks B1-B5 (79-114), A1-A3
 | 1282-1293 | 6 | ONE CLIENT AT A TIME, the consequence for "continue", ponytail: | Good honest ceiling |
 
 No CLAIM MISMATCH found in this file.
+
+## umem_impl.h
+
+In-scope comment lines: 290.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 137-139 | 3 | "Prefetch macros for performance optimization" | Narration. Delete |
+| 149-186 | 1/6 | CPU-hint block (20999ee) | The bug description, the measurement (8-vCPU, 8 threads, 2560 B, 7-of-8 on slot 0) and the 5 % re-read cost (4.16->3.94 Mops, median of 7, alternating) are the standard the brief asks for, minus the sha. BUT "Nothing reset it" (167-168) and "read once, correctly, and cache" (183) are contradicted by umem.c:3259 -- see CB-1 |
+| 189-193 | 3 | "rseq integration for CPU hint caching. When rseq is available and registered, we read the kernel-maintained cpu_id" | Redundant with 169-171; delete |
+| 240-243 | 1 | reset_cpu_hint_cache: "Called during magazine reload to detect CPU migration." | TRUE of the code (umem.c:3259) and directly contradicts 167-168 in the same file, 70 lines above. One of the two must go (CB-1) |
+| 346-384 | 6 | UMEM_LINK_MANGLE: what it protects, the glibc comparison, "This covers the SLAB FREELIST use of bc_next only", every in-tree reader listed, the control-arm build flag | Exemplary. Reader list verified: umem.c 1652 (build unwind), 1682 (create), 1796 (alloc), 1906 (free), destroy: umem_slab_destroy walks via bc_next? -- 4366 is hash rescale (plain, correct). umem_inspect.c 316, 500; umem_introspect.c 245. List is accurate |
+| 414-420 | 6 | SLAB_* states | OK. Note 417: SLAB_RECLAIMING "do not allocate" matches umem.c:1736 |
+| 430-432 | 6 | slab_state/idle_time/reclaim_next field comments | OK; "seconds empty (approx)" -- it is incremented by umem_reap_interval per pass (umem.c:4538), so "approx" is right |
+| 468 | 4 | cc_lock "protects slow path (magazine reload)" | Understates: cc_lock protects cc_rounds/cc_loaded/cc_ploaded/cc_magsize on every non-rseq/non-PTC alloc and free (umem.c:3313-3330), not only reload. Reword: "protects every cc_* field; held across depot calls (see umem_fork.c order 6a)" |
+| 485-497, 508-513, 539-548 | 1 | umem_tagged_ptr: "for lock-free stack operations ... Use umem_tagged_ptr_check() at init time" | Dead API: no caller of umem_tagged_ptr_check in umem.c; the depot moved to mutex lists (9640329). umem.c:2096-2124 keeps two helpers with zero callers. Comment describes a design that no longer exists in the file. Delete the block or mark UNUSED like umem.c:2956 does |
+| 558-562 | 3 | "Each list is protected by its own mutex for simple, correct locking. The depot is a cold path" | "simple, correct" is confidence. Keep "ml_lock protects ml_*" only |
+| 565-569 | 6 | ml_* field comments | OK |
+| 610-613 | 1 | cache_mag_reloads "total magazine reloads" | Never incremented anywhere in the tree (only read: umem.c:4765, umem_profile.c:314, umem_introspect.c:301,377; test_umem_stats.c:409 says "not yet implemented", SKIPs). Field comment should say so, or the field should go. umem_introspect's `mag_reloads` line and umem_profile's report print a permanent 0 |
+| 663-680 | 6 | per-CPU arrays from one mapping: the footprint numbers (12 KB of 18.6 KB; 29,159 VMAs from 50k destroys) | Good record; no box/sha |
+| 689-695 | 3 | rseq layer field | OK |
+| 699-702 | 3 | cache_numa_info "NUMA-aware depot info" | Only ever NULL (umem.c:760, no writer). Same class as cache_mag_reloads: dead field with a live-sounding comment |
+| 707-708 | 3 | "cache-line aligned to prevent false sharing" | Fine |
+| 747-784 | 6 | UMEM_MIN_SLAB_OBJECTS: the mechanism, the measured VMA count (65,532; 64,270 of 64,275 mprotects 4096 B), cites docs/results/2026-09-22-umem-heap-ceiling-vma.md, PORTABILITY argument with the check | Exemplary; "Measured on a small workload before/after in the commit that introduced this" (782-783) should name the commit |
+| 788-832 | 6 | UMEM_MIN_QCACHE_SLAB: "the half the first one missed" -- records that the first fix was incomplete; illumos nqcache = 0 argument | Exemplary un-softened record |
+
+## malloc_interpose.c
+
+In-scope comment lines: 479. Very high standard throughout: ownership,
+lifetime and lock rules are stated per structure and the two "the old comment
+claimed X, it was wrong" corrections (476-495, 599-620) are kept in place.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 23-36 | 1 | "recommended in docs/PTHREAD_RESEARCH.md section 3" | File does not exist (docs/ has plans/, results/, reviews/, UMEMCTL.md). Dead reference; drop it |
+| 99-122 | 6 | POINTER OWNERSHIP: four owners with LIFETIME per owner, "single classifier all three use" | Exemplary. Verified: free (717), realloc (855ff), malloc_usable_size (771) all call interpose_owner_of |
+| 131-147 | 6 | static bump buffer: PERMANENT, why (P1.1), THREAD SAFETY: which lock, and why in_dlsym needs none | Exemplary |
+| 162-165 | 6 | "never wraps, never reuses" | Good |
+| 212-230 | 6 | libc pointer tracking: INVARIANT "recorded or handed to libc_free, never live-and-unrecorded"; records the append-only exhaustion bug | Exemplary |
+| 239-266 | 6 | libc_ptr_live: box (c7i.metal-48xl), method (multi 16:64, null sd 3.75 %), numbers (3.0 -> 0.8 Mops/s vs 398/421), why the relaxed read is sound with the ordering argument | The best measurement comment in the tree. Missing only the sha |
+| 269-289 | 6 | fork participation: which locks, why re-init not unlock, why the copied data is consistent | Exemplary; umem_fork.c:150-170 agrees |
+| 309-315 | 6 | calloc_depth after fork | Good |
+| 318-321, 348-352, 384-387 | 6 | track/is/untrack contracts ("caller MUST NOT return the pointer", "WITHOUT releasing the record") | Good |
+| 334, 401 | 6 | "Count up BEFORE the pointer becomes findable" / "Count down AFTER" | Good: the ordering argument at the exact store |
+| 362-366 | 6 | fast path: "is the whole fix for the negative thread scaling" | Good |
+| 430-435 | 6 | interpose_owner_of contract | Good |
+| 473-495 | 6 | calloc_depth per-thread; "The old comment claimed __thread could not be used ... That is true of the general-dynamic model ... not true of initial-exec" | Exemplary correction-in-place |
+| 498-521 | 6 | calloc_zero_fill: GCC memset->calloc rewrite, the observed symptom (jmp calloc@plt, 100 % CPU, zero syscalls), why the pre-fix escaped | Exemplary |
+| 544-565 | 6 | constructor: "Cross-.so note: numbered constructor priorities only order constructors WITHIN a single shared object ... The numeric priority is therefore a no-op across the boundary" | Corrects the IMPORTANT paragraph above it in place. Good, though the first paragraph (548-550) still asserts "We use priority 101 to ensure this runs first" -- reads as if both are true. Tighten: fold the correction into the claim |
+| 574-577 | 6 | umem_malloc_is_interposing disables backtrace | Verified umem_stacktrace.c:147-152 |
+| 585-621 | 6 | umem_abort = 0: "THIS IS NOT 'THE SAME AS GLIBC', and the comment here used to say it was"; what P5.8 changed; "abort=1" never existed and why | Exemplary. envvar.c:280 confirms "abort" is ITEM_FLAG |
+| 625-629 | 3 | "Don't call umem_init() here - let it initialize naturally" | Duplicates 561-564. Delete one |
+| 638-657 | 6 | malloc: dlsym static path; BOOTSTRAP->READY handoff | Good |
+| 695-709 | 6 | free fast path: why one decode instead of two; which checks must stay first; why skipping pre-classification loses no safety (P5.8) | Exemplary |
+| 719-723, 729 | 6 | OWN_STATIC no-op by design; OWN_LIBC release only as handed back | Good |
+| 741-750 | 6 | unknown pointer disposition, cross-ref to why weaker than glibc | Good |
+| 760-767 | 6 | malloc_usable_size must be interposed, why | Good |
+| 778-789 | 6 | calloc: two consequences required by P1.1 | Good |
+| 806-809, 820-824 | 6 | calloc static/recursion paths | Good |
+| 844-851 | 6 | realloc ownership rule (P1.7c) | Good; verified: untrack happens in free(ptr) after memcpy (912-916) |
+| 884-891 | 6 | OWN_UNKNOWN in realloc: why not guess length | Good |
+| 935-943 | 6 | memalign bootstrap: why the pointer MUST be recorded | Good |
+| 958-963 | 6 | last-resort bootstrap alignment limit | Good |
+| 980-988 | 6 | posix_memalign: return the error, don't read errno | Good |
+| 1019-1026 | 6 | aligned_alloc must be interposed; C11 UB accepted as glibc does | Good, names the glibc comparison |
+
+One CLAIM MISMATCH (dead doc reference), no code-vs-comment conflicts.
