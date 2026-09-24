@@ -235,9 +235,11 @@ Where libumem **does not win**:
   allocator (mimalloc, usually); at 128-192 threads on x86_64 it is 8-24 %
   behind the best. **Through `LD_PRELOAD` before `a74065e` it was 2x slower
   at one thread and 500x slower at 192** -- a global mutex on every
-  `free()`, now fixed (P8.1). Objects above 2 KB bypass the per-thread cache
-  and collapse to 0.06x glibc under threads (P8.2, open). Measured with a
-  null control in
+  `free()`, now fixed (P8.1). Objects above 2 KB collapsed to 0.06x glibc
+  under threads (P8.2) -- the cause turned out to be that **every thread was
+  using the same per-CPU cache** (the hint was `pthread_self() & mask`, always
+  0), now fixed; 2560 B at 8 threads went 1.4 -> 16.4 Mops (glibc 22.8). The
+  comparison below predates both fixes. Measured with a null control in
   [`docs/results/2026-09-23-allocator-comparison.md`](docs/results/2026-09-23-allocator-comparison.md).
 - **Memory overhead.** Measured 2026-09-23 with the repaired pair
   (RSS at the live-set peak / live bytes at that instant, plus `VmHWM`):
@@ -600,11 +602,20 @@ ownership checks) and is tracked as P8.3.
   metal (0.87-1.43x across sizes and thread counts, null sd 13 %) and
   **8-24 % behind the best allocator on x86_64 metal** at 128-192 threads
   (null sd 8.5 %). Mechanism not yet established (P8.4).
-- **`multi` at 1k:4k object sizes collapses under threads: 0.06-0.10x
+- **`multi` at 1k:4k object sizes collapsed under threads: 0.06-0.10x
   glibc at 64+ threads on both metals**, p999 32-68 us, deterministic
-  (P8.2). Objects above 2048 bytes bypass the per-thread cache
-  (`umem_ptc_maxsize`) and hit the per-CPU lock with 31-round magazines. This
-  is the largest fixable gap in the allocator itself.
+  (P8.2) -- **fixed** (`ae86536`), and not for the reason first given. The
+  comparison attributed it to objects above 2048 bytes bypassing the
+  per-thread cache; the plan's own diagnostic (raise `tcache_max`) did not
+  move the cliff. The cause was the per-thread CPU hint: `pthread_self()`
+  cast to `int`, a page-aligned address, so `hint & cache_cpu_mask` was 0 for
+  every thread and the whole process shared one `cc_lock` for every
+  operation that reached the magazine layer. Solaris uses `thr_self()`, a
+  small integer; the port never had a working hint, and the per-thread cache
+  had been hiding it for every size it covers. On `c7i.2xlarge` at 8
+  threads: 2560 B 1.4 -> 16.4 Mops, 4096 B 1.5 -> 17.2, 1k:4k 10.9 -> 17.4
+  (glibc 22.8 / 21.0 / 22.8); sizes the per-thread cache serves are
+  unchanged. The metal numbers above are pre-fix and have not been re-run.
 - **`frag` (grow a live set, free half at random, repeat): 1.2-2.3x glibc
   but 20-42 % behind jemalloc/mimalloc/snmalloc/rpmalloc at 16..1024 B,**
   at every thread count including one, and **under sustained load the
