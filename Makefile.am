@@ -812,7 +812,8 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_heap_ceiling \
 	test/integration/test_heap_ceiling_512.sh \
 	test/integration/test_reclaim_returns.sh \
-	test/integration/test_fork_child_reclaim.sh
+	test/integration/test_fork_child_reclaim.sh \
+	test/integration/test_cpu_hint_spread
 
 # Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
 # P5.9).  Each demonstrates the exposure it closes and fails against v3.0.0 --
@@ -901,6 +902,13 @@ noinst_PROGRAMS += test/integration/test_fork_child_reclaim
 test_integration_test_fork_child_reclaim_SOURCES = test/integration/test_fork_child_reclaim.c
 test_integration_test_fork_child_reclaim_LDADD = libumem.la
 test_integration_test_fork_child_reclaim_CPPFLAGS = -I$(srcdir)
+
+# P8.2: threads must spread across per-CPU caches (the CPU hint was
+# pthread_self() & mask == 0 for every thread).
+noinst_PROGRAMS += test/integration/test_cpu_hint_spread
+test_integration_test_cpu_hint_spread_SOURCES = test/integration/test_cpu_hint_spread.c
+test_integration_test_cpu_hint_spread_LDADD = libumem.la
+test_integration_test_cpu_hint_spread_CPPFLAGS = -I$(srcdir)
 test_integration_test_heap_ceiling_SOURCES = \
 	test/integration/test_heap_ceiling.c
 test_integration_test_heap_ceiling_LDADD = libumem.la
