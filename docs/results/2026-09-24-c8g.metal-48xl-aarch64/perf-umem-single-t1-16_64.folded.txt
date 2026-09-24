@@ -1,0 +1,74 @@
+    29.34%  bench_main  bench_main             [.] td_qsort
+474 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort
+456 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add;td_compress;td_qsort;td_qsort
+199 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort;td_qsort
+179 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add;td_compress;td_qsort
+39 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort;td_qsort;td_qsort
+    21.08%  bench_main  [vdso]                 [.] 0x0000000000000518
+939 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffff8f9b1518
+    11.28%  bench_main  libc.so.6              [.] __random
+505 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;rand;__random
+     8.37%  bench_main  [vdso]                 [.] 0x0000000000000508
+386 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffff8f9b1508
+     5.52%  bench_main  bench_main             [.] td_compress
+246 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add;td_compress
+     4.45%  bench_main  bench_main             [.] td_add
+206 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add
+     3.24%  bench_main  [vdso]                 [.] 0x000000000000050c
+150 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffff8f9b150c
+     3.09%  bench_main  [vdso]                 [.] 0x00000000000004fc
+143 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffff8f9b14fc
+     2.48%  bench_main  [vdso]                 [.] 0x0000000000000528
+114 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffff8f9b1528
+     2.47%  bench_main  bench_main             [.] workload_single_thread
+114 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread
+     1.47%  bench_main  libumem.so.1.0.0       [.] _umem_alloc
+63 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;umem_alloc_wrapper;_umem_alloc
+     0.95%  bench_main  libumem.so.1.0.0       [.] _umem_free
+40 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;_umem_free
+     0.93%  bench_main  libm.so.6              [.] log
+43 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;td_add;log
+     0.91%  bench_main  libc.so.6              [.] clock_gettime@@GLIBC_2.17
+33 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;clock_gettime@@GLIBC_2.17
+     0.77%  bench_main  bench_main             [.] umem_alloc_wrapper
+23 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;umem_alloc_wrapper
+     0.60%  bench_main  libc.so.6              [.] __random_r
+28 _start;__libc_start_main@@GLIBC_2.34;__libc_start_call_main;main;bench_run_n;bench_run;workload_single_thread;rand;__random;__random_r
+     0.43%  bench_main  libc.so.6              [.] __GI___memset_generic
+     0.41%  bench_main  [vdso]                 [.] __kernel_clock_gettime
+     0.30%  bench_main  libc.so.6              [.] rand
+     0.24%  bench_main  bench_main             [.] umem_free_wrapper
+     0.15%  bench_main  [vdso]                 [.] 0x0000000000000510
+     0.13%  bench_main  [vdso]                 [.] 0x00000000000004f8
+     0.11%  bench_main  bench_main             [.] memset@plt
+     0.09%  bench_main  bench_main             [.] clock_gettime@plt
+     0.09%  bench_main  bench_main             [.] rand@plt
+     0.09%  bench_main  [vdso]                 [.] 0x00000000000004f4
+     0.09%  bench_main  bench_main             [.] log@plt
+     0.06%  bench_main  [vdso]                 [.] 0x00000000000004d0
+     0.06%  bench_main  [vdso]                 [.] 0x00000000000004ec
+     0.06%  bench_main  [vdso]                 [.] 0x000000000000052c
+     0.06%  bench_main  [vdso]                 [.] 0x0000000000000534
+     0.06%  bench_main  [vdso]                 [.] 0x00000000000004e0
+     0.06%  bench_main  [vdso]                 [.] 0x0000000000000580
+     0.04%  bench_main  bench_main             [.] umem_alloc@plt
+     0.04%  bench_main  [vdso]                 [.] 0x0000000000000540
+     0.04%  bench_main  [vdso]                 [.] 0x00000000000004d8
+     0.04%  bench_main  [vdso]                 [.] 0x0000000000000548
+     0.04%  bench_main  [vdso]                 [.] 0x0000000000000578
+     0.04%  bench_main  [vdso]                 [.] 0x000000000000057c
+     0.04%  bench_main  [vdso]                 [.] 0x00000000000004c8
+     0.04%  bench_main  [kernel.kallsyms]      [k] tmigr_handle_remote_cpu
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000500
+     0.02%  bench_main  [vdso]                 [.] 0x00000000000004e8
+     0.02%  bench_main  bench_main             [.] umem_free@plt
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000520
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000504
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000550
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000514
+     0.02%  bench_main  [vdso]                 [.] 0x000000000000053c
+     0.02%  bench_main  ld-linux-aarch64.so.1  [.] do_lookup_x
+     0.00%  numactl     [kernel.kallsyms]      [k] el0_svc
+     0.00%  perf-exec   [kernel.kallsyms]      [k] perf_event_comm_event.constprop.0
+     0.00%  numactl     [kernel.kallsyms]      [k] finish_task_switch.isra.0
+     0.00%  perf-exec   [kernel.kallsyms]      [k] perf_event_enable_on_exec

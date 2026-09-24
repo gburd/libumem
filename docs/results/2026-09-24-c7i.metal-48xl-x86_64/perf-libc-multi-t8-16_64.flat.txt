@@ -1,0 +1,11 @@
+    53.72%  bench_main  bench_main         [.] td_qsort
+    10.08%  bench_main  bench_main         [.] mt_worker_thread
+     7.90%  bench_main  [vdso]             [.] 0x0000000000000c19
+     5.14%  bench_main  bench_main         [.] td_add
+     4.09%  bench_main  bench_main         [.] td_compress
+     3.01%  bench_main  libc.so.6          [.] _int_free
+     1.85%  bench_main  libc.so.6          [.] malloc
+     1.74%  bench_main  libc.so.6          [.] cfree@GLIBC_2.2.5
+     0.73%  bench_main  libc.so.6          [.] clock_gettime@@GLIBC_2.17
+     0.69%  bench_main  libc.so.6          [.] rand_r
+     0.50%  bench_main  libc.so.6          [.] __memset_avx512_unaligned_erms

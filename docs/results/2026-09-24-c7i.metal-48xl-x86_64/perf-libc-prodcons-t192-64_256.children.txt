@@ -1,0 +1,13 @@
+    54.15%     0.00%  bench_main  bench_main            [.] libc_alloc
+    54.15%     0.00%  bench_main  [unknown]             [k] 0x4c4c4120612d2020
+    54.04%    54.01%  bench_main  bench_main            [.] ring_pop
+    40.73%    40.71%  bench_main  bench_main            [.] producer_thread
+     3.25%     0.09%  bench_main  libc.so.6             [.] __sched_yield
+     3.24%     0.02%  bench_main  [kernel.kallsyms]     [k] entry_SYSCALL_64_after_hwframe
+     3.22%     0.02%  bench_main  [kernel.kallsyms]     [k] do_syscall_64
+     2.92%     0.00%  bench_main  [kernel.kallsyms]     [k] __x64_sys_sched_yield
+     1.94%     1.89%  bench_main  [kernel.kallsyms]     [k] _raw_spin_lock
+     1.91%     0.02%  bench_main  [kernel.kallsyms]     [k] raw_spin_rq_lock_nested
+     1.63%     0.03%  bench_main  [kernel.kallsyms]     [k] do_sched_yield
+     1.35%     0.02%  bench_main  [kernel.kallsyms]     [k] schedule
+     1.33%     0.46%  bench_main  [kernel.kallsyms]     [k] __schedule

@@ -1,0 +1,2844 @@
+# libumem allocator scaling matrix
+# instance=c8g.metal-48xl arch=aarch64 vcpu=192 governor=unknown pinned=1
+# columns mirror bench CSV: ops_per_sec, latency percentiles (ns),
+# peak_rss_bytes, ops_cov (stddev/mean over 3 runs), unstable flag.
+#
+# UNITS (P2.1/P2.2 -- read before comparing to anything published
+# before 2026-09-22, which used different and partly wrong ones):
+#   total_ops           operations completed, summed over ALL threads
+#   ops_per_thread      total_ops / threads, as actually run
+#   threads             threads that RAN (may differ from requested)
+#   frag                rss_at_live_peak / live_bytes_at_peak, both
+#                       sampled at the SAME instant, at the LIVE-SET
+#                       PEAK (not at the worst ratio: maximising the
+#                       ratio finds the smallest denominator, which
+#                       once reported 505x while implied RSS was flat
+#                       at ~1.1GB).  frag_median summarises the
+#                       sampled series.  Absent for workloads with no
+#                       live set, or too few samples.  Read the PAIR
+#                       and vmhwm, never the quotient alone.
+#   ops_floor_raised    true => the per-thread budget was below the
+#                       minimum and was raised; the point ran MORE
+#                       work than -n asked for.
+date = "2026-09-24"
+instance_type = "c8g.metal-48xl"
+arch = "aarch64"
+vcpu = 192
+git_sha = "d6f04abd8f1b6366c840f3c78df51ffe5812433f"
+operations_total_per_point = 20000000
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.194379
+ops_per_sec = 6260997.75
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 36
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 30411
+lat_mean = 35
+rss_at_live_peak = 7946240
+vmhwm_bytes = 7946240
+allocated_bytes = 790035092
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.119771
+ops_per_sec = 6410726.49
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 37
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 36106
+lat_mean = 35
+rss_at_live_peak = 17354752
+vmhwm_bytes = 17354752
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.170350
+ops_per_sec = 6308450.85
+lat_min = 28
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 50634
+lat_mean = 36
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.525148
+ops_per_sec = 5673520.21
+lat_min = 31
+lat_p50 = 39
+lat_p90 = 40
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 15036
+lat_mean = 39
+rss_at_live_peak = 17371136
+vmhwm_bytes = 17371136
+allocated_bytes = 790035092
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.547860
+ops_per_sec = 5637201.40
+lat_min = 32
+lat_p50 = 40
+lat_p90 = 41
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 72264
+lat_mean = 40
+rss_at_live_peak = 17387520
+vmhwm_bytes = 17387520
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0005
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.042058
+ops_per_sec = 6574495.63
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 39
+lat_max = 14046
+lat_mean = 34
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 789998898
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.474045
+ops_per_sec = 5756977.07
+lat_min = 31
+lat_p50 = 38
+lat_p90 = 39
+lat_p99 = 40
+lat_p999 = 46
+lat_max = 6486
+lat_mean = 38
+rss_at_live_peak = 7925760
+vmhwm_bytes = 7925760
+allocated_bytes = 790035092
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.018308
+ops_per_sec = 6626228.27
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 34
+lat_p99 = 35
+lat_p999 = 45
+lat_max = 17195
+lat_mean = 33
+rss_at_live_peak = 9490432
+vmhwm_bytes = 9490432
+allocated_bytes = 790035092
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.078405
+ops_per_sec = 6496871.58
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 34
+lat_p99 = 35
+lat_p999 = 50
+lat_max = 63415
+lat_mean = 33
+rss_at_live_peak = 7925760
+vmhwm_bytes = 7925760
+allocated_bytes = 789998898
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.610874
+ops_per_sec = 5538825.38
+lat_min = 38
+lat_p50 = 47
+lat_p90 = 49
+lat_p99 = 50
+lat_p999 = 51
+lat_max = 53214
+lat_mean = 48
+rss_at_live_peak = 9506816
+vmhwm_bytes = 9506816
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.029915
+ops_per_sec = 6600844.57
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 36
+lat_p99 = 68
+lat_p999 = 113
+lat_max = 41124
+lat_mean = 36
+rss_at_live_peak = 7925760
+vmhwm_bytes = 7925760
+allocated_bytes = 790035092
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.452944
+ops_per_sec = 5792159.24
+lat_min = 31
+lat_p50 = 38
+lat_p90 = 39
+lat_p99 = 40
+lat_p999 = 41
+lat_max = 27498
+lat_mean = 38
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.143283
+ops_per_sec = 6362773.95
+lat_min = 28
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 31163
+lat_mean = 36
+rss_at_live_peak = 17350656
+vmhwm_bytes = 17350656
+allocated_bytes = 789998898
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.119042
+ops_per_sec = 6412225.64
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 37
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 22555
+lat_mean = 35
+rss_at_live_peak = 17354752
+vmhwm_bytes = 17354752
+allocated_bytes = 790035092
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0005
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.501868
+ops_per_sec = 5711236.88
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 40
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 43490
+lat_mean = 39
+rss_at_live_peak = 17387520
+vmhwm_bytes = 17387520
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0014
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.549289
+ops_per_sec = 5634931.12
+lat_min = 32
+lat_p50 = 40
+lat_p90 = 40
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 18903
+lat_mean = 40
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.041934
+ops_per_sec = 6574764.29
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 39
+lat_max = 8536
+lat_mean = 34
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.595118
+ops_per_sec = 5563099.80
+lat_min = 31
+lat_p50 = 38
+lat_p90 = 39
+lat_p99 = 40
+lat_p999 = 40
+lat_max = 48546
+lat_mean = 38
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.059924
+ops_per_sec = 6536109.04
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 34
+lat_p99 = 35
+lat_p999 = 45
+lat_max = 28119
+lat_mean = 33
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.068859
+ops_per_sec = 6517079.77
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 34
+lat_p99 = 35
+lat_p999 = 50
+lat_max = 28984
+lat_mean = 33
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 789998898
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0000
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.631995
+ops_per_sec = 5506615.05
+lat_min = 34
+lat_p50 = 42
+lat_p90 = 43
+lat_p99 = 45
+lat_p999 = 47
+lat_max = 45422
+lat_mean = 43
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "16:64"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.075415
+ops_per_sec = 6503187.32
+lat_min = 27
+lat_p50 = 35
+lat_p90 = 36
+lat_p99 = 71
+lat_p999 = 112
+lat_max = 13610
+lat_mean = 35
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 790053906
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.254666
+ops_per_sec = 6145023.06
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 36
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 15664
+lat_mean = 35
+rss_at_live_peak = 7917568
+vmhwm_bytes = 7917568
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.296414
+ops_per_sec = 6067199.44
+lat_min = 29
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 38
+lat_p999 = 38
+lat_max = 41965
+lat_mean = 36
+rss_at_live_peak = 17371136
+vmhwm_bytes = 17371136
+allocated_bytes = 3190019826
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.296094
+ops_per_sec = 6067787.20
+lat_min = 29
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 38
+lat_p999 = 38
+lat_max = 31580
+lat_mean = 36
+rss_at_live_peak = 17371136
+vmhwm_bytes = 17371136
+allocated_bytes = 3190199636
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.702141
+ops_per_sec = 5402279.73
+lat_min = 32
+lat_p50 = 40
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 43
+lat_max = 48631
+lat_mean = 40
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 3190019826
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0007
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.710188
+ops_per_sec = 5390562.67
+lat_min = 32
+lat_p50 = 40
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 43
+lat_max = 29670
+lat_mean = 40
+rss_at_live_peak = 17391616
+vmhwm_bytes = 17391616
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0023
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.089920
+ops_per_sec = 6472658.68
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 40
+lat_max = 39834
+lat_mean = 34
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 3190199636
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.114923
+ops_per_sec = 6420704.33
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 43
+lat_max = 26161
+lat_mean = 39
+rss_at_live_peak = 9486336
+vmhwm_bytes = 9486336
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.106963
+ops_per_sec = 6437154.97
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 34
+lat_p99 = 45
+lat_p999 = 49
+lat_max = 17419
+lat_mean = 33
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 3190199636
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.115149
+ops_per_sec = 6420237.64
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 35
+lat_p99 = 46
+lat_p999 = 50
+lat_max = 41268
+lat_mean = 33
+rss_at_live_peak = 9568256
+vmhwm_bytes = 9568256
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.687045
+ops_per_sec = 5424397.58
+lat_min = 34
+lat_p50 = 42
+lat_p90 = 44
+lat_p99 = 46
+lat_p999 = 49
+lat_max = 49235
+lat_mean = 43
+rss_at_live_peak = 9506816
+vmhwm_bytes = 9506816
+allocated_bytes = 3190199636
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.083988
+ops_per_sec = 6485110.43
+lat_min = 27
+lat_p50 = 35
+lat_p90 = 37
+lat_p99 = 68
+lat_p999 = 81
+lat_max = 44929
+lat_mean = 36
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 3190199636
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.277867
+ops_per_sec = 6101528.21
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 36
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 23124
+lat_mean = 35
+rss_at_live_peak = 7913472
+vmhwm_bytes = 7913472
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.284800
+ops_per_sec = 6088651.56
+lat_min = 29
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 38
+lat_p999 = 38
+lat_max = 77224
+lat_mean = 36
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 3190019826
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.268824
+ops_per_sec = 6118409.19
+lat_min = 29
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 39
+lat_p999 = 40
+lat_max = 18637
+lat_mean = 36
+rss_at_live_peak = 17350656
+vmhwm_bytes = 17350656
+allocated_bytes = 3190019826
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.647790
+ops_per_sec = 5482772.40
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 40
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 17506
+lat_mean = 39
+rss_at_live_peak = 17375232
+vmhwm_bytes = 17375232
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0014
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.689583
+ops_per_sec = 5420666.94
+lat_min = 33
+lat_p50 = 39
+lat_p90 = 40
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 30373
+lat_mean = 39
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0007
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.107908
+ops_per_sec = 6435196.90
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 42
+lat_max = 30898
+lat_mean = 34
+rss_at_live_peak = 7925760
+vmhwm_bytes = 7925760
+allocated_bytes = 3190019826
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.138810
+ops_per_sec = 6371841.92
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 43
+lat_max = 12990
+lat_mean = 39
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 3190199636
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.103608
+ops_per_sec = 6444113.26
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 34
+lat_p99 = 45
+lat_p999 = 49
+lat_max = 15678
+lat_mean = 33
+rss_at_live_peak = 9490432
+vmhwm_bytes = 9490432
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0005
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.122315
+ops_per_sec = 6405502.94
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 34
+lat_p99 = 46
+lat_p999 = 50
+lat_max = 26498
+lat_mean = 33
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 3190199636
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.673126
+ops_per_sec = 5444953.60
+lat_min = 35
+lat_p50 = 44
+lat_p90 = 46
+lat_p99 = 48
+lat_p999 = 50
+lat_max = 42622
+lat_mean = 45
+rss_at_live_peak = 9502720
+vmhwm_bytes = 9502720
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "64:256"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.090403
+ops_per_sec = 6471648.48
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 37
+lat_p99 = 68
+lat_p999 = 81
+lat_max = 14490
+lat_mean = 36
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 3190042002
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.423478
+ops_per_sec = 5842011.79
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 36
+lat_p99 = 37
+lat_p999 = 37
+lat_max = 7156
+lat_mean = 35
+rss_at_live_peak = 7913472
+vmhwm_bytes = 7913472
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.481417
+ops_per_sec = 5744786.83
+lat_min = 33
+lat_p50 = 39
+lat_p90 = 41
+lat_p99 = 41
+lat_p999 = 41
+lat_max = 44881
+lat_mean = 39
+rss_at_live_peak = 17362944
+vmhwm_bytes = 17362944
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.304868
+ops_per_sec = 6051679.52
+lat_min = 28
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 45034
+lat_mean = 35
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.749832
+ops_per_sec = 5333571.85
+lat_min = 32
+lat_p50 = 40
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 43
+lat_max = 797854
+lat_mean = 40
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0010
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.761035
+ops_per_sec = 5317685.07
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 40
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 47422
+lat_mean = 40
+rss_at_live_peak = 17375232
+vmhwm_bytes = 17375232
+allocated_bytes = 12790283442
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0022
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.224606
+ops_per_sec = 6202308.24
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 42
+lat_max = 20929
+lat_mean = 34
+rss_at_live_peak = 7913472
+vmhwm_bytes = 7913472
+allocated_bytes = 12790283442
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.306372
+ops_per_sec = 6048926.65
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 45
+lat_max = 36804
+lat_mean = 39
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 12790136658
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.211864
+ops_per_sec = 6226913.48
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 38
+lat_p99 = 48
+lat_p999 = 49
+lat_max = 5651
+lat_mean = 34
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.230346
+ops_per_sec = 6191287.63
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 36
+lat_p99 = 50
+lat_p999 = 51
+lat_max = 13850
+lat_mean = 34
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 12790136658
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.733365
+ops_per_sec = 5357097.65
+lat_min = 34
+lat_p50 = 42
+lat_p90 = 44
+lat_p99 = 45
+lat_p999 = 47
+lat_max = 39302
+lat_mean = 43
+rss_at_live_peak = 9465856
+vmhwm_bytes = 9465856
+allocated_bytes = 12790136658
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.243395
+ops_per_sec = 6166377.85
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 52
+lat_p99 = 59
+lat_p999 = 78
+lat_max = 50722
+lat_mean = 38
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 12790283442
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.380333
+ops_per_sec = 5916576.69
+lat_min = 28
+lat_p50 = 35
+lat_p90 = 36
+lat_p99 = 37
+lat_p999 = 37
+lat_max = 32676
+lat_mean = 35
+rss_at_live_peak = 7925760
+vmhwm_bytes = 7925760
+allocated_bytes = 12790283442
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.324306
+ops_per_sec = 6016293.78
+lat_min = 28
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 37
+lat_p999 = 38
+lat_max = 36729
+lat_mean = 36
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 12790283442
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.310645
+ops_per_sec = 6041118.03
+lat_min = 28
+lat_p50 = 36
+lat_p90 = 37
+lat_p99 = 38
+lat_p999 = 38
+lat_max = 16959
+lat_mean = 36
+rss_at_live_peak = 17362944
+vmhwm_bytes = 17362944
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.707562
+ops_per_sec = 5394380.12
+lat_min = 32
+lat_p50 = 40
+lat_p90 = 41
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 15015
+lat_mean = 40
+rss_at_live_peak = 17371136
+vmhwm_bytes = 17371136
+allocated_bytes = 12790136658
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0026
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.712807
+ops_per_sec = 5386759.23
+lat_min = 32
+lat_p50 = 40
+lat_p90 = 40
+lat_p99 = 41
+lat_p999 = 42
+lat_max = 32021
+lat_mean = 39
+rss_at_live_peak = 17375232
+vmhwm_bytes = 17375232
+allocated_bytes = 12790136658
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0018
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.223899
+ops_per_sec = 6203667.75
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 40
+lat_max = 23858
+lat_mean = 34
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 12790283442
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.312405
+ops_per_sec = 6037909.51
+lat_min = 31
+lat_p50 = 39
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 44
+lat_max = 19118
+lat_mean = 39
+rss_at_live_peak = 9490432
+vmhwm_bytes = 9490432
+allocated_bytes = 12790283442
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.210985
+ops_per_sec = 6228617.36
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 38
+lat_p99 = 48
+lat_p999 = 50
+lat_max = 29917
+lat_mean = 34
+rss_at_live_peak = 9482240
+vmhwm_bytes = 9482240
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.211590
+ops_per_sec = 6227445.66
+lat_min = 26
+lat_p50 = 33
+lat_p90 = 35
+lat_p99 = 50
+lat_p999 = 51
+lat_max = 44884
+lat_mean = 34
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 12790136658
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.788512
+ops_per_sec = 5279118.14
+lat_min = 34
+lat_p50 = 42
+lat_p90 = 43
+lat_p99 = 44
+lat_p999 = 46
+lat_max = 49913
+lat_mean = 43
+rss_at_live_peak = 9465856
+vmhwm_bytes = 9465856
+allocated_bytes = 12791233940
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "256:1024"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.266968
+ops_per_sec = 6121884.04
+lat_min = 27
+lat_p50 = 35
+lat_p90 = 52
+lat_p99 = 59
+lat_p999 = 75
+lat_max = 37445
+lat_mean = 38
+rss_at_live_peak = 9490432
+vmhwm_bytes = 9490432
+allocated_bytes = 12790136658
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0005
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.942374
+ops_per_sec = 5073085.47
+lat_min = 30
+lat_p50 = 50
+lat_p90 = 56
+lat_p99 = 61
+lat_p999 = 64
+lat_max = 50075
+lat_mean = 51
+rss_at_live_peak = 7913472
+vmhwm_bytes = 7913472
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.166140
+ops_per_sec = 4800606.73
+lat_min = 29
+lat_p50 = 61
+lat_p90 = 65
+lat_p99 = 68
+lat_p999 = 72
+lat_max = 765390
+lat_mean = 54
+rss_at_live_peak = 17350656
+vmhwm_bytes = 17350656
+allocated_bytes = 51194875796
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.187344
+ops_per_sec = 4776297.88
+lat_min = 29
+lat_p50 = 60
+lat_p90 = 65
+lat_p99 = 67
+lat_p999 = 69
+lat_max = 47203
+lat_mean = 54
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.516951
+ops_per_sec = 4427765.67
+lat_min = 32
+lat_p50 = 64
+lat_p90 = 67
+lat_p99 = 69
+lat_p999 = 72
+lat_max = 35209
+lat_mean = 57
+rss_at_live_peak = 17375232
+vmhwm_bytes = 17375232
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.530323
+ops_per_sec = 4414696.32
+lat_min = 32
+lat_p50 = 64
+lat_p90 = 67
+lat_p99 = 71
+lat_p999 = 73
+lat_max = 22841
+lat_mean = 58
+rss_at_live_peak = 17387520
+vmhwm_bytes = 17387520
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.728912
+ops_per_sec = 5363494.98
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 39
+lat_max = 18085
+lat_mean = 34
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.803087
+ops_per_sec = 5258886.11
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 45
+lat_max = 35166
+lat_mean = 39
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.750030
+ops_per_sec = 5333290.90
+lat_min = 28
+lat_p50 = 37
+lat_p90 = 43
+lat_p99 = 47
+lat_p999 = 66
+lat_max = 38394
+lat_mean = 38
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.575868
+ops_per_sec = 5593047.42
+lat_min = 26
+lat_p50 = 34
+lat_p90 = 49
+lat_p99 = 51
+lat_p999 = 52
+lat_max = 15142
+lat_mean = 37
+rss_at_live_peak = 9490432
+vmhwm_bytes = 9490432
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.278984
+ops_per_sec = 4674006.51
+lat_min = 34
+lat_p50 = 42
+lat_p90 = 44
+lat_p99 = 45
+lat_p999 = 47
+lat_max = 52131
+lat_mean = 43
+rss_at_live_peak = 9502720
+vmhwm_bytes = 9502720
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 1
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.798728
+ops_per_sec = 5264919.65
+lat_min = 28
+lat_p50 = 50
+lat_p90 = 52
+lat_p99 = 55
+lat_p999 = 61
+lat_max = 16640
+lat_mean = 48
+rss_at_live_peak = 7913472
+vmhwm_bytes = 7913472
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "libc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.979827
+ops_per_sec = 5025343.54
+lat_min = 31
+lat_p50 = 51
+lat_p90 = 57
+lat_p99 = 72
+lat_p999 = 90
+lat_max = 26077
+lat_mean = 53
+rss_at_live_peak = 7921664
+vmhwm_bytes = 7921664
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.207305
+ops_per_sec = 4753636.34
+lat_min = 29
+lat_p50 = 61
+lat_p90 = 66
+lat_p99 = 70
+lat_p999 = 73
+lat_max = 744351
+lat_mean = 55
+rss_at_live_peak = 17358848
+vmhwm_bytes = 17358848
+allocated_bytes = 51194875796
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.185370
+ops_per_sec = 4778549.62
+lat_min = 28
+lat_p50 = 60
+lat_p90 = 64
+lat_p99 = 67
+lat_p999 = 69
+lat_max = 42191
+lat_mean = 54
+rss_at_live_peak = 17362944
+vmhwm_bytes = 17362944
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0003
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.519002
+ops_per_sec = 4425756.35
+lat_min = 32
+lat_p50 = 64
+lat_p90 = 68
+lat_p99 = 71
+lat_p999 = 82
+lat_max = 810717
+lat_mean = 57
+rss_at_live_peak = 17371136
+vmhwm_bytes = 17371136
+allocated_bytes = 51194875796
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0002
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload@null"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.536697
+ops_per_sec = 4408493.52
+lat_min = 32
+lat_p50 = 63
+lat_p90 = 67
+lat_p99 = 70
+lat_p999 = 73
+lat_max = 37119
+lat_mean = 58
+rss_at_live_peak = 17338368
+vmhwm_bytes = 17338368
+allocated_bytes = 51194875796
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0000
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "jemalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.735620
+ops_per_sec = 5353863.18
+lat_min = 27
+lat_p50 = 34
+lat_p90 = 35
+lat_p99 = 36
+lat_p999 = 39
+lat_max = 33300
+lat_mean = 34
+rss_at_live_peak = 7917568
+vmhwm_bytes = 7917568
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "tcmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.799337
+ops_per_sec = 5264076.17
+lat_min = 32
+lat_p50 = 39
+lat_p90 = 41
+lat_p99 = 42
+lat_p999 = 43
+lat_max = 27543
+lat_mean = 39
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "mimalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.769434
+ops_per_sec = 5305835.69
+lat_min = 29
+lat_p50 = 37
+lat_p90 = 45
+lat_p99 = 52
+lat_p999 = 67
+lat_max = 37436
+lat_mean = 39
+rss_at_live_peak = 9494528
+vmhwm_bytes = 9494528
+allocated_bytes = 51186888018
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0004
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "snmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.570948
+ops_per_sec = 5600754.35
+lat_min = 26
+lat_p50 = 34
+lat_p90 = 49
+lat_p99 = 51
+lat_p999 = 52
+lat_max = 6190
+lat_mean = 37
+rss_at_live_peak = 9498624
+vmhwm_bytes = 9498624
+allocated_bytes = 51194875796
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "scudo"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 4.263173
+ops_per_sec = 4691341.84
+lat_min = 35
+lat_p50 = 42
+lat_p90 = 44
+lat_p99 = 45
+lat_p999 = 46
+lat_max = 42068
+lat_mean = 43
+rss_at_live_peak = 9474048
+vmhwm_bytes = 9474048
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "rpmalloc"
+workload = "single"
+threads_requested = 1
+threads = 1
+replicate = 2
+size = "1024:4096"
+total_ops = 20000000
+ops_per_thread = 20000000
+elapsed_sec = 3.758386
+ops_per_sec = 5321433.85
+lat_min = 29
+lat_p50 = 50
+lat_p90 = 53
+lat_p99 = 55
+lat_p999 = 61
+lat_max = 41371
+lat_mean = 48
+rss_at_live_peak = 7917568
+vmhwm_bytes = 7917568
+allocated_bytes = 51191315634
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (workload holds no live set, or too
+#       few samples to summarise -- see frag_samples)
+ops_cov = 0.0001
+runs = 3
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0

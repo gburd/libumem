@@ -1,0 +1,75 @@
+    36.35%  bench_main  bench_main             [.] td_qsort
+583 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort
+532 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort
+213 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort
+176 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort;td_qsort
+23 thread_start;start_thread;mt_worker_thread;td_add;td_compress;td_qsort;td_qsort;td_qsort;td_qsort;td_qsort
+    21.51%  bench_main  [vdso]                 [.] 0x0000000000000518
+910 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa3658518
+     8.90%  bench_main  [vdso]                 [.] 0x0000000000000508
+373 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa3658508
+     5.48%  bench_main  bench_main             [.] mt_worker_thread
+240 thread_start;start_thread;mt_worker_thread
+     5.21%  bench_main  bench_main             [.] td_compress
+223 thread_start;start_thread;mt_worker_thread;td_add;td_compress
+     4.35%  bench_main  bench_main             [.] td_add
+184 thread_start;start_thread;mt_worker_thread;td_add
+     3.69%  bench_main  [vdso]                 [.] 0x00000000000004fc
+163 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa36584fc
+     2.86%  bench_main  [vdso]                 [.] 0x000000000000050c
+125 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa365850c
+     2.29%  bench_main  [vdso]                 [.] 0x0000000000000528
+92 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17;__kernel_clock_gettime;0xffffa3658528
+     1.72%  bench_main  libc.so.6              [.] _int_free
+68 thread_start;start_thread;mt_worker_thread;cfree@GLIBC_2.17;_int_free
+     1.27%  bench_main  libc.so.6              [.] cfree@GLIBC_2.17
+55 thread_start;start_thread;mt_worker_thread;cfree@GLIBC_2.17
+     1.21%  bench_main  libc.so.6              [.] malloc
+50 thread_start;start_thread;mt_worker_thread;malloc
+     1.02%  bench_main  libc.so.6              [.] clock_gettime@@GLIBC_2.17
+37 thread_start;start_thread;mt_worker_thread;clock_gettime@@GLIBC_2.17
+     0.77%  bench_main  libm.so.6              [.] log
+34 thread_start;start_thread;mt_worker_thread;td_add;log
+     0.52%  bench_main  [vdso]                 [.] __kernel_clock_gettime
+     0.39%  bench_main  libc.so.6              [.] rand_r
+     0.34%  bench_main  libc.so.6              [.] __GI___memset_generic
+     0.27%  bench_main  bench_main             [.] clock_gettime@plt
+     0.14%  bench_main  [vdso]                 [.] 0x000000000000052c
+     0.11%  bench_main  [vdso]                 [.] 0x00000000000004e8
+     0.11%  bench_main  bench_main             [.] rand_r@plt
+     0.11%  bench_main  [vdso]                 [.] 0x0000000000000550
+     0.10%  bench_main  bench_main             [.] log@plt
+     0.09%  bench_main  [vdso]                 [.] 0x00000000000004f4
+     0.09%  bench_main  [vdso]                 [.] 0x0000000000000578
+     0.09%  bench_main  [vdso]                 [.] 0x000000000000053c
+     0.07%  bench_main  [vdso]                 [.] 0x0000000000000540
+     0.07%  bench_main  [vdso]                 [.] 0x0000000000000510
+     0.07%  bench_main  [vdso]                 [.] 0x0000000000000514
+     0.07%  bench_main  [vdso]                 [.] 0x000000000000057c
+     0.07%  bench_main  bench_main             [.] memset@plt
+     0.07%  bench_main  [vdso]                 [.] 0x00000000000004e0
+     0.07%  bench_main  bench_main             [.] libc_alloc
+     0.05%  bench_main  [vdso]                 [.] 0x0000000000000504
+     0.05%  bench_main  bench_main             [.] libc_free
+     0.05%  bench_main  [vdso]                 [.] 0x0000000000000580
+     0.05%  bench_main  bench_main             [.] free@plt
+     0.05%  bench_main  [vdso]                 [.] 0x00000000000004f8
+     0.05%  bench_main  [vdso]                 [.] 0x0000000000000534
+     0.05%  bench_main  [vdso]                 [.] 0x00000000000004d0
+     0.05%  bench_main  bench_main             [.] malloc@plt
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000500
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000548
+     0.02%  bench_main  [vdso]                 [.] 0x00000000000004c8
+     0.02%  bench_main  [vdso]                 [.] 0x00000000000004f0
+     0.02%  bench_main  [vdso]                 [.] 0x00000000000004d4
+     0.02%  bench_main  [vdso]                 [.] 0x0000000000000524
+     0.01%  bench_main  ld-linux-aarch64.so.1  [.] _dl_relocate_object_no_relro
+     0.00%  bench_main  [kernel.kallsyms]      [k] perf_iterate_ctx
+     0.00%  bench_main  [kernel.kallsyms]      [k] arch_local_irq_restore
+     0.00%  bench_main  [kernel.kallsyms]      [k] do_futex
+     0.00%  numactl     numactl                [.] 0x000000000001065c
+     0.00%  perf-exec   [kernel.kallsyms]      [k] perf_event_exec
+     0.00%  bench_main  [kernel.kallsyms]      [k] finish_task_switch.isra.0
+     0.00%  bench_main  [kernel.kallsyms]      [k] calculate_sigpending
+     0.00%  numactl     [kernel.kallsyms]      [k] finish_task_switch.isra.0
+     0.00%  perf-exec   [kernel.kallsyms]      [k] perf_event_enable_on_exec

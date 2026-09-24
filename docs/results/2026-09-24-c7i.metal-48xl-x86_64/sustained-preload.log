@@ -1,0 +1,30 @@
+sustained load: allocators=umem-preload umem-preload@null threads=192
+  windows=4 x ~20s each, interleaved; warmups=1
+  sha=d6f04abd8f1b6366c840f3c78df51ffe5812433f (env) -> docs/results/2026-09-24-c7i.metal-48xl-x86_64/sustained-preload.toml
+  calibrate umem-preload prodcons: would need total_n=19200000 (~20s/window, from 11.7647s @ 2000000; floor 19200000)
+  calibrate umem-preload prodcons: would need total_n=19200000 (~20s/window, from 11.392s @ 2000000; floor 19200000)
+  -> prodcons: ALL allocators get total_n=19200000 (matched work; windows will
+     differ in duration, which is the honest result)
+  calibrate umem-preload frag: would need total_n=19200000 (~20s/window, from 7.438s @ 2000000; floor 19200000)
+  calibrate umem-preload frag: would need total_n=19200000 (~20s/window, from 7.46395s @ 2000000; floor 19200000)
+  -> frag: ALL allocators get total_n=19200000 (matched work; windows will
+     differ in duration, which is the honest result)
+  warmup window 0: umem-preload (discarded)
+  warmup window 0: umem-preload@null (discarded)
+  umem-preload prodcons-sustained w=0  ops=38400000  mops=   1.602 p99=    48943 p999=    183086 rss@peak=193519616
+  umem-preload frag-sustained     w=0  ops=36540723  mops=   5.021 p99=   424004 p999=    718906 rss@peak=390561792
+  umem-preload@null prodcons-sustained w=0  ops=38400000  mops=   1.576 p99=    50697 p999=    184539 rss@peak=191426560
+  umem-preload@null frag-sustained     w=0  ops=36540723  mops=   4.920 p99=   443895 p999=    839114 rss@peak=389271552
+  umem-preload prodcons-sustained w=1  ops=38400000  mops=   1.866 p99=    53685 p999=    239280 rss@peak=166363136
+  umem-preload frag-sustained     w=1  ops=36540723  mops=   5.059 p99=   435501 p999=    818284 rss@peak=389292032
+  umem-preload@null prodcons-sustained w=1  ops=38400000  mops=   1.680 p99=    41136 p999=    161591 rss@peak=191582208
+  umem-preload@null frag-sustained     w=1  ops=36540723  mops=   5.025 p99=   433996 p999=    778685 rss@peak=387055616
+  umem-preload prodcons-sustained w=2  ops=38400000  mops=   1.603 p99=    61527 p999=    233238 rss@peak=190742528
+  umem-preload frag-sustained     w=2  ops=36540723  mops=   4.827 p99=   438185 p999=    791564 rss@peak=390115328
+  umem-preload@null prodcons-sustained w=2  ops=38400000  mops=   1.550 p99=    54139 p999=    205823 rss@peak=193925120
+  umem-preload@null frag-sustained     w=2  ops=36540723  mops=   5.008 p99=   419362 p999=    694287 rss@peak=398446592
+  umem-preload prodcons-sustained w=3  ops=38400000  mops=   1.646 p99=    54433 p999=    212342 rss@peak=189251584
+  umem-preload frag-sustained     w=3  ops=36540723  mops=   4.824 p99=   453868 p999=    878101 rss@peak=390819840
+  umem-preload@null prodcons-sustained w=3  ops=38400000  mops=   1.638 p99=    54184 p999=    211377 rss@peak=190775296
+  umem-preload@null frag-sustained     w=3  ops=36540723  mops=   4.933 p99=   449298 p999=    822969 rss@peak=389513216
+done: umem-preload umem-preload@null -> docs/results/2026-09-24-c7i.metal-48xl-x86_64/sustained-preload.toml

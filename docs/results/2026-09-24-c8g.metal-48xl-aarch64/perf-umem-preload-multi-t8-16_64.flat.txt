@@ -1,0 +1,17 @@
+    31.09%  bench_main  bench_main               [.] td_qsort
+    19.10%  bench_main  [vdso]                   [.] 0x0000000000000518
+     8.75%  bench_main  [vdso]                   [.] 0x0000000000000508
+     5.99%  bench_main  bench_main               [.] mt_worker_thread
+     4.99%  bench_main  bench_main               [.] td_compress
+     4.78%  bench_main  bench_main               [.] td_add
+     3.53%  bench_main  [vdso]                   [.] 0x00000000000004fc
+     3.08%  bench_main  [vdso]                   [.] 0x000000000000050c
+     2.74%  bench_main  [vdso]                   [.] 0x0000000000000528
+     1.91%  bench_main  libumem.so.1.0.0         [.] _umem_free
+     1.89%  bench_main  libumem.so.1.0.0         [.] process_free
+     1.58%  bench_main  libumem.so.1.0.0         [.] _umem_alloc
+     1.43%  bench_main  libm.so.6                [.] log
+     1.25%  bench_main  libumem.so.1.0.0         [.] umem_malloc
+     1.05%  bench_main  libumem.so.1.0.0         [.] umem_may_own
+     0.71%  bench_main  libumem.so.1.0.0         [.] is_bootstrap_pointer
+     0.66%  bench_main  libumem_malloc.so.1.0.0  [.] free

@@ -1,0 +1,28 @@
+== installing packaged allocators (jemalloc, tcmalloc/gperftools, clang+compiler-rt for scudo) ==
+scudo: /usr/lib64/clang/15.0.7/lib/linux/libclang_rt.scudo_standalone-x86_64.so -> /usr/local/lib/libscudo_standalone.so
+== mimalloc (from source) ==
+Cloning into 'mimalloc-src'...
+mimalloc: mimalloc-src/out/release/libmimalloc.so.3.5 -> /usr/local/lib/libmimalloc.so
+== snmalloc (from source) ==
+Cloning into 'snmalloc-src'...
+snmalloc: -> /usr/local/lib/libsnmallocshim.so
+== rpmalloc (from source) ==
+Cloning into 'rpmalloc-src'...
+rpmalloc: rpmalloc-src/bin/linux/release/x86-64/librpmalloc.so -> /usr/local/lib/librpmalloc.so
+== done; ldconfig cache: ==
+	libtcmalloc_minimal_debug.so.4 (libc6,x86-64) => /lib64/libtcmalloc_minimal_debug.so.4
+	libtcmalloc_minimal_debug.so (libc6,x86-64) => /lib64/libtcmalloc_minimal_debug.so
+	libtcmalloc_minimal.so.4 (libc6,x86-64) => /lib64/libtcmalloc_minimal.so.4
+	libtcmalloc_minimal.so (libc6,x86-64) => /lib64/libtcmalloc_minimal.so
+	libtcmalloc_debug.so.4 (libc6,x86-64) => /lib64/libtcmalloc_debug.so.4
+	libtcmalloc_debug.so (libc6,x86-64) => /lib64/libtcmalloc_debug.so
+	libtcmalloc_and_profiler.so.4 (libc6,x86-64) => /lib64/libtcmalloc_and_profiler.so.4
+	libtcmalloc_and_profiler.so (libc6,x86-64) => /lib64/libtcmalloc_and_profiler.so
+	libtcmalloc.so.4 (libc6,x86-64) => /lib64/libtcmalloc.so.4
+	libtcmalloc.so (libc6,x86-64) => /lib64/libtcmalloc.so
+	libsnmallocshim.so (libc6,x86-64) => /usr/local/lib/libsnmallocshim.so
+	librpmalloc.so (libc6,x86-64) => /usr/local/lib/librpmalloc.so
+	libmimalloc.so.3 (libc6,x86-64) => /usr/local/lib/libmimalloc.so.3
+	libjemalloc.so.2 (libc6,x86-64) => /lib64/libjemalloc.so.2
+	libjemalloc.so (libc6,x86-64) => /lib64/libjemalloc.so
+	libclang_rt.scudo_standalone-x86_64.so (libc6,x86-64) => /usr/local/lib/libclang_rt.scudo_standalone-x86_64.so

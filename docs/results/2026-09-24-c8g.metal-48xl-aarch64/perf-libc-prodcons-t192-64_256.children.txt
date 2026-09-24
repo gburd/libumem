@@ -1,0 +1,9 @@
+   100.00%     0.00%  bench_main  libc.so.6              [.] start_thread
+   100.00%     0.00%  bench_main  libc.so.6              [.] thread_start
+    50.74%    50.48%  bench_main  bench_main             [.] producer_thread
+    49.25%     5.65%  bench_main  bench_main             [.] consumer_thread
+    42.12%    42.12%  bench_main  bench_main             [.] ring_pop
+     1.22%     0.17%  bench_main  libc.so.6              [.] __sched_yield
+     1.08%     0.00%  bench_main  [kernel.kallsyms]      [k] el0t_64_sync
+     1.08%     0.00%  bench_main  [kernel.kallsyms]      [k] el0t_64_sync_handler
+     1.08%     0.20%  bench_main  [kernel.kallsyms]      [k] el0_svc

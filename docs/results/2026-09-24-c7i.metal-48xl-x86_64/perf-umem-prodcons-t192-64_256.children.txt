@@ -1,0 +1,6 @@
+    55.44%     0.01%  bench_main  bench_main            [.] umem_alloc_wrapper
+    55.43%     0.00%  bench_main  [unknown]             [k] 0x2d20200000000063
+    54.76%    54.72%  bench_main  bench_main            [.] ring_pop
+    39.96%    39.93%  bench_main  bench_main            [.] producer_thread
+     3.58%     0.00%  bench_main  [unknown]             [k] 0000000000000000
+     2.81%     2.81%  bench_main  libc.so.6             [.] pthread_mutex_trylock@@GLIBC_2.34

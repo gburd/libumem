@@ -1,0 +1,10 @@
+matrix: instance=c7i.metal-48xl arch=x86_64 vcpu=192 governor=performance
+  allocators: libc umem umem-preload
+  threads:    192
+  sizes:      1024:4096
+  runs=1 warmups=1 replicates=1 pin=1 ops=19200000
+  -> /home/ec2-user/libumem-iso-cmp2-d6f04abd8f1b/docs/results/2026-09-24-c7i.metal-48xl-x86_64/ceiling/matrix.toml
+  libc frag 1024:4096 t=192 rep=1  16:42:12
+  umem frag 1024:4096 t=192 rep=1  16:42:25
+  umem-preload frag 1024:4096 t=192 rep=1  16:42:41
+matrix complete -> /home/ec2-user/libumem-iso-cmp2-d6f04abd8f1b/docs/results/2026-09-24-c7i.metal-48xl-x86_64/ceiling/matrix.toml

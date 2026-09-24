@@ -1,0 +1,4 @@
+[ perf record: Woken up 185 times to write data ]
+Warning:
+7 out of order events recorded.
+[ perf record: Captured and wrote 161.896 MB /tmp/perf-libc-prodcons-t192-64_256.data (2268367 samples) ]

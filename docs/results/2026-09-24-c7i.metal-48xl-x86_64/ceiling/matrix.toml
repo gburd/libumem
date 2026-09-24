@@ -1,0 +1,127 @@
+# libumem allocator scaling matrix
+# instance=c7i.metal-48xl arch=x86_64 vcpu=192 governor=performance pinned=1
+# columns mirror bench CSV: ops_per_sec, latency percentiles (ns),
+# peak_rss_bytes, ops_cov (stddev/mean over 1 runs), unstable flag.
+#
+# UNITS (P2.1/P2.2 -- read before comparing to anything published
+# before 2026-09-22, which used different and partly wrong ones):
+#   total_ops           operations completed, summed over ALL threads
+#   ops_per_thread      total_ops / threads, as actually run
+#   threads             threads that RAN (may differ from requested)
+#   frag                rss_at_live_peak / live_bytes_at_peak, both
+#                       sampled at the SAME instant, at the LIVE-SET
+#                       PEAK (not at the worst ratio: maximising the
+#                       ratio finds the smallest denominator, which
+#                       once reported 505x while implied RSS was flat
+#                       at ~1.1GB).  frag_median summarises the
+#                       sampled series.  Absent for workloads with no
+#                       live set, or too few samples.  Read the PAIR
+#                       and vmhwm, never the quotient alone.
+#   ops_floor_raised    true => the per-thread budget was below the
+#                       minimum and was raised; the point ran MORE
+#                       work than -n asked for.
+date = "2026-09-24"
+instance_type = "c7i.metal-48xl"
+arch = "x86_64"
+vcpu = 192
+git_sha = "d6f04abd8f1b6366c840f3c78df51ffe5812433f"
+operations_total_per_point = 19200000
+
+[[point]]
+allocator = "libc"
+workload = "frag"
+threads_requested = 192
+threads = 192
+replicate = 1
+size = "1024:4096"
+total_ops = 36540723
+ops_per_thread = 190316
+elapsed_sec = 2.719108
+ops_per_sec = 13438495.09
+lat_min = 25
+lat_p50 = 596
+lat_p90 = 7170
+lat_p99 = 19617
+lat_p999 = 46514
+lat_max = 300039770
+lat_mean = 3144
+rss_at_live_peak = 11707392000
+vmhwm_bytes = 11896938496
+allocated_bytes = 49154588940
+live_bytes_at_peak = 8895120128
+live_bytes_median = 8138258724
+frag_samples = 1431
+frag = 1.3162
+frag_median = 1.3853
+frag_definition = "rss_at_live_peak / live_bytes_at_peak, sampled together at the live-set peak; frag_median is the median of the sampled rss/live series. Report the PAIR (rss_at_live_peak, live_bytes_at_peak) and vmhwm, not the quotient alone."
+ops_cov = 0.0000
+runs = 1
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem"
+workload = "frag"
+threads_requested = 192
+threads = 192
+replicate = 1
+size = "1024:4096"
+total_ops = 36540723
+ops_per_thread = 190316
+elapsed_sec = 4.047017
+ops_per_sec = 9029050.92
+lat_min = 20
+lat_p50 = 358
+lat_p90 = 6038
+lat_p99 = 185814
+lat_p999 = 633421
+lat_max = 107520950
+lat_mean = 10579
+rss_at_live_peak = 11751272448
+vmhwm_bytes = 11846856704
+allocated_bytes = 49154588940
+live_bytes_at_peak = 10370644565
+live_bytes_median = 9174882161
+frag_samples = 1431
+frag = 1.1331
+frag_median = 1.2950
+frag_definition = "rss_at_live_peak / live_bytes_at_peak, sampled together at the live-set peak; frag_median is the median of the sampled rss/live series. Report the PAIR (rss_at_live_peak, live_bytes_at_peak) and vmhwm, not the quotient alone."
+ops_cov = 0.0000
+runs = 1
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0
+
+[[point]]
+allocator = "umem-preload"
+workload = "frag"
+threads_requested = 192
+threads = 192
+replicate = 1
+size = "1024:4096"
+total_ops = 36540723
+ops_per_thread = 190316
+elapsed_sec = 2.949299
+ops_per_sec = 12389628.21
+lat_min = 21
+lat_p50 = 230
+lat_p90 = 2202
+lat_p99 = 11103
+lat_p999 = 22553
+lat_max = 926005428
+lat_mean = 4556
+rss_at_live_peak = 11317207040
+vmhwm_bytes = 11237195776
+allocated_bytes = 49154588940
+live_bytes_at_peak = 9761800240
+live_bytes_median = 7776833291
+frag_samples = 1431
+frag = 1.1593
+frag_median = 1.4541
+frag_definition = "rss_at_live_peak / live_bytes_at_peak, sampled together at the live-set peak; frag_median is the median of the sampled rss/live series. Report the PAIR (rss_at_live_peak, live_bytes_at_peak) and vmhwm, not the quotient alone."
+ops_cov = 0.0000
+runs = 1
+unstable = false
+ops_floor_raised = false
+alloc_failures = 0

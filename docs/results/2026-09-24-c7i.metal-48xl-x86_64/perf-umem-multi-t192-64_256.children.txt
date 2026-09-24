@@ -1,0 +1,17 @@
+    27.02%    25.91%  bench_main  bench_main            [.] mt_worker_thread
+    22.68%    22.66%  bench_main  bench_main            [.] td_qsort
+    22.13%     1.28%  bench_main  libc.so.6             [.] clock_gettime@@GLIBC_2.17
+     8.58%     8.58%  bench_main  [vdso]                [.] 0x0000000000000c19
+     8.54%     0.00%  bench_main  [vdso]                [.] 0x00007f31070c6c1c
+     6.77%     0.00%  bench_main  [unknown]             [.] 0000000000000000
+     6.25%     6.24%  bench_main  libc.so.6             [.] pthread_mutex_trylock@@GLIBC_2.34
+     4.50%     4.14%  bench_main  bench_main            [.] td_add
+     4.43%     0.00%  bench_main  [vdso]                [.] 0x00007f31070c6bba
+     4.43%     4.43%  bench_main  [vdso]                [.] 0x0000000000000bb8
+     3.90%     3.89%  bench_main  bench_main            [.] td_compress
+     2.20%     2.04%  bench_main  libumem.so.1.0.0      [.] _umem_free
+     2.19%     2.07%  bench_main  libumem.so.1.0.0      [.] _umem_alloc
+     2.07%     1.28%  bench_main  bench_main            [.] umem_alloc_wrapper
+     1.24%     1.07%  bench_main  libc.so.6             [.] __memset_avx512_unaligned_erms
+     1.20%     0.00%  bench_main  [unknown]             [.] 0xdeadbeefcafebabe
+     1.06%     0.39%  bench_main  [vdso]                [.] __vdso_clock_gettime

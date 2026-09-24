@@ -1,0 +1,143 @@
+    29.82%  bench_main  bench_main               [.] td_qsort
+2060 td_qsort
+    19.06%  bench_main  bench_main               [.] mt_worker_thread
+366 0x4747474747474747;mt_worker_thread
+277 0x4646464646464646;mt_worker_thread
+213 0x4343434343434343;mt_worker_thread
+146 0x4848484848484848;mt_worker_thread
+122 0x4242424242424242;mt_worker_thread
+101 0x4444444444444444;mt_worker_thread
+    13.91%  bench_main  bench_main               [.] td_add
+934 td_add
+     5.67%  bench_main  libumem.so.1.0.0         [.] is_bootstrap_pointer
+83 0x4848484848484848;is_bootstrap_pointer
+67 0x4444444444444444;is_bootstrap_pointer
+66 0x4545454545454545;is_bootstrap_pointer
+45 0x4646464646464646;is_bootstrap_pointer
+     5.42%  bench_main  [vdso]                   [.] 0x0000000000000c19
+57 0x4242424242424242;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+49 0x4747474747474747;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+49 0x4646464646464646;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+47 0x4343434343434343;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+46 0x4848484848484848;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+44 0x4949494949494949;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+42 0x4444444444444444;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+41 0x4545454545454545;clock_gettime@@GLIBC_2.17;0x7fad6b370c1c
+     2.93%  bench_main  bench_main               [.] td_compress
+202 td_compress
+     2.74%  bench_main  libumem.so.1.0.0         [.] process_free
+124 process_free
+     1.96%  bench_main  libumem.so.1.0.0         [.] _umem_free
+     1.23%  bench_main  libumem_malloc.so.1.0.0  [.] free
+     1.03%  bench_main  libumem.so.1.0.0         [.] umem_may_own
+     1.02%  bench_main  libumem.so.1.0.0         [.] umem_malloc
+     0.92%  bench_main  [vdso]                   [.] 0x0000000000000bb4
+39 0x4646464646464646;clock_gettime@@GLIBC_2.17;0x7fad6b370bb6
+     0.76%  bench_main  libumem.so.1.0.0         [.] _umem_alloc
+41 _umem_alloc
+     0.57%  bench_main  libm.so.6                [.] 0x0000000000069877
+39 0x7fad6a58e880
+     0.54%  bench_main  libumem_malloc.so.1.0.0  [.] is_libc_pointer
+     0.54%  bench_main  libumem.so.1.0.0         [.] umem_malloc_free
+     0.54%  bench_main  libc.so.6                [.] clock_gettime@@GLIBC_2.17
+     0.52%  bench_main  libc.so.6                [.] rand_r
+     0.45%  bench_main  libc.so.6                [.] __memset_avx512_unaligned_erms
+     0.38%  bench_main  libm.so.6                [.] 0x00000000000698b4
+     0.36%  bench_main  libm.so.6                [.] 0x0000000000069890
+     0.36%  bench_main  libm.so.6                [.] 0x00000000000698b9
+     0.35%  bench_main  [vdso]                   [.] 0x0000000000000c44
+     0.34%  bench_main  [vdso]                   [.] 0x0000000000000c25
+     0.33%  bench_main  [vdso]                   [.] 0x0000000000000c4b
+     0.32%  bench_main  libm.so.6                [.] 0x000000000006986b
+     0.32%  bench_main  libm.so.6                [.] 0x0000000000069888
+     0.32%  bench_main  libm.so.6                [.] 0x00000000000698a6
+     0.28%  bench_main  [vdso]                   [.] 0x0000000000000bb6
+     0.28%  bench_main  [vdso]                   [.] 0x0000000000000bdf
+     0.26%  bench_main  libm.so.6                [.] 0x000000000006988c
+     0.26%  bench_main  [vdso]                   [.] 0x0000000000000c06
+     0.26%  bench_main  libm.so.6                [.] 0x0000000000069871
+     0.23%  bench_main  [vdso]                   [.] 0x0000000000000c8f
+     0.23%  bench_main  libc.so.6                [.] __errno_location
+     0.23%  bench_main  libumem.so.1.0.0         [.] is_bootstrap_pointer@plt
+     0.23%  bench_main  libm.so.6                [.] 0x000000000006984a
+     0.20%  bench_main  libm.so.6                [.] log
+     0.20%  bench_main  [vdso]                   [.] 0x0000000000000bf9
+     0.20%  bench_main  [vdso]                   [.] 0x0000000000000bbd
+     0.19%  bench_main  bench_main               [.] clock_gettime@plt
+     0.19%  bench_main  [vdso]                   [.] __vdso_clock_gettime
+     0.19%  bench_main  [vdso]                   [.] 0x0000000000000c1c
+     0.19%  bench_main  libumem.so.1.0.0         [.] __errno_location@plt
+     0.16%  bench_main  [vdso]                   [.] 0x0000000000000c60
+     0.15%  bench_main  bench_main               [.] rand_r@plt
+     0.15%  bench_main  bench_main               [.] free@plt
+     0.13%  bench_main  libm.so.6                [.] 0x00000000000697e9
+     0.13%  bench_main  [vdso]                   [.] 0x0000000000000c32
+     0.13%  bench_main  libm.so.6                [.] 0x0000000000069884
+     0.13%  bench_main  libm.so.6                [.] 0x00000000000698bd
+     0.13%  bench_main  [vdso]                   [.] 0x0000000000000c81
+     0.13%  bench_main  libumem_malloc.so.1.0.0  [.] is_bootstrap_pointer@plt
+     0.12%  bench_main  bench_main               [.] malloc@plt
+     0.12%  bench_main  [vdso]                   [.] 0x0000000000000c48
+     0.12%  bench_main  [vdso]                   [.] 0x0000000000000bbc
+     0.12%  bench_main  [vdso]                   [.] 0x0000000000000c8a
+     0.10%  bench_main  libumem.so.1.0.0         [.] process_free@plt
+     0.10%  bench_main  libm.so.6                [.] 0x000000000006983a
+     0.10%  bench_main  bench_main               [.] log@plt
+     0.10%  bench_main  libumem_malloc.so.1.0.0  [.] umem_malloc_free@plt
+     0.10%  bench_main  bench_main               [.] umem_preload_free
+     0.10%  bench_main  libm.so.6                [.] 0x0000000000069880
+     0.09%  bench_main  libm.so.6                [.] 0x000000000000d2c4
+     0.09%  bench_main  libm.so.6                [.] 0x0000000000069899
+     0.09%  bench_main  [vdso]                   [.] 0x0000000000000bd1
+     0.09%  bench_main  libumem.so.1.0.0         [.] _umem_free@plt
+     0.09%  bench_main  bench_main               [.] memset@plt
+     0.07%  bench_main  libm.so.6                [.] 0x000000000006985b
+     0.07%  bench_main  libumem.so.1.0.0         [.] _umem_alloc@plt
+     0.06%  bench_main  libc.so.6                [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.06%  bench_main  libm.so.6                [.] 0x00000000000697ce
+     0.06%  bench_main  libm.so.6                [.] 0x000000000006980b
+     0.06%  bench_main  libm.so.6                [.] 0x0000000000069824
+     0.06%  bench_main  [vdso]                   [.] 0x0000000000000c36
+     0.04%  bench_main  libumem_malloc.so.1.0.0  [.] malloc
+     0.04%  bench_main  [vdso]                   [.] 0x0000000000000c22
+     0.04%  bench_main  libc.so.6                [.] __GI___pthread_mutex_unlock_usercnt
+     0.03%  bench_main  [vdso]                   [.] 0x0000000000000c03
+     0.03%  bench_main  [vdso]                   [.] 0x0000000000000bb8
+     0.01%  bench_main  [vdso]                   [.] 0x0000000000000bba
+     0.01%  bench_main  libm.so.6                [.] 0x00000000000698af
+     0.01%  bench_main  libc.so.6                [.] start_thread
+     0.01%  bench_main  bench_main               [.] umem_preload_alloc
+     0.01%  bench_main  libumem_malloc.so.1.0.0  [.] umem_malloc@plt
+     0.01%  numactl     libc.so.6                [.] __GI___pthread_mutex_unlock_usercnt
+     0.01%  bench_main  [kernel.kallsyms]        [k] perf_event_alloc
+     0.01%  bench_main  [kernel.kallsyms]        [k] __list_del_entry_valid_or_report
+     0.01%  bench_main  libumem.so.1.0.0         [.] umem_depot_alloc
+     0.01%  bench_main  libumem.so.1.0.0         [.] vmem_walk
+     0.01%  numactl     libumem.so.1.0.0         [.] umem_depot_pop_trylock
+     0.01%  numactl     libc.so.6                [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.01%  numactl     [kernel.kallsyms]        [k] smp_call_function_many_cond
+     0.01%  numactl     libc.so.6                [.] __memset_avx512_unaligned_erms
+     0.01%  bench_main  [kernel.kallsyms]        [k] perf_iterate_ctx
+     0.01%  numactl     libumem.so.1.0.0         [.] highbit
+     0.01%  bench_main  [kernel.kallsyms]        [k] do_anonymous_page
+     0.01%  numactl     [kernel.kallsyms]        [k] __mmap_region
+     0.01%  bench_main  libumem.so.1.0.0         [.] umem_depot_ws_reap
+     0.01%  numactl     [kernel.kallsyms]        [k] number
+     0.01%  bench_main  [kernel.kallsyms]        [k] generic_permission
+     0.00%  bench_main  libc.so.6                [.] pthread_mutex_lock@@GLIBC_2.2.5
+     0.00%  bench_main  [kernel.kallsyms]        [k] set_cred_ucounts
+     0.00%  numactl     ld-linux-x86-64.so.2     [.] _dl_relocate_object_no_relro
+     0.00%  bench_main  libumem.so.1.0.0         [.] umem_depot_ws_update
+     0.00%  bench_main  libumem.so.1.0.0         [.] umem_maglist_ws_reap
+     0.00%  numactl     [kernel.kallsyms]        [k] __list_del_entry_valid_or_report
+     0.00%  numactl     [kernel.kallsyms]        [k] perf_iterate_ctx
+     0.00%  numactl     [kernel.kallsyms]        [k] zap_present_ptes
+     0.00%  numactl     ld-linux-x86-64.so.2     [.] memset
+     0.00%  numactl     libc.so.6                [.] pthread_mutex_lock@@GLIBC_2.2.5
+     0.00%  bench_main  [kernel.kallsyms]        [k] rwsem_spin_on_owner
+     0.00%  bench_main  [kernel.kallsyms]        [k] osq_lock
+     0.00%  bench_main  libumem.so.1.0.0         [.] bootstrap_malloc
+     0.00%  bench_main  [kernel.kallsyms]        [k] _raw_spin_unlock_irqrestore
+     0.00%  bench_main  [kernel.kallsyms]        [k] mas_walk
+     0.00%  bench_main  [kernel.kallsyms]        [k] vms_complete_munmap_vmas
+     0.00%  bench_main  ld-linux-x86-64.so.2     [.] strcmp

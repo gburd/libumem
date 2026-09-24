@@ -1,0 +1,2 @@
+[ perf record: Woken up 93 times to write data ]
+[ perf record: Captured and wrote 42.187 MB /tmp/perf-umem-preload-frag-t192-64_256.data (263434 samples) ]

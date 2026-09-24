@@ -1,0 +1,94 @@
+    53.72%  bench_main  bench_main         [.] td_qsort
+2836 td_qsort
+    10.08%  bench_main  bench_main         [.] mt_worker_thread
+150 0xc8aecb2bd038fdb9;mt_worker_thread
+133 0;mt_worker_thread
+83 0x4444444444444444;mt_worker_thread
+32 0x4545454545454545;mt_worker_thread
+32 0x4848484848484848;mt_worker_thread
+     7.90%  bench_main  [vdso]             [.] 0x0000000000000c19
+287 0xc8aecb2bd038fdb9;clock_gettime@@GLIBC_2.17;0x7f8e09d01c1c
+129 0;clock_gettime@@GLIBC_2.17;0x7f8e09d01c1c
+     5.14%  bench_main  bench_main         [.] td_add
+235 td_add
+     4.09%  bench_main  bench_main         [.] td_compress
+217 td_compress
+     3.01%  bench_main  libc.so.6          [.] _int_free
+47 0x45;_int_free
+45 _int_free
+36 0x35;_int_free
+     1.85%  bench_main  libc.so.6          [.] malloc
+74 malloc
+     1.74%  bench_main  libc.so.6          [.] cfree@GLIBC_2.2.5
+56 cfree@GLIBC_2.2.5
+     0.73%  bench_main  libc.so.6          [.] clock_gettime@@GLIBC_2.17
+     0.69%  bench_main  libc.so.6          [.] rand_r
+31 0xc8aecb2bd038fdb9;rand_r
+     0.50%  bench_main  libc.so.6          [.] __memset_avx512_unaligned_erms
+     0.46%  bench_main  libm.so.6          [.] 0x00000000000698b9
+     0.45%  bench_main  libm.so.6          [.] 0x000000000006986b
+     0.44%  bench_main  libm.so.6          [.] 0x00000000000698a6
+     0.42%  bench_main  [vdso]             [.] 0x0000000000000c32
+     0.38%  bench_main  [vdso]             [.] 0x0000000000000c44
+     0.36%  bench_main  libm.so.6          [.] 0x00000000000698b4
+     0.32%  bench_main  libm.so.6          [.] 0x000000000006988c
+     0.31%  bench_main  libm.so.6          [.] 0x00000000000697ce
+     0.31%  bench_main  libm.so.6          [.] log
+     0.30%  bench_main  [vdso]             [.] 0x0000000000000c60
+     0.30%  bench_main  [vdso]             [.] 0x0000000000000bbd
+     0.29%  bench_main  [vdso]             [.] 0x0000000000000bdf
+     0.28%  bench_main  libm.so.6          [.] 0x0000000000069877
+     0.28%  bench_main  [vdso]             [.] 0x0000000000000c4b
+     0.27%  bench_main  [vdso]             [.] 0x0000000000000c36
+     0.27%  bench_main  [vdso]             [.] 0x0000000000000bf9
+     0.27%  bench_main  libm.so.6          [.] 0x0000000000069888
+     0.24%  bench_main  [vdso]             [.] __vdso_clock_gettime
+     0.23%  bench_main  [vdso]             [.] 0x0000000000000c8a
+     0.23%  bench_main  [vdso]             [.] 0x0000000000000c81
+     0.23%  bench_main  [vdso]             [.] 0x0000000000000c48
+     0.21%  bench_main  [vdso]             [.] 0x0000000000000c8f
+     0.21%  bench_main  [vdso]             [.] 0x0000000000000c06
+     0.21%  bench_main  libm.so.6          [.] 0x0000000000069890
+     0.19%  bench_main  bench_main         [.] memset@plt
+     0.19%  bench_main  [vdso]             [.] 0x0000000000000c25
+     0.19%  bench_main  libm.so.6          [.] 0x000000000006980b
+     0.19%  bench_main  libm.so.6          [.] 0x0000000000069871
+     0.17%  bench_main  bench_main         [.] free@plt
+     0.17%  bench_main  libm.so.6          [.] 0x00000000000697e9
+     0.15%  bench_main  [vdso]             [.] 0x0000000000000c1c
+     0.15%  bench_main  bench_main         [.] malloc@plt
+     0.15%  bench_main  libm.so.6          [.] 0x000000000000d2c4
+     0.15%  bench_main  libm.so.6          [.] 0x000000000006984a
+     0.13%  bench_main  [vdso]             [.] 0x0000000000000bd1
+     0.13%  bench_main  bench_main         [.] rand_r@plt
+     0.13%  bench_main  bench_main         [.] libc_free
+     0.11%  bench_main  libm.so.6          [.] 0x00000000000698bd
+     0.11%  bench_main  libm.so.6          [.] 0x0000000000069880
+     0.11%  bench_main  libm.so.6          [.] 0x000000000006983a
+     0.10%  bench_main  bench_main         [.] clock_gettime@plt
+     0.10%  bench_main  [vdso]             [.] 0x0000000000000c22
+     0.09%  bench_main  libm.so.6          [.] 0x0000000000069824
+     0.08%  bench_main  bench_main         [.] log@plt
+     0.08%  bench_main  bench_main         [.] libc_alloc
+     0.08%  bench_main  libm.so.6          [.] 0x000000000006985b
+     0.06%  bench_main  libm.so.6          [.] 0x0000000000069884
+     0.04%  bench_main  [vdso]             [.] 0x0000000000000bb6
+     0.04%  bench_main  libm.so.6          [.] 0x00000000000698af
+     0.02%  bench_main  [kernel.kallsyms]  [k] nohz_balancer_kick
+     0.02%  bench_main  [vdso]             [.] 0x0000000000000c5a
+     0.02%  bench_main  libm.so.6          [.] 0x0000000000069899
+     0.02%  bench_main  [vdso]             [.] 0x0000000000000c1e
+     0.02%  bench_main  [kernel.kallsyms]  [k] _raw_spin_lock
+     0.02%  bench_main  [kernel.kallsyms]  [k] update_load_avg
+     0.01%  bench_main  [kernel.kallsyms]  [k] __mem_cgroup_charge
+     0.01%  bench_main  libmimalloc.so     [.] _mi_detect_cpu_features
+     0.01%  bench_main  [kernel.kallsyms]  [k] osq_lock
+     0.01%  bench_main  [kernel.kallsyms]  [k] __list_del_entry_valid_or_report
+     0.01%  bench_main  [kernel.kallsyms]  [k] next_uptodate_folio
+     0.00%  bench_main  [kernel.kallsyms]  [k] filemap_map_pages
+     0.00%  bench_main  [kernel.kallsyms]  [k] mas_leaf_max_gap
+     0.00%  bench_main  [kernel.kallsyms]  [k] rcu_segcblist_enqueue
+     0.00%  bench_main  [kernel.kallsyms]  [k] rwsem_spin_on_owner
+     0.00%  bench_main  [kernel.kallsyms]  [k] vma_interval_tree_insert
+     0.00%  numactl     [kernel.kallsyms]  [k] avc_lookup
+     0.00%  numactl     [kernel.kallsyms]  [k] copy_mc_enhanced_fast_string

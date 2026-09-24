@@ -1,0 +1,15 @@
+    65.20%     0.00%  bench_main  [unknown]                  [k] 0000000000000000
+    59.49%    59.35%  bench_main  libc.so.6                  [.] pthread_mutex_trylock@@GLIBC_2.34
+    21.65%    21.61%  bench_main  bench_main                 [.] frag_worker
+    11.37%     0.00%  bench_main  [unknown]                  [.] 0xabababababababab
+     8.91%     8.86%  bench_main  libc.so.6                  [.] __GI___pthread_mutex_unlock_usercnt
+     5.36%     0.00%  bench_main  [kernel.kallsyms]          [k] entry_SYSCALL_64_after_hwframe
+     5.36%     0.00%  bench_main  [kernel.kallsyms]          [k] do_syscall_64
+     4.42%     0.00%  bench_main  libc.so.6                  [.] __mmap
+     4.41%     0.00%  bench_main  [kernel.kallsyms]          [k] vm_mmap_pgoff
+     4.05%     0.01%  bench_main  [kernel.kallsyms]          [k] down_write_killable
+     4.05%     0.01%  bench_main  [kernel.kallsyms]          [k] rwsem_down_write_slowpath
+     3.97%     0.02%  bench_main  [kernel.kallsyms]          [k] rwsem_optimistic_spin
+     3.73%     3.72%  bench_main  [kernel.kallsyms]          [k] osq_lock
+     1.86%     0.00%  bench_main  [unknown]                  [.] 0x0000000100000000
+     1.13%     0.99%  bench_main  libumem.so.1.0.0           [.] umem_depot_pop_trylock

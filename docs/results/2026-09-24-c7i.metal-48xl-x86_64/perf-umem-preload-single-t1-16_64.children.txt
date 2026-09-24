@@ -1,0 +1,17 @@
+    47.97%    47.97%  bench_main  bench_main               [.] td_qsort
+    29.43%     0.00%  bench_main  [unknown]                [.] 0x4242424242424242
+    13.24%     0.79%  bench_main  libc.so.6                [.] clock_gettime@@GLIBC_2.17
+     7.96%     7.96%  bench_main  [vdso]                   [.] 0x0000000000000c19
+     7.96%     0.00%  bench_main  [vdso]                   [.] 0x00007f8c13c2ec1c
+     5.56%     5.16%  bench_main  libc.so.6                [.] __random
+     4.71%     3.61%  bench_main  libumem.so.1.0.0         [.] process_free
+     4.61%     4.61%  bench_main  bench_main               [.] td_compress
+     4.41%     4.01%  bench_main  bench_main               [.] td_add
+     3.53%     2.42%  bench_main  bench_main               [.] workload_single_thread
+     2.03%     1.89%  bench_main  libumem.so.1.0.0         [.] _umem_free
+     2.03%     1.73%  bench_main  libumem.so.1.0.0         [.] umem_may_own
+     1.89%     1.63%  bench_main  libumem.so.1.0.0         [.] umem_malloc
+     1.67%     1.21%  bench_main  libumem.so.1.0.0         [.] is_bootstrap_pointer
+     1.53%     1.05%  bench_main  libumem_malloc.so.1.0.0  [.] free
+     1.49%     1.49%  bench_main  libumem.so.1.0.0         [.] _umem_alloc
+     1.15%     0.95%  bench_main  libc.so.6                [.] __random_r

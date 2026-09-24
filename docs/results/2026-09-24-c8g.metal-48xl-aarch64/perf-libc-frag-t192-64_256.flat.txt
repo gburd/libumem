@@ -1,0 +1,6 @@
+    92.54%  bench_main  bench_main         [.] frag_worker
+     1.26%  bench_main  libc.so.6          [.] _int_free
+     0.96%  bench_main  bench_main         [.] td_qsort
+     0.93%  bench_main  [vdso]             [.] 0x0000000000000518
+     0.65%  bench_main  libc.so.6          [.] cfree@GLIBC_2.17
+     0.63%  bench_main  libc.so.6          [.] _int_malloc

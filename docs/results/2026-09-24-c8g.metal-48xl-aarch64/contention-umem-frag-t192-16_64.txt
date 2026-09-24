@@ -1,0 +1,20 @@
+# umem frag t=192 size=16:64 ops=38171775 alloc_failures=0
+throughput_mops = 10.803
+lat_p50_ns = 204
+lat_p99_ns = 144778
+lat_p999_ns = 341420
+lat_max_ns = 370508974
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=192
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_255                     0            0            0            0            0           10              0              0            0
+umem_slab_cache                       0            0            0            0            0            0              0              0            0
+umem_bufctl_cache                     0            0            0            0            0        10104              0              0            0
+umem_va_4096                          0            0            0            0            0          746              0              0            0
+umem_va_24576                         0            0            0            0            0            0              0              0            0
+umem_alloc_32                    153504            0            0          562           88           69              0              0            0
+umem_alloc_48                   1214823            0            0         9833        30313       156734              0              0            0
+umem_alloc_64                   1221827            0            0         9803        30401       137831              0              0            0
+umem_alloc_80                   1231313            0            0         9891        30235       128509              0              0            0
+umem_alloc_24576                      0            0            0          192            0            2              0              0            0

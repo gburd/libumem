@@ -1,0 +1,2 @@
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 0.280 MB /tmp/perf-umem-single-t1-16_64.data (4051 samples) ]

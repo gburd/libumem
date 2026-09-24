@@ -1,0 +1,4 @@
+    54.52%  bench_main  bench_main               [.] ring_pop
+    40.29%  bench_main  bench_main               [.] producer_thread
+     2.65%  bench_main  libc.so.6                [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.53%  bench_main  libc.so.6                [.] __GI___pthread_mutex_unlock_usercnt

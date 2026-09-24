@@ -1,0 +1,73 @@
+matrix: instance=c7i.metal-48xl arch=x86_64 vcpu=192 governor=performance
+  allocators: libc umem umem@null umem-preload umem-preload@null jemalloc tcmalloc mimalloc snmalloc scudo rpmalloc
+  threads:    1 8 32
+  sizes:      1024:4096
+  runs=3 warmups=1 replicates=2 pin=1 ops=3200000
+  -> /home/ec2-user/libumem-iso-cmp2-d6f04abd8f1b/docs/results/2026-09-24-c7i.metal-48xl-x86_64/frag-big/matrix.toml
+  libc frag 1024:4096 t=1 rep=1  16:34:02
+  umem frag 1024:4096 t=1 rep=1  16:34:18
+  umem@null frag 1024:4096 t=1 rep=1  16:34:37
+  umem-preload frag 1024:4096 t=1 rep=1  16:34:56
+  umem-preload@null frag 1024:4096 t=1 rep=1  16:35:15
+  jemalloc frag 1024:4096 t=1 rep=1  16:35:34
+  tcmalloc frag 1024:4096 t=1 rep=1  16:35:47
+  mimalloc frag 1024:4096 t=1 rep=1  16:35:59
+  snmalloc frag 1024:4096 t=1 rep=1  16:36:14
+  scudo frag 1024:4096 t=1 rep=1  16:36:25
+  rpmalloc frag 1024:4096 t=1 rep=1  16:36:39
+  libc frag 1024:4096 t=1 rep=2  16:36:52
+  umem frag 1024:4096 t=1 rep=2  16:37:09
+  umem@null frag 1024:4096 t=1 rep=2  16:37:27
+  umem-preload frag 1024:4096 t=1 rep=2  16:37:46
+  umem-preload@null frag 1024:4096 t=1 rep=2  16:38:05
+  jemalloc frag 1024:4096 t=1 rep=2  16:38:24
+  tcmalloc frag 1024:4096 t=1 rep=2  16:38:37
+  mimalloc frag 1024:4096 t=1 rep=2  16:38:49
+  snmalloc frag 1024:4096 t=1 rep=2  16:39:04
+  scudo frag 1024:4096 t=1 rep=2  16:39:16
+  rpmalloc frag 1024:4096 t=1 rep=2  16:39:29
+  libc frag 1024:4096 t=8 rep=1  16:39:42
+  umem frag 1024:4096 t=8 rep=1  16:39:47
+  umem@null frag 1024:4096 t=8 rep=1  16:39:53
+  umem-preload frag 1024:4096 t=8 rep=1  16:39:59
+  umem-preload@null frag 1024:4096 t=8 rep=1  16:40:06
+  jemalloc frag 1024:4096 t=8 rep=1  16:40:12
+  tcmalloc frag 1024:4096 t=8 rep=1  16:40:15
+  mimalloc frag 1024:4096 t=8 rep=1  16:40:17
+  snmalloc frag 1024:4096 t=8 rep=1  16:40:20
+  scudo frag 1024:4096 t=8 rep=1  16:40:22
+  rpmalloc frag 1024:4096 t=8 rep=1  16:40:25
+  libc frag 1024:4096 t=8 rep=2  16:40:27
+  umem frag 1024:4096 t=8 rep=2  16:40:32
+  umem@null frag 1024:4096 t=8 rep=2  16:40:38
+  umem-preload frag 1024:4096 t=8 rep=2  16:40:45
+  umem-preload@null frag 1024:4096 t=8 rep=2  16:40:51
+  jemalloc frag 1024:4096 t=8 rep=2  16:40:58
+  tcmalloc frag 1024:4096 t=8 rep=2  16:41:00
+  mimalloc frag 1024:4096 t=8 rep=2  16:41:03
+  snmalloc frag 1024:4096 t=8 rep=2  16:41:05
+  scudo frag 1024:4096 t=8 rep=2  16:41:08
+  rpmalloc frag 1024:4096 t=8 rep=2  16:41:11
+  libc frag 1024:4096 t=32 rep=1  16:41:13
+  umem frag 1024:4096 t=32 rep=1  16:41:16
+  umem@null frag 1024:4096 t=32 rep=1  16:41:20
+  umem-preload frag 1024:4096 t=32 rep=1  16:41:23
+  umem-preload@null frag 1024:4096 t=32 rep=1  16:41:27
+  jemalloc frag 1024:4096 t=32 rep=1  16:41:31
+  tcmalloc frag 1024:4096 t=32 rep=1  16:41:33
+  mimalloc frag 1024:4096 t=32 rep=1  16:41:35
+  snmalloc frag 1024:4096 t=32 rep=1  16:41:37
+  scudo frag 1024:4096 t=32 rep=1  16:41:39
+  rpmalloc frag 1024:4096 t=32 rep=1  16:41:41
+  libc frag 1024:4096 t=32 rep=2  16:41:43
+  umem frag 1024:4096 t=32 rep=2  16:41:45
+  umem@null frag 1024:4096 t=32 rep=2  16:41:49
+  umem-preload frag 1024:4096 t=32 rep=2  16:41:53
+  umem-preload@null frag 1024:4096 t=32 rep=2  16:41:57
+  jemalloc frag 1024:4096 t=32 rep=2  16:42:00
+  tcmalloc frag 1024:4096 t=32 rep=2  16:42:02
+  mimalloc frag 1024:4096 t=32 rep=2  16:42:04
+  snmalloc frag 1024:4096 t=32 rep=2  16:42:06
+  scudo frag 1024:4096 t=32 rep=2  16:42:08
+  rpmalloc frag 1024:4096 t=32 rep=2  16:42:10
+matrix complete -> /home/ec2-user/libumem-iso-cmp2-d6f04abd8f1b/docs/results/2026-09-24-c7i.metal-48xl-x86_64/frag-big/matrix.toml

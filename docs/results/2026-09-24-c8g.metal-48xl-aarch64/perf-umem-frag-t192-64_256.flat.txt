@@ -1,0 +1,5 @@
+    56.72%  bench_main  libc.so.6              [.] pthread_mutex_trylock@@GLIBC_2.34
+    32.80%  bench_main  bench_main             [.] frag_worker
+     5.07%  bench_main  libc.so.6              [.] __GI___pthread_mutex_unlock_usercnt
+     0.76%  bench_main  bench_main             [.] umem_free_wrapper
+     0.50%  bench_main  libc.so.6              [.] pthread_mutex_lock@@GLIBC_2.17

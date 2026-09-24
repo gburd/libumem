@@ -1,0 +1,15 @@
+    28.24%    27.30%  bench_main  bench_main               [.] mt_worker_thread
+    20.25%    20.24%  bench_main  bench_main               [.] td_qsort
+    12.83%     0.72%  bench_main  libc.so.6                [.] clock_gettime@@GLIBC_2.17
+    12.17%    11.87%  bench_main  bench_main               [.] td_add
+     7.23%     7.23%  bench_main  [vdso]                   [.] 0x0000000000000c19
+     7.21%     0.00%  bench_main  [vdso]                   [.] 0x00007fcc16c18c1c
+     4.53%     3.42%  bench_main  libumem.so.1.0.0         [.] process_free
+     3.52%     3.52%  bench_main  bench_main               [.] td_compress
+     2.63%     2.49%  bench_main  libumem.so.1.0.0         [.] _umem_free
+     2.30%     1.86%  bench_main  libumem.so.1.0.0         [.] is_bootstrap_pointer
+     2.26%     2.01%  bench_main  libumem.so.1.0.0         [.] umem_malloc
+     1.77%     1.34%  bench_main  libumem_malloc.so.1.0.0  [.] free
+     1.71%     1.42%  bench_main  libumem.so.1.0.0         [.] umem_may_own
+     1.62%     1.48%  bench_main  libumem.so.1.0.0         [.] _umem_alloc
+     1.31%     1.18%  bench_main  libc.so.6                [.] __memset_avx512_unaligned_erms
