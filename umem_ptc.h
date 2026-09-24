@@ -38,18 +38,36 @@ extern "C" {
  * Design:
  * - Thread-local cache for allocations <= ptc_maxsize (default 2048 bytes)
  * - Array of bins, one per size class
- * - Each bin holds up to PTC_NSLOTS pointers
+ * - Each bin holds up to ptc_bin_capacity(bin) pointers
  * - Zero synchronization for cache hit
  * - Fallback to magazine layer when full/empty
+ *
+ * Footprint (P6.3).  The bins are the L1 of a two-level per-thread cache;
+ * the per-thread magazines behind them (umem_ptc_mag_t, up to 2 x 255
+ * rounds for small objects) are the lock-free L2.  A bin's capacity only
+ * sets where an object crosses from L1 to L2 -- both are one store -- so
+ * the capacities are sized for footprint, not hit rate.  The slot arrays
+ * are packed at their real capacities in one pool inside umem_ptc_t
+ * (below), not padded to a common maximum: the previous layout carried
+ * 28 x 128 slots for every thread, 31 KB, of which 20 KB was never
+ * indexed.
  */
 
-#define PTC_NSLOTS_SMALL  128  /* bins 0-(PTC_BIN_MEDIUM-1): sizes <=256B */
-#define PTC_NSLOTS_MEDIUM  64  /* bins PTC_BIN_MEDIUM-(PTC_BIN_LARGE-1) */
-#define PTC_NSLOTS_LARGE   32  /* bins PTC_BIN_LARGE-(PTC_NBINS-1) */
-#define PTC_NSLOTS        128  /* max capacity (for struct sizing) */
+#define PTC_NSLOTS_SMALL   64  /* bins 0-(PTC_BIN_MEDIUM-1): sizes <=256B */
+#define PTC_NSLOTS_MEDIUM  32  /* bins PTC_BIN_MEDIUM-(PTC_BIN_LARGE-1) */
+#define PTC_NSLOTS_LARGE   16  /* bins PTC_BIN_LARGE-(PTC_NBINS-1) */
 #define PTC_NBINS 28           /* number of size classes (up to 2048B) */
 #define PTC_BIN_MEDIUM    13   /* first bin for medium sizes (257-1024B) */
 #define PTC_BIN_LARGE     21   /* first bin for large sizes (1025-2048B) */
+
+/*
+ * Total slots across all bins.  Must equal the sum of ptc_bin_capacity()
+ * over [0, PTC_NBINS); umem_ptc_get() asserts that when it lays the pool out.
+ */
+#define PTC_TOTAL_SLOTS \
+	(PTC_BIN_MEDIUM * PTC_NSLOTS_SMALL + \
+	(PTC_BIN_LARGE - PTC_BIN_MEDIUM) * PTC_NSLOTS_MEDIUM + \
+	(PTC_NBINS - PTC_BIN_LARGE) * PTC_NSLOTS_LARGE)
 
 /* Forward declaration */
 struct umem_magazine;
@@ -102,16 +120,24 @@ typedef struct umem_ptc_mag {
 #endif
 
 /*
- * Per-bin structure holding cached objects
+ * Per-bin header.  `slots` points into umem_ptc_t.pool and is set ONCE by
+ * umem_ptc_get(); it never changes for the life of the PTC.  The fast paths
+ * in umem.c do `b->slots[b->count++] = buf` with b = &ptc->bins[bin]: the
+ * same shape as when slots was an inline array, one more independent load
+ * (the base pointer) and no multiply by a 1 KB stride.
+ *
+ * Only slots[0 .. count) are meaningful; the rest of a bin's array is never
+ * read and is not zeroed at creation.
  */
 typedef struct umem_ptc_bin {
-	void *slots[PTC_NSLOTS];
+	void **slots;           /* -> umem_ptc_t.pool, ptc_bin_capacity() long */
 	uint16_t count;         /* current number of cached objects */
 	uint16_t low_water;     /* for auto-tuning (future) */
-} __attribute__((aligned(_UMEM_PTC_CACHE_LINE))) umem_ptc_bin_t;
+} umem_ptc_bin_t;
 
 /*
- * Per-thread cache structure
+ * Per-thread cache structure.  Everything before `pool` is zeroed at
+ * creation; `pool` is written only below each bin's count.
  */
 typedef struct umem_ptc {
 	umem_ptc_bin_t bins[PTC_NBINS];
@@ -120,6 +146,7 @@ typedef struct umem_ptc {
 	uint64_t free_count;
 	uint64_t hits;
 	uint64_t misses;
+	void *pool[PTC_TOTAL_SLOTS];    /* bins' slot arrays, packed */
 } umem_ptc_t;
 
 /*

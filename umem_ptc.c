@@ -25,7 +25,6 @@
 #include <string.h>
 #include <pthread.h>
 #include <errno.h>
-#include <sched.h>
 #include <stdint.h>
 
 #include "umem_ptc.h"
@@ -288,7 +287,24 @@ umem_ptc_get(void)
 		return (NULL);
 	}
 
-	(void) memset(ptc, 0, sizeof(umem_ptc_t));
+	(void) memset(ptc, 0, offsetof(umem_ptc_t, pool));
+
+	/*
+	 * Carve each bin's slot array out of the pool at its real capacity.
+	 * Set once here; the fast paths in umem.c read bins[i].slots and never
+	 * write it.  The pool itself is not zeroed: only slots[0 .. count) are
+	 * ever read, and count starts at 0.
+	 */
+	{
+		void **p = ptc->pool;
+		int b;
+
+		for (b = 0; b < PTC_NBINS; b++) {
+			ptc->bins[b].slots = p;
+			p += ptc_bin_capacity(b);
+		}
+		ASSERT(p == ptc->pool + PTC_TOTAL_SLOTS);
+	}
 
 	/* Store in TLS and pthread-specific data */
 	thread_ptc = ptc;
@@ -409,9 +425,11 @@ umem_ptc_free(void *ptr, size_t size)
  *        freed, so anything left behind loses its only reference while the
  *        slab layer still counts it as allocated.
  *
- * Objects flushed here enter the per-CPU magazine via _umem_cache_free(),
- * which is intentional: the magazine layer is the correct next level in the
- * caching hierarchy (PTC -> magazine -> depot -> slab).
+ * Objects flushed here enter the per-CPU magazine -- one at a time through
+ * _umem_cache_free() for the steady-state half flush, as a batch under one
+ * cc_lock through umem_cache_free_batch() at exit -- which is intentional:
+ * the magazine layer is the correct next level in the caching hierarchy
+ * (PTC -> magazine -> depot -> slab).
  */
 /*
  * Exact drain accounting for the P1.3a regression.
@@ -484,12 +502,27 @@ umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 	}
 
 	/* Free to magazine layer */
-	if (all)
+	if (all) {
+		/*
+		 * Thread exit: hand the whole bin back in one lock acquisition
+		 * (P6.3).  Per-object _umem_cache_free took cc_lock once per
+		 * object -- up to 600 acquisitions per exiting thread -- and
+		 * at 16,000 simultaneous exits that queue stalled unrelated
+		 * threads for 37 ms.  umem_cache_free_batch fills the per-CPU
+		 * magazines under one cc_lock; anything the magazine layer
+		 * cannot take goes to the slab layer inside it and is counted
+		 * in its return, so it never leaves an object behind.
+		 */
+		int n = umem_cache_free_batch(cp, bin->slots, flush_count);
+
+		ASSERT(n == flush_count);
 		UMEM_PTC_PROBE_COUNT(umem_ptc_probe_exit_bins, 1);
+		UMEM_PTC_PROBE_COUNT(umem_ptc_probe_exit_handoffs, 1);
+		bin->count -= (uint16_t)n;
+		return;
+	}
 	for (i = 0; i < flush_count; i++) {
 		ptr = bin->slots[--bin->count];
-		if (all)
-			UMEM_PTC_PROBE_COUNT(umem_ptc_probe_exit_handoffs, 1);
 		_umem_cache_free(cp, ptr);
 	}
 }
@@ -573,44 +606,28 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 	 * a thread exiting with 128 cached objects permanently leaked 64 of
 	 * them.  Thread churn made that cumulative.  (The old comment here
 	 * claimed "Flush all bins", which the code did not do.)
-	 *
-	 * The yield accounting was also wrong: it added bin->count AFTER the
-	 * flush, i.e. the remainder rather than the number flushed.
 	 */
-	{
-		int flushed = 0;
-		for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
-			int n;
+	for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
+		bin = &ptc->bins[bin_idx];
+		if (bin->count == 0)
+			continue;
 
-			bin = &ptc->bins[bin_idx];
-			if (bin->count == 0)
-				continue;
-
-			n = bin->count;
-			umem_ptc_bin_flush_all(bin,
-			    umem_ptc_bin_size(bin_idx));
-			/*
-			 * Deliberately NOT an ASSERT here.  Under the probe
-			 * build the stranded count below is this regression's
-			 * oracle, and asserting would abort on the first
-			 * exiting thread before the test could read it --
-			 * turning a legible "N objects stranded" result into a
-			 * bare SIGABRT (observed: rc=134 with no output at
-			 * all).  The invariant is still enforced, by the test,
-			 * via that counter.
-			 */
-
-			/*
-			 * Returning a large number of objects can hold cc_lock
-			 * for a while; yield periodically so an exiting thread
-			 * does not stall the others.
-			 */
-			flushed += n;
-			if (flushed >= 64) {
-				sched_yield();
-				flushed = 0;
-			}
-		}
+		umem_ptc_bin_flush_all(bin, umem_ptc_bin_size(bin_idx));
+		/*
+		 * Deliberately NOT an ASSERT here.  Under the probe build the
+		 * stranded count below is this regression's oracle, and
+		 * asserting would abort on the first exiting thread before the
+		 * test could read it -- turning a legible "N objects stranded"
+		 * result into a bare SIGABRT (observed: rc=134 with no output
+		 * at all).  The invariant is still enforced, by the test, via
+		 * that counter.
+		 *
+		 * There used to be a sched_yield() every 64 objects here to
+		 * bound how long one exiting thread kept cc_lock busy.  The
+		 * bin is now one batched hand-off (P6.3), so the lock is
+		 * taken once per bin and released before the next; nothing
+		 * left to yield around.
+		 */
 	}
 
 	/* Free the ptc structure itself.  Anything still in a bin here loses
