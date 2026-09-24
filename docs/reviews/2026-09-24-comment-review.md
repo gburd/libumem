@@ -348,3 +348,94 @@ In-scope comment lines: 194.
 | 741-744 | 3 | "Check if this is a bootstrap allocation" | Duplicates process_free's own check at 541; harmless |
 | 756-760 | 3 | "NOTE: malloc(), free(), calloc() ... are now in malloc_interpose.c" | Third copy of the same note. Keep one |
 | 762-770 | 1 | "_malloc and _free are the PTC trampoline entry points ... after PTC genasm activates, malloc()/free() call through the generated code directly via function pointers" | Describes Solaris genasm which this port does not have. Nothing calls _malloc/_free through function pointers. Either "legacy ABI symbols" (as umem.c:610 says of umem_genasm_supported) or delete |
+
+## umem_ptc.h
+
+In-scope comment lines: most of the file.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 33-43 | 3 | "Provides a zero-synchronization fast path ... Zero synchronization for cache hit" | Design summary; "(similar to jemalloc ptc)" -- jemalloc's is "tcache". Minor |
+| 44-70 | 6 | Footprint (P6.3) + "THE CAPACITIES ARE NOT A FREE VARIABLE": records the halving that was wrong, the 28x cliff with numbers (157/63/5.5 Mpairs/s at N=32/33/64), the fix sha a2177b9, and "The capacities were not revisited after that fix ... has not been measured" | Exemplary un-softened record; the honest "not measured" closing sentence is the standard |
+| 72-79 | 2/6 | bins through 8192 for P8.2b: "x86 metal 105 -> 91 Mops from t=64 to 128, arm 277 -> 77" | Numbers with box class but no sha/date/file. Cite the docs/results entry |
+| 81-90 | 6 | "PTC_NBINS bounds size_to_bin_table ... test_ptc_footprint's 24 KB" | Good; ties constants to their consumers |
+| 92-95 | 6 | PTC_TOTAL_SLOTS "umem_ptc_get() asserts that" | Verified umem_ptc.c:313 |
+| 106-111 | 3 | umem_ptc_mag "eliminating cc_lock contention ... without taking any lock" | Confidence; "Only depot refill/flush takes a lock" is right. Trim first clause |
+| 113-134 | 6 | magsize/pmagsize MUST come from the magazine (P1.3b); loaded/previous can differ | Exemplary field comment |
+| 137-141 | 6 | UMEM_PTC_MAG_HAS_PMAGSIZE for regressions that build against both structs | Good |
+| 152-161 | 6 | slots set ONCE by umem_ptc_get; only slots[0..count) meaningful, not zeroed | Good ownership/lifecycle statement |
+| 165 | 3 | low_water "for auto-tuning (future)" | Never written or read anywhere (grep). Dead field with a promise; delete field or say "unused" |
+| 166-171 | 6 | one record per cache line: measured 2 % (5.76 vs 5.88, median of 9, alternating) | Method stated; no box/sha |
+| 174-177 | 6 | "Everything before `pool` is zeroed at creation; `pool` is written only below each bin's count" | Good; matches umem_ptc.c:297-313 |
+| 180-183 | 3 | alloc_count/free_count/hits/misses "statistics" | Never incremented anywhere (grep ptc->hits etc.: none). Dead fields; 32 bytes per thread with a live-sounding label |
+| 206-210 | 6 | ptc_bin_capacity tiers | Matches |
+| 232-241 | 3 | umem_ptc_alloc/umem_ptc_free "caller should use slow path" | These two are not called from umem.c (the fast path is inlined); only the .c defines them. Say "not on the hot path; kept for tests" or delete |
+| 263-267 | 6 | umem_ptc_bin_flush_all "Only correct at thread exit ... would lose its only reference" | Good |
+| 275-292 | 2/1 | SBO: "no locking (~3-5ns)"; "When the buffer is full, it resets and all outstanding pointers from the previous generation become invalid" | (a) ~3-5ns has no box. (b) The constraint is stated honestly, but this is an exported API whose contract is use-after-reset UB, called by nothing but test/unit/test_sbo.c. Flag for coordinator: dead public surface with a by-design UAF |
+
+## umem_ptc.c
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 46 | 3 | "enabled by default for performance" | Delete rationale |
+| 48-52 | 6 | thread_ptc initial-exec, non-static for inlining | Good |
+| 62-70 | 6 | size_to_bin_table: index rule, zero-init hazard ("a zero entry would silently alias every size to bin 0"), the ready flag | Good |
+| 88-96 | 3 | "Size classes we cache (matching umem's small size classes) ... first PTC_NBINS entries in umem_alloc_sizes" | LP64 table has three 0 padding entries (bins 25-27) so it is NOT "the first PTC_NBINS entries"; comment at 96 explains the padding but the header doesn't. Minor mismatch |
+| 158-162 | 6 | disable PTC for debug caches, why | Good |
+| 178-193 | 6 | bin_table via backing cache's object size: the 176-byte example, what the gap cost | Good record |
+| 209-212 | 3 | "Map through the backing cache's object size" | Restates 178-193; fine |
+| 232 | 6 | "Publish after all tables are fully populated" | States the ordering; ptc_table_ready is a plain int -- no release fence. Readers in umem.c use umem_ptc_bin_table directly gated on... nothing (umem.c:3812 reads bin_table without checking ptc_table_ready). Populated in umem_init before READY, so fine, but the comment implies a publish protocol that isn't one. Say "umem_init() completes before any allocation can reach the table" |
+| 298-303 | 6 | carve pool once; not zeroed; why | Good |
+| 318-324 | 6 | pthread_setspecific failure: decline PTC rather than lose objects at exit | Good |
+| 423-439 | 6 | flush policy `all`: what each does and why at exit; where objects go | Good |
+| 440-458 | 6 | P1.3a probe: why an in-library count instead of comparing outstanding counts (flakiness record) | Exemplary |
+| 461-466 | 6 | P6.3 ledger | Good |
+| 512-521 | 6 | thread exit batch: "600 acquisitions per exiting thread ... 16,000 simultaneous exits ... 37 ms" | Numbers without box/sha |
+| 542-544 | 3 | "Used only by umem_ptc_destroy()" | True (grep) |
+| 605-615 | 6 | "Drain every bin COMPLETELY ... (The old comment here claimed 'Flush all bins', which the code did not do.)" | Exemplary: the §7 example, corrected in place |
+| 622-636 | 6 | why NOT an ASSERT (rc=134 with no output); why the sched_yield went away | Good |
+| 639-640 | 6 | stranded count before unreachable | Good |
+| 663-666 | 3 | SBO "disabled when any debug flags are active on the smallest cache" | Code checks global umem_flags, not the smallest cache's flags. Reword to "when umem_flags has any debug flag" |
+
+## umem_fork.c
+
+In-scope comment lines: 35-80, 148-183, 300-333. The lock-order comment was
+checked claim by claim.
+
+### THE ONE TRUE LOCK ORDER (35-80), claim by claim
+
+| # | Claim | Verdict |
+|---|---|---|
+| 1 | umem_init_lock first | umem_lockup 194 takes it after the interposer hooks (192) -- the comment at 163-167 says the interposer locks come BEFORE 1. The numbered list omits them. Add "0. interposer locks (weak)" |
+| 2 | vmem_lockup(): vmem_list_lock, vmem_nosleep_lock, each vm_lock, vmem_segfree_lock; then vmem_sbrk_lockup(): sbrk_lock, sbrk_faillock | TRUE: vmem.c:1856-1867, vmem_sbrk.c:293-294 |
+| 3-5 | umem_cache_lock, umem_update_lock, umem_flags_lock | TRUE: 209-211 |
+| 6a | cc_lock ascending | TRUE: 90-91 |
+| 6b | cache_full.ml_lock, cache_empty.ml_lock, then per-stripe full/empty interleaved ascending | TRUE: 93-98 |
+| 6c | cache_lock | TRUE: 100 |
+| 7 | lh_cpu[*].clh_lock ascending then lh_lock | TRUE: 129-132 |
+| "6a before 6b ... _umem_cache_alloc() takes cc_lock and then, still holding it, calls umem_depot_alloc()/umem_depot_free(), which BLOCK on ml_lock" | TRUE: umem.c:3313 lock, 3375 depot_alloc, 3390 unlock; local pop and global fallback are blocking umem_depot_pop (2657, 2751) |
+| "(The trylock-based cross-CPU steal does not change this; only the remote-stripe scan is non-blocking.)" | TRUE: 2718, 2737 |
+| "umem_depot_alloc() -> umem_depot_destroy_stale() -> umem_slab_free() takes cache_lock while cc_lock and no ml_lock are held, so cache_lock is below both" | TRUE: 2626 -> umem_slab_free 1862 takes cache_lock; ml_lock released inside umem_depot_pop before return |
+| "Nothing in the allocator takes cc_lock or ml_lock while holding cache_lock -- that is the documented contract on umem_depot_alloc()/umem_depot_free()" | Contract text is at umem.c:2594-2598 (detached; see umem.c table) and uses inverted "below" wording. The fork file's sense is the one the code follows |
+| Solaris lineage paragraph | Not verified (no Solaris source here) |
+| "A previous version ... acquired cache_lock -> ml_locks -> cc_locks ... ABBA ... Reproduced by test/integration/test_fork_mt_load.c" | Un-softened record. File exists |
+
+Ordering NOT covered by the list, both taken from allocation paths: (i)
+brk_lock (umem_introspect.c, leaf, taken after allocation completes -- fine);
+(ii) umem_ptc has no locks. (iii) vmem_walk's vm_lock is taken from free()
+via umem_may_own -> hull_refresh (malloc.c:463) with no allocator lock held --
+consistent with 2 above cc_lock but worth a line since it is a new vmem
+entry from the free path.
+
+### Table
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 35-80 | 6 | THE ONE TRUE LOCK ORDER + derivation + old-bug record | Exemplary; omissions above |
+| 89, 109 | 6 | "See THE ONE TRUE LOCK ORDER above: 6a, then 6b, then 6c." / "Release in reverse" | Good |
+| 148-167 | 6 | interposer participation: which locks, why weak, ORDERING before umem_init_lock, why not a second pthread_atfork (glibc reverse order) | Exemplary |
+| 172-183 | 6 | introspect child reset: why weak, what the child inherits | Good |
+| 300-304 | 6 | "Released LAST, mirroring the acquisition order ... child variant re-initializes" | Good |
+| 308-313 | 6 | disarm after locks released, why | Good |
+| 317-333 | 6 | P6.9 update-thread recreation: what was dead, why here (pthread_create allocates), the two guards, failure non-fatal | Exemplary. Verified: 334-339 gated on umem_ready and cleanup_update; umem_update_thread.c:179 asserts MUTEX_HELD(umem_update_lock), held at 335 |
+| 255-262 (old) | -- | "worst that can happen is a cache has its magazines rescaled twice" | Out of scope (2008 text), consistent with umem.c 4.6 |

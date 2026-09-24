@@ -547,14 +547,22 @@ static int umem_alloc_sizes[] = {
  *
  * Larger magazines for small objects amortize depot access cost.
  * A 64-byte object now gets 127-slot magazines instead of 15-slot.
+ *
+ * The 2048..8192 band was 31 rounds for 2-4 KB chunks and 15 for 4-8 KB,
+ * Solaris tuning that assumed a 64 KB heap quantum and hence a slab of 16
+ * such objects; on Linux 3f2e67c now packs these 16 per slab too, and a
+ * magazine that holds fewer objects than a slab makes every 31 (or 15)
+ * operations per CPU a depot round trip.  63 for the whole band (P8.2b
+ * part b), the same as the 1-2 KB class.  Magazine shells are objects of
+ * umem_magazine_<magsize> caches created at init from this table, so two
+ * rows with one magsize would create a duplicate cache; the rows are merged
+ * instead.
  */
 static umem_magtype_t umem_magtype[] = {
 	{ 1,    8,      65536,  UMEM_MAXBUF },
 	{ 3,    16,     16384,  65536   },
 	{ 7,    32,     8192,   16384   },
-	{ 15,   64,     4096,   8192    },
-	{ 31,   64,     2048,   4096    },
-	{ 63,   64,     1024,   2048    },
+	{ 63,   64,     1024,   8192    },
 	{ 127,  64,     256,    1024    },
 	{ 255,  64,     0,      256     },
 };
