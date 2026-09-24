@@ -809,6 +809,64 @@ umem_malloc_free(void *buf)
 		return;
 	}
 
+	/*
+	 * Steps 2-5 for the two single-state-word layouts umem_malloc()
+	 * produces for every request up to UMEM_MAXBUF: MALLOC_MAGIC (8-byte
+	 * tag) and, on _LP64, MALLOC_SECOND_MAGIC (16-byte tag, state in the
+	 * second word).  This is process_free_umem() with do_free fixed to 1
+	 * and only these two cases; the checks and their order are the same:
+	 *
+	 *   2. the header word lies inside the hull -- before it is read
+	 *   3. decode; the magic names the layout
+	 *   4. size >= the layout's overhead, and [base, base+size) is inside
+	 *      the hull -- before anything is written
+	 *   5. poison the state word, then _umem_free(); errno is saved and
+	 *      restored around it, as process_free_umem() does
+	 *
+	 * Anything else -- the two-tag OVERSIZE and MEMALIGN layouts, a bad
+	 * magic, a double free, a hull miss on either test -- falls through
+	 * to process_free_umem(), which repeats these steps from the top (a
+	 * hull miss there also refreshes the hull) and reports.  So a pointer
+	 * this path refuses is decided by exactly the code that decided it
+	 * before, and one this path accepts passed the same tests it would
+	 * have passed there.
+	 */
+	{
+		malloc_data_t *hdr = (malloc_data_t *)buf - 1;
+		uintptr_t hlo = atomic_load_explicit(&umem_heap_lo,
+		    memory_order_relaxed);
+		uintptr_t hhi = atomic_load_explicit(&umem_heap_hi,
+		    memory_order_relaxed);
+		void *base;
+		size_t size, overhead;
+		uint32_t magic;
+		int *ep, old_errno;
+
+		if (!hull_contains(hlo, hhi, hdr, sizeof (*hdr)))
+			goto slow;
+		size = hdr->malloc_size;
+		magic = UMEM_MALLOC_DECODE(hdr->malloc_stat, size);
+		if (magic == MALLOC_MAGIC) {
+			base = hdr;
+			overhead = sizeof (malloc_data_t);
+#ifdef _LP64
+		} else if (magic == MALLOC_SECOND_MAGIC) {
+			base = hdr - 1;
+			overhead = 2 * sizeof (malloc_data_t);
+#endif
+		} else {
+			goto slow;
+		}
+		if (size < overhead || !hull_contains(hlo, hhi, base, size))
+			goto slow;
+		hdr->malloc_stat = UMEM_FREE_PATTERN_32;
+		ep = errno_addr();
+		old_errno = *ep;
+		_umem_free(base, size);
+		*ep = old_errno;
+		return;
+	}
+slow:
 	(void) process_free_umem(buf, 1, NULL);
 }
 
