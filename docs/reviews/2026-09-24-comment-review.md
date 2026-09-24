@@ -321,3 +321,30 @@ claimed X, it was wrong" corrections (476-495, 599-620) are kept in place.
 | 1019-1026 | 6 | aligned_alloc must be interposed; C11 UB accepted as glibc does | Good, names the glibc comparison |
 
 One CLAIM MISMATCH (dead doc reference), no code-vs-comment conflicts.
+
+## malloc.c
+
+In-scope comment lines: 194.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 58-69 | 3 | "Based on jemalloc's arena 0 and tcmalloc's Arena pattern" | Provenance, not invariant. Harmless; the three bullets are fine |
+| 90-94 | 6 | checked header addition: names the pre-fix failure (SIZE_MAX -> 15-byte total) | Good |
+| 179-181 | 3 | "NOTE: malloc/free interposition is now handled by malloc_interpose.c ... The weak symbol pragmas have been removed." | History-as-comment. Delete |
+| 184-188 | 1 | "On Linux, the PTC genasm code sets these function pointers after generating the per-thread-cache assembly. malloc() and free() check these" | No such pointers exist below the comment (it introduces nothing); genasm is not in this tree (umem.c:611 umem_genasm_supported = 0; only umem_ptc_bench.c mentions it). Delete |
+| 190-196, 728-734 | 1 | "This is the function that PTC falls back to ... On non-x86, malloc is a weak alias to this function." | No weak alias exists (grep: no `weak` attribute/pragma in malloc.c); malloc() is defined in malloc_interpose.c and calls umem_malloc. Rewrite: "Called by malloc_interpose.c's malloc() once READY" |
+| 206-210, 214-218 | 3 | "Based on jemalloc's arena 0 pattern"; "initial-exec TLS for single-instruction access" | Fine; second one states why |
+| 282, 369-371 | 3 | "NOTE: calloc() is now in malloc_interpose.c" etc. | History; delete or keep one pointer at the top |
+| 373-409 | 6 | umem_may_own: attacker position implied (foreign/wild pointer under LD_PRELOAD), WHAT IT IS (necessary not sufficient), WHY A CACHED HULL, monotone-widening argument, NO LOCK OF ITS OWN and why, ponytail: with upgrade | Exemplary security comment |
+| 425 | 6 | "Widen lo downward / hi upward, never the other way" | Good |
+| 448-453 | 1 | "vmem_walk() calls the callback with the arena lock held, so the callback must not allocate -- it does not." | Half-true: vmem.c:1440-1447 holds vm_lock across func() only when VMEM_REENTRANT is NOT in typemask; malloc.c:463 passes VMEM_SPAN alone, so yes, held. Comment is right for this call; say "without VMEM_REENTRANT" so a future caller does not generalize |
+| 470-473 | 6 | umem_may_own contract: false yes possible, false no not | Good |
+| 490-493 | 6 | miss -> refresh -> retest | Good |
+| 509-531 | 6 | VALIDATION ORDER steps 1-5, then what pre-fix did at each step | Exemplary; verified 571-576 (step 2), 683-696 (step 4), poison writes after validate |
+| 541-545 | 3 | bootstrap check "to avoid misinterpreting their headers" | OK |
+| 558-560 | 6 | "Set by the switch, acted on only after validation (step 5)" | Good |
+| 602, 655 | 6 | which tag carries state / both cleared after validation | Good |
+| 683-696 | 6 | Step 4 rationale | Good |
+| 741-744 | 3 | "Check if this is a bootstrap allocation" | Duplicates process_free's own check at 541; harmless |
+| 756-760 | 3 | "NOTE: malloc(), free(), calloc() ... are now in malloc_interpose.c" | Third copy of the same note. Keep one |
+| 762-770 | 1 | "_malloc and _free are the PTC trampoline entry points ... after PTC genasm activates, malloc()/free() call through the generated code directly via function pointers" | Describes Solaris genasm which this port does not have. Nothing calls _malloc/_free through function pointers. Either "legacy ABI symbols" (as umem.c:610 says of umem_genasm_supported) or delete |

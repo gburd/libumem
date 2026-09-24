@@ -2900,10 +2900,12 @@ umem_ptc_mag_return_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
  * since moved past is drained and freed by umem_ptc_mag_return* when it is
  * handed back (P1.3c).  No lock is held here.
  *
- * Out of line on purpose: inlined, the extra text in _umem_free cost 9 % at
- * t=1 on c7i.2xlarge (512 B, N=1, bench_pairs, median of 9 alternating
- * pairs, null +/-0.7 %) with the instruction count unchanged to 0.1 % --
- * pure layout.
+ * Out of line: this runs once per thread per class and has no business in
+ * _umem_free's text.  (An earlier version of this comment attributed a 9 %
+ * t=1 loss to inlining it.  That number was the A/B rig's: it built the
+ * bench binary per arm and a printf change in bench_pairs.c had moved the
+ * bench's own loop; with one bench binary the library is 3-8 % FASTER at
+ * that point.  scripts/ec2/hotpath_ab.sh records the correction.)
  */
 static __attribute__((noinline)) umem_magazine_t *
 umem_ptc_mag_prime(umem_cache_t *cp)
