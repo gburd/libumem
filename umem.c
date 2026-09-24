@@ -2169,6 +2169,16 @@ volatile long umem_ptc_probe_depot_pops_locked_empty = 0;
  * Pop a magazine from a single maglist, returning NULL if empty.
  * Caller does NOT hold mlp->ml_lock; this function acquires it.
  * Tracks contention on the cache if trylock fails.
+ *
+ * EMPTY-CHECK BEFORE THE LOCK (P8.5).  Both pop primitives read ml_list
+ * unlocked first and return NULL if it is NULL.  The read is racy and that
+ * is fine: a magazine pushed a moment later is found on the next call, which
+ * is exactly the outcome of a failed trylock and of the blocking pop's own
+ * miss.  What it buys: a steal scan over ncpus stripes, almost all empty,
+ * no longer takes and releases every stripe's lock to read a NULL head, and
+ * so no longer holds each stripe's lock against the CPU that owns it.  frag
+ * 16:64 at t=8 on c7i.2xlarge: 434k blocking-pop contention events per 80k
+ * successful reloads (5.4 per success) before; see the P8.5 STATUS entry.
  */
 static umem_magazine_t *
 umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
@@ -2182,6 +2192,11 @@ umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
 	 * the critical path after the lock is acquired.
 	 */
 	UMEM_PREFETCH_READ(&mlp->ml_list);
+
+	if (*(umem_magazine_t *volatile *)&mlp->ml_list == NULL) {
+		UMEM_PTC_PROBE_DEPOT_POP(1);
+		return (NULL);
+	}
 
 	if (mutex_trylock(&mlp->ml_lock) != 0) {
 		atomic_add_64(&cp->cache_depot_contention, 1);
@@ -2462,6 +2477,12 @@ umem_depot_pop_trylock(umem_maglist_t *mlp)
 	umem_magazine_t *mp;
 
 	UMEM_PREFETCH_READ(&mlp->ml_list);
+
+	/* See umem_depot_pop: an unlocked empty check costs no one anything. */
+	if (*(umem_magazine_t *volatile *)&mlp->ml_list == NULL) {
+		UMEM_PTC_PROBE_DEPOT_POP(1);
+		return (NULL);
+	}
 
 	if (mutex_trylock(&mlp->ml_lock) != 0)
 		return (NULL);
