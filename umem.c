@@ -2139,6 +2139,33 @@ atomic_cas_tagged_ptr(volatile umem_tagged_ptr_t *ptr,
  */
 
 /*
+ * P8.5 ledger (COMPILED OUT unless -DUMEM_PTC_RESIZE_PROBE, like the P1.3
+ * probes below): depot stripe pops attempted, and how many of them found the
+ * list EMPTY.  A pop that takes a stripe's lock only to read a NULL head paid
+ * a lock/unlock pair and held that stripe against the CPU that owns it, for
+ * nothing.  With the unlocked empty check, the "empty" count still rises but
+ * no lock was taken for it; the regression counts the LOCKED empties by
+ * subtraction (see test_depot_empty_scan).
+ */
+#ifdef UMEM_PTC_RESIZE_PROBE
+volatile long umem_ptc_probe_depot_pops = 0;
+volatile long umem_ptc_probe_depot_pops_empty = 0;
+volatile long umem_ptc_probe_depot_pops_locked_empty = 0;
+#define	UMEM_PTC_PROBE_DEPOT_POP(empty)	\
+	do {	\
+		(void) atomic_add_64((uint64_t *)&umem_ptc_probe_depot_pops, 1); \
+		if (empty)	\
+			(void) atomic_add_64((uint64_t *)	\
+			    &umem_ptc_probe_depot_pops_empty, 1);	\
+	} while (0)
+#define	UMEM_PTC_PROBE_DEPOT_POP_LOCKED_EMPTY()	\
+	(void) atomic_add_64((uint64_t *)&umem_ptc_probe_depot_pops_locked_empty, 1)
+#else
+#define	UMEM_PTC_PROBE_DEPOT_POP(empty)	((void)0)
+#define	UMEM_PTC_PROBE_DEPOT_POP_LOCKED_EMPTY()	((void)0)
+#endif
+
+/*
  * Pop a magazine from a single maglist, returning NULL if empty.
  * Caller does NOT hold mlp->ml_lock; this function acquires it.
  * Tracks contention on the cache if trylock fails.
@@ -2162,7 +2189,9 @@ umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
 	}
 
 	mp = mlp->ml_list;
+	UMEM_PTC_PROBE_DEPOT_POP(mp == NULL);
 	if (mp == NULL) {
+		UMEM_PTC_PROBE_DEPOT_POP_LOCKED_EMPTY();
 		(void) mutex_unlock(&mlp->ml_lock);
 		return (NULL);
 	}
@@ -2438,7 +2467,9 @@ umem_depot_pop_trylock(umem_maglist_t *mlp)
 		return (NULL);
 
 	mp = mlp->ml_list;
+	UMEM_PTC_PROBE_DEPOT_POP(mp == NULL);
 	if (mp == NULL) {
+		UMEM_PTC_PROBE_DEPOT_POP_LOCKED_EMPTY();
 		(void) mutex_unlock(&mlp->ml_lock);
 		return (NULL);
 	}

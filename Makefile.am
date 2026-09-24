@@ -834,6 +834,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_cpu_hint_spread \
 	test/integration/test_ptc_footprint \
 	test/integration/test_ptc_mag_primed \
+	test/integration/test_depot_empty_scan \
 	test/integration/test_cache_footprint \
 	test/integration/test_oversize_vma.sh
 
@@ -948,6 +949,14 @@ noinst_PROGRAMS += test/integration/test_ptc_mag_primed
 test_integration_test_ptc_mag_primed_SOURCES = test/integration/test_ptc_mag_primed.c
 test_integration_test_ptc_mag_primed_LDADD = libumem_ptcprobe.la
 test_integration_test_ptc_mag_primed_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
+
+# P8.5: a depot steal scan must not lock a stripe whose list is empty.  The
+# probe build counts pops that acquired a stripe lock and read a NULL head.
+noinst_PROGRAMS += test/integration/test_depot_empty_scan
+test_integration_test_depot_empty_scan_SOURCES = test/integration/test_depot_empty_scan.c
+test_integration_test_depot_empty_scan_LDADD = libumem_ptcprobe.la
+test_integration_test_depot_empty_scan_LDFLAGS = -pthread
+test_integration_test_depot_empty_scan_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 
 # Bare alloc-N-then-free-N loop for t=1 questions (bench_main's own histogram
 # and clock are 70 % of its cycles at t=1).  Instrument, never in TESTS.
