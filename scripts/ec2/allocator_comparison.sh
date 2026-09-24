@@ -295,9 +295,14 @@ echo "== 4. contention dumps at t=$HI_T  ($(date -u +%T))"
 last=$((HI_T-1)); (( last >= NCPU )) && last=$((NCPU-1))
 PIN="numactl --physcpubind=0-$last --localalloc --"
 command -v numactl >/dev/null || PIN=""
+# 1024:4096 is in the list because P8.2b (the 128+-thread cliff at that size)
+# was diagnosed from latency shape alone -- the 2026-09-24 run had no depot
+# counters at the one point that needed them.  frag at 1k:4k uses FRAG_BIG_OPS
+# (the live set is what the ceiling probe measures; keep the dump inside it).
 for w in multi prodcons frag; do
-    for s in 16:64 64:256 256:1024; do
+    for s in 16:64 64:256 256:1024 1024:4096; do
         o="$MULTI_OPS"; [[ $w == prodcons ]] && o="$PRODCONS_OPS"; [[ $w == frag ]] && o="$FRAG_OPS"
+        [[ $w == frag && $s == 1024:4096 ]] && o="$FRAG_BIG_OPS"
         $PIN test/bench/.libs/bench_contention -a umem -w "$w" -t "$HI_T" -n "$o" -s "$s" \
             > "$OUT/contention-umem-$w-t$HI_T-${s/:/_}.txt" 2>&1
         LD_PRELOAD="$PRELOAD_SO" $PIN test/bench/.libs/bench_contention -a umem-preload -w "$w" -t "$HI_T" -n "$o" -s "$s" \

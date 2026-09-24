@@ -1800,9 +1800,11 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 |---|---|---|
 | P8.1 interposer global mutex on every `free()` | preload 0.8 Mops vs API 394 at 192 t (500x); negative thread scaling on all 4 boxes | **FIXED** `a74065e`; A/B 0.79 -> 314 Mops (396x) at 192 t, null +/-3.5 % |
 | P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | **FIXED** `ae86536`: CPU hint was `pthread_self() & mask == 0` -- one `cc_lock` per process; 1.4 -> 16.4 Mops at t=8 |
-| P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; profile attributes it |
-| P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | open; **diagnosis task**, mechanism not established |
-| P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | open; mechanism in source + profile + contention dump |
+| P8.2b 1k:4k cliff at t>=128 on both metals (hidden by P8.2) | at `d6f04ab`: x86 105 -> 91 Mops t=64 -> 128 (libc 165 -> 253); arm 277 -> 77 (libc 255 -> 200); null falls with it; umem p999 11 us vs libc 0.4 | open; mechanism: sizes above `tcache_max` take a blocking depot trip every 31 ops per CPU; the original P8.2 fix (1)+(2) is the fix path |
+| P8.6 PTC per-thread magazines never primed | 28x cliff at the bin boundary, single thread (157 -> 5.5 Mpairs/s at N=64 -> 65 for 512 B); 39 % trylock + 34 % unlock | open; mechanism in source; fix: allocate one magazine on first miss |
+| P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; re-measured at `d6f04ab`: 0.74-0.91, flat; profile attributes it |
+| P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | **CLOSED** by `ae86536` (P8.2's fix): at `d6f04ab` x86 t=192 umem 528.8 = null 527.8 > libc 486.8 -- PTC misses had also gone to `cache_cpu[0]` |
+| P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | open; mechanism in source + profile + contention dump | re-measured at `d6f04ab`: sustained 2.4x (x86) / 9x (arm) better, still 2-3x behind the field; perf 59 % in `pthread_mutex_trylock`, 95 % of depot reloads cross-stripe -- mechanism confirmed, open |
 
 ### P8.1 The `LD_PRELOAD` interposer took a global mutex on every `free()` -- FIXED
 
@@ -1973,6 +1975,52 @@ nothing discarded with objects in it) already govern `umem_ptc_mag_return`;
 the new magazine goes through the same function. Not done in this pass --
 it is a fast-path change and needs its own A/B with the null control.
 
+### P8.2b The 1k:4k class has a second cliff at 128+ threads, which P8.2 was hiding
+
+`umem.c` `_umem_alloc`/`_umem_free` (sizes above `tcache_max` bypass the PTC
+entirely); `_umem_cache_alloc` (`cc_lock`, then a **blocking**
+`umem_depot_alloc()` on magazine exhaustion); `umem_magtype` (2560-4096 B
+chunks: 31-round magazines).
+
+**Measured** at `d6f04ab` (2026-09-24 comparison, `multi` 1024:4096, API,
+Mops/s, median over replicates; before = `f2a8267`):
+
+| box | t | before | after | null after | libc after | best after |
+|---|---:|---:|---:|---:|---:|---:|
+| `c7i.metal` | 64 | 9.4 | **105.2** | 87.4 | 164.6 | 207.1 |
+| `c7i.metal` | 128 | 12.4 | **90.6** | 69.0 | 252.5 | 326.3 |
+| `c7i.metal` | 192 | 27.7 | 113.1 | 83.3 | 344.2 | 494.8 |
+| `c8g.metal` | 64 | 15.3 | **277.3** | 277.3 | 254.7 | 328.0 |
+| `c8g.metal` | 128 | 26.8 | **77.3** | 75.4 | 200.3 | 416.4 |
+| `c8g.metal` | 192 | 36.3 | 273.3 | 281.9 | 390.1 | 535.8 |
+
+Up to t=64 P8.2 is fixed (umem within 15 % of glibc). From t=64 to t=128
+throughput **falls** on both metals while every other arm keeps scaling; the
+null falls with it, so it is deterministic and in the allocator. Latency
+shape at arm t=128: umem p50 156 ns, p99 4,454, p999 10,959; libc p50 55,
+p999 372; jemalloc p999 42.
+
+**Mechanism.** These sizes never touch the PTC, so every op is `cc_lock`, and
+every 31 ops per CPU is a blocking depot round trip -- with 128 threads now
+correctly spread over 128 per-CPU slots (the very thing `ae86536` fixed), 128
+CPUs each take that trip into a stripe that is empty because the objects were
+freed elsewhere, and the cross-stripe steal is under `ml_lock`. At 64 CPUs
+the depot keeps up; at 128 it convoys. This was the *second half* of the
+original P8.2 diagnosis; the CPU-hint bug made it unobservable because
+everything was on one lock anyway. The x86 lo box shows the same shape one
+step down (t=8: umem 16.1, null 22.3, libc 23.2, `unstable` on both umem
+replicates, p999 1-2 us vs libc 0.16).
+
+**Fix** is the original P8.2 (1) and (2), now with a live pre-fix number:
+extend PTC classes through 8 KB so 2.5-8 KB objects have per-thread bins and
+magazines (and fix P8.6 so those magazines actually work), and raise
+`mt_magsize` for the 2048-8192 band from 31 to 63. **Regression:** `multi`
+1024:4096 at t=128 on metal must be >= its t=64 figure (monotone) and
+>= 0.6x libc; today 0.36x (x86) / 0.39x (arm). The contention-dump phase of
+`allocator_comparison.sh` should include 1024:4096 so the next run has the
+depot counters at this point (a rig gap: `CONTENTION_SIZES` covers three
+size ranges and not this one).
+
 ### P8.3 Interposer per-call overhead after P8.1
 
 `malloc_interpose.c` `free()` fast path at `a74065e` (`is_static_pointer`,
@@ -2033,6 +2081,16 @@ candidates are the `umem_introspect_break_armed` load on every alloc, the
 `thread_ptc` TLS access, and the `ptc_bin_capacity()` call on every free
 (`umem.c:3911`). (3) The same on `c8g.metal-48xl` where the gap is absent,
 to see which counter differs.
+
+**STATUS: CLOSED (`ae86536`, measured at `d6f04ab`).** Not by a P8.4 fix but
+by P8.2's: a PTC *miss* (bin full or empty) at these sizes also went to
+`cache_cpu[0]`, and at 128-192 threads that was a measurable fraction of
+operations. 2026-09-24 comparison, `multi` 16:64 on `c7i.metal-48xl`: t=128
+umem 357.7 = libc 356.6 (best); t=192 umem 528.8, null 527.8, libc 486.8,
+best 583.4 mimalloc (umem/best 0.91, inside the run's null spread). Same on
+`c8g.metal`: t=192 602.1 vs null 560.6 vs best 612.3. 64:256 and 256:1024 at
+t=192 gained 28-36 % identically.
+`docs/results/2026-09-24-allocator-comparison.md` §2.
 
 ### P8.5 `frag` is 20-33 % behind the size-class allocators at 16..1024 B, and 2-3x behind under sustained load
 
