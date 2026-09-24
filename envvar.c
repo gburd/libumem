@@ -222,6 +222,17 @@ static umem_env_item_t umem_options_items[] = {
 		"The preferred page size for the sbrk(2) heap.",
 		NULL, 0, NULL,	&vmem_sbrk_pagesize
 	},
+	{ "mmap_guard",		"Evolving",	ITEM_SIZE,
+		"=bytes. Freed mmap-heap spans at least this large are remapped "
+		    "PROT_NONE so a use-after-free faults; smaller ones are "
+		    "MADV_DONTNEED'd, which returns the pages equally but does "
+		    "not split the mapping into a new VMA.  Default 16M; 0 = "
+		    "never guard.",
+		NULL, 0, NULL,	&vmem_mmap_guard_min
+		/* Not secure-unsafe in either direction: raising it trades a
+		 * fault-on-UAF property for VMA count and back; neither is a
+		 * file, socket, exec or disclosure side effect. */
+	},
 #endif
 #endif
 	{ "reclaim",		"Evolving",	ITEM_UINT,

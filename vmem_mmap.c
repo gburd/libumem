@@ -148,6 +148,40 @@ vmem_mmap_alloc(vmem_t *src, size_t size, int vmflags)
 	return (ret);
 }
 
+/*
+ * Spans at or above this size are returned to the heap by remapping them
+ * PROT_NONE; below it, by MADV_DONTNEED.  Tunable: UMEM_OPTIONS=mmap_guard=N
+ * (bytes; 0 = always DONTNEED, i.e. never punch a hole).
+ *
+ * WHY THERE ARE TWO WAYS (P6.2, and P6.4's VMA leak).  The heap is one
+ * PROT_NONE reservation that vmem_mmap_alloc() commits RW with MAP_FIXED as
+ * spans are handed out.  Freeing a span used to remap it PROT_NONE
+ * unconditionally.  That splits the RW mapping the span came from into
+ * RW / NONE / RW -- one new kernel VMA per freed span, and the kernel will
+ * not merge it back when the neighbour is later re-committed (MAP_FIXED
+ * over a hole makes a fresh mapping).  Measured: 40,102 VMAs at 40k
+ * half-freed 136 KiB oversize objects; 1,236 single-page PROT_NONE holes
+ * left by destroying 2,000 caches (freed descriptor pages take the same
+ * path).  vm.max_map_count is 65,530.
+ *
+ * MADV_DONTNEED gives the kernel the pages back just as completely -- RSS
+ * after either is the same, measured -- and does not touch the VMA.  What it
+ * does NOT give is the fault-on-use-after-free property: a stale pointer
+ * into a DONTNEED'd span reads zeros instead of dying.  That property is
+ * real, and worth keeping where it is cheap: a multi-megabyte oversize
+ * object is exactly the kind of buffer a use-after-free is dangerous in,
+ * and there can never be enough of them to matter for VMA count.  A 4 KiB
+ * descriptor page or a 136 KiB span is where the VMA cost lives and where
+ * the guard buys least (small spans are re-committed soon, and a
+ * re-committed span reads as memory either way).
+ *
+ * So: guard (PROT_NONE) at >= 16 MiB by default, DONTNEED below.  The
+ * default is a policy choice recorded here, not a measurement: 16 MiB is
+ * where a process would need 4,000+ simultaneously-freed spans of that
+ * size to reach the cap, which is not a shape any allocator serves.
+ */
+size_t vmem_mmap_guard_min = 16 * 1024 * 1024;
+
 static void
 vmem_mmap_free(vmem_t *src, void *addr, size_t size)
 {
@@ -155,7 +189,12 @@ vmem_mmap_free(vmem_t *src, void *addr, size_t size)
 #ifdef _WIN32
 	VirtualFree(addr, size, MEM_RELEASE);
 #else
-	(void) mmap(addr, size, FREE_PROT, FREE_FLAGS | MAP_FIXED, -1, 0);
+	if (vmem_mmap_guard_min != 0 && size >= vmem_mmap_guard_min) {
+		(void) mmap(addr, size, FREE_PROT, FREE_FLAGS | MAP_FIXED,
+		    -1, 0);
+	} else {
+		(void) madvise(addr, size, MADV_DONTNEED);
+	}
 #endif
 	vmem_free(src, addr, size);
 	errno = old_errno;

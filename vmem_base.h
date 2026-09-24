@@ -61,6 +61,7 @@ extern void vmem_reap(void);		/* vmem_populate()-safe reap */
 extern size_t pagesize;
 extern size_t vmem_sbrk_pagesize;
 extern size_t vmem_sbrk_minalloc;
+extern size_t vmem_mmap_guard_min;	/* see vmem_mmap.c */
 
 extern uint_t vmem_backend;
 #define	VMEM_BACKEND_SBRK	0x0000001
