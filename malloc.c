@@ -78,6 +78,24 @@ typedef struct bootstrap_header {
 static __thread int bootstrap_depth;
 
 /*
+ * Number of live bootstrap allocations.  This is the gate for
+ * bootstrap_pointer_p(): when it reads zero no bootstrap pointer exists, so
+ * the 8-byte read of buf[-1] against BOOTSTRAP_MAGIC is skipped.  Same
+ * construction and the same argument as libc_ptr_live in
+ * malloc_interpose.c: the count goes UP before bootstrap_malloc() returns
+ * the pointer (so a pointer that can be freed is always counted), and DOWN
+ * after bootstrap_free() has unmapped it.  A stale nonzero costs one load
+ * and one compare; a zero is true at the instant it is read for every
+ * pointer the caller can hold.
+ *
+ * Steady state for nearly every process is zero: bootstrap allocations are
+ * made only while umem is not READY or inside a recursive malloc, and the
+ * few that survive (pthread TLS blocks, dlsym state) are counted until the
+ * thread exits.  The relaxed read is on the free() fast path.
+ */
+static _Atomic long bootstrap_live;
+
+/*
  * Exposed for malloc_interpose.c
  * These functions are used during bootstrap phase when umem is not yet ready.
  */
@@ -123,20 +141,45 @@ bootstrap_malloc(size_t size)
 
 	hdr->magic = BOOTSTRAP_MAGIC;
 	hdr->size = total_size;
+	/* Count up BEFORE the pointer becomes freeable. */
+	atomic_fetch_add_explicit(&bootstrap_live, 1, memory_order_release);
 	bootstrap_depth--;
 	return (void *)(hdr + 1);
 }
 
 /*
- * Reads the 8 bytes before buf.  Callers pass a pointer that is either
- * known to be a heap pointer or has been handed to free() by the caller of
- * free(); this is step 1 of process_free()'s validation order.
+ * Step 1 of process_free()'s validation order.  Reads the 8 bytes before
+ * buf ONLY when a bootstrap allocation is live; with bootstrap_live == 0
+ * no pointer can be one, and nothing is read.  For a foreign pointer that
+ * means buf[-1] is now never read before the hull check (step 2), which
+ * before this gate it was, unconditionally.
+ *
+ * THIS GATE IS A HARDENING CHANGE FIRST AND A PERFORMANCE CHANGE SECOND.
+ * Without it, free(p) for any p reads p[-1] before anything has established
+ * that p is ours, and if those 8 bytes equal BOOTSTRAP_MAGIC the pointer goes
+ * to bootstrap_free() -> munmap(hdr, hdr->size) with both hdr and size taken
+ * from memory the caller controls (attacker position D: controls buffer
+ * contents, not the environment).  That is an unmap of a chosen range.  The
+ * P5.8 work ordered every OTHER read after the ownership check and left this
+ * one in front on the argument that a bootstrap mmap can land inside the
+ * hull's gaps; the gate keeps that argument (the read still happens whenever
+ * a bootstrap pointer can exist) and closes the exposure for the steady
+ * state of every process, where bootstrap_live is zero.
+ *
+ * It was measured at +1.6 % instructions per free() on c7g.2xlarge
+ * (P8.3 candidate (b), 382c529) and reverted for that reason in 802c6ac.
+ * Reinstated: a 1.6 % microbench delta on one architecture does not buy back
+ * an attacker-controlled munmap, and AGENTS.md 7a does not allow that trade
+ * without a decision recorded here.  This is the decision.
  */
 static inline int
 bootstrap_pointer_p(const void *buf)
 {
-	const bootstrap_header_t *hdr = (const bootstrap_header_t *)buf - 1;
+	const bootstrap_header_t *hdr;
 
+	if (atomic_load_explicit(&bootstrap_live, memory_order_acquire) == 0)
+		return (0);
+	hdr = (const bootstrap_header_t *)buf - 1;
 	return (hdr->magic == BOOTSTRAP_MAGIC);
 }
 
@@ -166,6 +209,8 @@ bootstrap_free(void *buf)
 #else
 	(void) munmap(hdr, hdr->size);
 #endif
+	/* Count down AFTER the mapping is gone. */
+	atomic_fetch_sub_explicit(&bootstrap_live, 1, memory_order_release);
 }
 
 /*
