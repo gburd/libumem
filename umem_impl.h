@@ -166,19 +166,23 @@ extern "C" {
  * The old comment here claimed the hint was "reset on magazine reload to
  * detect CPU migration".  Nothing reset it.
  *
- * WHAT THIS DOES NOW.  Prefer the kernel-maintained rseq cpu_id, registering
- * the thread first if the caller has not (registration is idempotent and
- * cheap; before, the first allocation computed its hint BEFORE the rseq block
- * in _umem_cache_alloc registered, so the rseq path was never consulted for
- * the value that got cached).  Without rseq, use sched_getcpu() -- a real CPU
- * number -- and cache it.  Only as a last resort fall back to a thread-id
- * hash, and then hash the address bits that vary (>> 12) rather than the
- * ones that never do.
+ * WHAT THIS DOES NOW.  On the one miss, prefer the kernel-maintained rseq
+ * cpu_id, registering the thread first if the caller has not (registration
+ * is idempotent and cheap; before, the first allocation computed its hint
+ * BEFORE the rseq block in _umem_cache_alloc registered, so the rseq path
+ * was never consulted for the value that got cached).  Without rseq, use
+ * sched_getcpu() -- a real CPU number.  Only as a last resort fall back to a
+ * thread-id hash, and then hash the address bits that vary (>> 12) rather
+ * than the ones that never do.
  *
- * The rseq value is re-read on every call: it is one TLS load and it tracks
- * migration.  The sched_getcpu() value is cached, and that cache is stale
- * after migration -- acceptable: a wrong-but-spread hint costs cache-line
- * traffic, not serialisation.
+ * The value is cached in TLS after the first successful read, as before.
+ * A first attempt re-read the rseq cpu_id on every call to track migration
+ * and cost 5 % at t=1 on the magazine path (4.16 -> 3.94 Mops, 2560 B,
+ * median of 7, alternating builds): three TLS loads and a dereference where
+ * there had been one load.  Spread is the property that matters here, not
+ * exactness -- a stale-after-migration hint costs cache-line traffic, not
+ * serialisation, and is exactly what the Solaris thr_self() hint always
+ * did.  So: read once, correctly, and cache.
  */
 extern __thread int cached_cpu_hint;
 
@@ -198,21 +202,22 @@ extern __thread int cached_cpu_hint;
 static inline int __attribute__((always_inline))
 get_cached_cpu_hint(void)
 {
-	int hint;
+	int hint = cached_cpu_hint;
 
-#ifdef UMEM_RSEQ_AVAILABLE
-	if (likely(umem_rseq_enabled)) {
-		if (unlikely(!umem_rseq_registered))
-			(void) umem_rseq_register_thread();
-		if (likely(umem_rseq_cpu_idp != NULL)) {
-			hint = (int)*umem_rseq_cpu_idp;
-			if (likely(hint >= 0))
-				return hint;
-		}
-	}
-#endif
-	hint = cached_cpu_hint;
 	if (unlikely(hint == -1)) {
+#ifdef UMEM_RSEQ_AVAILABLE
+		if (umem_rseq_enabled) {
+			if (!umem_rseq_registered)
+				(void) umem_rseq_register_thread();
+			if (umem_rseq_cpu_idp != NULL) {
+				hint = (int)*umem_rseq_cpu_idp;
+				if (hint >= 0) {
+					cached_cpu_hint = hint;
+					return hint;
+				}
+			}
+		}
+#endif
 #if defined(__linux__)
 		hint = sched_getcpu();
 		if (hint < 0)
