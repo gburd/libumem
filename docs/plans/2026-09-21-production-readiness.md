@@ -1852,7 +1852,7 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 | P8.6 PTC per-thread magazines never primed | 28x cliff at the bin boundary, single thread (157 -> 5.5 Mpairs/s at N=64 -> 65 for 512 B); 39 % trylock + 34 % unlock | **FIXED** `a2177b9`: one magazine allocated on the first free-side miss; cliff 26.9x -> 1.16x (x86), 26.3x -> 1.05x (arm); depot trylocks per 200 rounds 25,600 -> 0; inside the bin within null |
 | P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; re-measured at `d6f04ab`: 0.74-0.91, flat; profile attributes it |
 | P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | **CLOSED** by `ae86536` (P8.2's fix): at `d6f04ab` x86 t=192 umem 528.8 = null 527.8 > libc 486.8 -- PTC misses had also gone to `cache_cpu[0]` |
-| P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | open; mechanism in source + profile + contention dump | re-measured at `d6f04ab`: sustained 2.4x (x86) / 9x (arm) better, still 2-3x behind the field; perf 59 % in `pthread_mutex_trylock`, 95 % of depot reloads cross-stripe -- mechanism confirmed, open |
+| P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | **PARTIAL** `0532c38`: at t=8 the cost was steal SCANS locking empty stripes (98.6 % of 17M pops), not steals (dep_remote/dep_local 0.11); unlocked head check -> dep_conten 434k -> 0, sustained 0.57x -> 0.72x (x86) / 0.77x (arm) glibc; p999 19 us unchanged (slab layer, plan's (1)); t=192 not re-measured (no metal) |
 
 ### P8.1 The `LD_PRELOAD` interposer took a global mutex on every `free()` -- FIXED
 
@@ -2416,6 +2416,91 @@ lock *wait*, which `perf` attributes to the caller -- take a `perf record
 choosing between (1) and (2). (4) Regression: sustained `frag` 16:64 at 8
 threads >= 0.8x glibc and p999 < 5 us on `c7i.2xlarge` (today 0.45x and
 22 us); at 192 threads on metal >= 0.5x glibc (today 0.13x).
+
+**STATUS: PARTIAL FIX (`0532c38`); the diagnosis above was wrong for the
+8-thread case, and the 192-thread case is not re-measured.**
+
+**Re-measured first**, as the brief required, after P8.6 (`a2177b9`) and
+P8.2b (`ad72787`, `eb68575`) landed -- either could have moved this, since
+PTC misses are what reach the depot.  Neither did.  frag 16:64 t=8,
+`verify-isolated`, `c7i.2xlarge` / `c7g.2xlarge`:
+
+| build | matrix frag umem / null / libc (Mops) | sustained frag umem / libc (Mops, 4 x 20 s) | umem p999 / libc p999 (us) | dep_local | dep_remote | dep_conten | conten per reload | perf trylock + unlock |
+|---|---|---|---|---:|---:|---:|---:|---|
+| `356354e` x86 | 22.1 / 21.6 / 19.8 | **10.4** / 20.4 | 19.2 / 2.2 | 75,322 | 17,140 | 437,045 | 4.7 | 22 % + 8 % |
+| `eb68575` x86 | 22.1 / 22.1 / 20.7 | **11.6** / 20.5 | 18.9 / 2.1 | 71,790 | 8,058 | 433,667 | 5.4 | 17 % + 7 % |
+| `356354e` arm | 21.6 / 22.4 / 20.7 | **10.7** / 20.3 | 14.1 / 1.6 | | | | | |
+| `eb68575` arm | 20.6 / 24.4 / 21.9 | **12.7** / 22.4 | 15.1 / 1.6 | | | | | |
+
+The matrix frag point (20M ops, no sustained live set) has umem level with
+or ahead of glibc on both boxes, as the 2026-09-24 report said.  The
+sustained run is the deficit: 0.51x / 0.48x glibc, p999 9x / 9x worse.
+
+**What the contention dump says, against what the entry above says.**
+The mechanism written above -- and confirmed at HEAD in the 2026-09-24
+report from the t=192 metal dump -- is cross-stripe *stealing*: "95 % of
+depot reloads steal from another CPU's stripe".  At t=8 on 8 CPUs that is
+not what the counters show: `dep_remote / dep_local` is 0.11-0.23, so
+nine of ten successful reloads are LOCAL.  What is large is `dep_conten`,
+434k against 80k successful reloads: 5.4 times per reload, a thread's
+blocking `umem_depot_pop()` on its OWN stripe found the lock held and
+slept.  Who holds it?  A `perf` with DWARF unwinding (frame pointers are
+off in the release build) attributes 15 % of all cycles to
+`pthread_mutex_trylock` called from `umem_depot_alloc_trylock` (8.2 %)
+and `umem_depot_alloc` (5.1 % via `umem_depot_pop_trylock`, 1.7 % via
+`umem_depot_pop`) -- the steal SCANS, not the steals.  Every alloc-side
+miss trylocked all 8 stripes on the PTC path and then all 8 again on the
+blocking path, and both pop primitives took the lock BEFORE looking at
+the list.  On frag the live set grows faster than frees return magazines,
+so nearly every stripe is empty nearly all the time: the scan was 16
+lock/unlock pairs per miss to read 16 NULLs, and eight threads doing that
+concurrently held each other's local stripe locks.  The probe build's
+`test_depot_empty_scan` counts it: **98.6 % (x86) / 98.7 % (arm) of
+17-19M depot pops acquired a stripe lock and read an empty list.**
+
+**Fix `0532c38`.**  `umem_depot_pop()` and `umem_depot_pop_trylock()` read
+`ml_list` unlocked first and return NULL if it is NULL.  The read is racy
+and that is the right semantics: a magazine pushed a moment later is found
+on the next call, which is exactly the outcome of a failed trylock.  Two
+lines in the two primitives every depot path goes through; no new list, no
+new hashing.  The plan's (1) batch-from-slab and (2) overflow list /
+steal-by-freeing-CPU were not taken: (2) addresses stealing, which the t=8
+counters say is not the cost, and (1) is a different mechanism (slab-layer
+lock rate) that the post-fix profile below now exposes as the next one.
+
+**After** (`0532c38`, same protocol):
+
+| box | sustained frag umem / libc (Mops) | ratio | umem p999 / libc p999 (us) | dep_local | dep_remote | dep_conten | locked-empty pops (probe) | perf trylock + unlock |
+|---|---|---:|---|---:|---:|---:|---|---|
+| x86 before (`eb68575`) | 11.6 / 20.5 | 0.57 | 18.9 / 2.1 | 71,790 | 8,058 | 433,667 | 17,114,748 of 17,360,206 | 17 % + 7 % |
+| x86 after | **14.9** / 20.6 | **0.72** | 19.1 / 2.1 | 76,114 | 2,844 | **0** | **19** of 26,749,400 | **0 % + 1.2 %** |
+| arm before (`eb68575`) | 12.7 / 22.4 | 0.57 | 15.1 / 1.6 | | | | 19,268,300 of 19,513,852 | |
+| arm after | **18.0** / 23.3 | **0.77** | 13.0 / 1.4 | | | | **5,661** of 24,100,671 | |
+
++28 % (x86) and +42 % (arm) sustained; `dep_conten` 434k -> 0;
+`pthread_mutex_trylock` gone from the profile.  The matrix frag point is
+inside the null (x86 22.4 vs null 22.1; arm 24.0 vs null 21.5, null
+spread 21.0-24.8).  **The p999 did not move**: 19 us / 13 us against
+libc's 2.1 / 1.4.  The post-fix profile says where the rest is: `frag_worker`
+24 % + `td_qsort`/`td_add`/`td_compress` 14 % + `umem_free_wrapper` 15 %
+are the bench's own memset, histogram and header check (the same 45-50 %
+overhead the team brief warns of at t=1); of what is left, kernel
+`native_queued_spin_lock_slowpath` 5.6 % (futex wake under `mmap_lock`,
+slab creation) and `umem_slab_alloc` 3.2 % + `pthread_mutex_lock` 2.1 %
+(one object per `cache_lock` acquisition) are the allocator.  That is the
+plan's (1), and it is the tail: a slab-create under `mmap` is the 19 us.
+Target (4) -- >= 0.8x glibc and p999 < 5 us at t=8 -- is not met: 0.72x /
+0.77x and the tail unchanged.
+
+**Not done.**  The t=192 metal re-measurement (the 95 % cross-stripe
+figure, sustained 3x behind) -- `c7i.metal-48xl` had no capacity and
+`c8g.metal` was used for P8.2b and terminated per the brief; the brief
+said not to launch metal for this alone.  The fix here removes lock
+traffic that the t=192 profile (59 % in `pthread_mutex_trylock`) also
+shows, but whether stealing or scanning dominates there is a claim for the
+next metal run, with the contention dump beside it.  (1), the slab-layer
+batch, is the remaining lo-box mechanism and is not attempted in this
+pass.
 
 ### Phase 8 exit criteria
 

@@ -61,6 +61,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   gave the new bins a working L2 behind them. `c7i.metal-48xl` was not
   re-measured (no capacity in us-east-2 during the run). (P8.2b)
 
+- **Depot steal scans no longer lock stripes that are empty.** Both depot
+  pop primitives took a stripe's lock before looking at its list. A reload
+  that misses its own stripe scans up to all the others, and on a workload
+  whose live set grows faster than its frees return (`frag`) nearly every
+  stripe is empty: eight threads each took and released 16 locks per miss to
+  read 16 NULLs, and held each other's stripes doing it -- 98.6 % of 17M
+  depot pops on `c7i.2xlarge`, 434k blocking-lock contention events per 80k
+  successful reloads. An unlocked head check first: contention events
+  434k -> 0, `pthread_mutex_trylock` gone from the profile (was 17-22 % of
+  cycles), sustained `frag` 16:64 at t=8 0.57x -> 0.72x glibc (x86) and
+  0.77x (arm). The p999 tail (19 us vs glibc 2 us) is unchanged and is the
+  slab layer's one-object-per-lock, not the depot; the 192-thread metal
+  figure is not re-measured. The plan's diagnosis for this point --
+  cross-stripe *stealing* -- was wrong at 8 threads (9 of 10 reloads are
+  local); the cost was cross-stripe *scanning*. Regression
+  `test/integration/test_depot_empty_scan` (probe build): locked-empty pops
+  <= 1 %, pre-fix 98.6 %. (P8.5, partial)
+
 ## [3.2.0] - 2026-09-24
 
 The theme of this release is *things that were never running*. Three of its
