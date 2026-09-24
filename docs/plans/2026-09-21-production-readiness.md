@@ -696,13 +696,13 @@ x86 16 GB, `c7g.2xlarge` arm 16 GB, `c7i.metal-48xl` 192 vCPU 377 GB)
 
 | Item | Dimension | Verdict | The number | glibc |
 |---|---|---|---|---|
-| P6.1 | object count | **BLOCKING** | 512 B objects: `umem_alloc` -> NULL at 8.2 GB, 63k VMAs (`vm.max_map_count`); 64 B: 48k VMAs at 100M. `3f2e67c` fixed one of two paths. Lever (c) 4 MiB qcache slab floor: 15,702 -> 274 VMAs, zero small-heap cost | 54 VMAs |
-| P6.2 | object size | HIGH | vmem segment supply FINE to 11 GB; every freed oversize object is a permanent VMA (40k at 136 KiB x 40k); oversize alloc 20-100x slower per call | same VMA count at half-freed, but its dynamic mmap threshold exits the regime |
-| P6.3 | thread count | HIGH | 16,000 threads: no cap; 56 KB/idle thread (`umem_ptc_t` is 31 KB, 20 KB of it padding); exit drain 423 us/thread and main stalls 37 ms | 17.5 KB/thread, 11 us/thread flat, 1 ms |
-| P6.4/4b | cache count | HIGH on 192 CPUs | allocation unaffected at 50k caches; 117 KB/cache, 415 ms create tails, **3.0 s `fork()`** at 50k on 192 CPUs; 51k VMAs + 1.8 GB left after destroying all | n/a |
+| P6.1 | object count | **FIXED** (`cf3f762`) | 512 B objects: `umem_alloc` -> NULL at 8.2 GB, 63k VMAs (`vm.max_map_count`); 64 B: 48k VMAs at 100M. `3f2e67c` fixed one of two paths. Lever (c) 4 MiB qcache slab floor: 15,702 -> 274 VMAs, zero small-heap cost | 54 VMAs |
+| P6.2 | object size ((1) **FIXED** `ab8a73d`; qcache not added) | HIGH | vmem segment supply FINE to 11 GB; every freed oversize object is a permanent VMA (40k at 136 KiB x 40k); oversize alloc 20-100x slower per call | same VMA count at half-freed, but its dynamic mmap threshold exits the regime |
+| P6.3 | thread count | **FIXED** (`b8c39e6`, `06559e5`) | 16,000 threads: no cap; 56 KB/idle thread (`umem_ptc_t` is 31 KB, 20 KB of it padding); exit drain 423 us/thread and main stalls 37 ms | 17.5 KB/thread, 11 us/thread flat, 1 ms |
+| P6.4/4b | cache count | footprint+leak **FIXED** (`e00fdf2`, `ede1849`, `ab8a73d`); create tail / fork at 50k open | allocation unaffected at 50k caches; 117 KB/cache, 415 ms create tails, **3.0 s `fork()`** at 50k on 192 CPUs; 51k VMAs + 1.8 GB left after destroying all | n/a |
 | P6.5 | fragmentation over time | FINE / MEDIUM | 18 min churn: RSS +11 MB over the last 17 min (plateau); ratio 1.13 -> 1.33 is the live set shrinking under a fixed RSS | 1.018 flat |
 | P6.6 | fork with 4 GB heap | FINE | 23 ms vs 21 ms; child COW +0.4 MB; handlers +2 ms constant, not heap-proportional | 21 ms |
-| P6.7 | kernel knobs | FINE / MEDIUM / BLOCKING | clean NULL + ENOMEM under `RLIMIT_AS`, `RLIMIT_DATA`, `overcommit=2`; but no 64 B allocation possible after the first failure (glibc: yes); one stale-errno path on `RLIMIT_DATA`; `max_map_count=4096` fails 512 B at **500 MB** (P6.1 again) | recovers; 2 GB |
+| P6.7 | kernel knobs | FINE / MEDIUM (the BLOCKING part was P6.1) | clean NULL + ENOMEM under `RLIMIT_AS`, `RLIMIT_DATA`, `overcommit=2`; but no 64 B allocation possible after the first failure (glibc: yes); one stale-errno path on `RLIMIT_DATA`; `max_map_count=4096` fails 512 B at **500 MB** (P6.1 again) | recovers; 2 GB |
 | P6.8 | reclaim under pressure | **FIXED** (`147d5ff`, `9bbe58b`; root: update thread never started) |
 | P6.9 | fork child has no update thread | **FIXED** (`cceae1d`) | a freed 2 GB slab heap is 100 % resident at t = 100 s with the update thread running: every freed object sits in a depot magazine, `slab_refcnt` never reaches 0, `umem_cache_reclaim_pages` skips them, and the periodic pass never reaps the depot. `umem_reap()` every 10 s: -5 MB / 100 s | keeps interior pages too, but claims nothing |
 
@@ -970,6 +970,37 @@ allocations into slab-cached objects with no syscall, and closes the
 20-100x per-call gap at the same time. With P6.1's fix in place the qcache
 slabs would be >= 4 MiB spans. This is the same lever as glibc's dynamic
 mmap threshold, done statically.
+
+**STATUS: (1) FIXED (`ab8a73d`); (2) not done, and with a reason.**
+
+(1) `vmem_mmap_free` now `MADV_DONTNEED`s spans below `vmem_mmap_guard_min`
+(16 MiB, `UMEM_OPTIONS=mmap_guard=N`, 0 = never guard) and `PROT_NONE`-remaps
+at or above it. The threshold is a *policy* choice, recorded as such in the
+source: fault-on-use-after-free is worth most on large buffers and costs
+nothing there (4,000+ simultaneously-freed 16 MiB spans to reach the cap);
+below it the VMA cost lives and small spans are re-committed soon anyway.
+Evidence (`c7i.2xlarge`):
+
+| | pre `4f0feae` | post `ab8a73d` |
+|---|---|---|
+| `test_oversize_vma`: new VMAs from 1,000 frees of 136 KiB | **1,999** (two per hole: the NONE region and the split neighbour) | **0** |
+| guard arm (`mmap_guard=4096`, same run) | -- | 1,999 (the `PROT_NONE` path exists) |
+| RSS returned by the free | 132 of 132 MB | 132 of 132 MB |
+| `probe_objsize 139264 40000 2`, VMAs after all freed | 1,303 | **74** |
+| `test_heap_ceiling` 4 KiB / 512 B arms | 73 / 992 VMAs | 73 / 992 (unchanged) |
+| reclaim regressions | PASS | PASS |
+
+This is also what closed P6.4's destroy leak (freed descriptor pages took the
+same path). Scope: every span free of any kind goes through this function.
+
+(2) An oversize quantum cache was **not added**. With `cf3f762`'s 4 MiB floor
+on `UMC_QCACHE` slabs, a 2 MiB oversize class would be 2 objects per 4 MiB
+slab and a 136 KiB class 30 -- the floor would have to be lifted for this
+arena, which reintroduces the P6.1 VMA-per-slab arithmetic at exactly the
+sizes where it bit. And the per-call gap (1) was measured against is now a
+different number: with DONTNEED instead of a `PROT_NONE` remap plus a
+`MAP_FIXED` re-commit, an oversize alloc/free pair is one `madvise` and one
+`mmap`, not two `mmap`s. Not re-measured here; the comparison run will.
 
 ### P6.4 Cache count: 50,000 caches -- FINE on allocation stall; MEDIUM on create cost and per-cache footprint
 `umem.c:884-893` (`umem_cache_applyall`, holds `umem_cache_lock` for the
