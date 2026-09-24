@@ -505,32 +505,37 @@ hull_refresh(void)
 }
 
 /*
+ * Is [addr, addr + len) inside the hull [lo, hi)?  lo/hi are bounds the
+ * caller loaded from umem_heap_lo/hi.  Because the hull only widens, ANY
+ * pair ever read is a subset of the current hull, so a hit against a
+ * stale pair is a hit against the current one; a miss may be stale and
+ * must go through umem_may_own() before it is treated as a refusal.
+ */
+static inline int
+hull_contains(uintptr_t lo, uintptr_t hi, const void *addr, size_t len)
+{
+	uintptr_t a = (uintptr_t)addr;
+	uintptr_t end = a + len;
+
+	if (a == 0 || len == 0 || end < a)	/* wrapped: not a real object */
+		return (0);
+	return (a >= lo && end <= hi);
+}
+
+/*
  * Could [addr, addr + len) be memory umem handed out?  Conservative: a false
- * "yes" is possible (the hull is a superset), a false "no" is not.
+ * "yes" is possible (the hull is a superset), a false "no" is not.  This is
+ * the MISS path, reached only when hull_contains() against the caller's
+ * loaded pair said no: the heap may simply have grown since the last
+ * refresh, so re-read the spans and re-test before rejecting anything.
+ * The hit path is MAY_OWN in process_free_umem().
  */
 static int
 umem_may_own(const void *addr, size_t len)
 {
-	uintptr_t a = (uintptr_t)addr;
-	uintptr_t end;
-
-	if (a == 0 || len == 0)
-		return (0);
-	end = a + len;
-	if (end < a)
-		return (0);		/* wrapped: not a real object */
-
-	if (a >= atomic_load(&umem_heap_lo) &&
-	    end <= atomic_load(&umem_heap_hi))
-		return (1);
-
-	/*
-	 * Missed.  The heap may simply have grown since the last refresh, so
-	 * re-read the spans and re-test before rejecting anything.
-	 */
 	hull_refresh();
-	return (a >= atomic_load(&umem_heap_lo) &&
-	    end <= atomic_load(&umem_heap_hi));
+	return (hull_contains(atomic_load(&umem_heap_lo),
+	    atomic_load(&umem_heap_hi), addr, len));
 }
 
 /*
@@ -611,6 +616,18 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 
 	const char *message;
 	int old_errno = errno;
+	/*
+	 * One read of the hull for every ownership test in this call.  A hit
+	 * against these bounds is a hit against the current hull (they only
+	 * widen); a miss goes to umem_may_own(), which refreshes and
+	 * re-tests, so a valid pointer is never refused on a stale pair.
+	 */
+	uintptr_t hlo = atomic_load_explicit(&umem_heap_lo,
+	    memory_order_relaxed);
+	uintptr_t hhi = atomic_load_explicit(&umem_heap_hi,
+	    memory_order_relaxed);
+#define	MAY_OWN(p, n) \
+	(hull_contains(hlo, hhi, (p), (n)) || umem_may_own((p), (n)))
 
 	buf = (malloc_data_t *)buf_arg;
 
@@ -622,7 +639,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 	 * Only the FIRST header is covered here; the two-tag layouts re-check
 	 * before reading their second one.
 	 */
-	if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+	if (!MAY_OWN(buf, sizeof (malloc_data_t))) {
 		umem_err_recoverable("%s(%p): not a libumem allocation "
 		    "(outside umem's heap)\n",
 		    do_free ? "free" : "realloc", buf_arg);
@@ -656,7 +673,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 		size_t high_size;
 
 		buf--;
-		if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+		if (!MAY_OWN(buf, sizeof (malloc_data_t))) {
 			message = "invalid or corrupted buffer";
 			break;
 		}
@@ -688,7 +705,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 		overhead += sizeof (malloc_data_t);
 
 		buf--;
-		if (!umem_may_own(buf, sizeof (malloc_data_t))) {
+		if (!MAY_OWN(buf, sizeof (malloc_data_t))) {
 			message = "invalid or corrupted buffer";
 			break;
 		}
@@ -742,7 +759,7 @@ validate:
 	 * Failing either of these is treated exactly like a bad magic: report,
 	 * mutate nothing, and return 0 so the caller does not use the size.
 	 */
-	if (size < overhead_min || !umem_may_own(base, size)) {
+	if (size < overhead_min || !MAY_OWN(base, size)) {
 		umem_err_recoverable("%s(%p): header claims %zu bytes at %p, "
 		    "which is not a libumem allocation; refusing\n",
 		    do_free ? "free" : "realloc", buf_arg, size, base);
@@ -771,6 +788,7 @@ validate:
 
 	errno = old_errno;
 	return (1);
+#undef MAY_OWN
 }
 
 /*
