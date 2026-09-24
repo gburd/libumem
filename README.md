@@ -5,20 +5,23 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (unreleased, after v3.1.0): the ~5 GB Linux heap ceiling is gone,
-> including after a security-hardening pass; still not a hardened allocator in
-> the sense a security-critical deployment would want.** Ten reachable
-> correctness and lifetime defects found by the 2026-09-21 design review, and
-> ten security findings from the 2026-09-22 adversarial audit, are fixed — each
-> with a regression that fails before the fix and passes after, on x86_64 and
-> aarch64. The heap ceiling was fixed in two halves: the first was declared
-> complete and was not (512 B objects still failed at 8.2 GB), and a systematic
-> hard-limit hunt caught it; 9 GB of 4 KiB objects now uses 77 VMAs and 9 GB of
-> 512 B objects uses 994, of 65,530. Several diagnostic features now
-> have contracts documented honestly rather than optimistically — including that
-> `UMEM_DEBUG=audit` captures only ~2 frames in a default build — and several
-> performance conclusions previously published in this file were **withdrawn**
-> because the harness that produced them was measuring the wrong thing. Work,
+> **Status (v3.2.0): the Linux heap ceiling is gone, the maintenance thread
+> runs, the per-CPU caches are used, and the drop-in path scales; still not a
+> hardened allocator in the sense a security-critical deployment would want.**
+> Ten reachable correctness and lifetime defects found by the 2026-09-21
+> design review, ten security findings from the 2026-09-22 adversarial audit,
+> and the Phase 6 hard-limit findings are fixed — each with a regression that
+> fails before the fix and passes after, on x86_64 and aarch64. The theme of
+> this release is *things that were never running*: the update thread was
+> never started in any process that had not failed an allocation, every thread
+> used per-CPU cache slot 0, and the documented `UMEM_OPTIONS=abort` did not
+> exist. Where a first diagnosis was wrong — the heap ceiling (fixed in two
+> halves), the 1k:4k collapse (the CPU hint, not the per-thread cache) — the
+> record says so. Several diagnostic features have contracts documented
+> honestly rather than optimistically — including that `UMEM_DEBUG=audit`
+> captures only ~2 frames in a default build — and performance conclusions
+> previously published in this file were **withdrawn** and re-measured with a
+> null control. Work,
 > evidence, and exit criteria:
 > [`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
 > Claims below are qualified by what has actually been measured; where
@@ -563,93 +566,93 @@ only), never locally, with a fixed total work budget per point, allocators
 alternating at the innermost loop, and **a null control at every grid point**:
 libumem is run against a relabelled copy of itself so the rig's own resolution
 is known before any cross-allocator delta is read. A delta inside that band is
-reported as noise. Full method, tables, and mechanisms:
-[`docs/results/2026-09-23-allocator-comparison.md`](docs/results/2026-09-23-allocator-comparison.md).
+reported as noise. Two full runs against nine allocators (glibc 2.34,
+jemalloc 5.2.1, tcmalloc 2.9.1, mimalloc 3.x, snmalloc, scudo, rpmalloc) on
+four boxes (`c7i.2xlarge`, `c7g.2xlarge`, `c7i.metal-48xl`, `c8g.metal-48xl`):
+[`2026-09-23`](docs/results/2026-09-23-allocator-comparison.md) at `v3.1.0`'s
+allocator, with the method and the null analysis, and
+[`2026-09-24`](docs/results/2026-09-24-allocator-comparison.md) at `d6f04ab`
+after the fixes below. Numbers here are from the second run unless marked.
 
-### Two libumem paths, two very different results
+### Two libumem paths
 
 Every earlier comparison in this repository measured libumem through the
-`umem_alloc()` API (with the benchmark's own size header). The 2026-09-23
-comparison also measured the `LD_PRELOAD=libumem_malloc.so` drop-in path, and
-they are not the same thing:
+`umem_alloc()` API. Since 2026-09-23 the `LD_PRELOAD=libumem_malloc.so`
+drop-in path is measured alongside it, and they were not the same thing:
 
-| `c7i.metal-48xl`, 192 vCPU, `multi` 16:64, 20M ops | Mops at 1 thread | at 192 threads |
+| `c7i.metal-48xl`, 192 vCPU, `multi` 16:64 | Mops at 1 thread | at 192 threads |
 |---|---|---|
-| glibc 2.34 malloc | 6.2 | 431 |
-| best competitor (jemalloc 5.2.1 / mimalloc 3.x) | 8.1 | 517 |
-| **libumem, `umem_alloc` API** (what `-lumem` callers get) | 6.7 | **394** |
-| **libumem, `LD_PRELOAD` at `v3.1.0`** (what drop-in users got) | 3.0 | **0.82** |
-| libumem, `LD_PRELOAD` at `a74065e` (post-v3.1.0) | 6.1 | **314** |
+| glibc 2.34 malloc | 6.2 | 487 |
+| best competitor (mimalloc 3.x) | 7.4 | 583 |
+| **libumem, `umem_alloc` API** | 7.7 | **529** |
+| libumem, `LD_PRELOAD` at `v3.1.0` (previous run, 20M ops) | 3.0 | **0.82** |
+| **libumem, `LD_PRELOAD` now** | 6.7 | **393** |
 
 The `v3.1.0` interposer took a **process-global mutex on every `free()`**
-(`malloc_interpose.c`, `is_libc_pointer()`: lock + 512-slot scan of a table
-that is empty for the entire steady-state life of every process), so the
-drop-in path scaled *negatively* with threads: 500x slower than the allocator
-underneath at 192 threads, and 2x slower even at one thread. Fixed in
-`a74065e`; the A/B on the same box, with a +/-3.5 % null control at 192
-threads, shows **0.79 -> 314 Mops (396x)**. If you use libumem as a drop-in
-malloc, you need that fix. The residual ~20 % between the fixed interposer
-and the API is per-call validation cost (`process_free()` header decode and
-ownership checks) and is tracked as P8.3.
+(`is_libc_pointer()`: lock + 512-slot scan of a table that is empty for the
+steady-state life of every process), so the drop-in path scaled *negatively*
+with threads. Fixed in `a74065e`. The residual -- preload at 0.74-0.91x of the
+API, flat across thread counts on every box -- is per-call validation
+(`process_free()` header decode and two ownership checks) and is tracked as
+P8.3. If you use libumem as a drop-in malloc, you need `a74065e` or later.
 
 ### What the API path does, against the field (null-controlled)
 
-- **Single-thread: at or above glibc everywhere** (0.97-1.22x, all four
-  boxes, all four size ranges), within 3-13 % of the best allocator at each
-  point against a +/-2-5 % resolution. Not the fastest anywhere; never the
-  slowest.
-- **`multi` scaling to 192 threads is within noise of glibc** on aarch64
-  metal (0.87-1.43x across sizes and thread counts, null sd 13 %) and
-  **8-24 % behind the best allocator on x86_64 metal** at 128-192 threads
-  (null sd 8.5 %). Mechanism not yet established (P8.4).
-- **`multi` at 1k:4k object sizes collapsed under threads: 0.06-0.10x
-  glibc at 64+ threads on both metals**, p999 32-68 us, deterministic
-  (P8.2) -- **fixed** (`ae86536`), and not for the reason first given. The
-  comparison attributed it to objects above 2048 bytes bypassing the
-  per-thread cache; the plan's own diagnostic (raise `tcache_max`) did not
-  move the cliff. The cause was the per-thread CPU hint: `pthread_self()`
-  cast to `int`, a page-aligned address, so `hint & cache_cpu_mask` was 0 for
-  every thread and the whole process shared one `cc_lock` for every
-  operation that reached the magazine layer. Solaris uses `thr_self()`, a
-  small integer; the port never had a working hint, and the per-thread cache
-  had been hiding it for every size it covers. On `c7i.2xlarge` at 8
-  threads: 2560 B 1.4 -> 16.4 Mops, 4096 B 1.5 -> 17.2, 1k:4k 10.9 -> 17.4
-  (glibc 22.8 / 21.0 / 22.8); sizes the per-thread cache serves are
-  unchanged. The metal numbers above are pre-fix and have not been re-run.
-- **`frag` (grow a live set, free half at random, repeat): 1.2-2.3x glibc
-  but 20-42 % behind jemalloc/mimalloc/snmalloc/rpmalloc at 16..1024 B,**
-  at every thread count including one, and **under sustained load the
-  worst allocator in the field on every box: 2-3x behind at 8 threads
-  (8.7 vs 19-22 Mops, p999 22 us vs 0.3-2.2 us) and 8-19x behind at 192
-  threads (2.0 / 1.2 Mops vs 15-24 for everything else including glibc,
-  p999 6-10 ms).** Freed objects go to the freeing CPU's depot stripe and
-  are wanted by whichever CPU allocates next, so at N threads the depot is
-  an N-way exchange through per-stripe mutexes; `perf` at 192 threads puts
-  13 % of all cycles in those mutexes (P8.5).
-- **`prodcons` p999 (cross-thread handoff) is umem's best number at 8
-  threads:** 0.9 us sustained, second only to rpmalloc, 5-13x better than
-  glibc/scudo/mimalloc. At 192 threads it is 240-270 us, between tcmalloc
-  and scudo; the 2026-09-09 figure of 84-93 us was taken with the
-  double-divided budget and is not comparable, so this is neither confirmed
-  nor a regression (P8.5 follow-up). `prodcons` *throughput* on 8-vCPU
-  boxes is bimodal (identical processes land in a 4 or a 13 Mops regime;
-  the null control reached +244 %) and is not reported.
-- **Memory: umem holds 1.55-1.6x its live set at 64..256 B and 2.6x at
-  16..63 B; glibc holds 1.25x / 1.85x**, jemalloc/mimalloc 1.2x / 1.65x,
-  scudo (the other headered size-class allocator) 1.5x / 2.6x. RSS at the
-  live-set peak and `VmHWM` agree to 1 %. About a third of the 16-63 B
+- **Single-thread: at or above glibc everywhere** (0.97-1.24x, all boxes, all
+  size ranges), within 3-13 % of the best allocator at each point. Not the
+  fastest anywhere; never the slowest.
+- **`multi` scaling to 192 threads at 16..1024 B is within the null of the
+  best allocator on both metals.** x86: umem 529 vs null 528 vs glibc 487 vs
+  mimalloc 583 at t=192; arm: 602 vs 561 vs 597 vs 612. The 2026-09-23 run
+  had umem 8-24 % behind on x86 metal at 128-192 threads (P8.4); that was the
+  CPU-hint bug below acting on per-thread-cache *misses*, and it closed with
+  it.
+- **`multi` at 1k:4k object sizes: the collapse is fixed up to 64 threads;
+  a second cliff remains above.** Before: 0.06-0.10x glibc at 64+ threads on
+  both metals. The cause was not what the first diagnosis said (objects above
+  2048 B bypassing the per-thread cache -- raising `tcache_max` did not move
+  it): the per-thread CPU hint was `pthread_self()` cast to `int`, a
+  page-aligned address, so `hint & cache_cpu_mask` was **0 for every thread**
+  and the whole process shared one `cc_lock` for every operation that reached
+  the magazine layer. Solaris uses `thr_self()`, a small integer; this port
+  never had a working hint. Fixed (`ae86536`): 4-18x on both metals up to
+  t=64 (x86 t=32: 7.5 -> 98 Mops, glibc 117; arm t=64: 15 -> 277, glibc 255).
+  **From t=128 throughput falls again** (x86 105 -> 91, arm 277 -> 77, while
+  glibc goes 165 -> 253 / 255 -> 200) with p999 11 us against glibc's 0.4:
+  these sizes still bypass the per-thread cache, so 128 CPUs each take a
+  blocking depot round trip every 31 operations, and the depot convoys. That
+  is the half of the original diagnosis the hint bug was hiding, and its fix
+  (per-thread classes through 8 KB, 63-round magazines for 2-8 KB) is P8.2b.
+- **`frag` (grow a live set, free half at random, repeat): level with glibc,
+  20-40 % behind the size-class allocators at 16..1024 B** at every thread
+  count including one. **Sustained at 192 threads it is still the slowest in
+  the field, by 2-3x -- down from 8-19x.** x86: 2.0 -> 4.8 Mops (glibc 14.8,
+  jemalloc 16.6), p999 6.0 -> 1.0 ms; arm: 1.2 -> 10.8 (glibc 22.1), p999
+  9.9 -> 0.34 ms. `perf` at HEAD: **59 % of all cycles in
+  `pthread_mutex_trylock`**, and the depot counters say why -- 95 % of
+  magazine reloads steal from another CPU's stripe, ~5 failed trylocks per
+  success. `frag` frees on a different thread than it allocates, so the local
+  stripe is always empty and the neighbour scan runs on every reload (P8.5).
+- **`prodcons` is unchanged and within null on every box** (it exercises none
+  of the fixed paths). Its p999 at 8 threads, 0.9 us sustained, remains umem's
+  best number, second only to rpmalloc. `prodcons` *throughput* on 8-vCPU
+  boxes is bimodal (the null control reached +244 %) and is not reported.
+- **Memory: umem holds ~1.5x its live set at 64..256 B and 2.6x at 16..63 B;
+  glibc 1.25x / 1.85x**, jemalloc/mimalloc 1.2x / 1.65x, scudo 1.5x / 2.6x.
+  At 192 threads the ratio came down from 3.3-3.8 to 3.0 with the per-thread
+  cache packing; at 8 threads it is unchanged. About a third of the 16-63 B
   overhead is the size header pushing requests one class up; the rest is warm
-  slab/magazine retention. This is the slab-allocator trade and is accepted
-  as such.
-- **`alloc_failures` was zero on every row** of every matrix except the
-  deliberate ceiling probe, which reproduced the ~5 GB `vm.max_map_count`
-  ceiling at 4.45-4.55 GB on 16 GiB boxes (6.2-6.9M failures out of 12M
-  attempts) at `f2a8267`. `3f2e67c` landed after the run and is unmeasured
-  here.
+  slab/magazine retention -- the slab-allocator trade, accepted as such.
+- **The heap-ceiling probe runs to completion.** An 8-11 GB live set of
+  1-4 KiB objects -- the point that crashed (rc=143) or failed 39 % of
+  allocations in every previous run -- completes with **zero failures on
+  every box**, at the default `vm.max_map_count`. On `c7i.2xlarge` umem does
+  it at 2x glibc's throughput (10.4 vs 4.9 Mops); on x86 metal at 192 threads
+  at 0.67x, which is the P8.2b cliff at these sizes.
 
-Every one of these has a table with the null control beside it in the
-results document, and every gap in the "fixable" category has a task with the
-mechanism and a fix approach in Phase 8 of
+Every one of these has a table with the null control beside it in the results
+documents, and every open gap has a task with the mechanism and a fix
+approach in Phase 8 of
 [the readiness plan](docs/plans/2026-09-21-production-readiness.md).
 
 ### Provenance of older numbers on this page
