@@ -53,6 +53,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/security/test_errno_preserved \
 		  test/security/test_free_errno \
 		  test/security/test_forged_free \
+		  test/security/test_forged_bootstrap \
 		  test/security/test_stack_bounds \
 		  test/security/test_introspect_peer_uid \
 		  tools/umem_profile_dump
@@ -854,6 +855,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_errno_preserved \
 	test/security/test_free_errno \
 	test/security/test_forged_free \
+	test/security/test_forged_bootstrap \
 	test/security/test_abort_option.sh \
 	test/security/test_stack_bounds.sh \
 	test/security/test_introspect_sock_path.sh \
@@ -866,6 +868,12 @@ TESTS += test/security/test_no_path_exec.sh \
 test_security_test_forged_free_SOURCES = test/security/test_forged_free.c
 test_security_test_forged_free_LDADD = libumem.la libumem_malloc.la
 test_security_test_forged_free_CPPFLAGS = -I$(srcdir)
+
+# P5.10: a forged BOOTSTRAP_MAGIC header must not make free() munmap the
+# caller's page.  Same two-library link for the same reason.
+test_security_test_forged_bootstrap_SOURCES = test/security/test_forged_bootstrap.c
+test_security_test_forged_bootstrap_LDADD = libumem.la libumem_malloc.la
+test_security_test_forged_bootstrap_CPPFLAGS = -I$(srcdir)
 
 # P5.9: needs frame pointers in the TEST (it corrupts its own frame) and a real
 # pthread stack it allocates itself.  -fno-omit-frame-pointer is on the test,
