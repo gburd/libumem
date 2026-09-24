@@ -1143,6 +1143,51 @@ rounds) instead of `_umem_cache_free` per object, taking `ml_lock` once per
 bin instead of `cc_lock` once per object. Regression: `probe_threads 16000`
 exit drain < 20 us/thread and main's worst alloc during it < 2 ms.
 
+**STATUS: FIXED (`b8c39e6`, `06559e5`), with two corrections to the entry
+above.**
+
+*Correction 1 -- the drain baseline was P8.2.* The 423 us/thread and 36.6 ms
+stall were measured at `a2548b8`, before the CPU-hint fix (`ae86536`): every
+exiting thread's `_umem_cache_free` hit `cache_cpu[0]`, one `cc_lock` for the
+whole process. On 8 vCPU / 4,000 threads, pre- vs post-P6.3 drain is 27 vs
+31 us/thread -- inside noise. The one-hand-off-per-bin exit path is kept
+because it is exact (regression ledger: hand-offs == bins) and because the
+per-object path is O(objects) lock acquisitions by construction; the 16k
+metal re-measurement was lost when the agent doing it died (503) and is
+recorded as not done.
+
+*Correction 2 -- the bin capacities are not a free variable.* `b8c39e6` also
+halved them (64/32/16). Alternating A/B, median of 9, `c7i.2xlarge` t=1:
+bench `single` 512 B 5.72 -> 5.31 Mops (-7 %). Four more builds isolated
+it: packing at the OLD capacities reproduced 5.31 exactly (so not the
+packing); an offset layout did not help; line-separating the 16-byte bin
+records recovered `multi` 16:1024 (5.76 -> 5.88) but not `single`. A pure
+alloc-N-then-free-N microbench found the shape: **512 B, 157 Mpairs/s at
+N=32, 63 at N=33, 5.5 at N=64 -- a 28x cliff at the bin boundary**, and the
+pre-fix build has the identical cliff at 64/65. perf: 39 %
+`pthread_mutex_trylock` + 34 % unlock. **The per-thread magazine "L2" behind
+the bins is never primed** (P8.6 below), so anything past the bin pays up to
+`UMEM_DEPOT_STEAL_MAX` failed trylocks then `cc_lock`, every op. Capacities
+restored to 128/64/32 (`06559e5`); packing alone gives `sizeof(umem_ptc_t)`
+31,616 -> 22,144 B and RSS/thread 55.6 -> 39.3 KB at 4,000 threads (target
+was < 35 KB; the remaining 39 is the 22 KB struct plus ~600 cached objects
+per thread in the probe, which is the cache doing its job).
+
+*And the residual -7 % on bench `single` is not the allocator.* With
+capacities restored it persisted (5.75 vs 5.31), so it was profiled: `perf
+diff` puts **+4.21 % in `td_qsort`** -- the bench's own t-digest latency
+histogram -- and **-0.54 % in `_umem_alloc`**; libumem's total share fell
+5.11 -> 4.84 %, and per-op alloc latency fell p50 35 -> 33 ns, p999 41 -> 36.
+The allocator got faster; the histogram got more expensive because the
+latency distribution it was fed changed shape. `bench single` at t=1 spends
+~70 % of its cycles in `td_*` and the vDSO clock and is **not a valid
+allocator microbench**; recorded as a harness limitation (Phase 2 follow-up).
+The pure microbench (no per-op clock, no histogram) shows +2 % (153 -> 156
+Mpairs/s at 512 B).
+
+Gate PASS both arches at `ede1849`; P1.3a stranded = 0, P1.3c ledger 0/12,
+`test_main` clean, ASan clean on the drain path.
+
 ### P6.4b Cache count on 192 CPUs: 117 KB per cache, 415 ms creates, 3 s fork -- HIGH
 Same mechanisms as P6.4; provenance `a2548b8`, `c7i.metal-48xl`,
 `umem_max_ncpus` = 256.
@@ -1855,6 +1900,47 @@ is a claim for the next comparison run, not this entry. The original (1) and
 (2) -- PTC classes through 8 KB, larger magazines for 2-8 KB -- remain as
 possible *further* gains; they are no longer the fix. Gate PASS both arches,
 default / `--enable-introspect` / `--disable-rseq`.
+
+### P8.6 The per-thread magazine layer is never primed
+
+`umem.c:3782-3868` (`_umem_alloc`: bin empty -> `mag->rounds`,
+`mag->prounds`, then `umem_depot_alloc_trylock(cp, &cp->cache_full)`, then
+fall to `_umem_cache_alloc`); `:3994-4068` (`_umem_free`: bin full -> mags
+-> `umem_depot_alloc_trylock(cp, &cp->cache_empty)`, then fall to
+`_umem_cache_free`); `umem.c` `umem_depot_alloc_trylock` (local stripe +
+`UMEM_DEPOT_STEAL_MAX` neighbours + global, all trylock, all fail on a
+list that has never been populated).
+
+**Measured** (`c7i.2xlarge`, one thread, 512 B, alloc N then free N,
+Mpairs/s, median of 5): N=32 157.8, N=48 158.0, N=63 145.7, **N=64 145.9,
+N=65 84.3, N=96 8.0, N=128 5.5**. A 28x cliff at the PTC bin's capacity.
+perf at N=64 (with the halved bins): 39 % `pthread_mutex_trylock`, 34 %
+`pthread_mutex_unlock`, 7.6 % `umem_depot_pop_trylock` -- the allocator is
+spending its time failing to lock empty lists.
+
+**Mechanism.** The PTC's magazines take from the depot by trylock only and
+never allocate a magazine. The CPU layer publishes an *empty* magazine to
+the depot only when its own loaded magazine drains -- which a steady
+alloc/free workload never does -- and a *full* one only when its loaded
+magazine fills, likewise. So on a cache that has only ever seen one thread
+cycling objects, the depot lists stay empty forever, and every op past the
+bin does 1 + min(ncpus, `UMEM_DEPOT_STEAL_MAX`) + 1 trylock/unlock pairs
+that all fail, then takes `cc_lock` and does the work there anyway. This is
+the same class as "rseq magazines are never populated" (README, open since
+v2.7.0): a fast layer that exists in the code and is never fed.
+
+**Fix.** Prime on first miss: when both PTC magazines are NULL and the depot
+trylock finds nothing, allocate one empty magazine from `mt_cache` (the CPU
+layer does exactly this at `umem.c` `_umem_cache_free` "no empty magazines
+in the depot, so try to allocate a new one") and adopt it as `mag->loaded`.
+One allocation per thread per size class, ever. Then the free side fills
+it, the alloc side drains it, and the depot round trip happens once per
+`magsize` objects instead of the bin's worth. Regression: the microbench
+above must not have a cliff between N=64 and N=128 (ratio < 2x, today
+26x). Interaction: the P1.3b/P1.3c invariants (capacity from the magazine,
+nothing discarded with objects in it) already govern `umem_ptc_mag_return`;
+the new magazine goes through the same function. Not done in this pass --
+it is a fast-path change and needs its own A/B with the null control.
 
 ### P8.3 Interposer per-call overhead after P8.1
 

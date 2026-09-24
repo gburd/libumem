@@ -70,16 +70,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   process crash, never continue). Regression `test_abort_option.sh`: default
   refuses and completes, `UMEM_OPTIONS=abort` on the same forged free dies with
   SIGABRT. The first attempt put it in the wrong table and the test caught it.
-- **Per-cache footprint: three page-rounded `mmap`s became one exact mapping**
+- **Per-thread cache footprint 31.6 -> 22.1 KB; thread exit hands each bin
+  back in one batch** (`b8c39e6`, `06559e5`). The slot arrays were padded to
+  128 for all 28 bins though 15 of them index 64 or 32; they are now packed at
+  their real capacities. `umem_ptc_destroy` freed cached objects one `cc_lock`
+  at a time (~600 per thread); a bin is now one `umem_cache_free_batch`.
+  A first version also halved the bin capacities and lost 7 % on the `single`
+  bench; isolating that found a 28x cliff at the bin boundary that exists in
+  every prior release (the per-thread magazine layer behind the bins is never
+  primed, recorded as P8.6) and, separately, that the bench's own t-digest
+  histogram was the -7 % -- the allocator itself got faster (p50 35 -> 33 ns).
+  Capacities are unchanged. Regression `test_ptc_footprint`.
+- **Freed spans are `MADV_DONTNEED`'d, not `PROT_NONE`-remapped, below 16 MiB**
+  (`ab8a73d`). `vmem_mmap_free` remapped every freed span `PROT_NONE` with
+  `MAP_FIXED`, splitting the RW mapping it came from: one permanent kernel VMA
+  per freed span. 40,000 half-freed 136 KiB oversize objects cost 40,102 VMAs
+  (glibc: 54); 2,000 destroyed caches left 1,216. `MADV_DONTNEED` returns the
+  pages identically (measured) without touching the VMA. The fault-on-use-
+  after-free property of `PROT_NONE` is kept for spans >= 16 MiB, where VMA
+  count cannot matter; tunable `UMEM_OPTIONS=mmap_guard=N` (0 = never guard).
+  Regression `test_oversize_vma.sh`: 1,999 -> 0 new VMAs per 1,000 frees, with
+  a guard arm proving the `PROT_NONE` path still exists.
+- **Per-cache footprint: three page-rounded `mmap`s became one exact block**
   (`e00fdf2`). Each `umem_cache_create()` mapped two depot arrays and the rseq
   array separately, 512 B each in a 4 KiB page on 8 CPUs: 12 KB of an 18.6 KB
   per-cache footprint was page rounding. Now carved from one mapping sized to
-  its contents: 18,964 -> 10,708 B/cache. Regression `test_cache_footprint`.
-  The VMAs left behind by `umem_cache_destroy` (1,134 per 2,000 destroys)
-  turned out to be a different defect -- freed descriptor pages are
-  `PROT_NONE`-remapped by `vmem_mmap_free`, one VMA per page, the same
-  mechanism as freed oversize objects -- and are fixed where that is (P6.2);
-  the test's VMA arm reports SKIP with the live number until then.
+  its contents, allocated from `umem_cache_arena` (`e00fdf2`, `ede1849`):
+  18,964 -> 11,173 B/cache. The VMAs left behind by `umem_cache_destroy`
+  (1,134 per 2,000 destroys) were two further defects the same test exposed:
+  freed descriptor pages `PROT_NONE`-remapped by `vmem_mmap_free` (above),
+  and the per-cache block's own `munmap` orphaning the heap pages on either
+  side of it (`mmap(NULL)` hands out addresses top-down, so it landed
+  between them). Now 3 VMAs per 2,000 destroys; 50,000 caches create in
+  23.6 s (was 36), 11.0 KB each (was 18.6), and leave 175 VMAs (was 29,159).
+  Regression `test_cache_footprint`.
 - **Every thread used the same per-CPU cache.** The per-thread CPU hint that
   selects `cache_cpu[]` was `pthread_self()` cast to `int` -- a page-aligned
   address whose low bits are always zero -- so `hint & cache_cpu_mask` was 0
