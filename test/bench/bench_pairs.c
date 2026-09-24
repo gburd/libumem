@@ -16,7 +16,12 @@
  * the allocator faster (docs/plans/2026-09-24-team-brief.md).  Use this, or
  * `perf stat` instructions per op, for any t=1 question.
  *
- *   bench_pairs [-s lo[:hi]] [-n N] [-t threads] [-d seconds]
+ *   bench_pairs [-s lo[:hi]] [-n N] [-t threads] [-d seconds] [-m]
+ *
+ * -m uses malloc()/free() instead of umem_alloc()/umem_free().  Run with
+ * LD_PRELOAD=libumem_malloc.so that is the interposer arm; the same binary
+ * without -m and without the preload is the API arm it is compared against
+ * (P8.3).  One binary for both arms, so the loop's own cost is identical.
  *
  * Each thread: allocate N objects (size drawn per object from [lo, hi) with
  * rand_r, as bench_main's `multi` does; fixed when hi is absent), free the N
@@ -36,7 +41,7 @@
 #include "umem.h"
 
 static size_t lo = 512, hi = 0;
-static int nobj = 64, nthreads = 1;
+static int nobj = 64, nthreads = 1, use_malloc = 0;
 static double seconds = 1.0;
 static volatile int stop;
 
@@ -63,12 +68,18 @@ worker(void *arg)
 		for (i = 0; i < nobj; i++) {
 			sz[i] = hi > lo ?
 			    lo + (size_t)rand_r(&seed) % (hi - lo) : lo;
-			p[i] = umem_alloc(sz[i], UMEM_DEFAULT);
+			p[i] = use_malloc ? malloc(sz[i]) :
+			    umem_alloc(sz[i], UMEM_DEFAULT);
 			if (p[i] == NULL)
 				return ((void *)UINT64_MAX);
 		}
-		for (i = 0; i < nobj; i++)
-			umem_free(p[i], sz[i]);
+		if (use_malloc) {
+			for (i = 0; i < nobj; i++)
+				free(p[i]);
+		} else {
+			for (i = 0; i < nobj; i++)
+				umem_free(p[i], sz[i]);
+		}
 		pairs += (uint64_t)nobj;
 	}
 	free(p);
@@ -84,7 +95,7 @@ main(int argc, char **argv)
 	double t0, t1;
 	int c, i;
 
-	while ((c = getopt(argc, argv, "s:n:t:d:")) != -1) {
+	while ((c = getopt(argc, argv, "s:n:t:d:m")) != -1) {
 		switch (c) {
 		case 's': {
 			char *colon = strchr(optarg, ':');
@@ -95,9 +106,10 @@ main(int argc, char **argv)
 		case 'n': nobj = atoi(optarg); break;
 		case 't': nthreads = atoi(optarg); break;
 		case 'd': seconds = atof(optarg); break;
+		case 'm': use_malloc = 1; break;
 		default:
 			fprintf(stderr, "usage: %s [-s lo[:hi]] [-n N] "
-			    "[-t threads] [-d seconds]\n", argv[0]);
+			    "[-t threads] [-d seconds] [-m]\n", argv[0]);
 			return (2);
 		}
 	}
@@ -126,7 +138,8 @@ main(int argc, char **argv)
 		printf("size=%zu:%zu ", lo, hi);
 	else
 		printf("size=%zu ", lo);
-	printf("N=%d t=%d %.2f Mpairs/s\n", nobj, nthreads,
+	printf("N=%d t=%d %s %.2f Mpairs/s\n", nobj, nthreads,
+	    use_malloc ? "malloc" : "api",
 	    (double)total / (t1 - t0) / 1e6);
 	return (0);
 }
