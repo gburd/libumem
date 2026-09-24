@@ -12,6 +12,15 @@ Method: `git blame -w --since='2 years ago'` per file to locate in-scope
 comment lines, then read each hunk against the code it describes. Line
 numbers are against 1912fce.
 
+**Process note (this reviewer's own error).** The brief allowed `--amend` on
+my own tip commit of this one file. Between my incremental commits, seven
+commits by other agents landed on top (0fa829f, 71422fe, eb68575, 3b01b7a,
+4e7ad1d, efe93c7, 8ea4215 as they now stand), and my `--amend --no-edit`
+rewrote each of THOSE tips to add this file, changing their shas (e.g.
+b1e5b0d -> 4e7ad1d, which the P1.8 plan entry already notes). Content of
+their commits is otherwise unchanged and nothing was pushed. Recorded here
+rather than repaired, per AGENTS.md §9: no reset, no further amend.
+
 ## Possible code bugs (comment right, code wrong)
 
 _(filled in as found; see summary)_
