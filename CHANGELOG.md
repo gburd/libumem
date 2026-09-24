@@ -70,6 +70,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   process crash, never continue). Regression `test_abort_option.sh`: default
   refuses and completes, `UMEM_OPTIONS=abort` on the same forged free dies with
   SIGABRT. The first attempt put it in the wrong table and the test caught it.
+- **Every thread used the same per-CPU cache.** The per-thread CPU hint that
+  selects `cache_cpu[]` was `pthread_self()` cast to `int` -- a page-aligned
+  address whose low bits are always zero -- so `hint & cache_cpu_mask` was 0
+  for every thread, cached forever. Every operation that reached the magazine
+  layer (all sizes above `tcache_max`, every PTC miss below it) serialised on
+  one `cc_lock` for the whole process: the P8.2 collapse, 0.06x glibc at 64
+  threads on metal, 1.4 Mops/s at 8 threads for 2560-byte objects where
+  1536-byte ones did 32. On Solaris the hint is `thr_self()`, a small integer;
+  the port never had a working one. Fixed at `get_cached_cpu_hint()`: rseq
+  `cpu_id` (registering first), else `sched_getcpu()`, cached once. 8 threads
+  now use 8 slots (was 1); 2560 B t=8 1.4 -> 16.4 Mops (glibc 22.8); PTC-served
+  sizes unchanged; t=1 within noise. Regression `test_cpu_hint_spread`.
 - **Interposer `free()` ~500x collapse** (`a74065e`). `interpose_owner_of()` took
   a global lock and scanned 512 slots on every `free()` -- a table that is empty
   after bootstrap -- plus decoded the header twice. An atomic `libc_ptr_live`

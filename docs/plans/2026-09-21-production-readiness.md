@@ -1658,7 +1658,7 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 | Item | Gap (measured, null-controlled) | State |
 |---|---|---|
 | P8.1 interposer global mutex on every `free()` | preload 0.8 Mops vs API 394 at 192 t (500x); negative thread scaling on all 4 boxes | **FIXED** `a74065e`; A/B 0.79 -> 314 Mops (396x) at 192 t, null +/-3.5 % |
-| P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | open; mechanism in source |
+| P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | **FIXED** `ae86536`: CPU hint was `pthread_self() & mask == 0` -- one `cc_lock` per process; 1.4 -> 16.4 Mops at t=8 |
 | P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; profile attributes it |
 | P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | open; **diagnosis task**, mechanism not established |
 | P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | open; mechanism in source + profile + contention dump |
@@ -1737,15 +1737,59 @@ caches extend to 32 KB (tcmalloc, jemalloc) or are the whole allocator.
 is proven in one run. Then `bench_contention -w multi -s 2048:4096` to
 confirm `cc_alloc` and `full_reload` carry the traffic.
 
-**Fix.** (1) Extend `ptc_size_classes` and `PTC_NBINS` (`umem_ptc.h:50`)
-through 8192 and default `umem_ptc_maxsize` to match; the bins for 2.5-8 KB
-objects want fewer slots (`PTC_NSLOTS_LARGE` is 32; 16 is enough) so
-`umem_ptc_t` does not grow past P6.3's already-flagged 31 KB. (2)
-Independently, raise `mt_magsize` for the 2048..8192 band in `umem_magtype`
-from 31/15 to 63 -- the Solaris tuning assumed a 64 KB slab and objects of
-this size are exactly the ones `3f2e67c` now packs 16-per-slab. (3)
-Regression: `multi` 1024:4096 at t=8 must be >= 0.8x glibc on `c7i.2xlarge`
-(today 0.26x); an A/B with the null control at t=8 and t=192 on metal.
+**Fix as proposed above.** (1) Extend `ptc_size_classes` through 8192;
+(2) raise `mt_magsize` for the 2048..8192 band; (3) regression at t=8.
+
+**STATUS: FIXED (`20999ee`, `ae86536`) -- and the mechanism above was
+wrong.** The one-run diagnostic proposed above was run first, and it did not
+move the cliff: `tcache_max=8192` took 1k:4k from 10.9 to 10.5 Mops at t=8
+on `c7i.2xlarge`. So the PTC-bypass story was at best incomplete. Per-class
+at t=8: 1536 B (PTC-served) 31.8 Mops, 2560 B 1.4, 4096 B 1.5 -- and
+`bench_contention` on the 2560 class showed `cc_alloc` = 999,992 with
+**zero** depot reloads. Not the depot, not magazine size: pure `cc_lock`
+contention. Counting per-CPU caches with `cc_alloc != 0` after 8 threads:
+**1** (occasionally 2).
+
+**The real mechanism** (`umem.c:641`, `umem_impl.h` `get_cached_cpu_hint`).
+On Solaris `CPUHINT()` is `thr_self()`, a small integer thread id, so
+`hint & cache_cpu_mask` spreads threads over `cache_cpu[]`. This port
+defined it as `pthread_self()` cast to `int`: a page-aligned stack address
+whose low bits are always zero. `hint & mask == 0` for **every thread**, and
+the value was cached in TLS once, forever (the comment claimed it was "reset
+on magazine reload to detect CPU migration"; nothing reset it). The rseq
+`cpu_id` that the function preferred was never consulted for the cached
+value: a thread's first `_umem_cache_alloc` computed `CPU_CACHED(mask)` on
+its first line, *before* the rseq block below registered the thread. So
+every operation reaching the magazine layer -- every size above
+`tcache_max` and every PTC miss below it -- serialised on one `cc_lock` for
+the whole process. A port bug older than every phase of this plan; the PTC
+had been hiding it for every size it covers.
+
+**Fix.** `get_cached_cpu_hint()` on its one miss registers rseq if the caller
+has not and takes the kernel `cpu_id`; else `sched_getcpu()`; else a
+thread-id hash of the bits that vary (`>> 12`). `CPU()` (the log path) goes
+through the same function. A first version re-read the rseq `cpu_id` on
+every call to track migration and cost 5 % at t=1 (4.16 -> 3.94 Mops,
+2560 B, median of 7, alternating builds); reverted to read-once-and-cache
+(4.06, within noise of 4.16). Spread is the property; post-migration
+exactness is not.
+
+**Evidence** (`c7i.2xlarge`, `test_cpu_hint_spread`: 8 threads, 2560 B,
+count of `cache_cpu[]` slots with `cc_alloc != 0`):
+
+| build | slots used of 8 | 2560 B t=8 | 4096 B t=8 | 1k:4k t=8 | 16:64 t=8 |
+|---|---|---|---|---|---|
+| pre `a7bcdc4` | **1, 1, 1** | 1.4 | 1.5 | 10.9 | 27.4 |
+| post `ae86536` | **8, 8, 8** (also 8 with `rseq=0`) | 16.4 | 17.2 | 17.4 | 25.8 |
+| glibc same box | -- | 22.8 | 21.0 | 22.8 | 26.8 |
+
+12x on the affected classes at t=8; the (3) target of >= 0.8x glibc at t=8
+is met at 0.72-0.82x. The metal numbers (0.06x glibc at 64-192 t) are not
+re-measured here; the mechanism predicts they scale with the fix, and that
+is a claim for the next comparison run, not this entry. The original (1) and
+(2) -- PTC classes through 8 KB, larger magazines for 2-8 KB -- remain as
+possible *further* gains; they are no longer the fix. Gate PASS both arches,
+default / `--enable-introspect` / `--disable-rseq`.
 
 ### P8.3 Interposer per-call overhead after P8.1
 
