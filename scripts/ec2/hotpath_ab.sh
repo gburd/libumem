@@ -13,6 +13,16 @@
 # cycles at t=1 (team brief 2026-09-24).  Plus `perf stat` instructions per
 # pair at t=1, which is load-independent.
 #
+# ONE BENCH BINARY FOR EVERY ARM.  The first version of this script built
+# bench_pairs per arm from that arm's tree.  When bench_pairs.c differed
+# between the refs by a printf, the binary's `worker` moved 0x20 bytes and
+# the bench itself ran 13-15 % slower at N=1 against EITHER library
+# (c7i.2xlarge, 356354e vs a2177b9, 9 alternating pairs) -- which the A/B
+# reported as an 8-9 % library regression with instructions per pair
+# unchanged to 0.1 %.  Cross-pairing lib x bench found it; the library was
+# in fact 3-8 % faster.  So the bench comes from the post tree only, its
+# sha256 is logged, and the arms differ in libumem.so alone.
+#
 #   ./scripts/ec2/job.sh intel-lo@hot start ab 3600 \
 #     'cd ~/libumem-ab && PRE=<sha> POST=<sha> ./post/scripts/ec2/hotpath_ab.sh'
 set +e
@@ -35,19 +45,19 @@ build_into() {  # $1 tag $2 src
 	so="$(ls "$src"/.libs/libumem.so.*.*.* | head -1)"
 	rm -rf "/tmp/hab_$tag"; mkdir -p "/tmp/hab_$tag"
 	cp "$so" "/tmp/hab_$tag/$(objdump -p "$so" | awk '/SONAME/{print $2}')"
-	cp "$src/test/bench/.libs/bench_pairs" "/tmp/hab_$tag/bench_pairs"
 	log "  built $tag from $src: libumem.so sha256=$(sha256sum "$so" | cut -c1-16)"
 }
+BENCH=/tmp/hab_bench_pairs
 
 run_one() {  # $1 tag $2 size $3 N $4 threads -> Mpairs/s
 	local last=$(( $4 - 1 )); (( last >= NCPU )) && last=$((NCPU-1))
 	LD_LIBRARY_PATH="/tmp/hab_$1" numactl --physcpubind=0-"$last" --localalloc -- \
-	    "/tmp/hab_$1/bench_pairs" -s "$2" -n "$3" -t "$4" -d "$DUR" | awk '{print $(NF-1)}'
+	    "$BENCH" -s "$2" -n "$3" -t "$4" -d "$DUR" | awk '{print $(NF-1)}'
 }
 insn_one() {  # $1 tag $2 size $3 N -> instructions per pair (t=1)
 	local out ins pairs
 	out="$(LD_LIBRARY_PATH="/tmp/hab_$1" perf stat -x, -e instructions:u \
-	    numactl --physcpubind=0 -- "/tmp/hab_$1/bench_pairs" -s "$2" -n "$3" -t 1 -d "$DUR" 2>&1)"
+	    numactl --physcpubind=0 -- "$BENCH" -s "$2" -n "$3" -t 1 -d "$DUR" 2>&1)"
 	ins="$(echo "$out" | awk -F, '/instructions/{print $1}')"
 	pairs="$(echo "$out" | awk '/Mpairs/{print $(NF-1)*1e6*'"$DUR"'}')"
 	awk -v i="$ins" -v p="$pairs" 'BEGIN{ if (p>0) printf "%.1f", i/p; else print "nan" }'
@@ -73,6 +83,8 @@ build_into pre  "$PWD/pre"  || exit 1
 build_into post "$PWD/post" || exit 1
 build_into pre2 "$PWD/pre2" || exit 1
 cmp -s /tmp/hab_pre/libumem.so.1 /tmp/hab_post/libumem.so.1 && { log "FATAL: pre and post libumem.so byte-identical"; exit 1; }
+cp "$PWD/post/test/bench/.libs/bench_pairs" "$BENCH"
+log "  bench_pairs (one binary, from post): sha256=$(sha256sum "$BENCH" | cut -c1-16)"
 log ""
 IFS='|' read -ra PTS <<< "$POINTS"
 log "## bench_pairs Mpairs/s (delta = B relative to A)"
