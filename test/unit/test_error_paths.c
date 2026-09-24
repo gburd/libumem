@@ -289,11 +289,17 @@ test_free_null(const MunitParameter params[], void* data)
 	(void)params;
 	(void)data;
 
-	/* Freeing NULL with size=0 is safe (no-op).
-	 * Note: umem_free(NULL, non_zero_size) is undefined behavior because
-	 * the implementation indexes into umem_alloc_table and dereferences
-	 * the cache pointer before checking for NULL buf. */
+	/*
+	 * Freeing NULL is a no-op for every size (P1.8).  This comment used to
+	 * say umem_free(NULL, n != 0) was undefined because _umem_free indexed
+	 * the cache table before checking buf -- which was a description of a
+	 * bug, not a contract: the NULL went into the PTC bin and the next
+	 * umem_alloc(n) returned it.  test/unit/test_free_null is the
+	 * regression; this is the smoke check.
+	 */
 	umem_free(NULL, 0);
+	umem_free(NULL, 64);
+	munit_assert_not_null(umem_alloc(64, UMEM_DEFAULT));
 
 	return MUNIT_OK;
 }

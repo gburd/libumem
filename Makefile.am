@@ -37,6 +37,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/stress/stress_concurrency_oracle \
 		  test/stress/repro_calloc_interpose_race \
 		  test/unit/test_overflow_contracts \
+		  test/unit/test_free_null \
 		  test/unit/test_aligned_contracts \
 		  test/unit/test_hash_partition \
 		  test/unit/test_lifecycle_churn \
@@ -621,6 +622,12 @@ test_unit_test_overflow_contracts_SOURCES = test/unit/test_overflow_contracts.c
 test_unit_test_overflow_contracts_LDADD = libumem.la
 test_unit_test_overflow_contracts_CPPFLAGS = -I$(srcdir)
 
+# P1.8 regression: umem_free(NULL, n) and umem_cache_free(cp, NULL) are no-ops
+# (they put NULL on a free list; the next allocation returned it).
+test_unit_test_free_null_SOURCES = test/unit/test_free_null.c
+test_unit_test_free_null_LDADD = libumem.la
+test_unit_test_free_null_CPPFLAGS = -I$(srcdir)
+
 # P1.7(c,e) regression: aligned-allocation and realloc-ownership contracts.
 # Like the calloc race, run both with and without LD_PRELOAD.
 test_unit_test_aligned_contracts_SOURCES = test/unit/test_aligned_contracts.c
@@ -796,6 +803,7 @@ TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
 #   test/stress/repro_ptc_resize_capacity         (P1.3b capacity/resize race)
 #   test/integration/test_ptc_resize_no_loss      (P1.3c populated discard)
 TESTS += test/unit/test_overflow_contracts \
+	test/unit/test_free_null \
 	test/unit/test_aligned_contracts \
 	test/unit/test_hash_partition \
 	test/unit/test_slab_floor \

@@ -471,3 +471,76 @@ In-scope comment lines: 124, 604-621, 1525, 1594-1602.
 Class 4 note: vmem.c's header (lines 40-70, old) documents VM_SLEEP removal;
 the lock-order list in umem.c §6 does not include vmem_segfree_lock, which
 vmem_lockup takes (1867). umem_fork.c's list does. umem.c §6 should match.
+
+## envvar.c
+
+In-scope comment lines: 67. Every secure-unsafe mark carries its reason, in
+the voice §7a asks for (the side effect and who chooses the environment).
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 50-59 | 6 | dead `#ifdef UMEM_NUMA_AVAILABLE` include: why it never fired, why removed not repaired | Good record; same class of bug as umem_inspect.c:35-41 |
+| 106-115 | 6 | item_secure_unsafe: definition, who chooses the env, "Pure tuning options must NOT be marked" | Exemplary field contract |
+| 119-123 | 6 | count-and-report-once: why not per option | Good |
+| 166-168 | 6 | backend: "vmem_sbrk.c already refuses ... but only AFTER parsing. Refuse earlier" | Verified vmem_sbrk.c:314 |
+| 232-234 | 6 | mmap_guard "Not secure-unsafe in either direction", reason | Good: states why NOT marked |
+| 266-267, 275-276 | 6 | profile / introspect reasons | Good |
+| 289-291 | 6 | abort "Arming the abort is the SAFE direction" | Good |
+| 323-326 | 6 | verbose: "misc.c already refuses this write under issetugid(); do not even set the flag" | Verified misc.c:123 |
+| 353-355 | 6 | noabort: attacker position (env of privileged target) | Good |
+| 362-364 | 6 | mtbf: "umem.c also zeroes umem_mtbf post-parse under issetugid(); this refuses it earlier and also under AT_SECURE" | Verified umem.c:5890-5891 |
+| 704-712 | 6 | single filter point: "a new one only becomes reachable in secure mode if someone leaves item_secure_unsafe clear" | Good: states the default-safe direction |
+| 990-997 | 6 | report goes through log_message so "the warning must not become the disclosure" | Good |
+
+No findings. `random` (367-370) and `checknull` have no secure mark and no
+comment saying why -- both are pure tuning; a one-line "not secure-unsafe:
+tuning only" would match the standard 232-234 sets.
+
+## umem_hooks.c / umem_hooks.h
+
+In-scope comment lines: 116 (.c); the L1-L5 contract in the .h.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| .h 11-46 | 6 | L1-L5: lifetime with two corollaries (unregister from own callback self-deadlocks), no user code under lock, stats not a snapshot, walk semantics incl. nested-walk self-deadlock, find is unreferenced | Exemplary contract. Verified L1 (unregister 160-190 waits refcnt==0 after hook_active=0), L2 (track_alloc 207-229 drops lock around hook_alloc; walk 440-448), L4 (walk_busy 437-441, per-hook gen) |
+| .c 47-50 | 6 | cv / walk_busy / gen field comments cite L4 | Good |
+| .c 53-71 | 6 | hook_hold: "refuse rather than wrap, because a wrap to 0 would let unregister free the hook while callers are still in it" | Good: states the failure the check prevents and what declining degrades to |
+| .c 78, 86 | 6 | "Caller must hold hook_list_lock" | Good |
+| .c 148-153 | 6 | unregister L1 | Good |
+| .c 164-167 | 6 | racing double unregister: both callers get the guarantee | Good |
+| .c 175-178 | 6 | "Close the door first" | Good |
+| .c 364-370 | 6 | dump via walk (L2) with the interposition reason | Good |
+| .c 394-398 | 6 | find L5 | Good |
+| .c 415-427 | 6 | walk restart-safe iteration rationale | Good |
+| .c 438 | 6 | "One walk at a time: hook_walk_gen is a single field per hook" | Good |
+
+No findings.
+
+## umem_rseq.c
+
+In-scope comment lines: 47-92, 119-123, 153-156, 176-180, 197-201, 223-237,
+279-283, 302-305.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 47-75 | 6 | RSEQ_SIG: what the kernel checks, when umem's own registration is reachable, why the value differs per arch, "(as verified on real Graviton hardware) ... force-kills the thread with SIGSEGV" | Exemplary; cross-checked umem_rseq_x86_64.S:27 (0x53053053) and umem_rseq_aarch64.S:31-38 (0xd428bc00) |
+| 82-88 | 6 | weak __rseq_offset/__rseq_size detection | Good |
+| 119-123 | 3 | umem_rseq_get_area | Fine |
+| 153-156, 176-180 | 6 | availability: EBUSY/EINVAL/ENOSYS meanings | Good |
+| 197-201 | 3 | detect glibc management | Fine |
+| 223-237 | 1 | "Set FS-relative offset for the assembly fast path ... Otherwise, compute offset from umem_rseq_area TLS symbol" then `#else umem_rseq_asm_safe = 0` for non-x86 | On aarch64 without glibc rseq, asm is disabled (245) even though umem_rseq_aarch64.S exists and reads umem_rseq_fs_offset via tpidr_el0 (S:59-75, 139). Comment does not say aarch64 manual registration gets no asm path. umem.c:3291-3294 ("Uses assembly critical sections when we own the rseq registration (not glibc)") says the OPPOSITE of the code: asm_safe is set at 230 in the glibc branch and at 243 in the x86 manual branch. Fix umem.c's sentence |
+| 279-283 | 3 | glibc-managed register: "copy cpu_id into our thread-local area" | Code stores a POINTER to glibc's cpu_id (umem_rseq_cpu_idp = &glibc_area->cpu_id), copies nothing. Reword |
+| 302-305 | 6 | EBUSY -> glibc | Fine |
+
+## umem_update_thread.c
+
+In-scope comment lines: 38-58, 74-79, 222-231, 246.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 38-58 | 6 | handshake object: who owns it (creator's stack), two predicates one mutex, why every mutation is under mtx + broadcast, the old lost-wakeup and destroyed-while-held bugs | Exemplary lifecycle comment |
+| 74-79 | 6 | worker side of the handshake | Good |
+| 225-231 | 6 | "The wait must NOT live inside ASSERT(): misc.h compiles ASSERT() out entirely under NDEBUG, which removed the wait from release builds" | Exemplary record of a real bug class (side effects in ASSERT) |
+| 246 | 6 | "no worker exists, so nothing can hold obj.mtx" | Good |
+
+No findings.
