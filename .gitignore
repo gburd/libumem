@@ -46,6 +46,7 @@ core.*
 # Benchmark artifacts
 test/bench/bench_allocators
 test/bench/bench_main
+test/bench/bench_pairs
 test/bench/bench_depot_contention
 test/bench/results/*
 !test/bench/results/.gitkeep

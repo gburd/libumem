@@ -815,6 +815,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_cpu_hint_spread \
 	test/integration/test_ptc_footprint \
+	test/integration/test_ptc_mag_primed \
 	test/integration/test_cache_footprint \
 	test/integration/test_oversize_vma.sh
 
@@ -921,6 +922,22 @@ test_integration_test_ptc_footprint_SOURCES = test/integration/test_ptc_footprin
 test_integration_test_ptc_footprint_LDADD = libumem_ptcprobe.la
 test_integration_test_ptc_footprint_LDFLAGS = -pthread
 test_integration_test_ptc_footprint_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
+
+# P8.6: the per-thread magazines behind the PTC bins must hold objects.  The
+# probe build counts depot trylock attempts from the PTC paths; unprimed, that
+# is one per object past the bin.
+noinst_PROGRAMS += test/integration/test_ptc_mag_primed
+test_integration_test_ptc_mag_primed_SOURCES = test/integration/test_ptc_mag_primed.c
+test_integration_test_ptc_mag_primed_LDADD = libumem_ptcprobe.la
+test_integration_test_ptc_mag_primed_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
+
+# Bare alloc-N-then-free-N loop for t=1 questions (bench_main's own histogram
+# and clock are 70 % of its cycles at t=1).  Instrument, never in TESTS.
+noinst_PROGRAMS += test/bench/bench_pairs
+test_bench_bench_pairs_SOURCES = test/bench/bench_pairs.c
+test_bench_bench_pairs_LDADD = libumem.la
+test_bench_bench_pairs_LDFLAGS = -pthread
+test_bench_bench_pairs_CPPFLAGS = -I$(srcdir)
 
 # P6.4: per-cache footprint and VMAs left behind by destroy.
 noinst_PROGRAMS += test/integration/test_cache_footprint

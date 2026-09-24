@@ -2289,6 +2289,15 @@ volatile long umem_ptc_probe_desyncs = 0;	/* capacity != magazine's own */
  */
 volatile long umem_ptc_probe_shell_frees = 0;
 volatile long umem_ptc_probe_objects_lost = 0;
+/*
+ * P8.6 ledger: umem_depot_alloc_trylock() calls made from the PTC alloc/free
+ * paths.  Each is 1 + min(ncpus, UMEM_DEPOT_STEAL_MAX) + 1 trylock/unlock
+ * pairs when the lists are empty.  With a working L2 this is O(N / magsize)
+ * for N objects crossing the bin boundary; unprimed it was O(N).
+ */
+volatile long umem_ptc_probe_depot_trylocks = 0;
+#define	UMEM_PTC_PROBE_DEPOT_TRYLOCK()	\
+	(void) atomic_add_64((uint64_t *)&umem_ptc_probe_depot_trylocks, 1)
 
 static void
 umem_ptc_resize_probe(void)
@@ -2381,6 +2390,7 @@ umem_ptc_probe_shell_free(umem_magazine_t *mp, int rounds)
 #define	UMEM_PTC_RESIZE_PROBE_POINT()	((void)0)
 #define	UMEM_PTC_PROBE_OBSERVE(mp, cap)	((void)0)
 #define	UMEM_PTC_PROBE_SHELL_FREE(mp, n)	((void)0)
+#define	UMEM_PTC_PROBE_DEPOT_TRYLOCK()	((void)0)
 #endif
 
 /*
@@ -2468,6 +2478,8 @@ umem_depot_alloc_trylock(umem_cache_t *cp, umem_maglist_t *mlp)
 	umem_maglist_t *pcpu_arr;
 	int ncpus = cp->cache_depot_ncpus;
 	int is_full = (mlp == &cp->cache_full);
+
+	UMEM_PTC_PROBE_DEPOT_TRYLOCK();
 
 	if (ncpus > 0) {
 		int cpu = get_cached_cpu_hint() & (ncpus - 1);
