@@ -415,6 +415,21 @@ extern uintptr_t umem_link_cookie;
 	(((umem_slab_t *)P2END((uintptr_t)(mp), PAGESIZE) - 1)->slab_cache == \
 	    (cp)->cache_magtype->mt_cache)
 
+/*
+ * A magazine's OWN capacity in rounds, from the slab header of the
+ * umem_magazine_<N> cache it was allocated from (bufsize is
+ * (N + 1) * sizeof (void *): one slot for mag_next plus N rounds).  This is
+ * the header form of umem.c's umem_mag_capacity(), for readers outside
+ * umem.c.  Use it, never cp->cache_magtype->mt_magsize, to bound indexing
+ * into a magazine already in hand (P1.3b): after a resize, shells of the
+ * OLD capacity stay on the depot lists until popped and destroyed, so the
+ * cache's current magtype over-reads them.  umem_inspect.c did exactly that
+ * (comment review 2026-09-24, CB-2).
+ */
+#define	UMEM_MAGAZINE_CAPACITY(mp)	\
+	((int)(((umem_slab_t *)P2END((uintptr_t)(mp), PAGESIZE) - 1)-> \
+	    slab_cache->cache_bufsize / sizeof (void *)) - 1)
+
 #define	UMEM_SLAB_MEMBER(sp, buf)	\
 	((size_t)(buf) - (size_t)(sp)->slab_base < \
 	    (sp)->slab_cache->cache_slabsize)

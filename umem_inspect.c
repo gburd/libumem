@@ -832,11 +832,21 @@ cached_set_destroy(struct cached_set *cs)
  * mag_round[] array is indexed [0..rounds-1] for the rounds in use.
  */
 static void
-cached_set_add_maglist(struct cached_set *cs, umem_magazine_t *mp, int cap,
+cached_set_add_maglist(struct cached_set *cs, umem_magazine_t *mp,
     unsigned safety_max)
 {
 	unsigned safety = 0;
+	/*
+	 * Bound each magazine by ITS OWN capacity, not the cache's current
+	 * mt_magsize: after a resize, stale smaller shells stay on these lists
+	 * until popped and destroyed, and reading mt_magsize rounds from a
+	 * 127-round shell reads 128 pointers past it into the next slab object
+	 * -- garbage that the cached set then treats as CACHED buffers.  A
+	 * full-list magazine holds exactly its capacity, so capacity is the
+	 * right count here (the loaded/previous ones below carry a count).
+	 */
 	while (mp != NULL && safety++ < safety_max) {
+		int cap = UMEM_MAGAZINE_CAPACITY(mp);
 		for (int r = 0; r < cap; r++)
 			cached_set_add(cs, mp->mag_round[r]);
 		mp = (umem_magazine_t *)mp->mag_next;
@@ -879,31 +889,35 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 
 	cache_lock_all(cp);
 
-	/* Central depot: full magazines hold magsize rounds each. */
-	cached_set_add_maglist(cs, cp->cache_full.ml_list, magsize, 1u << 20);
+	/* Central depot: a full magazine holds exactly its own capacity. */
+	cached_set_add_maglist(cs, cp->cache_full.ml_list, 1u << 20);
 
 	/* Per-CPU depot arrays. */
 	if (cp->cache_depot_full != NULL && cp->cache_depot_ncpus > 0) {
 		for (int i = 0; i < cp->cache_depot_ncpus; i++) {
 			cached_set_add_maglist(cs,
-			    cp->cache_depot_full[i].ml_list, magsize,
-			    1u << 20);
+			    cp->cache_depot_full[i].ml_list, 1u << 20);
 		}
 	}
 
-	/* Per-CPU loaded/previous magazines. */
+	/*
+	 * Per-CPU loaded/previous magazines: bounded by the count the CPU
+	 * layer keeps AND by the shell's own capacity (P1.3b).
+	 */
 	for (uint32_t cpu = 0; cpu <= cp->cache_cpu_mask; cpu++) {
 		umem_cpu_cache_t *ccp = &cp->cache_cpu[cpu];
 		if (ccp->cc_loaded != NULL && ccp->cc_rounds > 0) {
 			int r = ccp->cc_rounds;
-			if (r > magsize) r = magsize;
+			int cap = UMEM_MAGAZINE_CAPACITY(ccp->cc_loaded);
+			if (r > cap) r = cap;
 			for (int i = 0; i < r; i++)
 				cached_set_add(cs,
 				    ccp->cc_loaded->mag_round[i]);
 		}
 		if (ccp->cc_ploaded != NULL && ccp->cc_prounds > 0) {
 			int r = ccp->cc_prounds;
-			if (r > magsize) r = magsize;
+			int cap = UMEM_MAGAZINE_CAPACITY(ccp->cc_ploaded);
+			if (r > cap) r = cap;
 			for (int i = 0; i < r; i++)
 				cached_set_add(cs,
 				    ccp->cc_ploaded->mag_round[i]);
@@ -921,15 +935,13 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 		for (int i = 0; i < n; i++) {
 			umem_rseq_cache_t *rc = &cp->cache_rseq[i];
 			umem_magazine_t *mp;
-			int cap = rc->magsize;
 			int r;
 
-			if (cap <= 0 || cap > magsize)
-				cap = magsize;
-
+			/* Each shell bounds itself (P1.3b); see maglist above. */
 			mp = (umem_magazine_t *)rc->loaded_mag;
 			r = rc->rounds;
 			if (mp != NULL && r > 0) {
+				int cap = UMEM_MAGAZINE_CAPACITY(mp);
 				if (r > cap) r = cap;
 				for (int k = 0; k < r; k++)
 					cached_set_add(cs, mp->mag_round[k]);
@@ -938,6 +950,7 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 			mp = (umem_magazine_t *)rc->previous_mag;
 			r = rc->prounds;
 			if (mp != NULL && r > 0) {
+				int cap = UMEM_MAGAZINE_CAPACITY(mp);
 				if (r > cap) r = cap;
 				for (int k = 0; k < r; k++)
 					cached_set_add(cs, mp->mag_round[k]);
