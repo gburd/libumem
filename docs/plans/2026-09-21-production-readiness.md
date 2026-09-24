@@ -2604,6 +2604,32 @@ next metal run, with the contention dump beside it.  (1), the slab-layer
 batch, is the remaining lo-box mechanism and is not attempted in this
 pass.
 
+### Gate record, 2026-09-24 hot-path round (`343177c`)
+
+`scripts/ec2/exit_criteria_gate.sh` via `verify-isolated.sh` on
+`c7i.2xlarge` (`intel-lo@hot`) and `c7g.2xlarge` (`arm-lo@hot`), plus the
+introspect / `--disable-rseq` / oracle-matrix pass in the same isolated tree:
+
+| check | x86_64 | aarch64 |
+|---|---|---|
+| default build + `make check` | 43 total / 40 PASS / 3 SKIP / 0 FAIL | 43 / 40 / 3 / 0 |
+| `test_main --no-fork` | PASS | PASS |
+| property tests (4) | all rc 0 | all rc 0 |
+| concurrency oracle (8 t, 25 s, mixed, all) | PASS, 256M allocs, 0 fail | PASS, 344M, 0 fail |
+| `make dist` tarball's own `make check` | 43 / 40 / 0 FAIL | 43 / 40 / 0 FAIL |
+| installed prefix, external consumer | compile + run rc 0 | rc 0 |
+| release config `-O3 -DNDEBUG`: `make check` / `test_main` / oracle | 43/40/3/0, PASS, PASS 275M | 43/40/3/0, PASS, PASS 381M |
+| **GATE** | **PASS** | **PASS** |
+| `--enable-introspect` `make check` | 43 / **43** / 0 / 0 | 43 / 43 / 0 / 0 |
+| `--enable-introspect` exact oracles: `test_ptc_mag_primed`, `test_depot_empty_scan`, `test_ptc_thread_exit_drain_probe` (stranded 0), `test_ptc_resize_no_loss_probe` x12, `test_cpu_hint_spread`, `test_ptc_footprint`, `test_free_null` | all PASS | all PASS |
+| `oracle_matrix.sh 16 60 default` | PASS (4/4) | PASS (4/4) |
+| `oracle_matrix.sh 16 60 asan` | PASS (4/4) | PASS (4/4) |
+| `--disable-rseq` `make check` | 43 / 40 / 3 / 0 | 43 / 40 / 3 / 0 |
+
+The default-config exact oracles were also run at each fix sha separately
+(`a2177b9`, `ad72787`, `eb68575`, `0532c38`, `4441514`): see the STATUS
+entries above.
+
 ### Phase 8 exit criteria
 
 1. P8.1 closed (it is). The README's Performance section states the
