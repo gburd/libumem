@@ -14,14 +14,23 @@
  * umem_alloc API.
  *
  * After P8.1 removed the global lock, LD_PRELOAD=libumem_malloc.so ran at
- * 0.74-0.91x of the umem_alloc/umem_free API on every box, flat across
- * thread counts (docs/results/2026-09-24-allocator-comparison.md section 3):
- * a per-call cost, not a lock.  Its parts, from the 2026-09-23 profile:
- * is_bootstrap_pointer() reading buf[-1] out of line twice per free,
- * process_free()'s errno save/restore call, umem_may_own() twice, and the
- * PLT hop into libumem.so.
+ * 0.74-0.91x of the umem_alloc/umem_free API in bench_main (docs/results/
+ * 2026-09-24-allocator-comparison.md section 3).  That instrument's own
+ * per-op cost hides most of the gap: in a bare loop (this test; bench_pairs)
+ * the same build was at 0.41 (c7i.2xlarge) / 0.40 (c7g.2xlarge) at t=8,
+ * 418 vs 147 instructions per pair.  The parts, measured one commit at a
+ * time on c7i.2xlarge (docs/plans/2026-09-21-production-readiness.md P8.3):
+ * is_bootstrap_pointer() out of line three times per free, umem_may_own()
+ * out of line twice, __errno_location() through the PLT, and
+ * process_free()'s general-purpose frame on the common path.
  *
- * HOW THIS DETECTS IT
+ * After the fix: 0.61 (c7i.2xlarge) / 0.53 (c7g.2xlarge) at t=8 here;
+ * 277 vs 147 instructions per pair.  The rest is what malloc/free must do
+ * that umem_alloc/umem_free need not: write, read and validate a header,
+ * and go through libumem_malloc.so.  The bar below is the post-fix floor
+ * minus the null control's spread, not a target.
+ *
+ * HOW THIS DETECTS A REGRESSION
  *   Same process, same libumem.so, two loops: umem_alloc/umem_free (the API
  *   arm) and malloc/free (the preload arm, which is the interposer when this
  *   runs under LD_PRELOAD).  Alternating pairs at NTHREADS; the median
@@ -34,8 +43,14 @@
  *
  * ONLY MEANINGFUL UNDER LD_PRELOAD=libumem_malloc.so; SKIP (77) otherwise.
  *
- * RATIO_MIN may be overridden with UMEM_INTERPOSE_RATIO_MIN for the
- * pre-fix demonstration; the default is the bar.
+ * RATIO_MIN may be overridden with UMEM_INTERPOSE_RATIO_MIN.
+ *
+ * THE BAR: 0.48.  Post-fix medians 0.61 (x86) / 0.53 (arm), minimum over
+ * 3 runs x 9 pairs 0.499 (arm); null API/API minimum 0.883 (arm), i.e. the
+ * rig alone can move a pair by 12 %.  0.53 * 0.88 = 0.47.  The pre-fix
+ * medians 0.409 / 0.395 are below it on both boxes, so the test
+ * distinguishes the two states; it will not catch a regression smaller
+ * than ~10 %, and it says so here rather than pretending otherwise.
  */
 
 #ifndef _GNU_SOURCE
@@ -55,7 +70,7 @@
 #define NOBJ		64
 #define ROUNDS		2000
 #define PAIRS		9
-#define RATIO_MIN	0.90
+#define RATIO_MIN	0.48
 
 static int
 interposed(void)

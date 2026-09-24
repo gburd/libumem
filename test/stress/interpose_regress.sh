@@ -79,10 +79,13 @@ SCALE=$(find_bin test/stress repro_interpose_free_scaling) || {
 	echo "FAIL: repro_interpose_free_scaling not built"; exit 1; }
 run_case "free() thread scaling (LD_PRELOAD interposer)" "$PRELOAD" "$SCALE"
 
-# Per-call cost relative to the API (P8.3): repro_interpose_free_ratio is
-# built but NOT gated here until the P8.3 fix lands; at 962a230 it fails on
-# master (preload/API 0.409 at t=8 on c7i.2xlarge, bare loop).  The gate
-# is added in the same commit as the fix.
+# Per-call cost relative to the API (P8.3): preload/API >= 0.48 at t=8,
+# median of 9 alternating pairs, bounded against an API/API null control.
+# Pre-fix (6705310) 0.409 / 0.395 on c7i.2xlarge / c7g.2xlarge; post-fix
+# 0.61 / 0.53.  The bar and its derivation are in the test's header.
+RATIO=$(find_bin test/stress repro_interpose_free_ratio) || {
+	echo "FAIL: repro_interpose_free_ratio not built"; exit 1; }
+run_case "free() per-call cost vs API (LD_PRELOAD interposer)" "$PRELOAD" "$RATIO"
 
 if [[ $rc -eq 0 ]]; then
 	echo "PASS: interposer regressions"
