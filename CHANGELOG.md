@@ -43,6 +43,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   binary's layout as an 8 % library regression; it now uses one bench
   binary for every arm. (P8.6)
 
+### Performance
+
+- **Per-thread caching now covers 2.5-8 KB objects; the 1k:4k cliff at 128+
+  threads is gone.** Sizes above 2048 B bypassed the per-thread cache, so
+  every operation took the per-CPU lock and, every 31 operations per CPU, a
+  blocking depot trip into a stripe other CPUs had emptied; at 128+ CPUs
+  the depot convoyed. `multi` 1024:4096 on `c8g.metal-48xl` (192 vCPU):
+  t=64/128/192 **275 / 128 / 179 Mops -> 314 / 352 / 429**, 0.42x -> 1.24x
+  glibc at t=128, p999 2.8 us -> 39 ns; on `c7i.2xlarge` t=8 0.69x -> 1.22x
+  glibc, p999 921 -> 130 ns. Per-class bare loop at t=8: 2560-8192 B were
+  23-66 Mpairs/s against 600 for 1536 B; all are 590-620 now. `PTC_NBINS`
+  28 -> 36 (`sizeof (umem_ptc_t)` 22,144 -> 24,000 B), `tcache_max` default
+  2048 -> 8192. The 2-8 KB magazines also went from 31/15 rounds to 63,
+  measured separately and inside the null at every point; it is kept as the
+  right table for a 16-object slab, not as the fix. This works because P8.6
+  gave the new bins a working L2 behind them. `c7i.metal-48xl` was not
+  re-measured (no capacity in us-east-2 during the run). (P8.2b)
+
 ## [3.2.0] - 2026-09-24
 
 The theme of this release is *things that were never running*. Three of its

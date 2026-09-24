@@ -1848,7 +1848,7 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 |---|---|---|
 | P8.1 interposer global mutex on every `free()` | preload 0.8 Mops vs API 394 at 192 t (500x); negative thread scaling on all 4 boxes | **FIXED** `a74065e`; A/B 0.79 -> 314 Mops (396x) at 192 t, null +/-3.5 % |
 | P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | **FIXED** `ae86536`: CPU hint was `pthread_self() & mask == 0` -- one `cc_lock` per process; 1.4 -> 16.4 Mops at t=8 |
-| P8.2b 1k:4k cliff at t>=128 on both metals (hidden by P8.2) | at `d6f04ab`: x86 105 -> 91 Mops t=64 -> 128 (libc 165 -> 253); arm 277 -> 77 (libc 255 -> 200); null falls with it; umem p999 11 us vs libc 0.4 | open; mechanism: sizes above `tcache_max` take a blocking depot trip every 31 ops per CPU; the original P8.2 fix (1)+(2) is the fix path |
+| P8.2b 1k:4k cliff at t>=128 on both metals (hidden by P8.2) | at `d6f04ab`: x86 105 -> 91 Mops t=64 -> 128 (libc 165 -> 253); arm 277 -> 77 (libc 255 -> 200); null falls with it; umem p999 11 us vs libc 0.4 | **FIXED** `ad72787` (PTC bins through 8192 B; `eb68575` 63-round magazines is inside the null): `c8g.metal` t=64/128/192 275/128/179 -> 314/352/429 Mops, 0.42x -> 1.24x libc at t=128, p999 2.8 us -> 39 ns; `c7i.2xlarge` t=8 0.69x -> 1.22x. x86 metal not re-measured (no capacity) |
 | P8.6 PTC per-thread magazines never primed | 28x cliff at the bin boundary, single thread (157 -> 5.5 Mpairs/s at N=64 -> 65 for 512 B); 39 % trylock + 34 % unlock | **FIXED** `a2177b9`: one magazine allocated on the first free-side miss; cliff 26.9x -> 1.16x (x86), 26.3x -> 1.05x (arm); depot trylocks per 200 rounds 25,600 -> 0; inside the bin within null |
 | P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; re-measured at `d6f04ab`: 0.74-0.91, flat; profile attributes it |
 | P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | **CLOSED** by `ae86536` (P8.2's fix): at `d6f04ab` x86 t=192 umem 528.8 = null 527.8 > libc 486.8 -- PTC misses had also gone to `cache_cpu[0]` |
@@ -2217,6 +2217,53 @@ check on every op -- and 10-26x at t=8; the band is now level with 1536 B.
 `test_ptc_mag_primed` PASS, `test_ptc_thread_exit_drain_probe` stranded 0,
 `test_ptc_resize_no_loss_probe` x12 rc 0, `test_cpu_hint_spread` 8/8 (at
 10240 B), `test_ptc_footprint` 24,000 <= 24,576 PASS.
+
+**Metal** (`c8g.metal-48xl`, 192 vCPU; `c7i.metal-48xl` had no capacity in
+any us-east-2 AZ for the hour this ran, so the x86 metal row is not
+re-measured here).  `multi` 1024:4096, 60M ops, 3 runs, 3 alternating
+replicates per arm, `verify-isolated` at each sha, same box, one after the
+other; median Mops and p999 ns:
+
+| build | t | libc | umem | umem@null | umem/libc | umem p999 | libc p999 | unstable (umem / null) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| pre `71422fe` | 64 | 249.7 | 275.4 | 276.0 | 1.10 | 86 | 80 | 0/3, 0/3 |
+| pre `71422fe` | 128 | 304.0 | **127.5** | **140.0** | **0.42** | **2,773** | 89 | 2/3, 3/3 |
+| pre `71422fe` | 192 | 361.6 | 179.0 | 280.4 | 0.49 | 1,337 | 363 | 2/3, 3/3 |
+| (a) `ad72787` | 64 | 248.8 | **313.6** | 315.7 | 1.26 | **39** | 82 | 0/3, 0/3 |
+| (a) `ad72787` | 128 | 285.3 | **352.4** | 355.5 | **1.24** | **39** | 117 | 1/3, 1/3 |
+| (a) `ad72787` | 192 | 368.0 | **428.9** | 437.6 | 1.17 | **39** | 291 | 0/3, 1/3 |
+| (a)+(b) `eb68575` | 64 | 250.8 | 314.1 | 314.9 | 1.25 | 39 | 82 | 0/3, 0/3 |
+| (a)+(b) `eb68575` | 128 | 317.7 | **359.0** | 346.4 | **1.13** | **39** | 84 | 2/3, 1/3 |
+| (a)+(b) `eb68575` | 192 | 351.0 | **438.6** | 420.4 | 1.25 | 39 | 344 | 0/3, 0/3 |
+
+The pre row reproduces the 2026-09-24 comparison's cliff at HEAD-of-then
+(277 -> 77 there; 275 -> 128 here, the null 276 -> 140, p999 2.8 us):
+the same shape, deterministic, in the allocator.  With (a) the curve is
+monotone -- 314 -> 352 -> 429 -- at 1.17-1.26x libc at every point, and
+p999 is 39 ns at all three thread counts against libc's 82-344.  The
+targets (t=128 >= t=64; >= 0.6x libc) are met with room.  (b) on top of
+(a) is inside the null at every point: once these sizes are PTC-served,
+the magazine layer sees only PTC overflow, and a 31- vs 63-round magazine
+behind a 16-slot bin is not where the time goes at this thread count.  (b)
+is kept because it is what the Solaris table would have said for a 16-
+object slab and costs nothing here, but it is not what fixed P8.2b -- (a)
+is, and (a) works because P8.6 gave those bins a working L2.
+
+`multi` 16:64 at t=192 (the no-regression point for the PTC table growth):
+pre umem 521.4 / null 538.7 / libc 576.9; (a) 530.5 / 578.7 / 555.6;
+(a)+(b) 541.7 / 548.7 / 558.2.  Inside the null's own spread (-20..+40
+Mops between replicates of the same binary) at every sha.
+
+The `bench_contention` dump for this point (`CONTENTION_SIZES` gap noted
+above) was attempted in the same job and produced no rows -- the tool
+needs `LD_LIBRARY_PATH=.libs` and the job did not set it; recorded here so
+the next comparison run does not repeat it.  The throughput and latency
+rows above are the regression's evidence; the depot counters at this
+point remain to be captured.
+
+**STATUS: FIXED (`ad72787`).**  Exit criterion 2 of Phase 8 for this item
+(pre-fix demonstration, fix, post-fix A/B with null on a metal box) is
+met on `c8g.metal-48xl`; `c7i.metal-48xl` awaits capacity.
 
 ### P8.3 Interposer per-call overhead after P8.1
 
