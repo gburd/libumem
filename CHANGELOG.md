@@ -3,7 +3,7 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [3.2.0] - 2026-09-24
 
 The theme of this release is *things that were never running*. Three of its
 fixes are for machinery that existed in the source, was documented, and did
