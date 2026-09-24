@@ -544,3 +544,57 @@ In-scope comment lines: 38-58, 74-79, 222-231, 246.
 | 246 | 6 | "no worker exists, so nothing can hold obj.mtx" | Good |
 
 No findings.
+
+## test/ (header comments: what each test proves)
+
+Read: test_ptc_resize_no_loss.c, test_ptc_thread_exit_drain.c,
+repro_ptc_resize_capacity.c, test_heap_ceiling.c, test_fork_mt_load.c,
+test_forged_free.c, test_stack_bounds.c, test_cache_footprint.c,
+test_freelist_mangle.c, test_inspect_contracts.c, test_hook_contracts.c,
+test_umem_stats.c, test_coverage.c, test_error_paths.c, repro_reclaim_reuse.c.
+
+The regression tests written since 2026-09-21 share a header shape --
+DEFECT (pre-fix, with the code excerpt) / HOW THIS DETECTS IT / what would make
+the test vacuous / exit codes -- and that shape is the standard the rest of
+the tree should be held to. The older unit tests do not have it.
+
+| file:line | class | comment excerpt | finding |
+|---|---|---|---|
+| test_ptc_resize_no_loss.c 12-130 | 6 | DEFECT with the old code inline; PRIMARY ORACLE (exact ledger) vs CORROBORATING SIGNAL; "That control is WRONG for this defect, and an earlier version of this test used it and produced garbage ... 64, 64, and 1755"; "If the resize does not happen, the test reports INCONCLUSIVE, never PASS" | Exemplary. Records two wrong earlier designs (wrong control; gate opened too early, 273-284: "reported PASS on a build with the defect present") |
+| test_ptc_resize_no_loss.c 458-466 | 6 | why exit 77 not 3: automake, observed on aarch64 | Good |
+| test_ptc_thread_exit_drain.c 12-49, 165-177 | 6 | DEFECT / HOW / WHY AN INTERNAL CONTROL / EXACT ORACLE preferred, and why the comparison arms "made this test flaky" | Exemplary; matches Makefile.am:483-490 |
+| test_ptc_thread_exit_drain.c 178-197 | 4 | probe arm returns 0 after exact oracle; the comparison arms below are then unreachable in the probe binary | Comment says "preferred"; the non-probe binary still runs the statistical comparison as its ONLY oracle. The header should say which binary the gate runs (exit_criteria_gate.sh runs the _probe variant per the team brief) so a reader does not take the plain binary's PASS as the P1.3a proof |
+| repro_ptc_resize_capacity.c 12-40 | 6 | DEFECT with the two reads shown; what the over-read returns | Exemplary |
+| test_heap_ceiling.c 12-40 | 6 | "Two things are asserted ... Checking only (1) would pass on a box whose limit had been raised by sysctl" | Exemplary: names the vacuity mode and closes it |
+| test_heap_ceiling.c 13-16 | 1 | "the mmap heap's parent arena used a PAGE-SIZED quantum where Solaris uses 64 KiB" | The fix that landed is UMEM_MIN_SLAB_OBJECTS / UMEM_MIN_QCACHE_SLAB (umem_impl.h:747-833: slab density, not arena quantum). AGENTS.md §10 says the ceiling "remains open, with an honest record of a failed fix attempt". Header describes the mechanism the failed attempt targeted. Re-read against umem_impl.h and the plan and correct |
+| test_fork_mt_load.c 1-40 | 6 | WHAT THIS CATCHES THAT umem_ptc_fork_test DOES NOT; the ABBA with both stacks; how depot traffic is forced | Exemplary |
+| test_forged_free.c 10-62 | 6 | attacker position, three numbered defects with file:line, THE FIX, WHAT THIS ASSERTS A-E with E as CONTROL ("so A-D are not passing because free() rejects everything"), PRE-FIX DEMONSTRATION with the observed string | Exemplary. Line refs drift: "umem_impl.h:663" -> MALLOC_MAGIC is now :844; "malloc_interpose.c:552" -> umem_abort = 0 is now :623 |
+| test_forged_free.c 80-86 | 6 | ASan skip: "Skip them rather than claim a result the run did not produce" | Good |
+| test_stack_bounds.c 1-30 | 6 | defect with file:line ranges, why read-only ("confirmed by reading both walks line by line"), fix, WHY DIRECT CALL | Exemplary |
+| test_cache_footprint.c 5-30 | 6 | defect, numbers (18.6 KB, 29,159 VMAs of 50k), what is tested and why N=2,000 | Good |
+| test_cache_footprint.c 138-150 | 6 | "THE VMA ARM took two fixes, and the first one's regression test (this arm) is what showed it ... Pre-both: 1,134. After (a) only: 1,066. After both: see the RESULT line" | Exemplary correction-in-place (ede1849 rewrote the SKIP-branch rationale instead of deleting it) |
+| test_freelist_mangle.c 5-60 | 6 | attacker position D named; attack + detect arms; "-DUMEM_NO_LINK_MANGLE ... this test then fails, which is what makes it a regression and not a tautology" | Exemplary |
+| test_inspect_contracts.c 1-20 | 6 | "Each test names the contract clause (C1..C5) it defends"; PRE-FIX BEHAVIOUR per clause; "Reproduced on x86_64 within seconds (see the report in docs/results/)" | Good; the docs/results reference should name the file |
+| test_hook_contracts.c 1-20 | 6 | same shape for L1-L5; "all four failed before the fix" | Good |
+| test_umem_stats.c 1-12, 403-450 | 1 | header: "cache_mag_reloads counts magazine operations"; body: "NOTE: This counter is defined in the structure but not yet implemented ... Skip until implemented" then `return MUNIT_SKIP` | Header claims a property the test then SKIPs on. The field is never incremented anywhere (see umem_impl.h table). Either implement or drop the test and the field; today `make check` counts this as a pass-shaped SKIP for a dead counter |
+| test_coverage.c 1063-1069 | 1 | "vmem_create with no import source crashes on destroy -- skip" with an unconditional `return MUNIT_SKIP` | A test whose whole body is SKIP, recording a crash as the reason (1e64034, 2026-04-22). Either the crash is real (then it is an open defect with no plan entry) or it is fixed (then the test is dead). Never-executed masquerading as SKIP -- AGENTS.md §6 |
+| test_coverage.c 1079-1080, 1713 | 3 | `umem_cache_create(..., UMF_AUDIT)` / `UMF_FIREWALL` as cflags, `if (cp == NULL) return MUNIT_SKIP` | UMF_* are cache_flags, not UMC_* cflags; umem.c:5070 masks cflags with UMF_DEBUG so UMF_AUDIT (0x1) is passed through by accident and UMF_FIREWALL (0x40) too. The comment "Cache with UMF_AUDIT flag" is accurate only because of that mask. Fragile; note it |
+| test_error_paths.c 1-10 | 3 | generic header | Says what categories it covers, not what a failure would mean. Pre-2026-09 style; no finding beyond "not to the standard" |
+| repro_reclaim_reuse.c 17-40 | 6 | P1.5 three cases with the byte arithmetic that makes each shape reach the defect | Exemplary |
+
+## scripts/ec2/
+
+Read the header blocks of exit_criteria_gate.sh, oracle_matrix.sh,
+sustained_load.sh, allocator_comparison.sh.
+
+| file:line | class | comment excerpt | finding |
+|---|---|---|---|
+| exit_criteria_gate.sh 14-18 | 3/5 | "NOTE: every $? is captured IMMEDIATELY ... reported here as rc=0 ... Exit status is the number of gate failures" then line 18: "reported as rc=0 by this very script. Same defect class as oracle_matrix.sh's." | Line 18 is an orphaned fragment of the previous wording (an edit left half the old sentence). Delete line 18 |
+| exit_criteria_gate.sh 42-44 | 6 | "No allowances here ... (prop_fragmentation used to be exempted for a vmem abort -- that was fixed, so the exemption is gone.)" | Good: says what changed. But the record it summarises (docs/results/2026-09-22-prop-fragmentation-vmem-abort.md) was deleted in the same commit -- see vmem.c table and Softened-record list |
+| oracle_matrix.sh 5-9 | 6 | exit status contract: 0/1/77 and what each means; records the old `set -e` + unexamined status + silent unsanitized run | Exemplary; this is the §6 PASS/SKIP/FAIL/never-executed distinction written into a script |
+| sustained_load.sh 9-30 | 6 | WHAT CHANGED 2026-09-22 and why older sustained.toml is not comparable: per-window rows, alternating A/B, matched op budgets ("Equalising wall-clock ... hands them different amounts of work and destroys the comparison"), provenance incl. sha | Exemplary method comment |
+| allocator_comparison.sh 1-20 | 6 | "One job, one build, one box, so the identity of every number is the same"; missing competitor RECORDED never dropped; null control inside the matrix "is the rig's resolution; a cross-allocator delta inside it is noise" | Exemplary |
+
+## umem_gc.c cross-check
+
+Only that no live comment claims GC is present. `grep -rn "gc\b\|GC\b" --include=*.c --include=*.h` outside umem_gc*.c and test_gc/prop_gc: none in umem.c, umem_impl.h, malloc*.c, umem_ptc*, umem_fork.c. Clean.
