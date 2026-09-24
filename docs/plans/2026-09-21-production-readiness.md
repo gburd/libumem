@@ -1849,7 +1849,7 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 | P8.1 interposer global mutex on every `free()` | preload 0.8 Mops vs API 394 at 192 t (500x); negative thread scaling on all 4 boxes | **FIXED** `a74065e`; A/B 0.79 -> 314 Mops (396x) at 192 t, null +/-3.5 % |
 | P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | **FIXED** `ae86536`: CPU hint was `pthread_self() & mask == 0` -- one `cc_lock` per process; 1.4 -> 16.4 Mops at t=8 |
 | P8.2b 1k:4k cliff at t>=128 on both metals (hidden by P8.2) | at `d6f04ab`: x86 105 -> 91 Mops t=64 -> 128 (libc 165 -> 253); arm 277 -> 77 (libc 255 -> 200); null falls with it; umem p999 11 us vs libc 0.4 | open; mechanism: sizes above `tcache_max` take a blocking depot trip every 31 ops per CPU; the original P8.2 fix (1)+(2) is the fix path |
-| P8.6 PTC per-thread magazines never primed | 28x cliff at the bin boundary, single thread (157 -> 5.5 Mpairs/s at N=64 -> 65 for 512 B); 39 % trylock + 34 % unlock | open; mechanism in source; fix: allocate one magazine on first miss |
+| P8.6 PTC per-thread magazines never primed | 28x cliff at the bin boundary, single thread (157 -> 5.5 Mpairs/s at N=64 -> 65 for 512 B); 39 % trylock + 34 % unlock | **FIXED** `a2177b9`: one magazine allocated on the first free-side miss; cliff 26.9x -> 1.16x (x86), 26.3x -> 1.05x (arm); depot trylocks per 200 rounds 25,600 -> 0; inside the bin within null |
 | P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | open; re-measured at `d6f04ab`: 0.74-0.91, flat; profile attributes it |
 | P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | **CLOSED** by `ae86536` (P8.2's fix): at `d6f04ab` x86 t=192 umem 528.8 = null 527.8 > libc 486.8 -- PTC misses had also gone to `cache_cpu[0]` |
 | P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | open; mechanism in source + profile + contention dump | re-measured at `d6f04ab`: sustained 2.4x (x86) / 9x (arm) better, still 2-3x behind the field; perf 59 % in `pthread_mutex_trylock`, 95 % of depot reloads cross-stripe -- mechanism confirmed, open |
@@ -2022,6 +2022,92 @@ above must not have a cliff between N=64 and N=128 (ratio < 2x, today
 nothing discarded with objects in it) already govern `umem_ptc_mag_return`;
 the new magazine goes through the same function. Not done in this pass --
 it is a fast-path change and needs its own A/B with the null control.
+
+**STATUS: FIXED (`a2177b9`, out-of-line in `a1901c8`).**  On the free side,
+when both per-thread magazines are full (or absent) and the depot's empty
+list has nothing, `umem_ptc_mag_prime()` allocates one magazine from
+`cp->cache_magtype->mt_cache`, exactly as `_umem_cache_free` does for the
+CPU layer, and the caller adopts it with `umem_mag_capacity()` (P1.3b).  No
+magtype-changed retry: a stale shell is drained and freed by
+`umem_ptc_mag_return*` when it is handed back (P1.3c).  The alloc side is
+unchanged -- when both magazines are empty and the depot has no full one,
+there is nothing to prime with, and falling to `_umem_cache_alloc` is
+correct.
+
+**Regression** `test/integration/test_ptc_mag_primed` (in `make check`,
+probe build): one thread, alloc `2*cap` then free `2*cap` for 200 rounds at
+512 B (bin 64) and 64 B (bin 128), counting `umem_depot_alloc_trylock()`
+calls from the PTC paths via a new `UMEM_PTC_RESIZE_PROBE` ledger
+(`umem_ptc_probe_depot_trylocks`).  Bound `2 * rounds + 8 = 408`.
+
+| build | 512 B attempts | 64 B attempts | result |
+|---|---|---|---|
+| parent `356354e` (test only), both arches | **25,600** (= one per object past the bin) | **51,200** | FAIL |
+| fix `a2177b9`, both arches | **0** | **0** | PASS |
+
+Zero, not "a handful": once the L2 holds a magazine the workload never
+fills it (2*cap <= magsize), so the depot is never consulted again.
+
+**The cliff** (`bench_pairs`, one thread, alloc N then free N, Mpairs/s,
+`verify-isolated` at each sha):
+
+| box | build | 512 B N=64 | N=65 | N=96 | N=128 | N=256 | N=64/N=128 | 64 B N=128 | N=256 |
+|---|---|---|---|---|---|---|---|---|---|
+| `c7i.2xlarge` | `356354e` | 160.5 | 93.0 | 8.8 | **5.97** | 4.0 | **26.9x** | 156.6 | 5.98 |
+| `c7i.2xlarge` | `a2177b9` | 160.0 | 158.2 | 146.1 | **137.4** | 133.1 | **1.16x** | 159.9 | 135.6 |
+| `c7g.2xlarge` | `356354e` | 102.3 | 57.3 | 5.7 | **3.89** | 2.6 | **26.3x** | 104.3 | 3.89 |
+| `c7g.2xlarge` | `a2177b9` | 102.2 | 99.6 | 98.7 | **97.6** | 95.2 | **1.05x** | 104.7 | 100.0 |
+
+**A/B with the null control** (`scripts/ec2/hotpath_ab.sh`: three arms
+from `git archive` -- pre `356354e`, post `a1901c8`, and an independent
+rebuild of pre as the null -- 9 alternating pairs per point, median delta,
+ONE `bench_pairs` binary for every arm; instructions per pair from `perf
+stat` at t=1):
+
+| point | x86 null | x86 A/B | arm null | arm A/B | insn/pair x86 | insn/pair arm |
+|---|---|---|---|---|---|---|
+| 512 B N=1 t=1 | +2.2 % (-4.4..+5.8) | +6.1 % (+1.2..+8.4) | +0.0 % | -0.2 % | +0.0 % | +0.0 % |
+| 512 B N=64 t=1 (bin edge) | +0.4 % | -0.2 % | +0.0 % | -0.2 % | +0.1 % | +0.0 % |
+| 512 B N=128 t=1 | +0.3 % | **+2234 %** | +0.0 % | **+2401 %** | **-90.2 %** | **-90.0 %** |
+| 16:64 N=1 t=1 | +0.1 % | -3.0 % (-4.7..-0.4) | -0.1 % | +0.5 % | +0.1 % | +0.0 % |
+| 16:64 N=64 t=1 | -0.1 % | -0.2 % | -0.0 % | +0.4 % | +0.0 % | +0.0 % |
+| 16:1024 N=1 t=1 | -0.2 % | -1.9 % (-2.7..-0.9) | +0.0 % | +0.2 % | +0.0 % | +0.0 % |
+| 16:1024 N=64 t=1 | -0.2 % | +1.7 % | +0.0 % | -0.3 % | -0.1 % | +0.0 % |
+| 512 B N=1 t=8 | -0.1 % | -0.1 % | -0.5 % | -0.1 % | | |
+| 512 B N=128 t=8 | -19 % (-98..+182) | +141 % (+15..+524) | +92 % (-70..+243) | +286 % (+94..+290) | | |
+| 16:64 N=1 t=8 | -0.4 % | +0.1 % | -0.1 % | +0.6 % | | |
+| 16:64 N=64 t=8 | -0.2 % | +0.0 % | +0.0 % | +0.5 % | | |
+| 16:1024 N=1 t=8 | +0.0 % | -0.5 % | -0.0 % | +0.2 % | | |
+| 16:1024 N=64 t=8 | +0.4 % | -0.0 % | +0.0 % | -0.0 % | | |
+
+Inside the bin (N <= 64) and at every 16:64 / 16:1024 point the change is
+within the null on arm and within 3 % on x86 with instruction counts
+identical to 0.1 %; 16:64 t=8 -- the brief's no-regression point -- is
++0.0 % / +0.5 %.  Past the bin the L2 now serves what the depot scan used
+to fail at: 10x fewer instructions per pair.  The t=8 N=128 point is
+bimodal in BOTH arms (the null's own spread is -98..+182 %): with eight
+threads cycling 128 objects each the pre-fix depot lists are sometimes fed
+by another thread's CPU magazine draining and sometimes not, and the
+post-fix figure depends on how many threads primed before the 1 s window.
+It is reported, not claimed.
+
+**What the first A/B got wrong, and how it was found.**  The first two
+runs of the rig built `bench_pairs` per arm and reported 512 B N=1 t=1 at
+**-8.9 %** and **-7.7 %** (null +0.3 %) with instructions per pair
+unchanged to 0.1 %.  Two layout variants (`cold`, `aligned(64)`) and a
+padding control (pre + a dead copy of the helper) did not explain it -- the
+padding control was inside the null.  Cross-pairing library x bench binary
+did: same library, bench from pre vs bench from post, **-13.1 % / -14.9 %**;
+same bench, library pre vs post, **+7.8 % / +3.2 %**.  A printf change in
+`bench_pairs.c` between the two refs had moved the bench's own `worker` by
+0x20 bytes.  The rig now uses one bench binary (from post) for every arm
+and logs its sha256 (`aa8c2ba`); the comment that had attributed the loss
+to inlining was corrected (`71422fe`).  The A/B above is the corrected run.
+
+**Oracles** at `a2177b9`, both arches: `test_ptc_thread_exit_drain_probe`
+stranded 0; `test_ptc_resize_no_loss_probe` x12 all PASS, objects lost 0;
+`test_cpu_hint_spread` 8/8; `test_ptc_footprint` PASS.  Gate runs recorded
+at the end of Phase 8.
 
 ### P8.2b The 1k:4k class has a second cliff at 128+ threads, which P8.2 was hiding
 

@@ -598,3 +598,88 @@ sustained_load.sh, allocator_comparison.sh.
 ## umem_gc.c cross-check
 
 Only that no live comment claims GC is present. `grep -rn "gc\b\|GC\b" --include=*.c --include=*.h` outside umem_gc*.c and test_gc/prop_gc: none in umem.c, umem_impl.h, malloc*.c, umem_ptc*, umem_fork.c. Clean.
+
+## Summary
+
+### Counts (in-scope comments, 2y blame window; "GOOD" rows are grouped, so the
+count under-represents how many individual comments meet the standard)
+
+| class | count | note |
+|---|---|---|
+| 1 CLAIM MISMATCH | 26 | 2 are possible code bugs (CB-1, CB-2); 1 is a contradiction between two live comments (umem_impl.h:167 vs :241); 5 are dead references (files/functions/aliases that do not exist) |
+| 2 STALE MEASUREMENT | 8 | none superseded; all are "no box/sha/date". The best-cited numbers (umem.c:2669, 4705; umem_impl.h:757; vmem_mmap.c:123) point at docs/results files and lack only the sha |
+| 3 NARRATION/CONFIDENCE | ~60 | concentrated in umem.c's 2026-04 prefetch/SIMD/"true lock-free" layer and umem_impl.h's tagged-pointer block; almost none in files touched after 2026-09-21 |
+| 4 MISSING INVARIANT | 2 explicit + 3 noted inline | cc_lock's field comment understates its scope (umem_impl.h:468); umem.c §6 lock list omits vmem_segfree_lock, sbrk_faillock, interposer locks; ptc_table_ready has no publish protocol though the comment implies one (umem_ptc.c:232) |
+| 5 SOFTENED RECORD | 2 | docs/results/2026-09-22-prop-fragmentation-vmem-abort.md deleted in 7ba9914 while vmem.c:617 still cites it and exit_criteria_gate.sh:43 summarises it; exit_criteria_gate.sh:18 is a half-deleted sentence. Everything else that was wrong was corrected in place -- umem_impl.h:167, umem_ptc.c:613, malloc_interpose.c:476/599, umem_fork.c:75, vmem_mmap.c:123/260, test_ptc_resize_no_loss.c:79/273, test_cache_footprint.c:138 are the models |
+| 6 GOOD | ~240 rows | see per-file tables |
+
+### Possible code bugs (comment right, code wrong) -- restated
+
+1. **CB-1** `umem.c:3259` `reset_cpu_hint_cache()` in `umem_cpu_reload()`, 8
+   callers. `umem_impl.h:167` (20999ee, yesterday) says "Nothing reset it" and
+   :183 says "read once ... and cache". The reset is live and now re-derives
+   the hint through rseq/sched_getcpu on every CPU-layer magazine exchange.
+   Unmeasured cost; contradicts the design statement. `@hot` decides: delete
+   the reset or correct the comment. Not both can stand.
+2. **CB-2** `umem_inspect.c:880-889, 925-927` bound magazine reads by
+   `cp->cache_magtype->mt_magsize`, the exact pattern `umem_mag_capacity`'s
+   comment (umem.c:2213-2225) forbids. Stale smaller shells on depot lists are
+   over-read. Reporting error, not a crash, but it is the P1.3b class in the
+   one file that did not get the fix.
+
+### Top ten CLAIM MISMATCHES, ranked by how wrong x how load-bearing
+
+| # | where | why it ranks |
+|---|---|---|
+| 1 | umem_impl.h:167-183 vs umem.c:3255-3259 / umem_impl.h:240-243 | The CPU-hint comment is the single most-read explanation of this week's headline fix, and its central sentence is false. Two live comments in one header contradict each other 70 lines apart |
+| 2 | umem.c:2579-2598 + 2762-2768 (depot lock order) | Says "ml_lock below cache_lock", umem_fork.c says cache_lock is below ml_lock; code follows umem_fork.c. This is the lock-order comment the fork file calls "the documented contract". Also physically detached from the function it describes |
+| 3 | umem.c:4486-4489, 4213-4219 | reclaim_pages "drops and reacquires the lock around madvise and slab destroy" -- that is the pre-fix behaviour that SEGV'd; the fix comment 20 lines down says so. umem_reap's stated reason for not calling it is the same stale mechanism |
+| 4 | umem_impl.h:610 cache_mag_reloads; test_umem_stats.c:403-450 | A counter three reporting tools print, never incremented anywhere, with a test that SKIPs on it and a header claiming it "counts magazine operations". Dead data presented as live |
+| 5 | vmem.c:617 -> deleted docs/results file (7ba9914) | The only in-tree reference to a results record now points at nothing; the record was deleted because the symptom cleared. §8 says docs/ is durable |
+| 6 | umem.c:3280-3285, 5899-5905, umem_rseq.c:223-245 | "true lock-free ... when we own the rseq registration (not glibc)" -- code enables asm in the glibc branch and x86-manual branch, never aarch64-manual. Opposite of the sentence. AGENTS.md §6 already flags the rseq path as serving zero hits; the comments still sell it |
+| 7 | test_heap_ceiling.c:13-16 | DEFECT paragraph names the arena-quantum mechanism; the fix that landed and the file's own later table (43-60) describe slab density. A regression test's header is where the next reader learns what was wrong |
+| 8 | malloc.c:184-196, 728-734, 762-770 | genasm/weak-alias/function-pointer dispatch that does not exist in this port, on the two entry points every interposed call goes through |
+| 9 | umem_impl.h:485-548 tagged pointers | 60 lines describing a lock-free depot that 9640329 removed; two zero-caller helpers survive in umem.c:2096-2124 to keep it company. "Use umem_tagged_ptr_check() at init" -- nothing does |
+| 10 | umem.c:1116-1120 "Deliberately weak"; umem.c:2126-2131 orphan header; malloc_interpose.c:34 dead doc ref; umem.c:6070 "8-448 bytes"; umem.c:2958 dead docs/results ref | Small, cheap, and each one teaches a reader something false |
+
+### Suggested fix order
+
+1. Resolve CB-1 (decision + one-line code or comment change; `@hot` owns the
+   lines). Then correct umem_impl.h:149-186 so the record says the reset WAS
+   there and what was decided about it -- do not delete "Nothing reset it";
+   annotate it.
+2. Fix #2: move the lock-order block onto `umem_depot_alloc()` and invert the
+   "below" wording to match umem_fork.c. One comment, two sites.
+3. Fix #3 (two sentences) and #6 (three sentences): pure comment edits in
+   umem.c, no code.
+4. Restore docs/results/2026-09-22-prop-fragmentation-vmem-abort.md with a
+   STATUS: FIXED header (git show 7ba9914^:path), fixing #5 and the class-5
+   finding at once.
+5. Decide cache_mag_reloads / low_water / hits / misses / cache_numa_info /
+   tagged-pointer helpers: implement or delete. Each is a field with a
+   live-sounding comment and no writer. Deleting is the ponytail answer; the
+   test that SKIPs on cache_mag_reloads goes with it.
+6. CB-2: `@review-*` cannot touch source; hand to whoever owns umem_inspect.c
+   with the two line ranges.
+7. #7, #8, #10 and the class-3 sweep of umem.c's prefetch/SIMD comments
+   (delete ~12 comments that restate `__builtin_prefetch` arguments).
+8. Add box/sha to the eight class-2 numbers; most have a docs/results file to
+   point at already.
+
+### Calibration: what "good" looks like here
+
+The standard is already met, and exceeded, in the files touched since
+2026-09-21. Six comments a new contributor should read before writing one:
+
+- `malloc_interpose.c:239-266` (libc_ptr_live): box, method, numbers, and a
+  correctness argument for a lock-free read.
+- `umem.c:2812-2835` (umem_ptc_mag_return): two invariants stated at the one
+  shared function, with what used to happen.
+- `umem_inspect.c:156-206` (C1-C5): which lock protects what, what is
+  consistent, what may be torn, and the debugger caveat.
+- `umem_introspect.c:918-957` (P5.6): attacker position, both failure modes
+  demonstrated, the fix, and why the residual predictability is fine.
+- `vmem_mmap.c:246-275`: "Measured at d22bf03 and 553d42e, both of which
+  contain the comment you are reading" -- the fix-in-place record at its best.
+- `umem_ptc.h:44-70`: the first version was wrong, here is the cliff, here is
+  the fix sha, and "it has not been measured" for the part that was not.
