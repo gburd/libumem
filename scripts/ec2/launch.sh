@@ -63,6 +63,7 @@ log "launching $ROLE: $ITYPE ($ARCH) ami=$AMI sg=$SGID"
 IID="$(aws ec2 run-instances \
 	--image-id "$AMI" --instance-type "$ITYPE" \
 	--key-name "$KEY_NAME" --security-group-ids "$SGID" \
+	${SUBNET_ID:+--subnet-id "$SUBNET_ID"} \
 	--block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=60,VolumeType=gp3,Iops=6000,Throughput=400}' \
 	--metadata-options 'HttpTokens=required,HttpEndpoint=enabled' \
 	--tag-specifications "ResourceType=instance,Tags=[{Key=Project,Value=${PROJECT_TAG}},{Key=Role,Value=${ROLE}},{Key=Name,Value=libumem-${ROLE}}]" \
