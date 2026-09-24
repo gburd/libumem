@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+The theme of this release is *things that were never running*. Three of its
+fixes are for machinery that existed in the source, was documented, and did
+nothing in any ordinary process: the maintenance thread (never started), the
+per-CPU cache layer (every thread on slot 0), and the documented
+`UMEM_OPTIONS=abort` escape hatch (no such option). A fourth, the ~5 GB Linux
+heap ceiling, was fixed in v3.1.0's follow-up and then found to be half-fixed
+by a systematic hard-limit hunt, whose other findings are also here. Every fix
+carries a regression that fails on the parent commit and passes after, on
+x86_64 and aarch64; where the first diagnosis was wrong, the entry says so.
+
+### Compatibility
+
+- **No API or ABI change.** Public headers (`umem.h`, `umem_hooks.h`,
+  `umem_inspect.h`) are byte-identical to v3.1.0; `sizeof(umem_hook_t)` is 120;
+  soname `libumem.so.1`.
+- **Behaviour changes a deployment may notice:** every process now has a second
+  thread from `umem_init()` onward (see Known); freed heap memory is returned to
+  the OS after `reclaim_delay` (30 s) where before it never was; freed spans
+  under 16 MiB are `MADV_DONTNEED`'d rather than `PROT_NONE`-remapped, so a
+  use-after-free into such a span reads zeros instead of faulting
+  (`UMEM_OPTIONS=mmap_guard=0..N` adjusts).
+- **New tunables:** `UMEM_OPTIONS=abort`, `UMEM_OPTIONS=mmap_guard=N`.
+
 ### Fixed
 
 - **The ~5 GB heap ceiling on Linux is removed -- in two halves, the second of
