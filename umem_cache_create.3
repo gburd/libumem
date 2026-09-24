@@ -319,8 +319,8 @@ a cache pointer
 \fB\fIbuf\fR\fR
 .ad
 .RS 9n
-a pointer previously returned from \fBumem_cache_alloc()\fR. This argument must
-not be \fINULL\fR.
+a pointer previously returned from \fBumem_cache_alloc()\fR, or \fINULL\fR,
+in which case the call is a no-op.
 .RE
 
 .sp

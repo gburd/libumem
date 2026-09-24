@@ -136,7 +136,10 @@ callbacks are expected to perform their own concurrency management.
 .sp
 .LP
 The function call \fBumem_alloc\fR(0, \fIflag\fR) always returns \fINULL\fR.
-The function call \fBumem_free\fR(\fINULL\fR, 0) is allowed.
+The function call \fBumem_free\fR(\fINULL\fR, \fIsize\fR) is a no-op for
+every \fIsize\fR, as is \fBumem_free_align\fR(\fINULL\fR, \fIsize\fR), so
+the result of a failed allocation may be passed straight to the matching
+free.
 .sp
 .LP
 The \fBumem_zalloc()\fR function has the same semantics as \fBumem_alloc()\fR,

@@ -3,6 +3,25 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`umem_free(NULL, size)` with a non-zero size put NULL on a free list, and
+  the next `umem_alloc(size)` on that thread returned it -- NULL with
+  `errno == 0`.** `_umem_free()` indexed the size-class table and stored the
+  pointer into the per-thread bin (or, with `tcache=0`, the CPU magazine)
+  without checking it; the only NULL check was for `size == 0` on the
+  oversize branch. `umem_cache_free(cp, NULL)` had the same hole;
+  `umem_free_align(NULL, n)` panicked ("bad free") instead. All three are now
+  no-ops, as `free(NULL)` is, and the man pages say so
+  (`umem_alloc.3`, `umem_cache_create.3`). Found by the 2026-09-24
+  production-readiness review (section 2.1). The `LD_PRELOAD` interposer's
+  `free()` already returned on NULL and was not affected. Regression
+  `test/unit/test_free_null` (in `make check`) fails at the parent commit and
+  passes after. `test/unit/test_error_paths.c` had a comment calling this
+  undefined behaviour; it now asserts the contract. (P1.8)
+
 ## [3.2.0] - 2026-09-24
 
 The theme of this release is *things that were never running*. Three of its

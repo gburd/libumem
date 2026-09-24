@@ -18,7 +18,8 @@
  * for size == 0.  So umem_free(NULL, 64) put a NULL in the 64 B free list
  * and the NEXT umem_alloc(64) on that thread returned NULL with errno == 0:
  * a spurious allocation failure that reports success, one call removed from
- * its cause.  umem_cache_free(cp, NULL) had the same hole.  Demonstrated in
+ * its cause.  umem_cache_free(cp, NULL) had the same hole; umem_free_align
+ * (NULL, n) was the loud sibling, umem_panic("bad free").  Demonstrated in
  * docs/reviews/2026-09-24-production-readiness.md section 2.1.
  *
  * WHAT THIS TESTS, exactly.  For each PTC-served, magazine-served and
@@ -108,6 +109,16 @@ main(void)
 
 	umem_free(NULL, 0);
 	printf("ok:   umem_free(NULL, 0)\n");
+
+	/* Sibling: umem_free_align(NULL, n) used to umem_panic("bad free"). */
+	p = umem_alloc_align(64, 64, UMEM_DEFAULT);
+	if (p != NULL)
+		umem_free_align(p, 64);
+	umem_free_align(NULL, 64);
+	p = umem_alloc_align(64, 64, UMEM_DEFAULT);
+	check("umem_free_align(NULL, 64); umem_alloc_align(64, 64)", p);
+	if (p != NULL)
+		umem_free_align(p, 64);
 
 	if (fails == 0)
 		printf("RESULT: PASS (freeing NULL is a no-op on every path)\n");

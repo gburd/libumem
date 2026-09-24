@@ -40,6 +40,7 @@ the pre-fix failure, EC2 verification on x86_64 and aarch64.
 | P1.5a/b/c reclaim metadata + publication | FIXED | TSAN 1 -> 0, aborts pre-fix |
 | P1.6 maintenance-thread startup | FIXED | evidence retracted once, then redone |
 | P1.7 overflow + alignment contracts | FIXED | `docs/results/prefix-evidence/` |
+| P1.8 `umem_free(NULL, n)` stored NULL on a free list | FIXED (2026-09-24) | `test/unit/test_free_null` fails at parent, passes after |
 
 Also fixed while here, outside the original list: a pre-existing `umem_reap`
 self-deadlock reachable from the real update thread; a hash-partition weight
@@ -171,6 +172,53 @@ interposed.
 Required: checked arithmetic on every size/offset path; ownership released
 only after success; POSIX-conformant alignment validation; boundary
 regressions.
+
+### P1.8 `umem_free(NULL, size)` put NULL on a free list -- FIXED
+
+`umem.c` `_umem_free` (the PTC bin store, the per-thread magazine store,
+and via `_umem_cache_free` the CPU magazine store: no `buf != NULL` check on
+any of them; the only check was `buf == NULL && size == 0` on the oversize
+branch), `_umem_cache_free` (same), `_umem_free_align` (same shape; there
+the outcome was `umem_panic("bad free")` from `vmem_hash_delete`).  Found by
+the 2026-09-24 production-readiness review, section 2.1.
+
+**Demonstrated** (`c7i.2xlarge`, default build, review's `nul` job):
+`umem_free(NULL, 64)`; the next `umem_alloc(64)` on that thread returns
+`NULL` with `errno == 0`; the one after it works.  A spurious allocation
+failure that reports success, one call removed from its cause.  With
+`tcache=0` the NULL goes into the CPU magazine and comes back out of
+`_umem_cache_alloc()` the same way.  `test/unit/test_error_paths.c` had a
+comment calling this undefined behaviour "because the implementation indexes
+into umem_alloc_table ... before checking for NULL buf" -- a description of
+the bug, filed as a contract.  `umem_alloc.3` said `umem_free(NULL, 0)` is
+allowed and was silent on `umem_free(NULL, n)`; `umem_cache_create.3` said
+the argument must not be NULL.  Solaris libumem behaves the same; `free(NULL)`
+being a no-op is what every caller expects, and `umem_free(p, sz)` is the
+documented pairing for a `umem_alloc(sz)` that may have returned NULL.
+
+**Fix.** `if (buf == NULL) return;` at the top of `_umem_free`,
+`_umem_cache_free` and `_umem_free_align` -- one check at the top of each
+entry point, above every store, rather than one per store.  The interposer's
+`free()` already returned on NULL before reaching any of these
+(`malloc_interpose.c`), so `LD_PRELOAD` users were not exposed.  Man pages
+now state the no-op for all three.
+
+**STATUS: FIXED.**  Regression `test/unit/test_free_null` (in `make check`):
+free NULL at 8 / 64 / 512 / 2048 / 2560 / 8192 / 16384 / 262144 B, once and
+300 times, through `umem_free`, and through `umem_cache_free` on a private
+cache and `umem_free_align`; every following allocation must be non-NULL.
+
+| build | `umem_free(NULL, n); umem_alloc(n)` for n in 8..16384 | `umem_free(NULL, 262144)` (oversize) | `umem_cache_free(cp, NULL)` / `umem_free_align(NULL, 64)` | result |
+|---|---|---|---|---|
+| parent `b1e5b0d` (test only), `c7g.2xlarge` | **NULL, errno 0, at every one of the seven sizes** (8, 64, 512, 2048 through the PTC; 2560, 8192, 16384 through the CPU magazine), once and after 300 frees alike | **`umem_panic("vmem_hash_delete(..., 0, 262144): bad free")`, SIGABRT** -- the `buf == NULL && size == 0` check did not cover it | not reached (aborted first); the align path has the same `vmem_xfree` | FAIL, rc 134 |
+| fix `6b4fd7d` | non-NULL | no-op | no-op / no-op | PASS |
+
+The review reproduced the 64 B case; the regression shows it is every size
+class below `UMEM_MAXBUF`, and that above it the outcome was a process abort
+rather than a bad pointer.
+
+Both arches, default and `--enable-introspect`, in the gate run recorded
+under Phase 8's 2026-09-24 entries.
 
 ## Phase 2 — Trustworthy evidence
 

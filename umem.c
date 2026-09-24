@@ -3532,6 +3532,15 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	umem_magtype_t *mtp;
 	int rounds, magsize;
 
+	/*
+	 * NULL is not an object (P1.8): stored into a magazine it would come
+	 * back out of umem_cache_alloc() as a failure with errno 0.  The man
+	 * page said the argument must not be NULL; a silent no-op is what
+	 * every caller of free(NULL) expects and costs one predictable branch.
+	 */
+	if (unlikely(buf == NULL))
+		return;
+
 	if (unlikely(ccp->cc_flags & UMF_BUFTAG))
 		if (umem_cache_free_debug(cp, buf) == -1)
 			return;
@@ -4001,6 +4010,16 @@ _umem_free(void *buf, size_t size)
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
 	static __thread int ptc_initializing_free = 0;
 
+	/*
+	 * Freeing NULL is a no-op for every size (P1.8).  Without this the
+	 * PTC and magazine stores below took NULL as an object and the next
+	 * umem_alloc(size) on this thread returned it, with errno 0.  This
+	 * is the ONE place for the check: the size-class paths, the oversize
+	 * branch and (via _umem_cache_free) the CPU layer all sit below it.
+	 */
+	if (unlikely(buf == NULL))
+		return;
+
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
 		umem_cache_t *cp = umem_alloc_table[index];
 
@@ -4157,8 +4176,6 @@ _umem_free(void *buf, size_t size)
 
 		_umem_cache_free(cp, buf);
 	} else {
-		if (buf == NULL && size == 0)
-			return;
 		vmem_free(umem_oversize_arena, buf, size);
 	}
 }
@@ -4169,7 +4186,8 @@ _umem_free(void *buf, size_t size)
 void
 _umem_free_align(void *buf, size_t size)
 {
-	if (buf == NULL && size == 0)
+	/* Same contract as umem_free (P1.8).  Before: umem_panic "bad free". */
+	if (buf == NULL)
 		return;
 	vmem_xfree(umem_memalign_arena, buf, size);
 }
