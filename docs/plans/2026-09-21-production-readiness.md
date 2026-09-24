@@ -211,7 +211,7 @@ cache and `umem_free_align`; every following allocation must be non-NULL.
 | build | `umem_free(NULL, n); umem_alloc(n)` for n in 8..16384 | `umem_free(NULL, 262144)` (oversize) | `umem_cache_free(cp, NULL)` / `umem_free_align(NULL, 64)` | result |
 |---|---|---|---|---|
 | parent `b1e5b0d` (test only), `c7g.2xlarge` | **NULL, errno 0, at every one of the seven sizes** (8, 64, 512, 2048 through the PTC; 2560, 8192, 16384 through the CPU magazine), once and after 300 frees alike | **`umem_panic("vmem_hash_delete(..., 0, 262144): bad free")`, SIGABRT** -- the `buf == NULL && size == 0` check did not cover it | not reached (aborted first); the align path has the same `vmem_xfree` | FAIL, rc 134 |
-| fix `6b4fd7d` | non-NULL | no-op | no-op / no-op | PASS |
+| fix `df7d1d8` | non-NULL | no-op | no-op / no-op | PASS |
 
 The review reproduced the 64 B case; the regression shows it is every size
 class below `UMEM_MAXBUF`, and that above it the outcome was a process abort
