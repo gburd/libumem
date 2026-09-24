@@ -45,7 +45,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [normal, asan, ubsan, coverage]
+        # `release` is the shipped configuration (release.yml: -O3 -g -DNDEBUG).
+        # Under NDEBUG every ASSERT() is compiled out, so it is a different
+        # program from `normal`, and until 2026-09-24 no test had ever run
+        # against it (production-readiness review, section 3.1).
+        mode: [normal, release, asan, ubsan, coverage]
 
     steps:
       - name: Install build dependencies
@@ -67,6 +71,7 @@ jobs:
         run: |
           case "${{ matrix.mode }}" in
             normal)   ./configure ;;
+            release)  ./configure CFLAGS='-O3 -g -DNDEBUG' ;;
             asan)     ./configure --enable-asan ;;
             ubsan)    ./configure --enable-ubsan ;;
             coverage) ./configure --enable-coverage ;;
@@ -96,7 +101,7 @@ jobs:
         timeout-minutes: 5
 
       - name: Comprehensive unit suite (test_main)
-        if: matrix.mode == 'normal'
+        if: matrix.mode == 'normal' || matrix.mode == 'release'
         run: |
           LD_LIBRARY_PATH=.libs test/.libs/test_main --no-fork
         timeout-minutes: 10

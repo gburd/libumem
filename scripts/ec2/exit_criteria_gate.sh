@@ -72,6 +72,27 @@ rc=$?; echo "external_compile_rc=$rc"; [ $rc -ne 0 ] && { note_fail "external co
 LD_LIBRARY_PATH="$LIB" /tmp/ext; rc=$?; echo "external_run_rc=$rc"; [ $rc -ne 0 ] && note_fail "external run"
 rm -rf -f /tmp/ext /tmp/ext.c 2>/dev/null
 
+r "7. RELEASE configuration: -O3 -DNDEBUG, the binary that actually ships"
+# .forgejo/workflows/release.yml builds the tarball with CFLAGS='-O3 -g -DNDEBUG'
+# and ran NO tests on it.  Under NDEBUG every ASSERT() is compiled out
+# (misc.h:138), so that binary is a different program from the one every
+# regression above ran against -- and it had never been through any of them
+# (production-readiness review 2026-09-24, section 3.1).  Steps 1-4 again on
+# exactly that configuration.  A failure here that steps 1-4 did not show is
+# an ASSERT that was load-bearing.
+./scripts/ec2/clean-regen.sh CFLAGS='-O3 -g -DNDEBUG' >/dev/null 2>&1 && make -j$(nproc) >/dev/null 2>&1
+rc=$?; echo "ndebug_build_rc=$rc"; [ $rc -ne 0 ] && note_fail "ndebug build"
+grep -q 'CFLAGS.*NDEBUG' Makefile || note_fail "ndebug configure did not take (Makefile CFLAGS lacks NDEBUG)"
+make check >/tmp/ck2.log 2>&1; rc=$?; echo "ndebug_check_rc=$rc"
+grep -E '^# (TOTAL|PASS|FAIL|SKIP|ERROR)' /tmp/ck2.log
+grep -E '^(FAIL|ERROR):' /tmp/ck2.log | head -5
+[ $rc -ne 0 ] && note_fail "ndebug make check"
+LD_LIBRARY_PATH=.libs ./test/.libs/test_main --no-fork >/tmp/tm2.log 2>&1
+rc=$?; echo "ndebug_test_main_rc=$rc"; tail -2 /tmp/tm2.log | head -2
+[ $rc -ne 0 ] && note_fail "ndebug test_main"
+LD_LIBRARY_PATH=.libs timeout 200 ./test/stress/.libs/stress_concurrency_oracle --threads=8 --duration=25 --size-class=mixed --pattern=all >/tmp/or2.log 2>&1
+rc=$?; tail -1 /tmp/or2.log; echo "ndebug_oracle_rc=$rc"; [ $rc -ne 0 ] && note_fail "ndebug oracle"
+
 r "GATE RESULT"
 echo "gate_failures=$fails"
 [ $fails -eq 0 ] && echo "GATE: PASS" || echo "GATE: FAIL"
