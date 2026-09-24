@@ -22,7 +22,10 @@
  * where 1536-byte (PTC-served) objects did 32; 0.06x glibc at 64 threads.
  *
  * WHAT THIS TESTS, exactly.  N threads each allocate and free a size that
- * bypasses the PTC (2560 B is the first class above umem_ptc_maxsize = 2048).
+ * bypasses the PTC.  This was 2560 B, the first class above the then
+ * umem_ptc_maxsize of 2048; the PTC now covers through 8192 (P8.2b), so it
+ * is 10240 B, the first class above that.  The property is the same: a size
+ * whose every operation reaches the per-CPU magazine layer.
  * Afterwards, count the per-CPU caches whose cc_alloc is non-zero.
  *
  *   PASS: at least min(N, ncpus) / 2 distinct caches were used.
@@ -45,7 +48,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#define	OBJ	2560
+#define	OBJ	10240
 #define	NTHREADS 8
 #define	NOPS	200000
 

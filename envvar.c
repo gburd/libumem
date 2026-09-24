@@ -252,7 +252,7 @@ static umem_env_item_t umem_options_items[] = {
 		NULL, 0, (uint_t *)&umem_ptc_enabled
 	},
 	{ "tcache_max",		"Evolving",	ITEM_SIZE,
-		"Maximum size (in bytes) cached by tcache (default 448)",
+		"Maximum size (in bytes) cached by tcache (default 8192)",
 		NULL, 0, NULL, &umem_ptc_maxsize
 	},
 	{ "ownership",		"Evolving",	ITEM_UINT,

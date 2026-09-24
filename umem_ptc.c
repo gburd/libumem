@@ -42,7 +42,7 @@ extern umem_cache_t *umem_alloc_table[];
 /*
  * Global configuration (can be tuned via UMEM_OPTIONS)
  */
-size_t umem_ptc_maxsize = 2048;      /* max cached size */
+size_t umem_ptc_maxsize = 8192;      /* max cached size */
 int umem_ptc_enabled = 1;            /* enabled by default for performance */
 
 /*
@@ -61,13 +61,15 @@ static int ptc_key_initialized = 0;
 
 /*
  * Size class table for quick bin lookup
- * Maps allocation sizes to bin indices.
+ * Maps allocation sizes to bin indices, indexed by size / 8, so it must
+ * reach the largest PTC class / 8 (8192 / 8 = 1024).
  * Zero-initialized by C static storage rules; umem_ptc_init() fills it
  * with valid bin indices (and -1 for unmapped entries).  The
  * ptc_table_ready flag guards against use before initialization,
  * since a zero entry would silently alias every size to bin 0.
  */
-static int8_t size_to_bin_table[PTC_NBINS * 32];
+#define	PTC_SIZE_TO_BIN_ENTRIES	(8192 / 8 + 1)
+static int8_t size_to_bin_table[PTC_SIZE_TO_BIN_ENTRIES];
 static int ptc_table_ready;
 
 /*
@@ -89,7 +91,9 @@ static const size_t ptc_size_classes[PTC_NBINS] = {
 	256, 320, 384, 448,     /* 4*64, 5*64, 6*64, 7*64 */
 	512, 640, 768, 896,     /* 4*128, 5*128, 6*128, 7*128 */
 	1024, 1280, 1536, 1792, /* 4*256, 5*256, 6*256, 7*256 */
-	2048, 0, 0              /* 8*256, padding */
+	2048, 0, 0, 0,          /* 8*256, padding to PTC_BIN_XLARGE */
+	2560, 3072, 3584, 4096, /* 5*512, 6*512, 7*512, 8*512 */
+	5120, 6144, 7168, 8192  /* 5*1024, 6*1024, 7*1024, 8*1024 */
 #else
 	8, 16, 24, 32,          /* 1*8, 2*8, 3*8, 4*8 */
 	40, 48, 56, 64,         /* 5*8, 6*8, 7*8, 4*16 */
@@ -97,7 +101,9 @@ static const size_t ptc_size_classes[PTC_NBINS] = {
 	160, 192, 224, 256,     /* 5*32, 6*32, 7*32, 4*64 */
 	320, 384, 448, 512,     /* 5*64, 6*64, 7*64, 4*128 */
 	640, 768, 896, 1024,    /* 5*128, 6*128, 7*128, 4*256 */
-	1280, 1536, 1792, 2048  /* 5*256, 6*256, 7*256, 8*256 */
+	1280, 1536, 1792, 2048, /* 5*256, 6*256, 7*256, 8*256 */
+	2560, 3072, 3584, 4096, /* 5*512, 6*512, 7*512, 8*512 */
+	5120, 6144, 7168, 8192  /* 5*1024, 6*1024, 7*1024, 8*1024 */
 #endif
 };
 

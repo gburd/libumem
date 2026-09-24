@@ -23,9 +23,10 @@
  * Forcing depot traffic: objects are allocated by one thread and freed by a
  * different one.  A magazine therefore cannot be recycled inside one CPU
  * cache; it has to be pushed to / popped from the depot, which is exactly the
- * umem_depot_alloc()/umem_depot_free() call made while cc_lock is held.  Half
- * of the size classes used are above umem_ptc_maxsize (2048) so they bypass
- * the per-thread cache entirely and always go through cc_lock.
+ * umem_depot_alloc()/umem_depot_free() call made while cc_lock is held.  Two
+ * of the size classes used are above umem_ptc_maxsize (8192 since P8.2b;
+ * 2048 before) so they bypass the per-thread cache entirely and always go
+ * through cc_lock.
  *
  * Failure mode is a hang, so this test carries its own watchdog thread: on
  * deadline expiry it writes a diagnosis with write(2) (the process may hold
@@ -48,8 +49,8 @@
 
 #include "umem.h"
 
-/* Mixed classes: <=2048 are PTC-eligible, >2048 always take cc_lock. */
-static const size_t sizes[] = { 32, 96, 256, 1024, 3072, 8192, 16384 };
+/* Mixed classes: <=8192 are PTC-eligible, >8192 always take cc_lock. */
+static const size_t sizes[] = { 32, 96, 256, 1024, 3072, 12288, 16384 };
 #define NSIZES	(sizeof (sizes) / sizeof (sizes[0]))
 
 #define RING_CAP	2048

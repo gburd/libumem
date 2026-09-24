@@ -36,7 +36,7 @@ extern "C" {
  * maintaining thread-local bins of recently freed objects.
  *
  * Design:
- * - Thread-local cache for allocations <= ptc_maxsize (default 2048 bytes)
+ * - Thread-local cache for allocations <= ptc_maxsize (default 8192 bytes)
  * - Array of bins, one per size class
  * - Each bin holds up to ptc_bin_capacity(bin) pointers
  * - Zero synchronization for cache hit
@@ -51,27 +51,43 @@ extern "C" {
  * change also halved them (64/32/16) on the reasoning that the bins are
  * only the L1 of a two-level per-thread cache and the per-thread magazines
  * (umem_ptc_mag_t) are a lock-free L2, so a bin's size merely sets where
- * an object crosses from one to the other.  That L2 does not exist in
- * practice: nothing ever primes it.  It takes magazines from the depot by
- * trylock only and never allocates one, and the CPU layer publishes an
+ * an object crosses from one to the other.  At the time, that L2 did not
+ * exist in practice: nothing primed it.  It took magazines from the depot
+ * by trylock only and never allocated one, and the CPU layer publishes an
  * empty magazine to the depot only when its own loaded magazine drains --
  * which a steady alloc/free workload never does.  So an object past the
- * bin costs up to UMEM_DEPOT_STEAL_MAX failed trylock/unlock pairs on
+ * bin cost up to UMEM_DEPOT_STEAL_MAX failed trylock/unlock pairs on
  * empty stripes and then cc_lock, every time.  Measured, single thread,
  * 512 B, alloc-N-then-free-N: 157 Mpairs/s at N = 32, 63 at N = 33, 5.5
  * at N = 64 -- a 28x cliff exactly at the bin boundary, and halving the
  * medium bin moved that cliff from N = 64 to N = 32 (bench `single`
  * 512 B: 5.72 -> 5.31 Mops).  The capacities stay at 128/64/32; the
  * footprint win is the packing (31 -> 12 KB), not the halving.  The
- * unprimed L2 is its own defect (P8.6).
+ * unprimed L2 was P8.6, fixed in a2177b9 (umem_ptc_mag_prime in umem.c):
+ * the same loop then runs 137 Mpairs/s at N = 128 against 160 at N = 64.
+ * The capacities were not revisited after that fix; a smaller bin is now
+ * a real trade against the L2, not a cliff, but it has not been measured.
  */
 
 #define PTC_NSLOTS_SMALL  128  /* bins 0-(PTC_BIN_MEDIUM-1): sizes <=256B */
 #define PTC_NSLOTS_MEDIUM  64  /* bins PTC_BIN_MEDIUM-(PTC_BIN_LARGE-1) */
-#define PTC_NSLOTS_LARGE   32  /* bins PTC_BIN_LARGE-(PTC_NBINS-1) */
-#define PTC_NBINS 28           /* number of size classes (up to 2048B) */
+#define PTC_NSLOTS_LARGE   32  /* bins PTC_BIN_LARGE-(PTC_BIN_XLARGE-1) */
+#define PTC_NSLOTS_XLARGE  16  /* bins PTC_BIN_XLARGE-(PTC_NBINS-1) */
+#define PTC_NBINS 36           /* number of size classes (up to 8192B) */
 #define PTC_BIN_MEDIUM    13   /* first bin for medium sizes (257-1024B) */
 #define PTC_BIN_LARGE     21   /* first bin for large sizes (1025-2048B) */
+#define PTC_BIN_XLARGE    28   /* first bin for xlarge sizes (2049-8192B) */
+
+/*
+ * PTC_NBINS bounds size_to_bin_table (indexed by size / 8, so it must reach
+ * the largest class / 8) and umem_ptc_maxsize's default, both in umem_ptc.c.
+ * The bins through 8192 exist for P8.2b: above the old 2048 ceiling every
+ * operation took cc_lock and, every 31 ops per CPU, a blocking depot trip
+ * into a stripe other CPUs had emptied; at 128+ CPUs the depot convoyed
+ * (x86 metal 105 -> 91 Mops from t=64 to 128, arm 277 -> 77, both nulls
+ * falling with them).  Footprint: 8 x 16 slots is 1 KB of pool, and the
+ * struct stays under test_ptc_footprint's 24 KB (24,000 B on LP64).
+ */
 
 /*
  * Total slots across all bins.  Must equal the sum of ptc_bin_capacity()
@@ -80,7 +96,8 @@ extern "C" {
 #define PTC_TOTAL_SLOTS \
 	(PTC_BIN_MEDIUM * PTC_NSLOTS_SMALL + \
 	(PTC_BIN_LARGE - PTC_BIN_MEDIUM) * PTC_NSLOTS_MEDIUM + \
-	(PTC_NBINS - PTC_BIN_LARGE) * PTC_NSLOTS_LARGE)
+	(PTC_BIN_XLARGE - PTC_BIN_LARGE) * PTC_NSLOTS_LARGE + \
+	(PTC_NBINS - PTC_BIN_XLARGE) * PTC_NSLOTS_XLARGE)
 
 /* Forward declaration */
 struct umem_magazine;
@@ -150,7 +167,7 @@ typedef struct umem_ptc_bin {
 	 * One record per cache line.  Packing 28 of these 16-byte records into
 	 * 7 lines measured 2 % slower than giving each its own (bench `multi`
 	 * 16:1024, t=1: 5.76 vs 5.88 Mops, median of 9, alternating builds);
-	 * 28 lines is 1.75 KB of the 12 KB struct.
+	 * PTC_NBINS lines is 2.25 KB of the 24 KB struct.
 	 */
 } __attribute__((aligned(_UMEM_PTC_CACHE_LINE))) umem_ptc_bin_t;
 
@@ -171,7 +188,7 @@ typedef struct umem_ptc {
 /*
  * Global configuration
  */
-extern size_t umem_ptc_maxsize;      /* max size cached (default 2048) */
+extern size_t umem_ptc_maxsize;      /* max size cached (default 8192) */
 extern int umem_ptc_enabled;         /* ptc globally enabled */
 
 /*
@@ -188,14 +205,16 @@ extern __thread umem_ptc_t *thread_ptc;
 
 /*
  * Return the slot capacity for a given bin index.
- * Small bins (<=256B) get 128 slots, medium (<=1024B) get 64, large get 32.
+ * Small bins (<=256B) get 128 slots, medium (<=1024B) 64, large (<=2048B)
+ * 32, xlarge (<=8192B) 16.
  */
 static inline int
 ptc_bin_capacity(int bin)
 {
 	if (bin < PTC_BIN_MEDIUM) return (PTC_NSLOTS_SMALL);
 	if (bin < PTC_BIN_LARGE) return (PTC_NSLOTS_MEDIUM);
-	return (PTC_NSLOTS_LARGE);
+	if (bin < PTC_BIN_XLARGE) return (PTC_NSLOTS_LARGE);
+	return (PTC_NSLOTS_XLARGE);
 }
 
 /*

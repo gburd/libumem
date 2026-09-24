@@ -68,27 +68,30 @@ static int tests_failed = 0;
 } while (0)
 
 /*
- * PTC size classes covering allocations up to 2048 bytes.
+ * PTC size classes covering allocations up to 8192 bytes (P8.2b raised the
+ * ceiling from 2048).
  *
- * LP64: 8..2048 (25 active classes)
- * ILP32: 8..2048 (28 active classes)
+ * LP64: 8..8192 (33 active classes)
+ * ILP32: 8..8192 (36 active classes)
  */
 #ifdef _LP64
 static const size_t ptc_sizes[] = {
 	8, 16, 32, 48, 64, 80, 96, 112,
 	128, 160, 192, 224, 256, 320, 384, 448,
 	512, 640, 768, 896, 1024, 1280, 1536, 1792,
-	2048
+	2048, 2560, 3072, 3584, 4096, 5120, 6144, 7168,
+	8192
 };
-#define PTC_MAX_SIZE 2048
+#define PTC_MAX_SIZE 8192
 #else
 static const size_t ptc_sizes[] = {
 	8, 16, 24, 32, 40, 48, 56, 64,
 	80, 96, 112, 128, 160, 192, 224, 256,
 	320, 384, 448, 512, 640, 768, 896, 1024,
-	1280, 1536, 1792, 2048
+	1280, 1536, 1792, 2048, 2560, 3072, 3584, 4096,
+	5120, 6144, 7168, 8192
 };
-#define PTC_MAX_SIZE 2048
+#define PTC_MAX_SIZE 8192
 #endif
 #define NUM_PTC_SIZES (sizeof (ptc_sizes) / sizeof (ptc_sizes[0]))
 
