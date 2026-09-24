@@ -2585,6 +2585,15 @@ plan's (1), and it is the tail: a slab-create under `mmap` is the 19 us.
 Target (4) -- >= 0.8x glibc and p999 < 5 us at t=8 -- is not met: 0.72x /
 0.77x and the tail unchanged.
 
+**Hot-path A/B with the null** (`hotpath_ab.sh`, pre `6b5fed8` vs post
+`0532c38` vs an independent rebuild of pre, 9 alternating pairs, one bench
+binary): every point inside or above the null on both arches -- x86 512 B
+N=1 t=1 +1.0 % (null -0.2 %), 16:64 N=64 t=1 +5.1 % (null +0.5 %), 16:64
+t=8 -0.9 % / -0.3 % (null -0.2 % / -0.3 %); arm every point within
++/-0.3 %; instructions per pair identical to 0.1 % everywhere.  The change
+adds one load to a path that then takes or fails a lock; on the fast path
+it is never reached.
+
 **Not done.**  The t=192 metal re-measurement (the 95 % cross-stripe
 figure, sustained 3x behind) -- `c7i.metal-48xl` had no capacity and
 `c8g.metal` was used for P8.2b and terminated per the brief; the brief
