@@ -575,6 +575,27 @@ umem_may_own(const void *addr, size_t len)
 
 static int process_free_umem(void *, int, size_t *);
 
+/*
+ * free() must leave errno as it found it, so process_free_umem() saves and
+ * restores it on every path.  errno is (*__errno_location()), a PLT call
+ * per free from this DSO.  The address it returns is fixed for the life of
+ * the thread (it is the thread's own TLS slot), so it is cached here once
+ * per thread; initial-exec TLS is one %fs/tpidr-relative load, the model
+ * malloc_guard.h already requires of libumem.so.  A forked child has one
+ * thread and inherits that thread's own slot, so nothing is reset on fork.
+ */
+static __thread int *errno_slot __attribute__((tls_model("initial-exec")));
+
+static inline int *
+errno_addr(void)
+{
+	int *p = errno_slot;
+
+	if (__builtin_expect(p == NULL, 0))
+		p = errno_slot = &errno;
+	return (p);
+}
+
 int
 process_free(void *buf_arg,
     int do_free,		/* free the buffer, or just get its size? */
@@ -615,7 +636,8 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 	size_t overhead_min;			/* smallest legal `size` */
 
 	const char *message;
-	int old_errno = errno;
+	int *ep = errno_addr();
+	int old_errno = *ep;
 	/*
 	 * One read of the hull for every ownership test in this call.  A hit
 	 * against these bounds is a hit against the current hull (they only
@@ -643,7 +665,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 		umem_err_recoverable("%s(%p): not a libumem allocation "
 		    "(outside umem's heap)\n",
 		    do_free ? "free" : "realloc", buf_arg);
-		errno = old_errno;
+		*ep = old_errno;
 		return (0);
 	}
 
@@ -741,7 +763,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 	umem_err_recoverable("%s(%p): %s\n",
 	    do_free? "free" : "realloc", buf_arg, message);
 
-	errno = old_errno;
+	*ep = old_errno;
 	return (0);
 
 validate:
@@ -763,7 +785,7 @@ validate:
 		umem_err_recoverable("%s(%p): header claims %zu bytes at %p, "
 		    "which is not a libumem allocation; refusing\n",
 		    do_free ? "free" : "realloc", buf_arg, size, base);
-		errno = old_errno;
+		*ep = old_errno;
 		return (0);
 	}
 
@@ -786,7 +808,7 @@ validate:
 			*data_size_arg = data_size;
 	}
 
-	errno = old_errno;
+	*ep = old_errno;
 	return (1);
 #undef MAY_OWN
 }
