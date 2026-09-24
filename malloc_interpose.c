@@ -711,7 +711,12 @@ free(void *ptr)
 	 * ptr[-1] that umem_malloc_free() is about to make.
 	 */
 	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1) &&
-	    !is_static_pointer(ptr) && !is_libc_pointer(ptr, NULL)) {
+	    !is_static_pointer(ptr) &&
+	    /*
+	     * is_libc_pointer()'s gate, inline.  A nonzero count falls to
+	     * interpose_owner_of() below, which does the locked scan.
+	     */
+	    atomic_load_explicit(&libc_ptr_live, memory_order_acquire) == 0) {
 		umem_malloc_free(ptr);
 		return;
 	}
