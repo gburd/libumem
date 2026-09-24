@@ -814,6 +814,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_reclaim_returns.sh \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_cpu_hint_spread \
+	test/integration/test_ptc_footprint \
 	test/integration/test_cache_footprint
 
 # Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
@@ -910,6 +911,15 @@ noinst_PROGRAMS += test/integration/test_cpu_hint_spread
 test_integration_test_cpu_hint_spread_SOURCES = test/integration/test_cpu_hint_spread.c
 test_integration_test_cpu_hint_spread_LDADD = libumem.la
 test_integration_test_cpu_hint_spread_CPPFLAGS = -I$(srcdir)
+
+# P6.3: per-thread cache struct <= 12 KB, and thread exit hands each bin back
+# in ONE lock-taking call (not one cc_lock per object).  The hand-off count is
+# an exact ledger in the probe build, so this links libumem_ptcprobe.la.
+noinst_PROGRAMS += test/integration/test_ptc_footprint
+test_integration_test_ptc_footprint_SOURCES = test/integration/test_ptc_footprint.c
+test_integration_test_ptc_footprint_LDADD = libumem_ptcprobe.la
+test_integration_test_ptc_footprint_LDFLAGS = -pthread
+test_integration_test_ptc_footprint_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 
 # P6.4: per-cache footprint and VMAs left behind by destroy.
 noinst_PROGRAMS += test/integration/test_cache_footprint

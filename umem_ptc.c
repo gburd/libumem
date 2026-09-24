@@ -434,6 +434,16 @@ umem_ptc_free(void *ptr, size_t size)
  */
 #ifdef UMEM_PTC_RESIZE_PROBE
 volatile long umem_ptc_probe_exit_stranded = 0;
+/*
+ * P6.3 ledger: lock-taking hand-offs made to drain bins at thread exit, and
+ * the number of non-empty bins drained.  Pre-fix every object was its own
+ * hand-off (one cc_lock each), so handoffs == objects; post-fix a bin is one
+ * hand-off, so handoffs == bins.  Exact in both builds.
+ */
+volatile long umem_ptc_probe_exit_handoffs = 0;
+volatile long umem_ptc_probe_exit_bins = 0;
+#define	UMEM_PTC_PROBE_COUNT(var, n)					\
+	(void) __atomic_add_fetch(&(var), (long)(n), __ATOMIC_RELAXED)
 #define	UMEM_PTC_PROBE_STRANDED(n)					\
 	do {								\
 		if ((n) > 0)						\
@@ -443,6 +453,7 @@ volatile long umem_ptc_probe_exit_stranded = 0;
 	} while (0)
 #else
 #define	UMEM_PTC_PROBE_STRANDED(n)	((void)0)
+#define	UMEM_PTC_PROBE_COUNT(var, n)	((void)0)
 #endif
 
 static void
@@ -473,8 +484,12 @@ umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 	}
 
 	/* Free to magazine layer */
+	if (all)
+		UMEM_PTC_PROBE_COUNT(umem_ptc_probe_exit_bins, 1);
 	for (i = 0; i < flush_count; i++) {
 		ptr = bin->slots[--bin->count];
+		if (all)
+			UMEM_PTC_PROBE_COUNT(umem_ptc_probe_exit_handoffs, 1);
 		_umem_cache_free(cp, ptr);
 	}
 }
