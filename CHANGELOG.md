@@ -21,6 +21,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `test/unit/test_free_null` (in `make check`) fails at the parent commit and
   passes after. `test/unit/test_error_paths.c` had a comment calling this
   undefined behaviour; it now asserts the contract. (P1.8)
+- **The per-thread magazine layer behind the PTC bins was never primed.**
+  Each thread has two magazines per size class between its bin and the depot,
+  meant to make bin overflow lock-free. Nothing ever gave them a magazine:
+  they took from the depot by trylock only and never allocated one, and the
+  depot's empty list is fed only when a per-CPU magazine drains, which a
+  steady alloc/free loop never does. So on a cache one thread cycles, every
+  object past the bin paid 1 + min(ncpus, 8) + 1 *failed* trylock/unlock
+  pairs and then the per-CPU lock: `perf` 39 % `pthread_mutex_trylock`,
+  34 % `pthread_mutex_unlock`. One thread, 512 B, alloc N then free N:
+  160 Mpairs/s at N=64, **6.0 at N=128** (c7i.2xlarge; 102 -> 3.9 on
+  c7g.2xlarge) -- a 27x cliff at the bin's capacity. Fix: on the first
+  free-side miss, allocate one magazine from the magtype cache, as the CPU
+  layer does. Post-fix 137 / 97.6 Mpairs/s at N=128; instructions per pair
+  past the bin down 90 %; inside the bin and at 16:64 / 16:1024 t=1 and t=8
+  within the null control on both arches. Regression
+  `test/integration/test_ptc_mag_primed` counts depot trylocks from the PTC
+  paths in the probe build: 25,600 per 200 rounds before, 0 after. New
+  instrument `test/bench/bench_pairs` (bare loop) and rig
+  `scripts/ec2/hotpath_ab.sh`, whose first version measured its own bench
+  binary's layout as an 8 % library regression; it now uses one bench
+  binary for every arm. (P8.6)
 
 ## [3.2.0] - 2026-09-24
 
