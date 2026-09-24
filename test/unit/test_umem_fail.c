@@ -224,12 +224,28 @@ test_err_recoverable_with_abort(const MunitParameter params[], void *data)
 	return MUNIT_OK;
 }
 
-/* Test: ASSERT macro failure */
+/*
+ * Test: ASSERT macro failure.
+ *
+ * This tests the ASSERT macro, not the library, so it is meaningless in a
+ * build where the macro is compiled out.  misc.h:138 makes ASSERT() a no-op
+ * under NDEBUG, which is exactly the release configuration
+ * (.forgejo/workflows/release.yml: CFLAGS='-O3 -g -DNDEBUG').  Before this
+ * guard the release binary failed test_main here, and since that was the only
+ * failure, nobody ran test_main against the release build at all -- so the
+ * program that ships had never been through the comprehensive suite
+ * (production-readiness review 2026-09-24, section 3.1).  SKIP says which
+ * build this ran against; a silent pass would not.
+ */
 static MunitResult
 test_assert_failed(const MunitParameter params[], void *data)
 {
 	(void)params;
 	(void)data;
+
+#ifdef NDEBUG
+	return MUNIT_SKIP;
+#endif
 
 	pid_t pid = fork();
 	if (pid == -1) {

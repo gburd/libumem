@@ -439,3 +439,35 @@ entry from the free path.
 | 308-313 | 6 | disarm after locks released, why | Good |
 | 317-333 | 6 | P6.9 update-thread recreation: what was dead, why here (pthread_create allocates), the two guards, failure non-fatal | Exemplary. Verified: 334-339 gated on umem_ready and cleanup_update; umem_update_thread.c:179 asserts MUTEX_HELD(umem_update_lock), held at 335 |
 | 255-262 (old) | -- | "worst that can happen is a cache has its magazines rescaled twice" | Out of scope (2008 text), consistent with umem.c 4.6 |
+
+## vmem_mmap.c
+
+In-scope comment lines: 52-91, 116-182, 246-275. This file is where the
+"grep for siblings" rule in AGENTS.md §7 came from, and both comments record
+it in place.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 52-57 | 6 | "No PROT_EXEC ... The original Solaris code had PROT_EXEC for genasm ... removed" | Good: says why, names the platform constraint |
+| 63-91 | 6 | MAP_FAILED / MAP_ANON / MAP_NORESERVE portability | Fine |
+| 116-118 | 6 | "Failure: leave errno as mmap() set it. See below." | Good |
+| 123-145 | 6 | "P5.5, and this function had the defect TWICE ... Only (1) was in the P5.5 report; (2) is the one that was actually on the measured heap-ceiling path ... so the v3.0.0 fix was not merely incomplete across functions but ineffective for the failure it was written for" | Exemplary un-softened record; cites docs/results file (exists) and the regression test (exists) |
+| 151-182 | 6 | two ways to free a span: the VMA mechanism, measured counts (40,102 VMAs; 1,236 holes), what DONTNEED gives up, "The default is a policy choice recorded here, not a measurement" | Exemplary; the explicit "policy, not measurement" line is the standard. No box/sha for the counts |
+| 246-275 | 6 | "AND FIXING IT HERE WAS NOT ENOUGH (P5.5) ... Measured at d22bf03 and 553d42e, both of which contain the comment you are reading" | Exemplary: names the shas at which the comment was true-but-insufficient. The ASSERT paragraph verified against vmem.c:604-628 |
+
+No findings other than missing box/sha on the VMA counts.
+
+## vmem.c
+
+In-scope comment lines: 124, 604-621, 1525, 1594-1602.
+
+| line | class | comment excerpt | finding |
+|---|---|---|---|
+| 124 | 6 | `#include <errno.h> /* vmem_populate() reports ENOMEM on VM_SLEEP */` | Good |
+| 604-621 | 1 | "(docs/results/2026-09-22-prop-fragmentation-vmem-abort.md)" | File was DELETED in 7ba9914 ("gate: remove the prop_fragmentation exemption; it passes now"). The comment's reference is dead; the record it cites is now only in git. Either restore the file (docs/ is durable per AGENTS.md §8 -- deleting a result because the symptom went away is the SOFTENED RECORD pattern) or change the reference to the sha. Class 5 as well |
+| 604-621 (rest) | 6 | why ENOMEM not ASSERT; "Under NDEBUG the assertion vanished entirely ... strictly worse" | Good |
+| 1594-1602 | 3 | vmem_xcreate description | Fine |
+
+Class 4 note: vmem.c's header (lines 40-70, old) documents VM_SLEEP removal;
+the lock-order list in umem.c §6 does not include vmem_segfree_lock, which
+vmem_lockup takes (1867). umem_fork.c's list does. umem.c §6 should match.
