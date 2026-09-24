@@ -1,0 +1,52 @@
+# umem-preload frag t=8 size=256:1024 ops=38280855 alloc_failures=0
+throughput_mops = 7.845
+lat_p50_ns = 163
+lat_p99_ns = 7302
+lat_p999_ns = 51964
+lat_max_ns = 10565352
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=8
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_1                       0            0            0            0            0            0              0              0            0
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_15                      0            0            0            0            0            0              0              0            0
+umem_magazine_63                      0            0            0            0            0            0              0              0            0
+umem_magazine_127                     0            0            0            0            0            0              0              0            0
+umem_slab_cache                       0            0            0            0            0            4              0              0            0
+umem_bufctl_cache                     0            0            0            0            0        53523              0              0            0
+umem_va_4096                          0            0            0            0            0           52              0              0            0
+umem_va_8192                          0            0            0            0            0           14              0              0            0
+umem_va_12288                         0            0            0            0            0           65              0              0            0
+umem_va_16384                         0            0            0            0            0            6              0              0            0
+umem_va_20480                         0            0            0            0            0            0              0              0            0
+umem_va_24576                         0            0            0            0            0            0              0              0            0
+umem_va_28672                         0            0            0            0            0            0              0              0            0
+umem_va_32768                         0            0            0            0            0            0              0              0            0
+umem_alloc_16                         0            0            0            0            0            0              0              0            0
+umem_alloc_32                         0            0            0            0            0            0              0              0            0
+umem_alloc_48                         0            0            0            0            0            0              0              0            0
+umem_alloc_64                         0            0            0            0            0            0              0              0            0
+umem_alloc_80                         0            0            0            0            0            0              0              0            0
+umem_alloc_96                         0            0            0            0            0            0              0              0            0
+umem_alloc_112                        0            0            0            0            0            0              0              0            0
+umem_alloc_128                        0            0            0            0            0            0              0              0            0
+umem_alloc_160                        0            0            0            0            0            0              0              0            0
+umem_alloc_192                        0            0            0            0            0            0              0              0            0
+umem_alloc_320                     2181            0            0        16620          748          242              0              0            0
+umem_alloc_384                     1819            0            0        21754          999         1492              0              0            0
+umem_alloc_448                     1787            0            0        21869          860          102              0              0            0
+umem_alloc_512                     1498            0            0        21775         1002          380              0              0            0
+umem_alloc_640                     2820            0            0        43515         2035         7492              0              0            0
+umem_alloc_768                     3270            0            0        43659         1923         3124              0              0            1
+umem_alloc_896                     2256            0            0        43535         2025         3463              0              0            0
+umem_alloc_1024                     755            0            0        43703         1895         4324              0              0            0
+umem_alloc_1280                     545            0            0        10941          482           47              0              0            0
+umem_alloc_1536                       0            0            0            0            0            0              0              0            0
+umem_alloc_1792                       0            0            0            0            0            0              0              0            0
+umem_alloc_2048                       0            0            0            0            0            0              0              0            0
+umem_alloc_2560                       0            0            0            0            0            0              0              0            0
+umem_alloc_4096                       0            0            0            0            0            0              0              0            0
+umem_alloc_5120                       1            0            0            2            0            0              0              0            0
+umem_alloc_24576                      0            0            0            8            0            0              0              0            0
+umem_alloc_73728                      0            0            0            1            0            0              0              0            0
+umem_alloc_81920                      0            0            0            0            0            0              0              0            0

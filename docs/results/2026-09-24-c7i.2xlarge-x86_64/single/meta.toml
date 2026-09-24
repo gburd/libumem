@@ -1,0 +1,129 @@
+# libumem benchmark matrix provenance
+captured = "2026-09-24T07:31:55Z"
+instance_type = "c7i.2xlarge"
+arch = "x86_64"
+vcpu = 8
+governor = "unknown"
+thp = "always madvise [never]"
+numa_balancing = "0"
+pinned = true
+runs = 3
+replicates = 2
+warmups = 1
+# total operations per point, across ALL threads (never per-thread)
+operations_total_per_point = 20000000
+min_ops_per_thread_floor = 100000
+uname = "Linux ip-172-31-32-181.us-east-2.compute.internal 6.12.103-129.197.amzn2023.x86_64 #1 SMP PREEMPT_DYNAMIC Wed Sep 16 22:54:33 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux"
+gcc = "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)"
+libc = "ldd (GNU libc) 2.34"
+git_sha = "d6f04abd8f1b6366c840f3c78df51ffe5812433f"
+git_sha_source = "env"
+configure_flags = " "
+bench_bin = ".libs/bench_main"
+bench_bin_digest = "5e21fbdb009004f799396c5d0144414f134248e2015aed5848130b1f67e0039d"
+libumem_so = "../../.libs/libumem.so.1.0.0"
+libumem_so_digest = "2272639cf5ecc72811bfaaa4de0e19416f3dc45790d8357218ba94cca847c0b8"
+allocators = ["libc","umem","umem@null","umem-preload","umem-preload@null","jemalloc","tcmalloc","mimalloc","snmalloc","scudo","rpmalloc"]
+# requested but not loadable on this host (reported, never silently dropped)
+allocators_unavailable = []
+
+[allocator_identity."libc"]
+path="(process libc)"
+version="ldd (GNU libc) 2.34"
+
+[allocator_identity."umem"]
+path="../../.libs/libumem.so.1.0.0"
+digest="2272639cf5ecc72811bfaaa4de0e19416f3dc45790d8357218ba94cca847c0b8"
+note="umem_alloc/umem_free API via the 16-byte bench wrapper header"
+
+[allocator_identity."umem@null"]
+null_control_alias_of = "umem"
+path="../../.libs/libumem.so.1.0.0"
+digest="2272639cf5ecc72811bfaaa4de0e19416f3dc45790d8357218ba94cca847c0b8"
+note="umem_alloc/umem_free API via the 16-byte bench wrapper header"
+
+[allocator_identity."umem-preload"]
+path="../../.libs/libumem_malloc.so.1.0.0"
+digest="9a389339a910a2b122e47d2b9b6dce3e2a8ed5f2a5870cb4853f6ee283bf47f2"
+libumem_digest="2272639cf5ecc72811bfaaa4de0e19416f3dc45790d8357218ba94cca847c0b8"
+note="plain malloc/free via LD_PRELOAD=libumem_malloc.so (drop-in path)"
+
+[allocator_identity."umem-preload@null"]
+null_control_alias_of = "umem-preload"
+path="../../.libs/libumem_malloc.so.1.0.0"
+digest="9a389339a910a2b122e47d2b9b6dce3e2a8ed5f2a5870cb4853f6ee283bf47f2"
+libumem_digest="2272639cf5ecc72811bfaaa4de0e19416f3dc45790d8357218ba94cca847c0b8"
+note="plain malloc/free via LD_PRELOAD=libumem_malloc.so (drop-in path)"
+
+[allocator_identity."jemalloc"]
+path="/lib64/libjemalloc.so.2"
+digest="99d2ff028c115cfba4d8e249bca417e03b36e650b257550e687b52ac40be65bf"
+realpath="/usr/lib64/libjemalloc.so.2"
+
+[allocator_identity."tcmalloc"]
+path="/lib64/libtcmalloc_minimal.so.4"
+digest="ba59f8edd533866ac1387ad9f32130d9377756ef8111a07eac75f2a990fdb0c1"
+realpath="/usr/lib64/libtcmalloc_minimal.so.4.5.9"
+
+[allocator_identity."mimalloc"]
+path="/usr/local/lib/libmimalloc.so.3"
+digest="eb544bc2a255a08fcf4b67ca55821a6800aa23e09274795c0ff9f42e28d95404"
+realpath="/usr/local/lib/libmimalloc.so"
+
+[allocator_identity."snmalloc"]
+path="/usr/local/lib/libsnmallocshim.so"
+digest="a35260612a3cca55dca4d630b702a8a47d773bce7c1d5915b041dabdeb49bf49"
+realpath="/usr/local/lib/libsnmallocshim.so"
+
+[allocator_identity."scudo"]
+path="/usr/local/lib/libclang_rt.scudo_standalone-x86_64.so"
+digest="fe34d400564c70546d1d8658f7702462e6b62abfdcd5710b93e6c72843a00bfd"
+realpath="/usr/local/lib/libscudo_standalone.so"
+
+[allocator_identity."rpmalloc"]
+path="/usr/local/lib/librpmalloc.so"
+digest="aed288595a7bc480769d7f9a1182738bec46cbc64b8c4c7f9c5da8563a83de29"
+realpath="/usr/local/lib/librpmalloc.so"
+
+[cpu]
+# Architecture:                            x86_64
+# CPU op-mode(s):                          32-bit, 64-bit
+# Address sizes:                           46 bits physical, 48 bits virtual
+# Byte Order:                              Little Endian
+# CPU(s):                                  8
+# On-line CPU(s) list:                     0-7
+# Vendor ID:                               GenuineIntel
+# Model name:                              Intel(R) Xeon(R) Platinum 8488C
+# CPU family:                              6
+# Model:                                   143
+# Thread(s) per core:                      2
+# Core(s) per socket:                      4
+# Socket(s):                               1
+# Stepping:                                8
+# BogoMIPS:                                4800.00
+# Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx_vnni avx512_bf16 wbnoinvd ida arat avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg tme avx512_vpopcntdq rdpid cldemote movdiri movdir64b md_clear serialize amx_bf16 avx512_fp16 amx_tile amx_int8 flush_l1d arch_capabilities
+# Hypervisor vendor:                       KVM
+# Virtualization type:                     full
+# L1d cache:                               192 KiB (4 instances)
+# L1i cache:                               128 KiB (4 instances)
+# L2 cache:                                8 MiB (4 instances)
+# L3 cache:                                105 MiB (1 instance)
+# NUMA node(s):                            1
+# NUMA node0 CPU(s):                       0-7
+# Vulnerability Gather data sampling:      Not affected
+# Vulnerability Indirect target selection: Not affected
+# Vulnerability Itlb multihit:             Not affected
+# Vulnerability L1tf:                      Not affected
+# Vulnerability Mds:                       Not affected
+# Vulnerability Meltdown:                  Not affected
+# Vulnerability Mmio stale data:           Not affected
+# Vulnerability Reg file data sampling:    Not affected
+# Vulnerability Retbleed:                  Not affected
+# Vulnerability Spec rstack overflow:      Not affected
+# Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+# Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+# Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI BHI_DIS_S
+# Vulnerability Srbds:                     Not affected
+# Vulnerability Tsa:                       Not affected
+# Vulnerability Tsx async abort:           Not affected
+# Vulnerability Vmscape:                   Not affected

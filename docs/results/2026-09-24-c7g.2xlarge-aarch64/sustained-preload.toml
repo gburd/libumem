@@ -1,0 +1,485 @@
+# sustained high-thread-count punishing-load results
+# PER-WINDOW rows: one row per measured window per allocator, with
+# that window's own latency percentiles and its own RSS/live-bytes
+# pair.  Windows for the named allocators INTERLEAVE (A,B,A,B,...)
+# so drift over the run does not masquerade as a difference between
+# allocators.  Not comparable to sustained.toml files written before
+# 2026-09-22: those aggregate a whole run and their frag column is a
+# different (and wrong) quantity.  See P2.1/P2.2 in
+# docs/plans/2026-09-21-production-readiness.md.
+captured = "2026-09-24T11:13:15Z"
+instance_type = "c7g.2xlarge"
+arch = "aarch64"
+vcpu = 8
+threads = 8
+governor = "unknown"
+duration_target_sec_per_window = 20
+windows_per_allocator = 4
+warmup_windows_discarded = 1
+frag_sizes = "16:64"
+prodcons_sizes = "64:256"
+allocators = ["umem-preload","umem-preload@null"]
+order = "interleaved"
+git_sha = "d6f04abd8f1b6366c840f3c78df51ffe5812433f"
+git_sha_source = "env"
+configure_flags = " "
+uname = "Linux ip-172-31-37-77.us-east-2.compute.internal 6.12.103-129.197.amzn2023.aarch64 #1 SMP Wed Sep 16 22:54:17 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
+gcc = "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)"
+libc = "ldd (GNU libc) 2.34"
+bench_bin = "test/bench/.libs/bench_main"
+bench_bin_digest = "faaa715c915025f61bf3e7ed3df3153aafc6d79a3881d35456c6abc852a56086"
+libumem_so = ".libs/libumem.so.1.0.0"
+libumem_so_digest = "dbbc66b5510f9fb48124ac561b8daa1ed09907ec594877df300992ffc082fb0c"
+
+[allocator_identity."umem-preload"]
+path = ".libs/libumem_malloc.so.1.0.0"
+realpath = "/home/ec2-user/libumem-iso-cmp2-d6f04abd8f1b/.libs/libumem_malloc.so.1.0.0"
+digest = "960471bf01fe269c01c556b548a35972a038b05c6846c06aad21490e59802acf"
+libumem_digest = "dbbc66b5510f9fb48124ac561b8daa1ed09907ec594877df300992ffc082fb0c"
+
+[allocator_identity."umem-preload@null"]
+null_control_alias_of = "umem-preload"
+path = ".libs/libumem_malloc.so.1.0.0"
+realpath = "/home/ec2-user/libumem-iso-cmp2-d6f04abd8f1b/.libs/libumem_malloc.so.1.0.0"
+digest = "960471bf01fe269c01c556b548a35972a038b05c6846c06aad21490e59802acf"
+libumem_digest = "dbbc66b5510f9fb48124ac561b8daa1ed09907ec594877df300992ffc082fb0c"
+
+[[window]]
+allocator = "umem-preload"
+workload = "prodcons-sustained"
+window = 0
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 21.023413
+ops_per_sec = 14862637.64
+lat_min = 35
+lat_p50 = 77
+lat_p90 = 94
+lat_p99 = 121
+lat_p999 = 563
+lat_max = 1226748
+lat_mean = 79
+rss_at_live_peak = 20787200
+vmhwm_bytes = 20787200
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload"
+workload = "frag-sustained"
+window = 0
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 19.017444
+ops_per_sec = 10632976.04
+lat_min = 35
+lat_p50 = 146
+lat_p90 = 1377
+lat_p99 = 2926
+lat_p999 = 14416
+lat_max = 10027085
+lat_mean = 441
+rss_at_live_peak = 2291683328
+vmhwm_bytes = 2378838016
+allocated_bytes = 4225816036
+live_bytes_at_peak = 991513094
+live_bytes_median = 910488987
+frag_samples = 61
+frag = 2.3113
+frag_median = 2.5282
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "prodcons-sustained"
+window = 0
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 20.991892
+ops_per_sec = 14884955.18
+lat_min = 35
+lat_p50 = 77
+lat_p90 = 95
+lat_p99 = 123
+lat_p999 = 818
+lat_max = 1439242
+lat_mean = 80
+rss_at_live_peak = 20946944
+vmhwm_bytes = 20946944
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "frag-sustained"
+window = 0
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 20.439076
+ops_per_sec = 9893403.63
+lat_min = 35
+lat_p50 = 154
+lat_p90 = 1446
+lat_p99 = 3225
+lat_p999 = 14116
+lat_max = 6780685
+lat_mean = 466
+rss_at_live_peak = 2102026240
+vmhwm_bytes = 2368491520
+allocated_bytes = 4225816036
+live_bytes_at_peak = 985661076
+live_bytes_median = 880114951
+frag_samples = 61
+frag = 2.1326
+frag_median = 2.5941
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload"
+workload = "prodcons-sustained"
+window = 1
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 17.714138
+ops_per_sec = 17639208.19
+lat_min = 35
+lat_p50 = 77
+lat_p90 = 94
+lat_p99 = 121
+lat_p999 = 785
+lat_max = 1378199
+lat_mean = 80
+rss_at_live_peak = 21123072
+vmhwm_bytes = 21123072
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload"
+workload = "frag-sustained"
+window = 1
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 19.095260
+ops_per_sec = 10589645.49
+lat_min = 35
+lat_p50 = 147
+lat_p90 = 1439
+lat_p99 = 3132
+lat_p999 = 13808
+lat_max = 10033125
+lat_mean = 457
+rss_at_live_peak = 2280230912
+vmhwm_bytes = 2340708352
+allocated_bytes = 4225816036
+live_bytes_at_peak = 986963749
+live_bytes_median = 893120533
+frag_samples = 61
+frag = 2.3103
+frag_median = 2.5643
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "prodcons-sustained"
+window = 1
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 17.970732
+ops_per_sec = 17387348.08
+lat_min = 36
+lat_p50 = 77
+lat_p90 = 94
+lat_p99 = 147
+lat_p999 = 706
+lat_max = 1269677
+lat_mean = 80
+rss_at_live_peak = 21843968
+vmhwm_bytes = 21843968
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "frag-sustained"
+window = 1
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 19.411438
+ops_per_sec = 10417158.95
+lat_min = 35
+lat_p50 = 151
+lat_p90 = 1345
+lat_p99 = 3178
+lat_p999 = 13672
+lat_max = 10488072
+lat_mean = 451
+rss_at_live_peak = 2252152832
+vmhwm_bytes = 2375380992
+allocated_bytes = 4225816036
+live_bytes_at_peak = 977040037
+live_bytes_median = 860317790
+frag_samples = 61
+frag = 2.3051
+frag_median = 2.6294
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload"
+workload = "prodcons-sustained"
+window = 2
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 17.356972
+ops_per_sec = 18002182.91
+lat_min = 35
+lat_p50 = 77
+lat_p90 = 95
+lat_p99 = 130
+lat_p999 = 777
+lat_max = 1156353
+lat_mean = 80
+rss_at_live_peak = 20922368
+vmhwm_bytes = 20922368
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload"
+workload = "frag-sustained"
+window = 2
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 18.794841
+ops_per_sec = 10758911.41
+lat_min = 35
+lat_p50 = 151
+lat_p90 = 1346
+lat_p99 = 2258
+lat_p999 = 14831
+lat_max = 10037932
+lat_mean = 435
+rss_at_live_peak = 2193346560
+vmhwm_bytes = 2464346112
+allocated_bytes = 4225816036
+live_bytes_at_peak = 1039733376
+live_bytes_median = 899529870
+frag_samples = 61
+frag = 2.1095
+frag_median = 2.6823
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "prodcons-sustained"
+window = 2
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 15.697338
+ops_per_sec = 19905500.99
+lat_min = 35
+lat_p50 = 78
+lat_p90 = 94
+lat_p99 = 124
+lat_p999 = 858
+lat_max = 1459765
+lat_mean = 81
+rss_at_live_peak = 21082112
+vmhwm_bytes = 21082112
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "frag-sustained"
+window = 2
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 19.544288
+ops_per_sec = 10346349.21
+lat_min = 35
+lat_p50 = 152
+lat_p90 = 1477
+lat_p99 = 3400
+lat_p999 = 14415
+lat_max = 10926579
+lat_mean = 475
+rss_at_live_peak = 2075717632
+vmhwm_bytes = 2294382592
+allocated_bytes = 4225816036
+live_bytes_at_peak = 970142146
+live_bytes_median = 844038315
+frag_samples = 61
+frag = 2.1396
+frag_median = 2.6576
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload"
+workload = "prodcons-sustained"
+window = 3
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 20.013028
+ops_per_sec = 15612998.54
+lat_min = 36
+lat_p50 = 77
+lat_p90 = 95
+lat_p99 = 133
+lat_p999 = 840
+lat_max = 1337048
+lat_mean = 80
+rss_at_live_peak = 20963328
+vmhwm_bytes = 20963328
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload"
+workload = "frag-sustained"
+window = 3
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 20.304612
+ops_per_sec = 9958921.03
+lat_min = 35
+lat_p50 = 150
+lat_p90 = 1454
+lat_p99 = 2465
+lat_p999 = 15047
+lat_max = 10027003
+lat_mean = 459
+rss_at_live_peak = 2190069760
+vmhwm_bytes = 2498232320
+allocated_bytes = 4225816036
+live_bytes_at_peak = 1037788899
+live_bytes_median = 931621577
+frag_samples = 61
+frag = 2.1103
+frag_median = 2.5808
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "prodcons-sustained"
+window = 3
+threads = 8
+size = "64:256"
+total_ops = 312463376
+ops_per_thread = 39057922
+elapsed_sec = 19.483401
+ops_per_sec = 16037414.18
+lat_min = 35
+lat_p50 = 77
+lat_p90 = 96
+lat_p99 = 132
+lat_p999 = 845
+lat_max = 1305983
+lat_mean = 80
+rss_at_live_peak = 20992000
+vmhwm_bytes = 20992000
+allocated_bytes = 24919445007
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem-preload@null"
+workload = "frag-sustained"
+window = 3
+threads = 8
+size = "16:64"
+total_ops = 202212030
+ops_per_thread = 25276503
+elapsed_sec = 19.431236
+ops_per_sec = 10406544.97
+lat_min = 35
+lat_p50 = 152
+lat_p90 = 1388
+lat_p99 = 2686
+lat_p999 = 14501
+lat_max = 10019858
+lat_mean = 447
+rss_at_live_peak = 2081169408
+vmhwm_bytes = 2335490048
+allocated_bytes = 4225816036
+live_bytes_at_peak = 973323081
+live_bytes_median = 889100972
+frag_samples = 61
+frag = 2.1382
+frag_median = 2.5174
+ops_floor_raised = false
+alloc_failures = 0

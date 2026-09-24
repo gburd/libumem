@@ -1,0 +1,30 @@
+sustained load: allocators=umem-preload umem-preload@null threads=8
+  windows=4 x ~20s each, interleaved; warmups=1
+  sha=d6f04abd8f1b6366c840f3c78df51ffe5812433f (env) -> docs/results/2026-09-24-c7g.2xlarge-aarch64/sustained-preload.toml
+  calibrate umem-preload prodcons: would need total_n=178305562 (~20s/window, from 0.224334s @ 2000000; floor 800000)
+  calibrate umem-preload prodcons: would need total_n=156231691 (~20s/window, from 0.25603s @ 2000000; floor 800000)
+  -> prodcons: ALL allocators get total_n=156231691 (matched work; windows will
+     differ in duration, which is the honest result)
+  calibrate umem-preload frag: would need total_n=110322915 (~20s/window, from 0.362572s @ 2000000; floor 800000)
+  calibrate umem-preload frag: would need total_n=105645706 (~20s/window, from 0.378624s @ 2000000; floor 800000)
+  -> frag: ALL allocators get total_n=105645706 (matched work; windows will
+     differ in duration, which is the honest result)
+  warmup window 0: umem-preload (discarded)
+  warmup window 0: umem-preload@null (discarded)
+  umem-preload prodcons-sustained w=0  ops=312463376 mops=  14.863 p99=      121 p999=       563 rss@peak=20787200
+  umem-preload frag-sustained     w=0  ops=202212030 mops=  10.633 p99=     2926 p999=     14416 rss@peak=2291683328
+  umem-preload@null prodcons-sustained w=0  ops=312463376 mops=  14.885 p99=      123 p999=       818 rss@peak=20946944
+  umem-preload@null frag-sustained     w=0  ops=202212030 mops=   9.893 p99=     3225 p999=     14116 rss@peak=2102026240
+  umem-preload prodcons-sustained w=1  ops=312463376 mops=  17.639 p99=      121 p999=       785 rss@peak=21123072
+  umem-preload frag-sustained     w=1  ops=202212030 mops=  10.590 p99=     3132 p999=     13808 rss@peak=2280230912
+  umem-preload@null prodcons-sustained w=1  ops=312463376 mops=  17.387 p99=      147 p999=       706 rss@peak=21843968
+  umem-preload@null frag-sustained     w=1  ops=202212030 mops=  10.417 p99=     3178 p999=     13672 rss@peak=2252152832
+  umem-preload prodcons-sustained w=2  ops=312463376 mops=  18.002 p99=      130 p999=       777 rss@peak=20922368
+  umem-preload frag-sustained     w=2  ops=202212030 mops=  10.759 p99=     2258 p999=     14831 rss@peak=2193346560
+  umem-preload@null prodcons-sustained w=2  ops=312463376 mops=  19.906 p99=      124 p999=       858 rss@peak=21082112
+  umem-preload@null frag-sustained     w=2  ops=202212030 mops=  10.346 p99=     3400 p999=     14415 rss@peak=2075717632
+  umem-preload prodcons-sustained w=3  ops=312463376 mops=  15.613 p99=      133 p999=       840 rss@peak=20963328
+  umem-preload frag-sustained     w=3  ops=202212030 mops=   9.959 p99=     2465 p999=     15047 rss@peak=2190069760
+  umem-preload@null prodcons-sustained w=3  ops=312463376 mops=  16.037 p99=      132 p999=       845 rss@peak=20992000
+  umem-preload@null frag-sustained     w=3  ops=202212030 mops=  10.406 p99=     2686 p999=     14501 rss@peak=2081169408
+done: umem-preload umem-preload@null -> docs/results/2026-09-24-c7g.2xlarge-aarch64/sustained-preload.toml

@@ -1,0 +1,20 @@
+# umem multi t=1 size=16:64 ops=20000000 alloc_failures=0
+throughput_mops = 7.013
+lat_p50_ns = 37
+lat_p99_ns = 40
+lat_p999_ns = 41
+lat_max_ns = 1607012
+# umem contention dump
+# rseq_enabled=1 asm_safe=1 ncpus=8
+cache                          cc_alloc  full_reload   empty_reld    dep_local   dep_remote   dep_conten     rseq_alloc      rseq_free   rseq_rstrt
+umem_magazine_3                       0            0            0            0            0            0              0              0            0
+umem_magazine_255                     0            0            0            0            0            0              0              0            0
+umem_slab_cache                       0            0            0            0            0            0              0              0            0
+umem_bufctl_cache                     0            0            0            0            0            0              0              0            0
+umem_va_4096                          0            0            0            0            0            0              0              0            0
+umem_va_24576                         0            0            0            0            0            0              0              0            0
+umem_alloc_32                         0            0            0            1            0            0              0              0            0
+umem_alloc_48                         0            0            0            1            0            0              0              0            0
+umem_alloc_64                         0            0            0            1            0            0              0              0            0
+umem_alloc_80                         0            0            0            1            0            0              0              0            0
+umem_alloc_24576                      0            0            0            1            0            0              0              0            0
