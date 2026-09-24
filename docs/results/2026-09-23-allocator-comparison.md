@@ -63,11 +63,10 @@ same instant. Their difference is the interposer.
 - **Post-fix (`a74065e`) numbers for anything except the interposer A/B in
   §5.1.** The full matrix ran at `f2a8267`. The A/B was run on a separate
   identical metal box (`intel-hi@ab`) so it would not perturb the matrix.
-- **Metal `multi-hi` (200M ops at 64/128/192 threads) had to be rerun** and is
-  reported in §4.2 from the rerun only. The first attempt on both metal boxes
-  ran concurrently with a job that `job.sh kill` had failed to stop (§6), so
-  every point from that window measured a box under double load and was
-  discarded. `single` and `multi` completed before the overlap and are clean.
+- **Metal `multi-hi` (200M ops at 64/128/192 threads) is not reported.**
+  The first attempt ran under double load (§6.1) and was discarded; the
+  clean x86_64 rerun completed but was lost at instance termination
+  (§4.2.1). `single` and `multi` completed before the overlap and are clean.
 - **`umem-preload` at 200M ops on metal.** At 0.8 Mops a 200M-op point is
   250 s x 8 runs; its scaling is settled by the 20M-op `multi` pass and the
   A/B. Excluded from `multi-hi` deliberately.
@@ -261,9 +260,25 @@ thread on par with the field; 130-640 ns at 8-192 threads for sizes under
 1 KB (jemalloc 30-80, mimalloc 45-90, glibc 18-450); **10-68 us at 1k:4k
 under threads** where everyone else is 40-900 ns.
 
-#### 4.2.1 `multi-hi`: 200M ops at 64/128/192 threads, fast arms only
+#### 4.2.1 `multi-hi`: 200M ops at 64/128/192 threads -- NOT REPORTED
 
-<!-- MULTI-HI -->
+Two attempts, neither usable, stated plainly:
+
+1. The first pass on both metal boxes ran concurrently with a job that
+   `job.sh kill` had failed to stop (§6.1) and was discarded.
+2. The clean rerun completed on `c7i.metal-48xl` (216 points, `rc=0`,
+   23:33-23:57Z) but its output directory was not fetched before the
+   instance was terminated on the coordinator's cost deadline -- the fetch
+   used the wrong path pattern and returned nothing, and the box was gone
+   before that was noticed. On `c8g.metal-48xl` the rerun was cancelled at
+   the same deadline. Job logs (the sweep's stdout, not the TOML) are in
+   `docs/results/jobs/intel-hi-perf-multihi/`.
+
+The 20M-op `multi` pass in §4.2 covers the same thread counts at +/-12 %
+(x86_64) / +/-18 % (aarch64) resolution; `multi-hi` would have tightened
+that to ~+/-5 %. It is the one planned measurement this run did not deliver.
+P8.4 (the 8-24 % x86_64 gap at 128-192 threads) is the finding that would
+have benefited; it is filed as a diagnosis task partly for this reason.
 
 ### 4.3 `prodcons` (half the threads allocate, half free)
 
