@@ -252,7 +252,8 @@ Where libumem **does not win**:
   warm-cache trade and is accepted; the earlier "worst-in-field 2.3x" and
   "fixed to 2.7" claims both remain withdrawn (they measured a different,
   wrong quantity). Under `frag` churn umem is also 20-33 % slower than the
-  size-class allocators and 2-3x slower sustained (P8.5, open).
+  size-class allocators and 1.3-1.4x slower sustained at 8 threads after
+  `0532c38` (was 1.8x); 2-3x at 192 threads as last measured (P8.5, open).
 - **Tail latency.** Cross-thread handoff (`prodcons`) p999 is umem's
   strongest number at 8 threads -- 0.9 us sustained, second only to
   rpmalloc, 5-13x better than glibc. At 192 threads sustained it is
@@ -619,8 +620,8 @@ design and is not on a list to be removed. Metal not re-measured.
   had umem 8-24 % behind on x86 metal at 128-192 threads (P8.4); that was the
   CPU-hint bug below acting on per-thread-cache *misses*, and it closed with
   it.
-- **`multi` at 1k:4k object sizes: the collapse is fixed up to 64 threads;
-  a second cliff remains above.** Before: 0.06-0.10x glibc at 64+ threads on
+- **`multi` at 1k:4k object sizes: the collapse is fixed, and the second
+  cliff above 64 threads with it.** Before: 0.06-0.10x glibc at 64+ threads on
   both metals. The cause was not what the first diagnosis said (objects above
   2048 B bypassing the per-thread cache -- raising `tcache_max` did not move
   it): the per-thread CPU hint was `pthread_self()` cast to `int`, a
@@ -629,22 +630,42 @@ design and is not on a list to be removed. Metal not re-measured.
   the magazine layer. Solaris uses `thr_self()`, a small integer; this port
   never had a working hint. Fixed (`ae86536`): 4-18x on both metals up to
   t=64 (x86 t=32: 7.5 -> 98 Mops, glibc 117; arm t=64: 15 -> 277, glibc 255).
-  **From t=128 throughput falls again** (x86 105 -> 91, arm 277 -> 77, while
-  glibc goes 165 -> 253 / 255 -> 200) with p999 11 us against glibc's 0.4:
-  these sizes still bypass the per-thread cache, so 128 CPUs each take a
-  blocking depot round trip every 31 operations, and the depot convoys. That
-  is the half of the original diagnosis the hint bug was hiding, and its fix
-  (per-thread classes through 8 KB, 63-round magazines for 2-8 KB) is P8.2b.
+  From t=128 throughput then fell again (x86 105 -> 91, arm 277 -> 77, glibc
+  165 -> 253 / 255 -> 200, p999 11 us against 0.4): these sizes still
+  bypassed the per-thread cache, so 128 CPUs each took a blocking depot round
+  trip every 31 operations and the depot convoyed -- the half of the original
+  diagnosis the hint bug had hidden. Fixed (`ad72787`, P8.2b): the per-thread
+  cache now covers classes through 8 KB, and (with P8.6 below) those bins
+  have a working magazine layer behind them. `c8g.metal-48xl`, t=64/128/192:
+  275 / **128** / 179 -> 314 / **352** / 429 Mops, 0.42x -> 1.24x glibc at
+  t=128, p999 2.8 us -> 39 ns, monotone; null control beside it at every
+  point. `c7i.2xlarge` t=8: 0.69x -> 1.22x glibc. x86 metal was not
+  re-measured (no `c7i.metal-48xl` capacity during the run). Raising the
+  2-8 KB magazines from 31/15 to 63 rounds, measured separately, was inside
+  the null.
+- **The per-thread cache's second level was never primed** (P8.6, fixed
+  `a2177b9`): each thread's two magazines behind its bins took from the depot
+  by trylock only and nothing ever gave them a magazine, so every object past
+  a bin's capacity paid up to ten *failed* lock/unlock pairs and then the
+  per-CPU lock. One thread, 512 B, alloc N then free N: 160 Mpairs/s at N=64,
+  **6.0 at N=128** (27x) on `c7i.2xlarge`; now 137. Inside the bin and at
+  16:64 / 16:1024, t=1 and t=8, the change is within the null on both
+  arches.
 - **`frag` (grow a live set, free half at random, repeat): level with glibc,
   20-40 % behind the size-class allocators at 16..1024 B** at every thread
   count including one. **Sustained at 192 threads it is still the slowest in
   the field, by 2-3x -- down from 8-19x.** x86: 2.0 -> 4.8 Mops (glibc 14.8,
   jemalloc 16.6), p999 6.0 -> 1.0 ms; arm: 1.2 -> 10.8 (glibc 22.1), p999
-  9.9 -> 0.34 ms. `perf` at HEAD: **59 % of all cycles in
-  `pthread_mutex_trylock`**, and the depot counters say why -- 95 % of
-  magazine reloads steal from another CPU's stripe, ~5 failed trylocks per
-  success. `frag` frees on a different thread than it allocates, so the local
-  stripe is always empty and the neighbour scan runs on every reload (P8.5).
+  9.9 -> 0.34 ms. `perf` at that sha: **59 % of all cycles in
+  `pthread_mutex_trylock`**. At 8 threads the depot counters said something
+  different from the first reading of them: 9 of 10 reloads were *local*, but
+  every miss locked all 8 stripes (twice) to find them empty -- 98.6 % of 17M
+  depot pops took a lock to read a NULL. Fixed (`0532c38`, P8.5 partial): an
+  unlocked head check first; blocking-lock contention 434k -> 0, trylock gone
+  from the profile, sustained `frag` at t=8 0.57x -> 0.72x glibc (x86) /
+  0.77x (arm). The p999 tail at t=8 (19 us vs glibc 2 us) is unchanged and is
+  the slab layer's one-object-per-lock; the 192-thread figure is not
+  re-measured.
 - **`prodcons` is unchanged and within null on every box** (it exercises none
   of the fixed paths). Its p999 at 8 threads, 0.9 us sustained, remains umem's
   best number, second only to rpmalloc. `prodcons` *throughput* on 8-vCPU
@@ -660,7 +681,8 @@ design and is not on a list to be removed. Metal not re-measured.
   allocations in every previous run -- completes with **zero failures on
   every box**, at the default `vm.max_map_count`. On `c7i.2xlarge` umem does
   it at 2x glibc's throughput (10.4 vs 4.9 Mops); on x86 metal at 192 threads
-  at 0.67x, which is the P8.2b cliff at these sizes.
+  at 0.67x, which was the P8.2b cliff at these sizes (fixed since; that point
+  is not re-measured).
 
 Every one of these has a table with the null control beside it in the results
 documents, and every open gap has a task with the mechanism and a fix
