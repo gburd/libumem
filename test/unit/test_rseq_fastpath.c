@@ -93,18 +93,40 @@ extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
 /*
  * P5.13b demangle bridge: the fast path now stores mag_round[] slots
  * XOR-mangled (stored = ptr ^ umem_link_cookie ^ (&slot >> 12), exactly
- * UMEM_SLOT_MANGLE) and demangles on pop.  So this direct-asm test must
- * build MANGLED magazines and demangle when it inspects a slot, just as the
- * real depot path does -- otherwise it compares a raw pointer against a
- * mangled word.  umem_link_cookie is linked from libumem (same DSO the
- * fast path reads it from), initialized by umem_rseq_init() in main().
+ * UMEM_SLOT_MANGLE) and demangles on pop.  This direct-asm test must build
+ * MANGLED magazines and demangle when it inspects a slot.  umem_link_cookie
+ * is hidden-visibility (not linkable from here), so recover the cookie
+ * EMPIRICALLY: push a known sentinel into a known slot via the real (already
+ * mangling) free fast path, read back the stored word, and solve
+ *   cookie = stored ^ sentinel ^ (&slot >> 12).
+ * No library change, no dependence on symbol visibility.
  */
-extern uintptr_t umem_link_cookie;
-
+static uintptr_t g_test_cookie;
+static int
+tslot_cookie_probe(int cpu)
+{
+	test_magazine_t m;
+	umem_rseq_cache_t rc;
+	memset(&m, 0, sizeof (m));
+	memset(&rc, 0, sizeof (rc));
+	rc.loaded_mag = &m;
+	rc.magsize = 4;
+	rc.rounds = 0;
+	void *sentinel = (void *)(uintptr_t)0xabcd0000;
+	int c = cpu;
+	while (c >= 0 && umem_rseq_free_fastpath(&rc, sentinel, c) != 0)
+		c = umem_rseq_get_cpu();
+	if (rc.rounds != 1)
+		return (-1);
+	uintptr_t stored = (uintptr_t)m.mag_round[0];
+	g_test_cookie = stored ^ (uintptr_t)sentinel ^
+	    ((uintptr_t)&m.mag_round[0] >> 12);
+	return (0);
+}
 static inline void *
 tslot_mangle(void *slotp, void *val)
 {
-	return ((void *)((uintptr_t)val ^ umem_link_cookie ^
+	return ((void *)((uintptr_t)val ^ g_test_cookie ^
 	    ((uintptr_t)slotp >> 12)));
 }
 #define	tslot_demangle(slotp, val)	tslot_mangle((slotp), (val))
@@ -275,6 +297,11 @@ main(void)
 	int cpu;
 	if (pin_to_current_rseq_cpu(&cpu) != 0) {
 		fprintf(stderr, "SKIP: could not pin to a CPU\n");
+		return (0);
+	}
+
+	if (tslot_cookie_probe(cpu) != 0) {
+		fprintf(stderr, "SKIP: could not probe link cookie\n");
 		return (0);
 	}
 

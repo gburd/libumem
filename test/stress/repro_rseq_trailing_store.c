@@ -52,15 +52,36 @@ extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
 /*
  * P5.13b demangle bridge: the fast path stores mag_round[] slots mangled
  * (stored = ptr ^ umem_link_cookie ^ (&slot >> 12)) and demangles on pop.
- * This direct-asm repro must therefore build mangled magazines and demangle
- * on inspection.  umem_link_cookie is linked from libumem and initialized
- * by umem_rseq_init() in main().
+ * umem_link_cookie is hidden-visibility, so recover the cookie empirically
+ * via one mangling push through the real free fast path (see
+ * test/unit/test_rseq_fastpath.c for the same technique).
  */
-extern uintptr_t umem_link_cookie;
+static uintptr_t g_test_cookie;
+static int
+tslot_cookie_probe(int cpu)
+{
+	test_magazine_t m;
+	umem_rseq_cache_t rc;
+	memset(&m, 0, sizeof (m));
+	memset(&rc, 0, sizeof (rc));
+	rc.loaded_mag = &m;
+	rc.magsize = 4;
+	rc.rounds = 0;
+	void *sentinel = (void *)(uintptr_t)0xabcd0000;
+	int c = cpu;
+	while (c >= 0 && umem_rseq_free_fastpath(&rc, sentinel, c) != 0)
+		c = umem_rseq_get_cpu();
+	if (rc.rounds != 1)
+		return (-1);
+	uintptr_t stored = (uintptr_t)m.mag_round[0];
+	g_test_cookie = stored ^ (uintptr_t)sentinel ^
+	    ((uintptr_t)&m.mag_round[0] >> 12);
+	return (0);
+}
 static inline void *
 tslot_mangle(void *slotp, void *val)
 {
-	return ((void *)((uintptr_t)val ^ umem_link_cookie ^
+	return ((void *)((uintptr_t)val ^ g_test_cookie ^
 	    ((uintptr_t)slotp >> 12)));
 }
 #define	tslot_demangle(slotp, val)	tslot_mangle((slotp), (val))
@@ -210,6 +231,7 @@ repro_free_double_presence(int cpu, long iters)
 				    (tslot_demangle(&mag.mag_round[rounds_before],
 				    mag.mag_round[rounds_before]) == buf &&
 				    rounds_before < rc.rounds);
+				(void)committed_anyway;
 				if (rc.rounds > rounds_before) {
 					double_presence++;
 				}
@@ -241,6 +263,11 @@ main(int argc, char **argv)
 	CPU_ZERO(&set);
 	CPU_SET(cpu, &set);
 	sched_setaffinity(0, sizeof(set), &set);
+
+	if (tslot_cookie_probe(cpu) != 0) {
+		fprintf(stderr, "SKIP: could not probe link cookie\n");
+		return (0);
+	}
 
 	long iters = (argc > 1) ? atol(argv[1]) : 200000;
 	/*
