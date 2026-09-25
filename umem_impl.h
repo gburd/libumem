@@ -134,9 +134,6 @@ extern "C" {
 #endif
 #define	UMEM_CACHE_ALIGNED	__attribute__((aligned(UMEM_CACHE_LINE_SIZE)))
 
-/*
- * Prefetch macros for performance optimization
- */
 #define	UMEM_PREFETCH_READ(addr)	__builtin_prefetch((addr), 0, 3)
 #define	UMEM_PREFETCH_WRITE(addr)	__builtin_prefetch((addr), 1, 3)
 #define	UMEM_PREFETCH_BATCH(base, stride, count) \

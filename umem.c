@@ -949,7 +949,8 @@ umem_cache_applyall(void (*func)(umem_cache_t *))
  * rseq alloc/free/restart counts plus the summed per-CPU slab cc_alloc.
  * These are all counters the allocator already maintains on its normal paths
  * -- this is a read-only observability hook for benchmarks, not a new
- * hot-path cost.  Safe to call from a benchmark after a run.
+ * hot-path cost.  Takes umem_cache_lock for the walk; the counters are
+ * read without their own locks, so totals are approximate.
  */
 void
 umem_dump_contention(FILE *fp)
@@ -1741,11 +1742,6 @@ umem_slab_alloc(umem_cache_t *cp, int umflag)
 	cp->cache_slab_alloc++;
 	sp = cp->cache_freelist;
 
-	/*
-	 * Prefetch slab metadata for the allocation path.
-	 * Medium locality (2) since we'll be accessing multiple
-	 * fields of this slab during the allocation.
-	 */
 	__builtin_prefetch(sp, 0, 2);
 
 	ASSERT(sp->slab_cache == cp);
@@ -2091,11 +2087,7 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 
 	ASSERT(cp->cache_next == NULL || IN_UPDATE());
 
-	/*
-	 * Fast path: Use SIMD to check if magazine has any allocations.
-	 * If all slots are NULL, skip the loop entirely.
-	 * This optimization helps during cleanup of empty magazines.
-	 */
+	/* All-NULL magazines skip the loop. */
 	if (nrounds > 0 && !umem_mag_scan_notnull(mp->mag_round, nrounds)) {
 		goto done;
 	}
@@ -2103,12 +2095,6 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 	for (round = 0; round < nrounds; round++) {
 		void *buf = mp->mag_round[round];
 
-		/*
-		 * Prefetch next 4 magazine slots ahead during batch operations.
-		 * Low locality (1) since we only access each slot once.
-		 * This helps pipeline the loop by bringing future slots into
-		 * cache while processing current ones.
-		 */
 		if (round + 4 < nrounds) {
 			__builtin_prefetch(&mp->mag_round[round + 4], 0, 1);
 		}
@@ -2180,12 +2166,7 @@ umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
 {
 	umem_magazine_t *mp;
 
-	/*
-	 * Prefetch the list head before acquiring the lock.
-	 * On a lock miss, this lets the cache line warm up
-	 * during the mutex spin/sleep, saving ~50-100ns on
-	 * the critical path after the lock is acquired.
-	 */
+	/* Prefetch the list head before the lock; unmeasured. */
 	UMEM_PREFETCH_READ(&mlp->ml_list);
 
 	if (*(umem_magazine_t *volatile *)&mlp->ml_list == NULL) {
@@ -2214,10 +2195,6 @@ umem_depot_pop(umem_cache_t *cp, umem_maglist_t *mlp)
 
 	(void) mutex_unlock(&mlp->ml_lock);
 
-	/*
-	 * Prefetch the first few magazine rounds so they are
-	 * warm in cache when the caller starts allocating.
-	 */
 	UMEM_PREFETCH_READ(&mp->mag_round[0]);
 
 	return (mp);
@@ -2464,7 +2441,6 @@ umem_ptc_mag_check(umem_ptc_mag_t *mag)
 /*
  * Non-blocking depot pop for PTC refill path.
  * Returns NULL immediately if the lock is contended or list is empty.
- * Never blocks on a mutex, eliminating p99 latency spikes.
  */
 static umem_magazine_t *
 umem_depot_pop_trylock(umem_maglist_t *mlp)
@@ -2559,8 +2535,9 @@ umem_depot_alloc_trylock(umem_cache_t *cp, umem_maglist_t *mlp)
 		 * Scanning all ncpus (up to umem_max_ncpus, e.g. 512) empty
 		 * stripes on every miss is O(ncpus) trylock/unlock churn that
 		 * dominates single-thread hold-heavy workloads whose per-CPU
-		 * depot is legitimately empty (perf showed 82% of frag CPU in
-		 * pthread_mutex_trylock scanning empties). This is only the
+		 * depot is legitimately empty (a perf profile at the time put
+		 * most of frag's CPU in pthread_mutex_trylock scanning empties;
+		 * the profile was not kept, so no box/sha for it). This is only the
 		 * non-blocking PTC-refill fast path: on a miss the caller falls
 		 * through to _umem_cache_alloc -> umem_depot_alloc (blocking),
 		 * which still does the full NUMA-aware cross-CPU steal, so the
@@ -3217,8 +3194,9 @@ umem_maglist_ws_reap(umem_cache_t *cp, umem_maglist_t *mlp,
 /*
  * After reaping, mark per-CPU depot lists that still hold too many
  * magazines so that the next working-set update cycle will make them
- * reapable.  This avoids destroying magazines that are still in the
- * active working set while bounding long-term accumulation.
+ * reapable.  It raises ml_reaplimit only; see the body comment for why
+ * it must not touch ml_min (the first version did, and inverted this
+ * header's intent).
  */
 static void
 umem_maglist_mark_excess(umem_maglist_t *mlp)
@@ -3234,7 +3212,9 @@ umem_maglist_mark_excess(umem_maglist_t *mlp)
 		 * UMEM_DEPOT_PERCPU_MAX (8) that reaped at most 8 magazines
 		 * per list per pass -- 8 lists x 8 x 31 rounds x 4 KiB = 8 MB
 		 * per 10 s interval against a 2 GB surplus (measured: 5 MB in
-		 * 100 s; ~40 minutes to drain).  The clamp inverted the intent
+		 * 100 s; ~40 minutes to drain -- c7g.2xlarge, P6.8 probe_reclaim,
+		 * docs/plans/2026-09-21-production-readiness.md P6.8).  The clamp
+		 * inverted the intent
 		 * of the comment above: it was written to make the excess
 		 * reapable and instead bounded how much of it could ever be
 		 * reaped.  ml_min is the working-set trough the depot_pop
@@ -3300,11 +3280,6 @@ umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 	    (ccp->cc_loaded && current_rounds + rounds == ccp->cc_magsize));
 	ASSERT(ccp->cc_magsize > 0);
 
-	/*
-	 * Prefetch cc_ploaded before swap. This magazine will be accessed
-	 * soon for magazine exchange operations. High locality (3) since
-	 * we frequently swap between loaded and ploaded magazines.
-	 */
 	if (ccp->cc_ploaded != NULL) {
 		__builtin_prefetch(ccp->cc_ploaded, 0, 3);
 	}
@@ -3392,16 +3367,7 @@ retry:
 		 */
 		rounds = ccp->cc_rounds;
 		if (rounds > 0) {
-			/*
-			 * Prefetch the loaded magazine before accessing.
-			 * High locality (3) since we access this frequently
-			 * in the hot allocation path.
-			 */
 			__builtin_prefetch(ccp->cc_loaded, 0, 3);
-
-			/*
-			 * Decrement rounds. We hold the lock so this is safe.
-			 */
 			ccp->cc_rounds = rounds - 1;
 			buf = ccp->cc_loaded->mag_round[rounds - 1];
 			ccp->cc_alloc++;
@@ -3638,16 +3604,7 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 		magsize = ccp->cc_magsize;
 
 		if ((uint_t)rounds < magsize) {
-			/*
-			 * Prefetch the loaded magazine before accessing.
-			 * High locality (3) since we access this frequently
-			 * in the hot free path.
-			 */
 			__builtin_prefetch(ccp->cc_loaded, 0, 3);
-
-			/*
-			 * Increment rounds. We hold the lock so this is safe.
-			 */
 			ccp->cc_rounds = rounds + 1;
 			ccp->cc_loaded->mag_round[rounds] = buf;
 			ccp->cc_free++;
@@ -3696,11 +3653,7 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 		if (emp != NULL) {
 			atomic_add_64(&cp->cache_mag_total, 1);
 
-			/*
-			 * Initialize the new magazine with SIMD.
-			 * This zeroes all pointers efficiently using
-			 * vectorized stores when available (AVX2/SSE2/NEON).
-			 */
+			/* All slots NULL. */
 			umem_mag_init_fast(emp->mag_round, mtp->mt_magsize);
 
 			/*
@@ -3885,9 +3838,7 @@ umem_alloc_retry:
 		 * caches, and ineligible sizes — one check covers all.
 		 *
 		 * The cp lookup is done before the PTC block so the
-		 * CPU can begin the dependent load while we check the
-		 * thread-local cache, avoiding a pipeline stall on
-		 * PTC miss under contention.
+		 * dependent load can overlap the thread-local check.
 		 */
 		{
 			int8_t bin = umem_ptc_bin_table[index];
@@ -4852,7 +4803,10 @@ umem_cache_update(umem_cache_t *cp)
 	 * reclaim feature -- reclaim=1 by default, reclaim_delay documented --
 	 * could not fire on the most ordinary shape of "free a big heap".
 	 * Measured: 2 GB of freed 4 KiB objects 100 % resident at t = 100 s,
-	 * 16,911 full depot magazines, update thread confirmed running.
+	 * 16,911 full depot magazines, update thread confirmed running
+	 * (a2548b8, c7g.2xlarge, probe_reclaim; P6.8 in
+	 * docs/plans/2026-09-21-production-readiness.md; fixed 147d5ff +
+	 * 9bbe58b).
 	 *
 	 * So when reclaim is on, request UMU_REAP whenever some list is above
 	 * its working set.  The request is cheap (a flag; umem_process_updates
@@ -5309,7 +5263,10 @@ umem_cache_create(
 			 * UMEM_MIN_QCACHE_SLAB in umem_impl.h.  Small (<= 512 B)
 			 * objects' one-page slabs are served through umem_va's
 			 * qcache, whose 128 KiB slabs each cost a VMA; 4 MiB slabs
-			 * cost 57x fewer at zero measured RSS cost.
+			 * cost 57x fewer (15,702 -> 274 VMAs) at zero measured RSS
+			 * cost (cf3f762; P6.1 table in
+			 * docs/plans/2026-09-21-production-readiness.md;
+			 * docs/results/2026-09-22-umem-heap-ceiling-vma.md).
 			 */
 			if (bestfit < UMEM_MIN_QCACHE_SLAB)
 				bestfit = UMEM_MIN_QCACHE_SLAB;
