@@ -24,9 +24,9 @@
  * malloc interposition via dlsym(RTLD_NEXT)
  *
  * This file implements lazy initialization of libumem to avoid the
- * pthread_create/malloc circular dependency deadlock. The approach is
- * based on patterns used by profiling tools (valgrind, ASan) and
- * recommended in docs/PTHREAD_RESEARCH.md section 3.
+ * pthread_create/malloc circular dependency deadlock, the pattern
+ * profiling tools (valgrind, ASan) use.  (An earlier version cited
+ * docs/PTHREAD_RESEARCH.md; that file is not in the tree.)
  *
  * Key design:
  * 1. Use dlsym(RTLD_NEXT) to get real libc malloc
@@ -545,18 +545,18 @@ resolve_libc_functions(void)
  * Constructor: Resolve libc functions before any malloc calls
  * This is called automatically when the library is loaded via LD_PRELOAD.
  *
- * IMPORTANT: This constructor MUST run before libumem's __umem_init constructor,
- * because __umem_init may call pthread functions which call malloc. We use
- * priority 101 to ensure this runs first (lower priority numbers run first).
- *
- * Cross-.so note: numbered constructor priorities only order constructors
- * WITHIN a single shared object; they do not order across the .so boundary.
- * malloc_interpose lives in libumem_malloc.so and __umem_init in libumem.so,
- * so ordering is actually governed by load order (the LD_PRELOAD'd
- * libumem_malloc.so loads before libumem.so is pulled in as its NEEDED
- * dependency).  The numeric priority is therefore a no-op across the
- * boundary -- and the Solaris/illumos ld has no numbered .init_array, so we
- * use the plain constructor form there.
+ * This constructor MUST run before libumem's __umem_init constructor,
+ * because __umem_init may call pthread functions which call malloc.  What
+ * guarantees that is LOAD ORDER, not the constructor(101) below: numbered
+ * constructor priorities only order constructors WITHIN a single shared
+ * object, and malloc_interpose lives in libumem_malloc.so while __umem_init
+ * is in libumem.so.  The LD_PRELOAD'd libumem_malloc.so loads before
+ * libumem.so is pulled in as its NEEDED dependency, so its constructors
+ * run first.  The 101 is a no-op across the boundary and is kept only as
+ * documentation of intent; the Solaris/illumos ld has no numbered
+ * .init_array, so the plain form is used there.  (This comment used to
+ * say "We use priority 101 to ensure this runs first", which the
+ * paragraph after it then contradicted.)
  *
  * NOTE: We do NOT call umem_init() here because that would trigger
  * pthread_create which calls malloc, creating a deadlock. Instead,
@@ -621,12 +621,6 @@ umem_interpose_init(void)
 	 */
 	extern uint_t umem_abort;
 	umem_abort = 0;
-
-	/*
-	 * Don't call umem_init() here - let it initialize naturally
-	 * through the first umem API call. The bootstrap allocator will
-	 * handle any malloc calls that happen during initialization.
-	 */
 }
 
 /*
