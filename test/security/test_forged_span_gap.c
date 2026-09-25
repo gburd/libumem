@@ -67,7 +67,6 @@
 #include <unistd.h>
 #include <malloc.h>
 #include <sys/mman.h>
-#include <errno.h>
 
 #include "umem_impl.h"
 
@@ -78,10 +77,6 @@
  * the same way and for the same reason.
  */
 extern _Atomic uintptr_t vmem_heap_lo, vmem_heap_hi;
-
-#ifndef MAP_FIXED_NOREPLACE
-#define	MAP_FIXED_NOREPLACE	0x100000
-#endif
 
 static int failures;
 
@@ -112,36 +107,104 @@ typedef struct {
 	uint32_t malloc_stat;
 } forged_header_t;
 
-/*
- * Is [addr, addr+len) entirely UNMAPPED?  mincore() returns 0 for a mapped
- * range and -1/ENOMEM the moment it hits an unmapped page, which is exactly
- * the between-spans hole we want.
- */
-static int
-is_unmapped(void *addr, size_t len)
-{
-	long ps = sysconf(_SC_PAGESIZE);
-	size_t npg = (len + (size_t)ps - 1) / (size_t)ps;
-	unsigned char *vec = malloc(npg);
-	int rc;
+#ifndef MAP_FIXED_NOREPLACE
+#define	MAP_FIXED_NOREPLACE	0x100000
+#endif
 
-	if (vec == NULL)
-		return (0);
-	rc = mincore(addr, len, vec);
-	free(vec);
-	/* ENOMEM => at least one page in the range is not mapped. */
-	return (rc == -1 && errno == ENOMEM);
+/*
+ * Construct a between-spans hole DETERMINISTICALLY.
+ *
+ * The mmap heap grows DOWNWARD: hi is fixed at the first span's top and lo
+ * drops as the heap adds spans at lower addresses (measured on both arches:
+ * a barrier placed below the initial lo ends up inside [lo,hi) after the heap
+ * grows past it, with zero naturally-unmapped windows -- the heap run is
+ * contiguous, so there is no accidental hole to find).
+ *
+ * So we MAKE the hole: reserve a caller region just below the current lo,
+ * then grow the heap down past it.  The heap cannot mmap over our reservation
+ * (MAP_FIXED_NOREPLACE fails if occupied, and the reservation stays ours),
+ * so the region sits inside the final [lo,hi) hull, owned by no heap span --
+ * exactly a between-spans gap.  This is the position-D case: a caller mmap
+ * that the heap grew around.
+ *
+ * Returns the reserved region (mapped RW so a header can be forged in it), or
+ * MAP_FAILED if the layout could not be produced on this run.
+ */
+static void *
+make_between_spans_region(size_t region, void ***keep_out, int *nkeep_out)
+{
+	void **keep = malloc(sizeof (void *) * 8192);
+	int nkeep = 0, i;
+	uintptr_t lo0;
+	void *bars[8];
+	int nbar = 0, b;
+	void *chosen = MAP_FAILED;
+
+	if (keep == NULL)
+		return (MAP_FAILED);
+
+	/* Establish the first span(s) and read the current bottom. */
+	for (i = 0; i < 64; i++) {
+		keep[nkeep] = malloc(256 * 1024);
+		if (keep[nkeep] == NULL)
+			break;
+		memset(keep[nkeep], 0x11, 64);
+		nkeep++;
+	}
+	lo0 = atomic_load(&vmem_heap_lo);
+
+	/*
+	 * Reserve barriers below the current bottom, at several distances, so
+	 * that wherever the heap next grows to, at least one lands strictly
+	 * inside the final hull.  region-sized, region-aligned.
+	 */
+	for (b = 1; b <= 8 && nbar < 8; b++) {
+		uintptr_t want = (lo0 - (uintptr_t)b * 16 * 1024 * 1024) &
+		    ~(uintptr_t)(region - 1);
+		void *r = mmap((void *)want, region, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANON | MAP_FIXED_NOREPLACE, -1, 0);
+		if (r != MAP_FAILED && (uintptr_t)r == want)
+			bars[nbar++] = r;
+		else if (r != MAP_FAILED)
+			(void) munmap(r, region);
+	}
+
+	/* Grow the heap down past the barriers. */
+	for (i = 0; i < 8192 && nkeep < 8192; i++) {
+		keep[nkeep] = malloc(256 * 1024);
+		if (keep[nkeep] == NULL)
+			break;
+		memset(keep[nkeep], 0x11, 64);
+		nkeep++;
+	}
+
+	/* Pick a barrier now strictly inside [lo,hi); free the rest. */
+	{
+		uintptr_t lo = atomic_load(&vmem_heap_lo);
+		uintptr_t hi = atomic_load(&vmem_heap_hi);
+		for (b = 0; b < nbar; b++) {
+			uintptr_t a = (uintptr_t)bars[b];
+			if (chosen == MAP_FAILED &&
+			    a >= lo && a + region <= hi)
+				chosen = bars[b];
+			else
+				(void) munmap(bars[b], region);
+		}
+	}
+
+	*keep_out = keep;
+	*nkeep_out = nkeep;
+	return (chosen);
 }
 
 int
 main(void)
 {
-	long ps = sysconf(_SC_PAGESIZE);
-	size_t region = 64 * 1024;		/* caller mmap in the hole */
-	void *keep[4096];
+	size_t region = 64 * 1024;		/* caller region in the hole */
+	void **keep = NULL;
 	int nkeep = 0, i;
-	uintptr_t lo, hi, probe;
-	void *hole = MAP_FAILED;
+	uintptr_t lo, hi;
+	void *hole;
 	forged_header_t *hdr;
 	void *payload;
 	uint32_t size_field, stat_before, stat_after, size_before, size_after;
@@ -149,60 +212,25 @@ main(void)
 	printf("P7.4: free() must refuse a forged header in a between-spans "
 	    "hole inside the hull\n");
 
-	/*
-	 * Grow the heap so [vmem_heap_lo, vmem_heap_hi) is wide and spans more
-	 * than one kernel mmap -- otherwise there is no hole to exploit and
-	 * every arm is vacuous.  Hold the allocations so the spans stay live.
-	 */
-	for (i = 0; i < 4096; i++) {
-		keep[i] = malloc(256 * 1024);
-		if (keep[i] == NULL)
-			break;
-		memset(keep[i], 0x11, 64);
-		nkeep = i + 1;
-	}
-	if (nkeep == 0) {
-		printf("  SKIP: could not populate the heap\n");
-		return (77);
-	}
-
+	hole = make_between_spans_region(region, &keep, &nkeep);
 	lo = atomic_load(&vmem_heap_lo);
 	hi = atomic_load(&vmem_heap_hi);
 	printf("  heap hull [%#lx, %#lx)  width %#lx  (%d live 256K allocs)\n",
 	    (unsigned long)lo, (unsigned long)hi,
 	    (unsigned long)(hi - lo), nkeep);
-	if (hi <= lo || hi - lo < region) {
-		printf("  SKIP: hull too narrow to contain a hole\n");
-		goto cleanup;
-	}
 
-	/*
-	 * Scan the hull for an unmapped 64K-aligned window: a hole between two
-	 * spans.  Step by 64K.  The first fully-unmapped window is the gap.
-	 */
-	for (probe = (lo + region - 1) & ~(uintptr_t)(region - 1);
-	    probe + region <= hi; probe += region) {
-		if (!is_unmapped((void *)probe, region))
-			continue;
-		hole = mmap((void *)probe, region, PROT_READ | PROT_WRITE,
-		    MAP_PRIVATE | MAP_ANON | MAP_FIXED_NOREPLACE, -1, 0);
-		if (hole == MAP_FAILED)
-			continue;		/* raced; keep scanning */
-		if ((uintptr_t)hole != probe) {
-			/* kernel ignored NOREPLACE (old kernel): not our hole */
-			(void) munmap(hole, region);
-			hole = MAP_FAILED;
-			continue;
-		}
-		break;
+	if (nkeep == 0) {
+		printf("  SKIP: could not populate the heap\n");
+		free(keep);
+		return (77);
 	}
-
 	if (hole == MAP_FAILED) {
-		printf("  SKIP: no between-spans hole found in the hull\n");
+		printf("  SKIP: could not place a caller region inside the "
+		    "hull between spans\n");
 		goto cleanup;
 	}
-	printf("  caller mmap placed in hole at %p (inside the hull, "
-	    "outside every span)\n", hole);
+	printf("  caller region at %p is inside the hull, owned by no span\n",
+	    hole);
 
 	if (asan_active()) {
 		printf("  SKIP arms A-C under ASan: ASan interposes free() and "
@@ -295,6 +323,7 @@ cleanup:
 	}
 	for (i = 0; i < nkeep; i++)
 		free(keep[i]);
+	free(keep);
 
 	printf("\n");
 	if (failures != 0) {
