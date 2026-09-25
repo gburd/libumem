@@ -28,9 +28,11 @@
  * records, streams a log-like event feed, records it, and drives a
  * break-before-return engine (condvar spin) useful under gdb.
  *
- * ZERO-COST WHEN DISABLED: when introspect=0 (default) this file's thread is
- * never started and umem_introspect_break_armed stays 0, so the single
- * hot-path check in _umem_alloc predicts not-taken and never calls in here.
+ * COST WHEN DISABLED: when introspect=0 (default) this file's thread is
+ * never started and umem_introspect_break_armed stays 0, so the cost on
+ * the allocation path is one predictable load of that global per
+ * _umem_alloc (umem.c, two sites) and nothing is called in here.  (This
+ * used to say "ZERO-COST"; a load is not zero.)
  * When the whole feature is compiled out (no UMEM_INTROSPECT), this file is
  * empty and the hook is a no-op inline (see umem_introspect.h).
  */

@@ -646,8 +646,10 @@ hull_raise(_Atomic uintptr_t *slot, uintptr_t v)
 /*
  * Re-read vmem_heap's spans and widen the cached hull.  Called only when a
  * candidate missed the hull, i.e. never on the common path.  vmem_walk()
- * calls the callback with the arena lock held, so the callback must not
- * allocate -- it does not.
+ * without VMEM_REENTRANT in typemask (as here: VMEM_SPAN alone) calls the
+ * callback with the arena's vm_lock held, so the callback must not
+ * allocate -- it does not.  A caller that adds VMEM_REENTRANT gets the
+ * lock dropped around the callback and a different set of hazards.
  */
 static void
 hull_refresh(void)
