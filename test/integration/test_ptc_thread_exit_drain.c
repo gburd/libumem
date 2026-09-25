@@ -46,6 +46,16 @@
  *
  *   This is deliberately a comparison and not an equality: both arms include
  *   ordinary allocator retention, which is what the control subtracts out.
+ *
+ *   TWO BINARIES FROM THIS FILE, ONE GATE.  Makefile.am builds
+ *   test_ptc_thread_exit_drain (plain libumem; the comparison above is its
+ *   ONLY oracle) and test_ptc_thread_exit_drain_probe (libumem_ptcprobe,
+ *   -DUMEM_PTC_RESIZE_PROBE; the exact stranded-object count in main() is
+ *   its oracle and it returns before the comparison arms run).  Only the
+ *   _probe binary is in TESTS and in exit_criteria_gate.sh.  A PASS from
+ *   the plain binary is the statistical comparison, which straddled its
+ *   margin once (Makefile.am's note, 5/29 vs 1/15); it is not the P1.3a
+ *   proof.  The plain binary is kept as the pre-fix-shaped control.
  */
 
 #ifndef _GNU_SOURCE
