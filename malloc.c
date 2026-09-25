@@ -385,23 +385,20 @@ typedef struct malloc_data {
 } malloc_data_t;
 
 /*
- * NOTE: malloc/free interposition is now handled by malloc_interpose.c
- * which uses dlsym(RTLD_NEXT) to avoid pthread_create deadlocks.
- * The weak symbol pragmas have been removed.
+ * The public malloc(), free(), calloc(), realloc(), memalign(),
+ * posix_memalign(), aligned_alloc() and valloc() are defined in
+ * malloc_interpose.c (libumem_malloc.so).  That file owns bootstrap and
+ * pointer ownership; once umem is READY it calls umem_malloc() and
+ * umem_malloc_free() below.  There is no weak alias and no PTC/genasm
+ * function-pointer dispatch in this port: umem_genasm_supported is a
+ * constant 0 (umem.c) and the PTC fast path is inlined C in umem.c.
+ * (Earlier comments here described Solaris's genasm trampolines and a
+ * "weak alias to this function"; neither exists in this tree.)
  */
 
 /*
- * On Linux, the PTC genasm code sets these function pointers after
- * generating the per-thread-cache assembly.  malloc() and free() check
- * these and dispatch through them when set.
- */
-
-/*
- * umem_malloc: the real malloc implementation.
- *
- * This is the function that PTC falls back to for allocations it
- * cannot handle (overflow, oversized, etc.).
- * On non-x86, malloc is a weak alias to this function.
+ * umem_malloc: the malloc implementation behind malloc_interpose.c's
+ * malloc().  Called once umem is READY.
  */
 void *
 umem_malloc(size_t size_arg)
@@ -488,10 +485,6 @@ umem_malloc(size_t size_arg)
 }
 
 /*
- * NOTE: calloc() is now in malloc_interpose.c
- */
-
-/*
  * umem_memalign: internal memalign implementation
  * Used by malloc_interpose.c when umem is fully initialized
  */
@@ -574,10 +567,6 @@ umem_memalign(size_t align, size_t size_arg)
 
 	return ((void *)ret);
 }
-
-/*
- * NOTE: memalign, posix_memalign, and valloc are now in malloc_interpose.c
- */
 
 /*
  * ---- "could this address possibly be ours?" (P5.8) ----
@@ -986,11 +975,10 @@ validate:
 }
 
 /*
- * umem_malloc_free: the real free implementation.
- *
- * This is the function that PTC generated code falls back to for
- * free operations it cannot handle.
- * On non-x86, free is a weak alias to this function.
+ * umem_malloc_free: the free implementation behind malloc_interpose.c's
+ * free().  Reached on its fast path (no live libc pointers), for OWN_UMEM,
+ * and for OWN_UNKNOWN once READY; process_free() validates before it
+ * mutates anything (VALIDATION ORDER above).
  */
 void
 umem_malloc_free(void *buf)
@@ -1070,19 +1058,9 @@ slow:
 }
 
 /*
- * NOTE: malloc(), free(), calloc(), realloc(), memalign(), posix_memalign(),
- * and valloc() are now in malloc_interpose.c which handles both the bootstrap
- * phase and dispatching to umem once initialized.
- */
-
-/*
- * _malloc and _free are the PTC (per-thread cache) trampoline entry points.
- * On Solaris/Illumos, libc provides these in writable+executable text segments
- * so that umem_genasm() can overwrite them with generated assembly.
- * On Linux, these are simple trampolines -- after PTC genasm activates,
- * malloc()/free() call through the generated code directly via function
- * pointers, so these functions are only used for symbol resolution by the
- * genasm initialization code.
+ * _malloc and _free: legacy ABI symbols (the Solaris genasm trampoline
+ * names), kept exported for anything linked against them.  Nothing in this
+ * tree calls them (grep umem/ test/ tools/); they are plain wrappers.
  */
 #ifndef __sun
 void *
