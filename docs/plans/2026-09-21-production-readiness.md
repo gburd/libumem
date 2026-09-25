@@ -672,6 +672,7 @@ imply, and that is a documentation accuracy issue independent of hardening.
 | P5.7 `SO_PEERCRED` real uid | **FIXED** | decision function tested directly |
 | P5.8 foreign header decode | **FIXED** | writes preceded validation; now after acceptance |
 | P5.9 unbounded frame walk | **FIXED** | SIGSEGV pre-fix both arches |
+| P5.10 free() reads caller bytes to classify bootstrap pointers, then munmaps by them | **FIXED** `3767b4c` | `test_forged_bootstrap`: pre SIGSEGV, post PASS; ratio regression 0.598 |
 | P5.10 minor / verified-good | **DONE** | gdb whitelist confirmed sound, left alone |
 
 Qualified at `56dbe8d` on x86_64 and aarch64, isolated builds, both configs:
@@ -716,6 +717,45 @@ are now independently demonstrated.
    must stay until 1 and 2 are done.
 5. No security fix lands without its regression. A hardening change that cannot
    be shown to close the hole it claims to close is not a fix.
+
+### P5.10 free() unmapped a range named by the caller's own bytes -- HIGH, FIXED
+`malloc.c` bootstrap allocator (`bootstrap_malloc`, `bootstrap_pointer_p`,
+`bootstrap_free`); every `free()` path (`process_free` step 1,
+`umem_malloc_free`, the interposer's classifier)
+
+**Found by** the P8.3 agent while removing the triple `is_bootstrap_pointer`
+call (its STATUS entry records it as "open as a P5 item"), and by the 2026-09-24
+production-readiness review independently.
+
+**Mechanism.** Step 1 of `process_free()`'s validation order classified a
+pointer as a bootstrap allocation by reading the 8 bytes BEFORE it and
+comparing with `BOOTSTRAP_MAGIC` -- before step 2 had established the pointer
+was inside umem's address space. On a match, `bootstrap_free()` did
+`munmap(hdr, hdr->size)` with both address and length from that same memory.
+Position D (controls buffer contents): `free()` of a pointer 16 bytes into a
+caller's own mapping, with the magic and a size written in front of it, unmaps
+the caller's mapping -- or, with a larger size, whatever follows it. glibc has
+no equivalent read; jemalloc's rtree lookup and scudo's checksummed header are
+exact. This was **worse than glibc** and P5.8 had explicitly ordered every
+other pre-ownership read behind the hull check while leaving this one in front.
+
+**Three fixes, the first two insufficient, each shown by the same test.**
+
+| commit | change | `test_forged_bootstrap` | why |
+|---|---|---|---|
+| `a423ca9` (pre) | -- | **FAIL** (SIGSEGV; page gone) | unconditional read |
+| `6842a35` | reinstate the live-count gate (`382c529`, dropped by the P8.3 agent over +1.6 % insn on arm) | **FAIL** | `bootstrap_live` = **28** at steady state -- libdw `proc_maps_report`/`init_libdw`, `getpcstack` bounds, `dlsym` -- never freed, so the gate never closes |
+| `2d4a7ff` | registry: `bootstrap_malloc` records (ptr, size) in a 256-slot table; recognition is a lookup; `bootstrap_free` unmaps the RECORDED size | **PASS** | -- but the interposer ratio regression fell to **0.005** (P8.1's collapse: a locked 256-slot scan on every `free()`, because the count is never zero) |
+| `3767b4c` | `[lo, hi)` hull over the registered mappings in front of the scan | **PASS**, ratio **0.598** (bar 0.48, null 0.99) | 0 of 200,000 heap pointers fall in the hull (28.9 MB, contiguous bootstrap pages); the lock is taken only for pointers that could be bootstrap |
+
+Also fixed on the way: `umem_null_cache`'s positional initializer had been two
+fields short since `e00fdf2` (five `-Wint-conversion` warnings on every build
+that nothing failed on; `f9b3bd9`).
+
+**What glibc does:** nothing equivalent -- no pre-ownership read. libumem now
+matches: no path on `free()` reads memory the caller controls before ownership
+is known. Gate PASS both arches at `3767b4c`, all configs (45/42/3/0 default,
+45/45 introspect, release config included).
 
 ## Phase 6 — Hard limits
 
