@@ -115,37 +115,42 @@ typedef struct {
  * Construct a between-spans hole DETERMINISTICALLY.
  *
  * The mmap heap grows DOWNWARD: hi is fixed at the first span's top and lo
- * drops as the heap adds spans at lower addresses (measured on both arches:
- * a barrier placed below the initial lo ends up inside [lo,hi) after the heap
- * grows past it, with zero naturally-unmapped windows -- the heap run is
- * contiguous, so there is no accidental hole to find).
+ * drops as the heap adds spans at lower addresses (measured both arches).
+ * The mapped run is contiguous, so there is no ACCIDENTAL unmapped hole to
+ * find inside [lo,hi) -- we MAKE one: reserve a caller region a fixed
+ * distance below the current lo, then grow the heap DOWN past it.  The heap
+ * cannot mmap over the reservation (MAP_FIXED_NOREPLACE fails if occupied,
+ * and the reservation stays ours), so once lo has dropped below it the
+ * region sits inside [lo,hi), owned by no heap span -- exactly the position-D
+ * case: a caller mmap the heap grew around.
  *
- * So we MAKE the hole: reserve a caller region just below the current lo,
- * then grow the heap down past it.  The heap cannot mmap over our reservation
- * (MAP_FIXED_NOREPLACE fails if occupied, and the reservation stays ours),
- * so the region sits inside the final [lo,hi) hull, owned by no heap span --
- * exactly a between-spans gap.  This is the position-D case: a caller mmap
- * that the heap grew around.
+ * Growth uses LARGE (oversize) allocations: each imports its own heap span,
+ * and a large one drops lo far per span, so a handful of spans bracket the
+ * barrier -- well under the span table's capacity, so the exact check is
+ * exercised rather than its saturated hull fallback (which would falsely
+ * accept and make the test vacuous).
  *
  * Returns the reserved region (mapped RW so a header can be forged in it), or
  * MAP_FAILED if the layout could not be produced on this run.
  */
+#define	SHAPE_BIG	(16 * 1024 * 1024)	/* per-alloc span step */
+#define	SHAPE_DROP	(32 * 1024 * 1024)	/* barrier below initial lo */
+#define	SHAPE_MAX	512			/* bound on shaping allocations */
+
 static void *
 make_between_spans_region(size_t region, void ***keep_out, int *nkeep_out)
 {
-	void **keep = malloc(sizeof (void *) * 8192);
+	void **keep = malloc(sizeof (void *) * (SHAPE_MAX + 8));
 	int nkeep = 0, i;
-	uintptr_t lo0;
-	void *bars[8];
-	int nbar = 0, b;
-	void *chosen = MAP_FAILED;
+	uintptr_t lo0, want;
+	void *bar;
 
 	if (keep == NULL)
 		return (MAP_FAILED);
 
-	/* Establish the first span(s) and read the current bottom. */
-	for (i = 0; i < 64; i++) {
-		keep[nkeep] = malloc(256 * 1024);
+	/* Establish the heap and read the current bottom. */
+	for (i = 0; i < 4; i++) {
+		keep[nkeep] = malloc(SHAPE_BIG);
 		if (keep[nkeep] == NULL)
 			break;
 		memset(keep[nkeep], 0x11, 64);
@@ -153,48 +158,41 @@ make_between_spans_region(size_t region, void ***keep_out, int *nkeep_out)
 	}
 	lo0 = atomic_load(&vmem_heap_lo);
 
-	/*
-	 * Reserve barriers below the current bottom, at several distances, so
-	 * that wherever the heap next grows to, at least one lands strictly
-	 * inside the final hull.  region-sized, region-aligned.
-	 */
-	for (b = 1; b <= 8 && nbar < 8; b++) {
-		uintptr_t want = (lo0 - (uintptr_t)b * 16 * 1024 * 1024) &
-		    ~(uintptr_t)(region - 1);
-		void *r = mmap((void *)want, region, PROT_READ | PROT_WRITE,
-		    MAP_PRIVATE | MAP_ANON | MAP_FIXED_NOREPLACE, -1, 0);
-		if (r != MAP_FAILED && (uintptr_t)r == want)
-			bars[nbar++] = r;
-		else if (r != MAP_FAILED)
-			(void) munmap(r, region);
+	/* Reserve the caller region below the current bottom. */
+	want = (lo0 - SHAPE_DROP) & ~(uintptr_t)(region - 1);
+	bar = mmap((void *)want, region, PROT_READ | PROT_WRITE,
+	    MAP_PRIVATE | MAP_ANON | MAP_FIXED_NOREPLACE, -1, 0);
+	if (bar == MAP_FAILED || (uintptr_t)bar != want) {
+		if (bar != MAP_FAILED)
+			(void) munmap(bar, region);
+		*keep_out = keep;
+		*nkeep_out = nkeep;
+		return (MAP_FAILED);
 	}
 
-	/* Grow the heap down past the barriers. */
-	for (i = 0; i < 8192 && nkeep < 8192; i++) {
-		keep[nkeep] = malloc(256 * 1024);
+	/* Grow the heap DOWN until lo has dropped below the barrier. */
+	for (i = 0; i < SHAPE_MAX && nkeep < SHAPE_MAX + 4; i++) {
+		if (atomic_load(&vmem_heap_lo) < (uintptr_t)bar)
+			break;
+		keep[nkeep] = malloc(SHAPE_BIG);
 		if (keep[nkeep] == NULL)
 			break;
 		memset(keep[nkeep], 0x11, 64);
 		nkeep++;
 	}
 
-	/* Pick a barrier now strictly inside [lo,hi); free the rest. */
+	*keep_out = keep;
+	*nkeep_out = nkeep;
+
+	/* Confirm the barrier is now strictly inside [lo,hi). */
 	{
 		uintptr_t lo = atomic_load(&vmem_heap_lo);
 		uintptr_t hi = atomic_load(&vmem_heap_hi);
-		for (b = 0; b < nbar; b++) {
-			uintptr_t a = (uintptr_t)bars[b];
-			if (chosen == MAP_FAILED &&
-			    a >= lo && a + region <= hi)
-				chosen = bars[b];
-			else
-				(void) munmap(bars[b], region);
-		}
+		if ((uintptr_t)bar >= lo && (uintptr_t)bar + region <= hi)
+			return (bar);
 	}
-
-	*keep_out = keep;
-	*nkeep_out = nkeep;
-	return (chosen);
+	(void) munmap(bar, region);
+	return (MAP_FAILED);
 }
 
 int

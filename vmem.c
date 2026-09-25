@@ -289,17 +289,25 @@ vmem_free_t *vmem_heap_free;
  * hull bounds are intentionally NOT narrowed on removal (they only widen), so
  * the cheap first test never rejects a live pointer.
  *
- * CAPACITY.  A fixed array; spans are few (a 9 GB heap of 4 MiB qcache slabs
- * is ~80 spans, and contiguous growth coalesces).  On overflow the table is
- * marked saturated and umem_may_own() falls back to the hull for any pointer
- * -- a conservative false yes, never a false no.
+ * CAPACITY.  A fixed array.  For the common case -- allocations up to
+ * UMEM_MAXBUF served from slabs -- the heap coalesces into few large spans.
+ * OVERSIZE allocations are the pathological case: each imports its own span
+ * from the heap, so an oversize-heavy workload can produce thousands (a 2 GB
+ * heap of 256 KiB oversize objects measured ~9,000 spans, c7i.2xlarge,
+ * b978a0f).  Sized for that; on overflow the table is marked saturated and
+ * umem_may_own() falls back to the [lo,hi) hull -- a conservative false yes
+ * for the between-spans case, never a false no, i.e. it degrades to exactly
+ * the pre-P7.4 behaviour under an extreme span count and no worse.
+ * ponytail: fixed 16 Ki spans + hull fallback.  If an oversize-heavy
+ * workload must ALSO reject between-spans forgeries, the upgrade is a radix
+ * over span bases (jemalloc's rtree) with no capacity ceiling.
  */
 typedef struct vmem_span_ent {
 	uintptr_t vse_base;
 	uintptr_t vse_end;		/* exclusive */
 } vmem_span_ent_t;
 
-#define	VMEM_SPAN_MAX	4096
+#define	VMEM_SPAN_MAX	16384
 
 static vmem_span_ent_t vmem_span_tab[VMEM_SPAN_MAX];
 static _Atomic uint32_t vmem_span_seq;	/* seqlock; odd = write in progress */
