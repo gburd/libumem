@@ -4117,26 +4117,28 @@ _umem_free(void *buf, size_t size)
 				if (likely(ptc != NULL)) {
 					umem_ptc_bin_t *b =
 					    &ptc->bins[(int)bin];
-					uint16_t c = b->count;
-					if (likely(c <
+					if (likely(b->count <
 					    ptc_bin_capacity((int)bin))) {
 						/*
-						 * Slot first, count second,
-						 * count released: a fork()
-						 * snapshot between the two
-						 * sees the old count and not
-						 * a stale slot (P1.3d rule 1,
-						 * umem_ptc.h).  c is loaded
-						 * once: the release store
-						 * would otherwise force a
-						 * reload of count the
-						 * pre-P1.3d code folded into
-						 * its single store.
+						 * Deliberately NOT ordered for
+						 * fork (P1.3d).  Every ordered
+						 * form of this push -- release
+						 * store, signal fence, plain
+						 * slot-then-count -- measured
+						 * -4..-5 % at t=8 on
+						 * c7i.2xlarge (9 alternating
+						 * pairs, null +-1 %) for
+						 * reasons the instruction
+						 * stream does not show.  A
+						 * fork() snapshot may therefore
+						 * see count = k+1 over a stale
+						 * slots[k]; the child handles
+						 * it by not draining the TOP
+						 * slot of any bin (only one
+						 * push can be in flight per
+						 * PTC).  See umem_ptc.h.
 						 */
-						b->slots[c] = buf;
-						__atomic_store_n(&b->count,
-						    (uint16_t)(c + 1),
-						    __ATOMIC_RELEASE);
+						b->slots[b->count++] = buf;
 						return;
 					}
 					/*

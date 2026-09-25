@@ -497,6 +497,16 @@ test_integration_test_ptc_thread_exit_drain_probe_LDADD = libumem_ptcprobe.la
 test_integration_test_ptc_thread_exit_drain_probe_LDFLAGS = -pthread
 test_integration_test_ptc_thread_exit_drain_probe_CPPFLAGS = \
 	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
+
+# P1.3d: a fork child drains the PTCs of threads that did not survive fork().
+# Probe build only: the ledgers it reads exist nowhere else.
+noinst_PROGRAMS += test/integration/test_fork_ptc_drain_probe
+test_integration_test_fork_ptc_drain_probe_SOURCES = \
+	test/integration/test_fork_ptc_drain.c
+test_integration_test_fork_ptc_drain_probe_LDADD = libumem_ptcprobe.la
+test_integration_test_fork_ptc_drain_probe_LDFLAGS = -pthread
+test_integration_test_fork_ptc_drain_probe_CPPFLAGS = \
+	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 test_integration_test_fork_mt_load_CPPFLAGS = -I$(srcdir)
 
 # P1.3b regression: a PTC magazine must never be used with a capacity that is
@@ -828,6 +838,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/bench/test_bench_accounting \
 	test/bench/check_budget.sh \
 	test/integration/test_ptc_thread_exit_drain_probe \
+	test/integration/test_fork_ptc_drain_probe \
 	test/integration/test_ptc_resize_no_loss_probe \
 	test/integration/test_heap_ceiling \
 	test/integration/test_heap_ceiling_512.sh \

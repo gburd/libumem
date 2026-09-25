@@ -25,6 +25,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -188,15 +189,24 @@ typedef struct umem_ptc {
 	 * whose owning thread does not exist.  Two rules make that copy
 	 * usable by the child's fork handler instead of leaked:
 	 *
-	 *  1. Every PUSH stores the slot/round first and the count second,
-	 *     with a release store on the count (umem.c _umem_free PTC paths).
-	 *     A snapshot between the two stores then shows the OLD count, and
-	 *     the in-flight object is simply not in the copy -- it is the
-	 *     parent's, and the parent finishes the push.  Pops are a single
-	 *     count store and are already tear-free.  Before this rule the
-	 *     compiler was free to bump the count first, and a snapshot then
-	 *     showed a count one too high over a STALE slot: a pointer to an
-	 *     object the application may own, which the child would free.
+	 *  1. MAGAZINE pushes store the round first and the count second with
+	 *     a release store (umem.c _umem_free PTC paths; measured free at
+	 *     t=8).  A snapshot between the two shows the old count and the
+	 *     in-flight object is the parent's.  Pops are a single count
+	 *     store and are already tear-free.
+	 *
+	 *     BIN pushes are NOT ordered: every ordered form measured -4..-5 %
+	 *     at t=8 (c7i.2xlarge, 9 alternating pairs, null +-1 %; release
+	 *     store, signal fence and plain slot-then-count all the same,
+	 *     with identical instruction streams -- the cost is in the
+	 *     store-to-store ordering itself and was not explained further).
+	 *     So a bin snapshot may show count = k+1 over a stale slots[k].
+	 *     Since a PTC has one owner, at most ONE push is in flight, and
+	 *     only the top slot can be torn.  The child therefore drains each
+	 *     bin's slots [0, count-1) and LEAKS slots[count-1]: at most one
+	 *     object per non-empty bin per orphaned PTC, instead of the whole
+	 *     PTC.  A stale top slot is thereby never freed; a live one is
+	 *     leaked, which is the pre-P1.3d outcome for that object.
 	 *
 	 *  2. Every MULTI-STORE block (the loaded/previous swaps on both
 	 *     sides, the depot refill, the retire) sets fork_busy = 1 before
@@ -212,8 +222,25 @@ typedef struct umem_ptc {
 	 * store either way.
 	 */
 	volatile int fork_busy;
+	/*
+	 * Registry linkage (P1.3d part 2).  Every live PTC is on a doubly
+	 * linked list under umem_ptc_list_lock, linked in umem_ptc_get() after
+	 * the struct is fully built and unlinked in umem_ptc_cleanup() before
+	 * it is freed.  The list exists for exactly one reader: the fork
+	 * child, which walks it to drain the PTCs of threads that did not
+	 * survive fork().  owner is the creating thread, so the child can
+	 * tell its own (surviving) PTC from the orphans.
+	 */
+	struct umem_ptc *reg_next;
+	struct umem_ptc *reg_prev;
+	pthread_t owner;
 	void *pool[PTC_TOTAL_SLOTS];    /* bins' slot arrays, packed */
 } umem_ptc_t;
+
+/* Fork handlers for the PTC registry (umem_fork.c calls these). */
+void umem_ptc_fork_lockup(void);
+void umem_ptc_fork_release(void);
+void umem_ptc_fork_release_child(void);
 
 /*
  * Global configuration

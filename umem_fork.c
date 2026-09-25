@@ -27,6 +27,7 @@
 #include "config.h"
 #include "umem_base.h"
 #include "vmem_base.h"
+#include "umem_ptc.h"
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -37,6 +38,9 @@
  * THE ONE TRUE LOCK ORDER.  Every lock below is acquired in this order, by
  * the fork handlers and by ordinary allocation paths alike:
  *
+ *   1a. umem_ptc_list_lock (umem_ptc.c: the PTC registry; taken by
+ *       umem_ptc_get()/umem_ptc_cleanup() while holding no allocator lock,
+ *       and nothing takes an allocator lock while holding it -- P1.3d)
  *   1. umem_init_lock
  *   2. vmem locks (vmem_lockup(): vmem_list_lock, vmem_nosleep_lock, each
  *      arena's vm_lock, vmem_segfree_lock; then vmem_sbrk_lockup():
@@ -191,6 +195,8 @@ umem_lockup(void)
 	if (umem_interpose_lockup != NULL)
 		umem_interpose_lockup();
 
+	umem_ptc_fork_lockup();			/* 1a */
+
 	(void) mutex_lock(&umem_init_lock);
 	/*
 	 * If another thread is busy initializing the library, we must
@@ -315,6 +321,17 @@ umem_do_release(int as_child)
 			umem_introspect_fork_child();
 
 		/*
+		 * P1.3d: drain the PTCs of threads that did not survive the
+		 * fork.  After every allocator lock is released and after the
+		 * interposer/introspection child hooks have re-initialised
+		 * theirs, so the drain's frees run against a fully consistent
+		 * child; before the update thread is recreated below, so
+		 * nothing else walks caches while the drain runs.  Also
+		 * re-initialises the registry lock (its owner may be gone).
+		 */
+		umem_ptc_fork_release_child();
+
+		/*
 		 * Recreate the update thread (P6.9).  Threads do not survive
 		 * fork(), and the block above zeroed umem_update_thr to say
 		 * so; before this, nothing put it back, so a forked child's
@@ -338,6 +355,7 @@ umem_do_release(int as_child)
 			(void) mutex_unlock(&umem_update_lock);
 		}
 	} else {
+		umem_ptc_fork_release();		/* 1a */
 		if (umem_interpose_release != NULL)
 			umem_interpose_release();
 	}

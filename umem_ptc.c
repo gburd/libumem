@@ -59,6 +59,153 @@ __thread umem_ptc_t *thread_ptc
 static pthread_key_t ptc_key;
 static int ptc_key_initialized = 0;
 
+#ifdef UMEM_PTC_RESIZE_PROBE
+volatile long umem_ptc_probe_exit_stranded = 0;
+/*
+ * P6.3 ledger: lock-taking hand-offs made to drain bins at thread exit, and
+ * the number of non-empty bins drained.  Pre-fix every object was its own
+ * hand-off (one cc_lock each), so handoffs == objects; post-fix a bin is one
+ * hand-off, so handoffs == bins.  Exact in both builds.
+ */
+volatile long umem_ptc_probe_exit_handoffs = 0;
+volatile long umem_ptc_probe_exit_bins = 0;
+/*
+ * P1.3d ledger: PTCs the fork child drained, and PTCs it had to leak because
+ * the snapshot caught them mid-swap (fork_busy).  drained + leaked == the
+ * number of non-forking threads that had a PTC; leaked is expected to be 0
+ * in a quiescent fork and small under load.
+ */
+volatile long umem_ptc_probe_fork_drained = 0;
+volatile long umem_ptc_probe_fork_busy_leaked = 0;
+volatile long umem_ptc_probe_fork_top_dropped = 0;	/* bins' top slots leaked */
+#define	UMEM_PTC_PROBE_COUNT(var, n)					\
+	(void) __atomic_add_fetch(&(var), (long)(n), __ATOMIC_RELAXED)
+#define	UMEM_PTC_PROBE_STRANDED(n)					\
+	do {								\
+		if ((n) > 0)						\
+			(void) __atomic_add_fetch(			\
+			    &umem_ptc_probe_exit_stranded, (long)(n),	\
+			    __ATOMIC_RELAXED);				\
+	} while (0)
+#else
+#define	UMEM_PTC_PROBE_STRANDED(n)	((void)0)
+#define	UMEM_PTC_PROBE_COUNT(var, n)	((void)0)
+#endif
+
+/*
+ * Registry of live PTCs (P1.3d part 2).  See umem_ptc_t.reg_next in
+ * umem_ptc.h for what it is for.  umem_ptc_list_lock is in the fork lock
+ * order (umem_fork.c, step 1a: taken right after the interposer locks and
+ * before umem_init_lock, because umem_ptc_get() takes it while holding no
+ * allocator lock and nothing takes an allocator lock while holding it).
+ */
+static umem_ptc_t *umem_ptc_list;
+static pthread_mutex_t umem_ptc_list_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void
+umem_ptc_register(umem_ptc_t *ptc)
+{
+	(void) pthread_mutex_lock(&umem_ptc_list_lock);
+	ptc->reg_prev = NULL;
+	ptc->reg_next = umem_ptc_list;
+	if (umem_ptc_list != NULL)
+		umem_ptc_list->reg_prev = ptc;
+	umem_ptc_list = ptc;
+	(void) pthread_mutex_unlock(&umem_ptc_list_lock);
+}
+
+static void
+umem_ptc_unregister(umem_ptc_t *ptc)
+{
+	(void) pthread_mutex_lock(&umem_ptc_list_lock);
+	if (ptc->reg_prev != NULL)
+		ptc->reg_prev->reg_next = ptc->reg_next;
+	else if (umem_ptc_list == ptc)
+		umem_ptc_list = ptc->reg_next;
+	if (ptc->reg_next != NULL)
+		ptc->reg_next->reg_prev = ptc->reg_prev;
+	ptc->reg_next = ptc->reg_prev = NULL;
+	(void) pthread_mutex_unlock(&umem_ptc_list_lock);
+}
+
+void
+umem_ptc_fork_lockup(void)
+{
+	(void) pthread_mutex_lock(&umem_ptc_list_lock);
+}
+
+void
+umem_ptc_fork_release(void)
+{
+	(void) pthread_mutex_unlock(&umem_ptc_list_lock);
+}
+
+/*
+ * Fork child: drain every PTC that belonged to a thread that did not survive
+ * the fork, i.e. every registered PTC except the forking thread's own.
+ *
+ * Runs from the child's atfork handler AFTER every allocator lock has been
+ * released (umem_fork.c), because the drain allocates and frees.  The
+ * registry lock is re-initialised rather than unlocked: its owner at the
+ * snapshot may have been a thread that no longer exists.
+ *
+ * A PTC snapshotted with fork_busy set is mid-swap in the parent (P1.3d
+ * rule 2) and its loaded/previous may alias; draining it would free one
+ * magazine twice.  Those are unlinked and LEAKED -- the pre-P1.3d behaviour
+ * for every PTC -- and counted under the probe build.  Everything else is
+ * consistent by rule 1 and goes through umem_ptc_destroy(), the same drain
+ * a thread exit does.
+ */
+void
+umem_ptc_fork_release_child(void)
+{
+	umem_ptc_t *p, *next;
+	pthread_t self = pthread_self();
+
+	(void) pthread_mutex_init(&umem_ptc_list_lock, NULL);
+
+	p = umem_ptc_list;
+	umem_ptc_list = NULL;
+	for (; p != NULL; p = next) {
+		next = p->reg_next;
+		p->reg_next = p->reg_prev = NULL;
+		if (pthread_equal(p->owner, self)) {
+			/* The forking thread's own PTC: still live, relink. */
+			p->reg_next = umem_ptc_list;
+			if (umem_ptc_list != NULL)
+				umem_ptc_list->reg_prev = p;
+			umem_ptc_list = p;
+			continue;
+		}
+		if (p->fork_busy) {
+			UMEM_PTC_PROBE_COUNT(umem_ptc_probe_fork_busy_leaked, 1);
+			continue;
+		}
+		/*
+		 * Bin pushes are not fork-ordered (umem_ptc.h, rule 1), so the
+		 * top slot of every non-empty bin may be a stale pointer over a
+		 * count bumped one too far.  Drop it: leak at most one object
+		 * per bin rather than risk freeing something the application
+		 * owns.  The magazines ARE ordered and are drained in full by
+		 * umem_ptc_destroy().
+		 */
+		{
+			int b, dropped = 0;
+
+			for (b = 0; b < PTC_NBINS; b++) {
+				if (p->bins[b].count > 0) {
+					p->bins[b].count--;
+					dropped++;
+				}
+			}
+			UMEM_PTC_PROBE_COUNT(umem_ptc_probe_fork_top_dropped,
+			    dropped);
+		}
+		UMEM_PTC_PROBE_COUNT(umem_ptc_probe_fork_drained, 1);
+		umem_ptc_destroy(p);
+	}
+}
+
 /*
  * Size class table for quick bin lookup
  * Maps allocation sizes to bin indices, indexed by size / 8, so it must
@@ -116,6 +263,7 @@ umem_ptc_cleanup(void *arg)
 	umem_ptc_t *ptc = (umem_ptc_t *)arg;
 
 	if (ptc != NULL) {
+		umem_ptc_unregister(ptc);
 		umem_ptc_destroy(ptc);
 		thread_ptc = NULL;
 	}
@@ -329,6 +477,10 @@ umem_ptc_get(void)
 		}
 	}
 
+	/* Fully built and owned; now visible to the fork child (P1.3d). */
+	ptc->owner = pthread_self();
+	umem_ptc_register(ptc);
+
 	return (ptc);
 }
 
@@ -456,29 +608,6 @@ umem_ptc_free(void *ptr, size_t size)
  * changed at all.  An exact in-library count has no such coupling -- the same
  * lesson as the P1.3c probe.
  */
-#ifdef UMEM_PTC_RESIZE_PROBE
-volatile long umem_ptc_probe_exit_stranded = 0;
-/*
- * P6.3 ledger: lock-taking hand-offs made to drain bins at thread exit, and
- * the number of non-empty bins drained.  Pre-fix every object was its own
- * hand-off (one cc_lock each), so handoffs == objects; post-fix a bin is one
- * hand-off, so handoffs == bins.  Exact in both builds.
- */
-volatile long umem_ptc_probe_exit_handoffs = 0;
-volatile long umem_ptc_probe_exit_bins = 0;
-#define	UMEM_PTC_PROBE_COUNT(var, n)					\
-	(void) __atomic_add_fetch(&(var), (long)(n), __ATOMIC_RELAXED)
-#define	UMEM_PTC_PROBE_STRANDED(n)					\
-	do {								\
-		if ((n) > 0)						\
-			(void) __atomic_add_fetch(			\
-			    &umem_ptc_probe_exit_stranded, (long)(n),	\
-			    __ATOMIC_RELAXED);				\
-	} while (0)
-#else
-#define	UMEM_PTC_PROBE_STRANDED(n)	((void)0)
-#define	UMEM_PTC_PROBE_COUNT(var, n)	((void)0)
-#endif
 
 static void
 umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
