@@ -69,9 +69,9 @@ extern uint32_t umem_stack_depth;
 
 /* ------------------------------------------------------------------------
  * Event hooks.  These are intentionally tiny; the whole point is to be
- * a stable symbol a debugger can set a breakpoint on.  Keep the
- * function bodies trivial so the linker doesn't constant-fold them and
- * so `call` from a debugger always resolves.
+ * a stable symbol a debugger can set a breakpoint on.  noinline,used
+ * plus the asm memory barrier in each body keep the compiler from
+ * inlining or eliding them, so `call` from a debugger always resolves.
  * ------------------------------------------------------------------------ */
 
 static atomic_int umem_inspect_events_enabled;
@@ -234,12 +234,14 @@ for_each_cache(cache_visitor_t v, void *arg)
 }
 
 /*
- * Take every lock of one cache, in THE ONE TRUE LOCK ORDER documented in
- * umem_fork.c: per-CPU cc_lock ascending, then the depot maglist locks, then
- * cache_lock.  Needed by any collection that reads more than one layer --
- * the cached-buffer set reads per-CPU magazines (cc_lock), depot lists
- * (ml_lock) and cache_magtype (cache_lock) and previously held only
- * cache_lock for all three.
+ * Take every lock this read needs, in THE ONE TRUE LOCK ORDER documented in
+ * umem_fork.c: per-CPU cc_lock ascending, then the FULL depot maglist locks
+ * (cache_full, then cache_depot_full[i] ascending), then cache_lock.  The
+ * empty lists (cache_empty, cache_depot_empty[i]) are NOT taken: nothing
+ * here reads them.  Needed by any collection that reads more than one
+ * layer -- the cached-buffer set reads per-CPU magazines (cc_lock), full
+ * depot lists (ml_lock) and cache_magtype (cache_lock) and previously held
+ * only cache_lock for all three.
  *
  * Caller holds umem_cache_lock, which is above all of these.
  */
