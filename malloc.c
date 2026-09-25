@@ -127,48 +127,90 @@ static pthread_mutex_t bootstrap_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
 static _Atomic long bootstrap_live;
 
 /*
- * Convex hull of every registered bootstrap mapping, [lo, hi).  The live
- * count alone is not a usable fast-path gate: 28 bootstrap allocations
- * survive umem_init() in an ordinary process and are never freed, so the
- * count is nonzero for the life of nearly every process, and a locked
- * 256-slot scan on every free() reproduced P8.1's collapse exactly
- * (preload/API 0.005 at t=8 with the count-only gate).
+ * Lock-free membership set over the PAGES of registered bootstrap mappings.
  *
- * The hull is exact enough: a pointer outside [lo, hi) cannot be
- * registered, and that is two relaxed loads and two compares.  A pointer
- * inside takes the locked scan, which is the exact answer; bootstrap
- * mappings are their own mmaps in a region the heap does not share, so the
- * hull is tight and ordinary heap pointers miss it.  lo only falls and hi
- * only rises (a freed mapping does not shrink them), so a stale read is a
- * superset -- the same argument as umem_may_own()'s hull.
+ * A first version of the fast-path gate was a convex hull [lo, hi) over the
+ * mappings (3767b4c).  It measured 0 of 200,000 heap pointers inside on x86
+ * -- and then 0.006 preload/API on aarch64: the 30 bootstrap pages a process
+ * carries are not contiguous (libdw's live at one end of a 29 MB spread,
+ * dlsym's at the other), and thread stacks and new heap spans that the
+ * kernel later places in that gap all fell inside the hull, so every free()
+ * took the registry lock.  Intermittent, because it depends on where mmap
+ * puts things.  A hull is the wrong shape for a scattered set.
+ *
+ * This is an open-addressed table of page numbers (ptr >> PAGE_SHIFT), sized
+ * to MAX_BOOTSTRAP_PTRS x 4 so it never fills past 25 %.  Entries are
+ * written once under bootstrap_ptr_lock and never moved or cleared; a slot
+ * holds 0 (empty) or page+1.  Readers take no lock: a probe reads slots
+ * until it hits the page or an empty slot, and because entries only ever go
+ * from 0 to a value (with a release store), a reader that sees a value sees
+ * the whole value, and a reader that sees 0 at the terminating slot for a
+ * page that IS registered can happen only if the registration is in flight
+ * -- and a pointer being freed while its own registration is in flight is a
+ * pointer the caller does not yet hold.  Same argument as libc_ptr_live.
+ *
+ * The key is buf >> 12 regardless of the real page size: registration and
+ * lookup shift the same pointer the same way, so membership is consistent,
+ * and a bootstrap pointer is always hdr + 16 with hdr mmap-aligned, so on any
+ * page size >= 4 KiB two mappings never share a key.
+ *
+ * A freed mapping leaves its page in the set (a stale hit costs the locked
+ * exact scan, which then says no); the set is a filter with no false
+ * negatives, and its false-positive rate is bounded by the number of
+ * bootstrap pages ever created, ~30, out of every page the process maps.
+ * Every bootstrap pointer is page + 16 (the mapping's own header), so the
+ * page key is exact for them.
  */
-static _Atomic uintptr_t bootstrap_lo = UINTPTR_MAX;
-static _Atomic uintptr_t bootstrap_hi = 0;
+#define	BOOTSTRAP_SET_SLOTS	(MAX_BOOTSTRAP_PTRS * 4)
+static _Atomic uintptr_t bootstrap_pages[BOOTSTRAP_SET_SLOTS];
 
-static void
-bootstrap_hull_add(const void *buf, size_t total_size)
+static inline size_t
+bootstrap_page_hash(uintptr_t page)
 {
-	uintptr_t b = (uintptr_t)buf - sizeof (bootstrap_header_t);
-	uintptr_t e = b + total_size;
-	uintptr_t cur;
+	/* Fibonacci hashing on the page number; the low bits of mmap
+	 * addresses are not well distributed on their own. */
+	return ((size_t)((page * 0x9E3779B97F4A7C15ULL) >> 32) &
+	    (BOOTSTRAP_SET_SLOTS - 1));
+}
 
-	cur = atomic_load_explicit(&bootstrap_lo, memory_order_relaxed);
-	while (b < cur && !atomic_compare_exchange_weak_explicit(&bootstrap_lo,
-	    &cur, b, memory_order_release, memory_order_relaxed))
-		;
-	cur = atomic_load_explicit(&bootstrap_hi, memory_order_relaxed);
-	while (e > cur && !atomic_compare_exchange_weak_explicit(&bootstrap_hi,
-	    &cur, e, memory_order_release, memory_order_relaxed))
-		;
+/* Under bootstrap_ptr_lock.  Returns 0 if the set is (impossibly) full. */
+static int
+bootstrap_set_add(const void *buf)
+{
+	uintptr_t page = (uintptr_t)buf >> 12;
+	size_t i = bootstrap_page_hash(page), n;
+
+	for (n = 0; n < BOOTSTRAP_SET_SLOTS; n++) {
+		uintptr_t cur = atomic_load_explicit(&bootstrap_pages[i],
+		    memory_order_relaxed);
+		if (cur == page + 1)
+			return (1);
+		if (cur == 0) {
+			atomic_store_explicit(&bootstrap_pages[i], page + 1,
+			    memory_order_release);
+			return (1);
+		}
+		i = (i + 1) & (BOOTSTRAP_SET_SLOTS - 1);
+	}
+	return (0);
 }
 
 static inline int
-bootstrap_hull_may_contain(const void *buf)
+bootstrap_set_may_contain(const void *buf)
 {
-	uintptr_t a = (uintptr_t)buf;
+	uintptr_t page = (uintptr_t)buf >> 12;
+	size_t i = bootstrap_page_hash(page), n;
 
-	return (a >= atomic_load_explicit(&bootstrap_lo, memory_order_acquire) &&
-	    a < atomic_load_explicit(&bootstrap_hi, memory_order_acquire));
+	for (n = 0; n < BOOTSTRAP_SET_SLOTS; n++) {
+		uintptr_t cur = atomic_load_explicit(&bootstrap_pages[i],
+		    memory_order_acquire);
+		if (cur == 0)
+			return (0);
+		if (cur == page + 1)
+			return (1);
+		i = (i + 1) & (BOOTSTRAP_SET_SLOTS - 1);
+	}
+	return (1);	/* full table (cannot happen at 25 %): fall to the lock */
 }
 
 /* Returns 1 and records the mapping, or 0 if the table is full. */
@@ -186,7 +228,7 @@ bootstrap_register(void *buf, size_t total_size)
 			    memory_order_release);
 			bootstrap_ptrs[i].ptr = buf;
 			bootstrap_ptrs[i].size = total_size;
-			bootstrap_hull_add(buf, total_size);
+			(void) bootstrap_set_add(buf);
 			ok = 1;
 			break;
 		}
@@ -315,7 +357,7 @@ bootstrap_pointer_p(const void *buf)
 {
 	if (atomic_load_explicit(&bootstrap_live, memory_order_acquire) == 0)
 		return (0);
-	if (!bootstrap_hull_may_contain(buf))
+	if (!bootstrap_set_may_contain(buf))
 		return (0);
 	return (bootstrap_registered(buf));
 }
