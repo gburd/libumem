@@ -46,6 +46,26 @@
 .endm
 
 /*
+ * P5.13b: mag_round[] slots are stored XOR-mangled
+ *   stored = ptr ^ umem_link_cookie ^ (&slot >> 12)
+ * exactly as UMEM_SLOT_MANGLE in umem_impl.h does for the cc_lock path.
+ * The reload arms cache_rseq[cpu].loaded_mag with a depot magazine whose
+ * rounds are mangled, so this asm fast path -- which shares that magazine
+ * with the C cc_lock path -- MUST demangle on pop and mangle on push, or it
+ * hands the encoded word out as a pointer.  XOR is an involution: one macro
+ * both encodes and decodes.  umem_link_cookie is a hidden-visibility
+ * non-TLS global (rip-relative, no GOT).  slot_reg holds the ABSOLUTE
+ * address of the slot; it is clobbered (shifted) by this macro.  cookie_reg
+ * and slot_reg must differ from val_reg.
+ */
+.macro SLOT_XOR val_reg cookie_reg slot_reg
+	movq	umem_link_cookie(%rip), \cookie_reg
+	shrq	$12, \slot_reg
+	xorq	\cookie_reg, \val_reg
+	xorq	\slot_reg, \val_reg
+.endm
+
+/*
  * void *umem_rseq_alloc_fastpath(umem_rseq_cache_t *cache, int cpu_id)
  */
 .globl umem_rseq_alloc_fastpath
@@ -137,7 +157,10 @@ umem_rseq_alloc_fastpath:
 	 * and returns the already-computed %rax.
 	 */
 	decl	%edx
-	movq	8(%rcx,%rdx,8), %rax
+	leaq	8(%rcx,%rdx,8), %rsi	/* &mag_round[rounds-1] (absolute) */
+	movq	(%rsi), %rax		/* mangled slot value */
+	/* P5.13b: demangle.  %rax=stored, %rsi=&slot, %r8=cookie scratch. */
+	SLOT_XOR %rax, %r8, %rsi
 	incq	CACHE_ALLOC_COUNT_OFFSET(%rbx)
 	movl	%edx, CACHE_ROUNDS_OFFSET(%rbx)	/* COMMIT: last store */
 
@@ -245,7 +268,12 @@ umem_rseq_free_fastpath:
 	 * rounds), so the write is silently overwritten by the next
 	 * successful free into the same slot.
 	 */
-	movq	%r13, 8(%rcx,%rdx,8)
+	leaq	8(%rcx,%rdx,8), %rsi	/* &mag_round[rounds] (absolute) */
+	movq	%r13, %rax		/* buf */
+	/* P5.13b: mangle before store.  %rax=buf, %rsi=&slot, %r8=cookie. */
+	SLOT_XOR %rax, %r8, %rsi
+	leaq	8(%rcx,%rdx,8), %rsi	/* recompute &slot (SLOT_XOR shifted %rsi) */
+	movq	%rax, (%rsi)
 	incq	CACHE_FREE_COUNT_OFFSET(%rbx)
 	incl	%edx
 	movl	%edx, CACHE_ROUNDS_OFFSET(%rbx)	/* COMMIT: last store */
@@ -289,6 +317,214 @@ umem_rseq_free_fastpath:
 	ret
 	.cfi_endproc
 .size umem_rseq_free_fastpath, .-umem_rseq_free_fastpath
+
+/*
+ * int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache, int cpu_id,
+ *     umem_magazine_t *new_mag, int new_rounds, umem_magazine_t **old_mag_out)
+ *
+ * Phase 2 of the armed rseq reload (design:
+ * docs/results/2026-09-09-rseq-reload-asm-design.md).  Phase 1 (a depot
+ * pull, in C) is done by the caller and does NOT touch cache_rseq[cpu];
+ * this function is the ONLY thing that publishes the swap, and it does so
+ * inside its OWN rseq critical section so it is atomic w.r.t. this thread's
+ * occupancy of `cpu` -- the same kernel guarantee the fast path has.  This
+ * closes the migration-safety gap the v2 analysis proved a C-only or
+ * lock-based reload cannot (at most one writer per slot at any instant).
+ *
+ * Returns 1 if committed (caller frees *old_mag_out to the depot), 0 if
+ * aborted (thread migrated between the caller reading cpu_id and this
+ * commit; caller retries against the new cpu -- *old_mag_out untouched).
+ *
+ * SysV AMD64: %rdi=cache %esi=cpu_id %rdx=new_mag %ecx=new_rounds
+ *             %r8=old_mag_out.
+ */
+.globl umem_rseq_reload_alloc_commit
+.type umem_rseq_reload_alloc_commit, @function
+.align 16
+umem_rseq_reload_alloc_commit:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_adjust_cfa_offset 8
+	.cfi_offset %rbp, -16
+	movq	%rsp, %rbp
+	.cfi_def_cfa_register %rbp
+	pushq	%rbx
+	.cfi_offset %rbx, -24
+	pushq	%r12
+	.cfi_offset %r12, -32
+	pushq	%r13
+	.cfi_offset %r13, -40
+	pushq	%r14
+	.cfi_offset %r14, -48
+
+	movq	%rdi, %rbx		/* cache */
+	movq	%rdx, %r12		/* new_mag */
+	movl	%ecx, %r13d		/* new_rounds */
+	movq	%r8, %r14		/* old_mag_out */
+	/* %esi (cpu_id) used directly in the critical section below */
+
+	subq	$64, %rsp
+	andq	$-32, %rsp
+
+	/* Build rseq_cs descriptor on stack (32-byte aligned) */
+	movl	$0, 0(%rsp)
+	movl	$0, 4(%rsp)
+	leaq	.Lrseq_reload_alloc_start(%rip), %rax
+	movq	%rax, 8(%rsp)
+	leaq	.Lrseq_reload_alloc_post_commit(%rip), %rax
+	leaq	.Lrseq_reload_alloc_start(%rip), %rcx
+	subq	%rcx, %rax
+	movq	%rax, 16(%rsp)
+	leaq	.Lrseq_reload_alloc_abort(%rip), %rax
+	movq	%rax, 24(%rsp)
+
+	LOAD_FS_OFFSET %rax
+	movq	%rsp, %fs:RSEQ_CS_OFFSET(%rax)
+
+.Lrseq_reload_alloc_start:
+	LOAD_FS_OFFSET %rax
+	movl	%fs:RSEQ_CPU_ID_OFFSET(%rax), %ecx
+	cmpl	%esi, %ecx
+	jne	.Lrseq_reload_alloc_abort
+
+	/* Read OLD loaded_mag BEFORE any write (design section 6). */
+	movq	CACHE_LOADED_MAG_OFFSET(%rbx), %rax
+	movq	%rax, (%r14)		/* *old_mag_out = OLD loaded_mag */
+
+	/*
+	 * Resolution A (design section 4): rounds=0 (transient safe-empty),
+	 * then loaded_mag=new_mag, then rounds=new_rounds as the single
+	 * unconditional last store.  An abort after any prefix leaves a
+	 * consistent view: rounds=0 => fast path treats the slot as empty
+	 * (falls back to cc_lock, always correct); the real rounds is
+	 * exposed only once loaded_mag already points at new_mag.
+	 */
+	movl	$0, CACHE_ROUNDS_OFFSET(%rbx)
+	movq	%r12, CACHE_LOADED_MAG_OFFSET(%rbx)
+	movl	%r13d, CACHE_ROUNDS_OFFSET(%rbx)	/* COMMIT: last store */
+
+	movl	$1, %eax		/* committed */
+
+.Lrseq_reload_alloc_post_commit:
+	LOAD_FS_OFFSET %rcx
+	movq	$0, %fs:RSEQ_CS_OFFSET(%rcx)
+	leaq	-32(%rbp), %rsp
+	popq	%r14
+	popq	%r13
+	popq	%r12
+	popq	%rbx
+	popq	%rbp
+	.cfi_def_cfa %rsp, 8
+	ret
+
+	.align	32
+	.long	RSEQ_SIG	/* signature BEFORE label */
+.Lrseq_reload_alloc_abort:
+	incq	CACHE_RESTART_COUNT_OFFSET(%rbx)
+	LOAD_FS_OFFSET %rax
+	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)
+	xorl	%eax, %eax		/* aborted; caller retries */
+	leaq	-32(%rbp), %rsp
+	popq	%r14
+	popq	%r13
+	popq	%r12
+	popq	%rbx
+	popq	%rbp
+	ret
+	.cfi_endproc
+.size umem_rseq_reload_alloc_commit, .-umem_rseq_reload_alloc_commit
+
+/*
+ * int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache, int cpu_id,
+ *     umem_magazine_t *new_mag, umem_magazine_t **old_mag_out)
+ *
+ * Free-side phase 2: swap in a fresh EMPTY magazine (new_rounds is always
+ * 0), simpler than the alloc side (no section 4 transient-zero subtlety --
+ * the final rounds value IS zero regardless of the old value).  Write
+ * loaded_mag first, rounds=0 last (unconditional commit store).
+ *
+ * SysV AMD64: %rdi=cache %esi=cpu_id %rdx=new_mag %rcx=old_mag_out.
+ */
+.globl umem_rseq_reload_free_commit
+.type umem_rseq_reload_free_commit, @function
+.align 16
+umem_rseq_reload_free_commit:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_adjust_cfa_offset 8
+	.cfi_offset %rbp, -16
+	movq	%rsp, %rbp
+	.cfi_def_cfa_register %rbp
+	pushq	%rbx
+	.cfi_offset %rbx, -24
+	pushq	%r12
+	.cfi_offset %r12, -32
+	pushq	%r13
+	.cfi_offset %r13, -40
+
+	movq	%rdi, %rbx		/* cache */
+	movq	%rdx, %r12		/* new_mag (empty) */
+	movq	%rcx, %r13		/* old_mag_out */
+	/* %esi (cpu_id) used directly below */
+
+	subq	$64, %rsp
+	andq	$-32, %rsp
+
+	movl	$0, 0(%rsp)
+	movl	$0, 4(%rsp)
+	leaq	.Lrseq_reload_free_start(%rip), %rax
+	movq	%rax, 8(%rsp)
+	leaq	.Lrseq_reload_free_post_commit(%rip), %rax
+	leaq	.Lrseq_reload_free_start(%rip), %rcx
+	subq	%rcx, %rax
+	movq	%rax, 16(%rsp)
+	leaq	.Lrseq_reload_free_abort(%rip), %rax
+	movq	%rax, 24(%rsp)
+
+	LOAD_FS_OFFSET %rax
+	movq	%rsp, %fs:RSEQ_CS_OFFSET(%rax)
+
+.Lrseq_reload_free_start:
+	LOAD_FS_OFFSET %rax
+	movl	%fs:RSEQ_CPU_ID_OFFSET(%rax), %ecx
+	cmpl	%esi, %ecx
+	jne	.Lrseq_reload_free_abort
+
+	/* Read OLD loaded_mag before overwrite. */
+	movq	CACHE_LOADED_MAG_OFFSET(%rbx), %rax
+	movq	%rax, (%r13)		/* *old_mag_out = OLD loaded_mag */
+
+	movq	%r12, CACHE_LOADED_MAG_OFFSET(%rbx)	/* new empty mag */
+	movl	$0, CACHE_ROUNDS_OFFSET(%rbx)		/* COMMIT: last store */
+
+	movl	$1, %eax
+
+.Lrseq_reload_free_post_commit:
+	LOAD_FS_OFFSET %rcx
+	movq	$0, %fs:RSEQ_CS_OFFSET(%rcx)
+	leaq	-24(%rbp), %rsp
+	popq	%r13
+	popq	%r12
+	popq	%rbx
+	popq	%rbp
+	.cfi_def_cfa %rsp, 8
+	ret
+
+	.align	32
+	.long	RSEQ_SIG
+.Lrseq_reload_free_abort:
+	incq	CACHE_RESTART_COUNT_OFFSET(%rbx)
+	LOAD_FS_OFFSET %rax
+	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)
+	xorl	%eax, %eax
+	leaq	-24(%rbp), %rsp
+	popq	%r13
+	popq	%r12
+	popq	%rbx
+	popq	%rbp
+	ret
+	.cfi_endproc
+.size umem_rseq_reload_free_commit, .-umem_rseq_reload_free_commit
 
 .section .note.GNU-stack, "", @progbits
 
