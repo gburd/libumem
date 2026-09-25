@@ -3031,78 +3031,151 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 }
 
 #ifdef UMEM_RSEQ_AVAILABLE
+#if defined(__x86_64__) || defined(__aarch64__)
 /*
- * UNUSED: see docs/results/2026-09-09-rseq-reload-analysis-v2.md (the
- * original 2026-08-06-rseq-reload-analysis.md it supersedes was deleted in
- * ebcb467; `git show ebcb467^:docs/results/...`) for the full,
- * hardware-verified analysis of why arming this needs new asm, not a C
- * wrapper. A plain-C reload here races the lock-free rseq asm fastpath
- * across a CPU migration; a lock does not help because the fastpath never
- * takes one, and rechecking cpu_id in C does not close the window either
- * (measured ~42-47% double-issue rate under contention -- see
- * test/stress/repro_naive_reload_race.c). The precise assembly design for
- * arming this correctly is specified in
- * docs/results/2026-09-09-rseq-reload-asm-design.md. Kept for reference /
- * as a starting point; not called anywhere.
+ * ARMED rseq reload (P8.5b).  See docs/results/2026-09-09-rseq-reload-
+ * asm-design.md for the design and 2026-09-09-rseq-reload-analysis-v2.md
+ * for why this needs asm, not a C wrapper: a plain-C reload races the
+ * lock-free rseq fastpath across a CPU migration (measured ~42-47%
+ * double-issue in test/stress/repro_naive_reload_race.c), a lock does not
+ * help (the fastpath never takes one), and a C cpu_id recheck does not
+ * close the window (the check and the write are two preemptible
+ * instructions with no kernel cooperation).
+ *
+ * These are the TWO-PHASE reload the design specifies:
+ *   PHASE 1 (this C code, may block/migrate): pull a magazine from the
+ *     depot.  Touches nothing in cache_rseq[cpu], so it is safe on any CPU.
+ *   PHASE 2 (umem_rseq_reload_*_commit, asm): publish the swap into
+ *     cache_rseq[cpu] inside its OWN rseq critical section, atomic w.r.t.
+ *     this thread's occupancy of `cpu` -- the same kernel guarantee the
+ *     fastpath has.  Returns 1 committed / 0 aborted (migrated between the
+ *     caller reading cpu_id and the commit).  On abort the commit writes
+ *     NOTHING, so fmp is still un-published and can be re-committed against
+ *     the new cpu with the same fmp (design section 8).  Bounded retry, then
+ *     give fmp back and let the caller fall through to the cc_lock path
+ *     (always correct) so forward progress is guaranteed under a migration
+ *     storm.
+ *
+ * On success the commit has published the new magazine with `rounds` set;
+ * the caller re-runs the asm fastpath to actually pop/push the buffer, so
+ * that the pop/push itself is also rseq-atomic (never a plain read here).
  */
-static void *
+extern int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache,
+    int cpu_id, umem_magazine_t *new_mag, int new_rounds,
+    umem_magazine_t **old_mag_out, int *old_rounds_out);
+extern int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache,
+    int cpu_id, umem_magazine_t *new_mag, umem_magazine_t **old_mag_out,
+    int *old_rounds_out);
+
+#define	UMEM_RSEQ_RELOAD_RETRIES	3
+
+/*
+ * Arm the alloc-side reload.  Returns 1 if a full magazine was published
+ * into cache_rseq[cpu] (caller should re-run the fastpath), 0 if the reload
+ * could not be armed (depot empty, or migration storm -- caller falls
+ * through to cc_lock).  Never publishes a torn view (design Resolution A).
+ */
+static int
 umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 {
 	umem_rseq_cache_t *rc;
 	umem_magazine_t *fmp;
 	umem_magazine_t *old_mag;
-	void *buf;
+	int old_rounds;
+	int cpu = cpu_id;
+	int tries;
 
-	rc = &cp->cache_rseq[cpu_id];
-
+	/* PHASE 1: pull a full magazine (does not touch cache_rseq[cpu]). */
 	fmp = umem_depot_alloc(cp, &cp->cache_full);
 	if (fmp == NULL)
-		return (NULL);
+		return (0);
 
-	old_mag = (umem_magazine_t *)rc->loaded_mag;
-	if (old_mag != NULL)
-		umem_depot_free(cp, &cp->cache_empty, old_mag);
+	/* PHASE 2: commit the swap, retrying against the current cpu. */
+	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
+		if (cpu < 0 || cpu >= umem_rseq_get_ncpus())
+			break;
+		rc = &cp->cache_rseq[cpu];
+		old_mag = NULL;
+		old_rounds = 0;
+		if (umem_rseq_reload_alloc_commit(rc, cpu, fmp,
+		    rc->magsize, &old_mag, &old_rounds)) {
+			/*
+			 * Committed: fmp is now cache_rseq[cpu].loaded_mag
+			 * with `magsize` rounds.  The OLD magazine was returned
+			 * atomically at the swap WITH its rounds count -- a
+			 * migration can strand a NON-empty old magazine here, so
+			 * we must NOT assume it is empty.  umem_ptc_mag_return
+			 * classifies it against the depot's exact-count contracts
+			 * (drains a partial onto the empty list, handles a
+			 * magtype-mismatched shell) -- reuse it, do not pick a
+			 * list here.
+			 */
+			if (old_mag != NULL)
+				umem_ptc_mag_return(cp,
+				    old_rounds == rc->magsize ?
+				    &cp->cache_full : &cp->cache_empty,
+				    old_mag, old_rounds);
+			return (1);
+		}
+		/* Aborted (migrated): retry against the new cpu, same fmp. */
+		cpu = umem_rseq_get_cpu();
+	}
 
-	rc->loaded_mag = fmp;
-	rc->rounds = rc->magsize;
-	rc->rounds--;
-	/* P5.13b: rounds are mangled; demangle. */
-	buf = UMEM_SLOT_DEMANGLE(&fmp->mag_round[rc->rounds],
-	    fmp->mag_round[rc->rounds]);
-	rc->alloc_count++;
-
-	return (buf);
+	/* Could not commit: return the unpublished fmp to the depot. */
+	umem_depot_free(cp, &cp->cache_full, fmp);
+	return (0);
 }
 
 /*
- * UNUSED: see docs/results/2026-09-09-rseq-reload-analysis-v2.md for the
- * full analysis. Same migration-race hazard as
- * umem_rseq_alloc_slowpath() above; not called anywhere.
+ * Arm the free-side reload.  Returns 1 if a fresh empty magazine was
+ * published into cache_rseq[cpu] (caller should re-run the fastpath to push
+ * buf), 0 if it could not be armed (caller falls through to cc_lock).
  */
 static int
-umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
+umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id)
 {
 	umem_rseq_cache_t *rc;
 	umem_magazine_t *emp;
 	umem_magazine_t *old_mag;
+	int old_rounds;
+	int cpu = cpu_id;
+	int tries;
 
-	rc = &cp->cache_rseq[cpu_id];
-
+	/* PHASE 1: pull a fresh empty magazine. */
 	emp = umem_depot_alloc(cp, &cp->cache_empty);
 	if (emp == NULL)
-		return (-1);
+		return (0);
 
-	old_mag = (umem_magazine_t *)rc->loaded_mag;
-	if (old_mag != NULL)
-		umem_depot_free(cp, &cp->cache_full, old_mag);
+	/* PHASE 2: commit the swap (new_rounds is always 0 -- design 5.3). */
+	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
+		if (cpu < 0 || cpu >= umem_rseq_get_ncpus())
+			break;
+		rc = &cp->cache_rseq[cpu];
+		old_mag = NULL;
+		old_rounds = 0;
+		if (umem_rseq_reload_free_commit(rc, cpu, emp, &old_mag,
+		    &old_rounds)) {
+			/*
+			 * Committed: emp is now the empty loaded magazine.  The
+			 * OLD magazine was usually full, but a migration can
+			 * strand a partial one here; classify it with
+			 * umem_ptc_mag_return against the depot's exact-count
+			 * contracts rather than assuming full.
+			 */
+			if (old_mag != NULL)
+				umem_ptc_mag_return(cp,
+				    old_rounds == rc->magsize ?
+				    &cp->cache_full : &cp->cache_empty,
+				    old_mag, old_rounds);
+			return (1);
+		}
+		cpu = umem_rseq_get_cpu();
+	}
 
-	rc->loaded_mag = emp;
-	rc->rounds = 0;
-	emp->mag_round[0] = UMEM_SLOT_MANGLE(&emp->mag_round[0], buf);
-	rc->rounds = 1;
-	rc->free_count++;
+	umem_depot_free(cp, &cp->cache_empty, emp);
 	return (0);
 }
+#endif /* __x86_64__ || __aarch64__ */
 #endif /* UMEM_RSEQ_AVAILABLE */
 
 /*
@@ -3364,14 +3437,15 @@ retry:
 	 * registration gets no asm.  (This comment used to say the asm ran
 	 * "when we own the rseq registration (not glibc)" -- the opposite.)
 	 *
-	 * The asm serves ZERO allocations today: nothing loads a magazine
-	 * into cache_rseq[cpu].loaded_mag.  The only writers are
-	 * umem_rseq_alloc_slowpath()/umem_rseq_free_slowpath(), which are
-	 * UNUSED (see their comments and docs/results/2026-09-09-rseq-*.md),
-	 * and the cache-destroy drain, which NULLs it.  So the fastpath finds
-	 * loaded_mag == NULL, returns NULL, and every call falls through to
-	 * the cc_lock path below.  The machinery is kept for the asm-reload
-	 * design in docs/results/2026-09-09-rseq-reload-asm-design.md.
+	 * The asm reload is ARMED (P8.5b): on a fastpath miss the alloc/free
+	 * slowpath pulls a magazine from the depot (phase 1, C) and publishes
+	 * it into cache_rseq[cpu] via umem_rseq_reload_*_commit (phase 2, an
+	 * rseq critical section -- atomic w.r.t. this thread's CPU occupancy,
+	 * the only safe way, see docs/results/2026-09-09-rseq-reload-asm-
+	 * design.md).  A hit then skips the cc_lock magazine layer and the
+	 * depot scan entirely.  On any reload failure (depot empty, migration
+	 * storm) the code falls through to the cc_lock path, which is always
+	 * correct.
 	 */
 #ifdef UMEM_RSEQ_AVAILABLE
 	if (likely(umem_rseq_enabled) && cp->cache_rseq != NULL) {
@@ -3384,6 +3458,15 @@ retry:
 #if defined(__x86_64__) || defined(__aarch64__)
 				if (umem_rseq_asm_safe) {
 					buf = umem_rseq_alloc_fastpath(rc, cpu);
+					if (buf == NULL &&
+					    umem_rseq_alloc_slowpath(cp, cpu)) {
+						/*
+						 * Reload armed a full magazine into
+						 * cache_rseq[cpu]; re-run the fastpath
+						 * (rseq-atomic pop) to serve it.
+						 */
+						buf = umem_rseq_alloc_fastpath(rc, cpu);
+					}
 					if (buf != NULL) {
 						if (unlikely(ccp->cc_flags & UMF_BUFTAG) &&
 						    umem_cache_alloc_debug(cp, buf,
@@ -3632,6 +3715,16 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 #if defined(__x86_64__) || defined(__aarch64__)
 				if (umem_rseq_asm_safe) {
 					if (umem_rseq_free_fastpath(rc, buf,
+					    cpu) == 0)
+						return;
+					/*
+					 * Loaded magazine full: arm a fresh empty
+					 * magazine and re-run the fastpath (rseq-
+					 * atomic push).  On failure fall through to
+					 * the cc_lock path (always correct).
+					 */
+					if (umem_rseq_free_slowpath(cp, cpu) &&
+					    umem_rseq_free_fastpath(rc, buf,
 					    cpu) == 0)
 						return;
 				}
