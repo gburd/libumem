@@ -105,6 +105,25 @@ umem_do_abort(void)
 #define	SKIP_FRAMES		1	/* skip the panic frame */
 #define	ERR_STACK_FRAMES	128
 
+/*
+ * Symbolised stack trace into the error ring / stderr.
+ *
+ * NOT on the recoverable path any more.  umem_err_recoverable() runs on
+ * every refused free(), which under LD_PRELOAD (umem_abort = 0) is a
+ * steady-state event, and symbolising goes through libdw
+ * (umem_stacktrace_format -> dwfl_module_addrname), whose own allocations
+ * recurse into bootstrap_malloc() -- one mmap() each -- and which is not
+ * async-signal-safe.  On aarch64 the capture is ~34 frames deep (x86 -O2
+ * gives ~2; P5.9), so one refused free() from a signal handler cost
+ * milliseconds and test_errlog_signal livelocked: the 50 us timer's handler
+ * never finished before the next tick.  A trace nobody reads (umem_output
+ * is 0 by default, so the ring is the only consumer) is not worth a libdw
+ * walk per refusal.
+ *
+ * Kept for umem_panic() -- the process is about to abort and the trace is
+ * the point -- and for the recoverable path only when stderr output is on,
+ * i.e. when someone asked to see it.
+ */
 static void
 print_stacktrace(void)
 {
@@ -150,7 +169,9 @@ umem_err_recoverable(const char *format, ...)
 	if (format[strlen(format)-1] != '\n')
 		umem_error_enter("\n");
 
-	print_stacktrace();
+	/* See print_stacktrace: only when someone will see it, or we abort. */
+	if (umem_output || umem_abort > 0)
+		print_stacktrace();
 
 	if (umem_abort > 0)
 		umem_do_abort();
