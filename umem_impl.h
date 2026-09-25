@@ -385,7 +385,15 @@ typedef struct umem_buftag {
  * test/unit/test_freelist_mangle (which must fail against it) and for the
  * throughput A/B, and it is not a supported configuration.
  */
-extern uintptr_t umem_link_cookie;
+/*
+ * Hidden visibility so the mangle/demangle sites emit a single rip-relative
+ * load of the cookie value, not a GOT indirection (load the address, then
+ * dereference).  The cookie is read on the PTC fast path (P5.13) and the
+ * freelist path (P5.4); it is never part of the public ABI, only ever read
+ * inside libumem.  The double-load cost 2 instructions per mangle before this
+ * (P5.13 A/B, 2026-09-25).
+ */
+extern uintptr_t umem_link_cookie __attribute__((visibility("hidden")));
 
 #ifdef	UMEM_NO_LINK_MANGLE
 #define	UMEM_LINK_MANGLE(slotp, val)	((umem_bufctl_t *)(val))

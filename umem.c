@@ -1504,7 +1504,7 @@ umem_log_event(umem_log_header_t *lp, umem_cache_t *cp,
  * reaches a link only through a slab it found under that same lock, so the
  * lock already orders the cookie store ahead of any demangle.
  */
-uintptr_t umem_link_cookie = 0;
+uintptr_t umem_link_cookie __attribute__((visibility("hidden"))) = 0;
 
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
