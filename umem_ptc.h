@@ -32,7 +32,7 @@ extern "C" {
 #endif
 
 /*
- * Per-Thread Cache (PTC) for small allocations (similar to jemalloc ptc).
+ * Per-Thread Cache (PTC) for small allocations (jemalloc calls its tcache).
  * Provides a zero-synchronization fast path for small allocations by
  * maintaining thread-local bins of recently freed objects.
  *
@@ -85,8 +85,10 @@ extern "C" {
  * The bins through 8192 exist for P8.2b: above the old 2048 ceiling every
  * operation took cc_lock and, every 31 ops per CPU, a blocking depot trip
  * into a stripe other CPUs had emptied; at 128+ CPUs the depot convoyed
- * (x86 metal 105 -> 91 Mops from t=64 to 128, arm 277 -> 77, both nulls
- * falling with them).  Footprint: 8 x 16 slots is 1 KB of pool, and the
+ * (at d6f04ab: c7i.metal 105 -> 91 Mops from t=64 to 128, c8g.metal
+ * 277 -> 77, both nulls falling with them; fixed in ad72787, c8g.metal
+ * t=128 128 -> 352 Mops; docs/results/2026-09-24-allocator-comparison.md).
+ * Footprint: 8 x 16 slots is 1 KB of pool, and the
  * struct stays under test_ptc_footprint's 24 KB (24,000 B on LP64).
  */
 
@@ -106,9 +108,9 @@ struct umem_cache;
 
 /*
  * Per-thread magazine: thread-local loaded/previous magazine pair.
- * Sits between PTC bins and the depot, eliminating cc_lock contention.
- * When the PTC bin is empty/full, the thread magazine provides/accepts
- * objects without taking any lock. Only depot refill/flush takes a lock.
+ * Sits between PTC bins and the depot.  When the PTC bin is empty/full,
+ * the thread magazine provides/accepts objects with no lock; only depot
+ * refill/flush takes one (trylock, umem_depot_alloc_trylock).
  */
 typedef struct umem_ptc_mag {
 	struct umem_magazine *loaded;   /* currently loaded magazine */
@@ -163,7 +165,6 @@ typedef struct umem_ptc_mag {
 typedef struct umem_ptc_bin {
 	void **slots;           /* -> umem_ptc_t.pool, ptc_bin_capacity() long */
 	uint16_t count;         /* current number of cached objects */
-	uint16_t low_water;     /* for auto-tuning (future) */
 	/*
 	 * One record per cache line.  Packing 28 of these 16-byte records into
 	 * 7 lines measured 2 % slower than giving each its own (bench `multi`
@@ -179,10 +180,6 @@ typedef struct umem_ptc_bin {
 typedef struct umem_ptc {
 	umem_ptc_bin_t bins[PTC_NBINS];
 	umem_ptc_mag_t mags[PTC_NBINS]; /* per-thread magazines */
-	uint64_t alloc_count;   /* statistics */
-	uint64_t free_count;
-	uint64_t hits;
-	uint64_t misses;
 	/*
 	 * FORK CONSISTENCY (P1.3d).  A PTC is thread-private and lock-free,
 	 * so fork() can snapshot it mid-update; the child then holds a copy
@@ -292,15 +289,13 @@ int umem_ptc_size_to_bin(size_t size);
 umem_ptc_t *umem_ptc_get(void);
 
 /*
- * Allocate from thread cache
- * Returns NULL if not found in cache (caller should use slow path)
+ * Out-of-line bin alloc/free.  NOT on the hot path: umem.c inlines its
+ * own copy of this logic in _umem_alloc/_umem_free and never calls these.
+ * No in-tree caller (grep umem/ test/ tools/); exported for the ABI.
+ * Returns NULL / -1 when the bin cannot serve, and the caller should fall
+ * back to the ordinary path.
  */
 void *umem_ptc_alloc(size_t size);
-
-/*
- * Free to thread cache
- * Returns 0 if cached, -1 if cache full (caller should use slow path)
- */
 int umem_ptc_free(void *ptr, size_t size);
 
 /*
