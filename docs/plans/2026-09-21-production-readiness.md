@@ -2091,7 +2091,7 @@ CHANGELOG entry. Recorded here because it is a hardening-*evidence* defect:
 an exact oracle that fires on a non-defect is worse than a statistical one,
 because it is believed.
 
-### P7.4 `umem_may_own()` is a convex hull -- characterised, left open
+### P7.4 `umem_may_own()` is a convex hull -- FIXED (exact span table)
 `malloc.c:475-500` (`hull_refresh`, `umem_may_own`); `malloc.c:578,698`
 (`process_free` call sites)
 
@@ -2164,6 +2164,44 @@ want to spend the cycles. Regression: the P7.4 shape from Phase 7 -- a forged
 must refuse it; today it is accepted and lands in a PTC bin. Recorded as the
 fix; not started, because it is a hardening change that deserves its own A/B
 with a stable base, and this release's base moves until P5.13 lands.
+
+**STATUS: FIXED (`b978a0f`, `f253f6d`, `a0fd6ba`), with one correction to the
+decision above.** The span table is published exactly as decided
+(release-store append in `vmem_span_create`, lock-free binary-search read in
+`vmem_span_owns`; span REMOVAL is handled too -- `vmem_span_table_remove`), and
+`umem_may_own` short-circuits on the `[lo,hi)` hull first so a normal heap free
+pays nothing new.
+
+*Correction: my ~80-span estimate was wrong.* On the default mmap backend
+`vmem_heap` coalesces slab-sized grows but makes ONE span per oversize
+allocation, so an oversize-heavy heap has thousands of spans, not ~80. The
+table is a fixed 16 Ki entries with a `ponytail:` ceiling; on saturation
+`umem_may_own` falls back to the hull -- a conservative false-yes, never
+accept-all (an early cut had the vacuous accept-all bug and the agent caught it
+before committing). Two further findings from building it, recorded honestly:
+the between-spans gaps that actually exist on this backend are the heap's own
+PROT_NONE reservation slack (mapped, not caller-writable), and a caller `mmap`
+the heap grows around is absorbed into a vmem span -- so for those two shapes
+the hull was already not exploitable. The table still closes the general case
+(a caller region genuinely inside the hull, owned by no span), which is what
+the regression now demonstrates.
+
+**Regression** `test/security/test_forged_span_gap` (deterministic hole
+construction): FAILs at the parent (`e4e3d45`: forgery accepted, usable_size
+nonzero, address handed back by a later malloc), PASSes after -- forgery
+refused, usable_size 0, never handed back, real allocation still recognised.
+Verified pre-fix-FAIL / post-fix-PASS on both arches; gate `make check` 52/49/3/0
+both arches, all security tests PASS.
+
+**Hot-path A/B** (`e4e3d45` pre -> `f1d7a54` post, `bench_pairs`, 9 pairs, null
+first, both arches): the FREE path is **within the null at every point** -- arm
+all within +/-1 %, x86 within the null except two points whose null also swung
+(the per-thread last-span cache, `a0fd6ba`, keeps a heap free off the search).
+The foreign-free binary-search cost (the only path that pays the ~log2(N)
+loads) was NOT measured: the agent added the microbench (`f1d7a54`) but died
+before running it. Foreign frees are the exceptional path (a preload interposer
+seeing another allocator's pointer); the search is bounded and lock-free.
+Recorded as measured-later, not a release blocker.
 
 ### P7.5 Leading-component symlinks -- by design, stated
 `umem_open_write()` (`misc.c`); callers in `umem_profile.c`, `umem_inspect.c`

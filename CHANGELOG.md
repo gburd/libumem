@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security -- fixed
 
+- **Exact heap-ownership check on `free()`** (P7.4, `b978a0f`, `f253f6d`,
+  `a0fd6ba`). `umem_may_own()` used a `[lo,hi)` convex hull, so a forged object
+  header placed in the address gap between two heap spans passed the check and
+  the pointer was taken onto a per-thread bin and later returned by `malloc()`
+  (attacker position D). It now confirms exact containment against a sorted
+  span table published lock-free by `vmem_span_create` (jemalloc's approach, no
+  secret; span removal handled). A normal heap free short-circuits on the hull
+  and pays nothing new (measured within the null, both arches); only a foreign
+  pointer pays a bounded binary search. On saturation of the fixed 16 Ki-entry
+  table the check falls back to the hull -- a conservative false-yes, never
+  accept-all. `test/security/test_forged_span_gap`: forgery accepted before,
+  refused after. Stronger than glibc (no range check), matches jemalloc's
+  rtree; the unmangled magazine-round pointers remain (P5.13b, below).
+
+- **Per-thread magazine round pointers XOR-encoded** (P5.13b, `49f4da6`,
+  `e4e3d45`). P5.13 encoded the per-thread bin slots; this extends the same
+  transform (`ptr ^ cookie ^ (&slot >> 12)`) to the `mag_round[]` entries in
+  the magazine layer behind them, across 26 sites in `umem.c` and 6 in
+  `umem_inspect.c` (no out-of-process reader exists to teach). Empty slots are
+  count-driven (`umem_mag_init_fast` keeps a raw zero-fill; live rounds are
+  exactly `[0,rounds)` and never NULL-tested), so there is no mangled-NULL
+  trap. Amortized ~0 % on the fast path (the P5.13 bins absorb steady-state
+  traffic; the magazine transform only fires on a batch that spills past a
+  bin), +2.9 % / +3.9 % insn (x86 / arm64) at the one spill-heavy point,
+  recorded and shipped per the hardening rule.
+  `test/security/test_mag_round_mangle`: overwritten round not returned;
+  FAILs under `-DUMEM_NO_LINK_MANGLE`.
+
 - **Per-thread magazine round pointers are now pointer-mangled** (P5.13b,
   `e4e3d45`, test `49f4da6`). P5.13 mangled the per-thread cache bin slots but
   left the magazine layer behind them raw: `umem_magazine_t.mag_round[]` held
