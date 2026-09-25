@@ -5,9 +5,11 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v3.2.0): the Linux heap ceiling is gone, the maintenance thread
-> runs, the per-CPU caches are used, and the drop-in path scales; still not a
-> hardened allocator in the sense a security-critical deployment would want.**
+> **Status (unreleased, after v3.2.0): the Linux heap ceiling is gone, the
+> maintenance thread runs, the per-CPU caches are used, the drop-in path
+> scales, and a second audit closed seven more findings — two of them
+> introduced by v3.2.0's own fixes; still not a hardened allocator in the
+> sense a security-critical deployment would want.**
 > Ten reachable correctness and lifetime defects found by the 2026-09-21
 > design review, ten security findings from the 2026-09-22 adversarial audit,
 > and the Phase 6 hard-limit findings are fixed — each with a regression that
@@ -355,6 +357,28 @@ with a regression that demonstrates the pre-fix exposure:
   component is opened `O_NOFOLLOW`, the directory path is not walked. Same
   boundary as `O_NOFOLLOW` itself; in secure mode these options are ignored
   entirely, which is where it would matter.
+- **Per-thread cache slot pointers are unmangled** (P5.13). v3.2.0's
+  per-thread cache struct sat in the same slabs as 20–24 KiB user buffers,
+  one object apart, so a one-byte overrun rewrote the allocator's next
+  return; that adjacency is removed (P5.12) but the pointers themselves are
+  raw where glibc's tcache entries are safe-linked. Reachable now only with a
+  write primitive into the allocator's internal arena.
+
+### What the 2026-09-24 audit of v3.2.0 found and fixed (unreleased)
+
+Seven findings, all with a regression that fails on the parent commit:
+`free()` could `munmap` a range named by the caller's own bytes (P5.10; three
+fixes, the first two shown insufficient by the same test);
+`reap_interval=0` spun a core and was honoured for setuid targets (P5.11);
+the per-thread cache struct shared slabs with user buffers (P5.12);
+`mmap_guard` could be disabled from the environment (P5.14); every foreign
+`free()` under `LD_PRELOAD` walked the heap under the arena lock, and a
+signal handler in that window deadlocked (P5.15); the error path
+symbolised a full stack through libdw on every refused `free()` (P5.16);
+fork children leaked every non-forking thread's per-thread cache (P1.3d).
+Two of these were introduced by v3.2.0's own fixes and passed correctness
+review; the audit is in
+[`docs/reviews/2026-09-24-security-audit.md`](docs/reviews/2026-09-24-security-audit.md).
 
 ### Honest framing
 
