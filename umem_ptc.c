@@ -745,7 +745,19 @@ umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 		for (i = 0; i < flush_count; i++)
 			bin->slots[i] = UMEM_SLOT_DEMANGLE(&bin->slots[i],
 			    bin->slots[i]);
+#ifdef	UMEM_PTC_DRAIN_PER_OBJECT
+		/*
+		 * P6.3b control arm ONLY (not a supported build): return the
+		 * exit bin one object per cc_lock instead of one batch, to
+		 * A/B the batch hold-time against the per-object path at a
+		 * fixed base.  Slots are already demangled above.
+		 */
+		for (i = 0; i < flush_count; i++)
+			_umem_cache_free(cp, bin->slots[i]);
+		n = flush_count;
+#else
 		n = umem_cache_free_batch(cp, bin->slots, flush_count);
+#endif
 
 		ASSERT(n == flush_count);
 		UMEM_PTC_PROBE_COUNT(umem_ptc_probe_exit_bins, 1);
