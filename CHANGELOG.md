@@ -3,7 +3,25 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [3.3.0] - 2026-09-25
+
+The theme is *finishing the hardening and closing the open limits with
+evidence*. v3.2.0's audit left P5.13 (per-thread cache slots unmangled) as the
+last item that made libumem's freelist integrity worse than glibc; this
+release mangles them, with a per-process cookie glibc does not have, at a
+measured cost that is on the record. The Phase 6/8 open items were each
+re-measured on metal and closed with a decision rather than a speculative fix:
+the 16k-thread drain is a kernel `mmap_lock` property, not an allocator lock
+(P6.3b, refuted); the 50k-cache fork and 117 KB/cache footprint are structural
+to per-CPU layering and their only "fixes" are a hot-path cost for a
+pathological workload or a provably-unsound lock skip (P6.4b, closed); the
+2.5-8 KB per-thread retention is ~280 KB, not the feared 5.4 MB (P8.2c,
+measured-fine); the sustained-load slab-batch cannot meet its own p999 target
+and the real fix is an architectural owning-thread free (P8.5, partial,
+remainder deferred as P8.5b). A proportionate metal comparison confirms the
+1-4 KB tier is now 0.86-0.97 of the best competitor (was 0.51-0.65) and the
+small tiers are unchanged within variance. No API/ABI change:
+`sizeof(umem_hook_t)` is still 120.
 
 ### Security -- fixed
 
