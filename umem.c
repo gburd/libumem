@@ -3860,8 +3860,11 @@ umem_alloc_retry:
 					umem_ptc_bin_t *b =
 					    &ptc->bins[(int)bin];
 					if (likely(b->count > 0)) {
-						return
-						    (b->slots[--b->count]);
+						/* P5.13: slots stored mangled */
+						void **sp =
+						    &b->slots[--b->count];
+						return (UMEM_SLOT_DEMANGLE(sp,
+						    *sp));
 					}
 					/*
 					 * PTC bin empty — try per-thread
@@ -4091,7 +4094,9 @@ _umem_free(void *buf, size_t size)
 						 * push can be in flight per
 						 * PTC).  See umem_ptc.h.
 						 */
-						b->slots[b->count++] = buf;
+						void **sp =
+						    &b->slots[b->count++];
+						*sp = UMEM_SLOT_MANGLE(sp, buf);
 						return;
 					}
 					/*

@@ -160,7 +160,9 @@ typedef struct umem_ptc_mag {
  * (the base pointer) and no multiply by a 1 KB stride.
  *
  * Only slots[0 .. count) are meaningful; the rest of a bin's array is never
- * read and is not zeroed at creation.
+ * read and is not zeroed at creation.  Every slot is stored MANGLED
+ * (UMEM_SLOT_MANGLE, umem_impl.h, P5.13): a raw read of slots[k] is not an
+ * object address.
  */
 typedef struct umem_ptc_bin {
 	void **slots;           /* -> umem_ptc_t.pool, ptc_bin_capacity() long */

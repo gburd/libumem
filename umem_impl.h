@@ -397,6 +397,32 @@ extern uintptr_t umem_link_cookie;
 
 #define	UMEM_LINK_DEMANGLE(slotp, val)	UMEM_LINK_MANGLE(slotp, val)
 
+/*
+ * P5.13: the same transform for the per-thread cache's bin slots
+ * (umem_ptc_t.pool[], written and read through umem_ptc_bin_t.slots[]).
+ * The value is an object address, not a bufctl, hence the void * type.
+ * The stored form is  ptr ^ umem_link_cookie ^ (&slot >> 12): glibc's
+ * tcache PROTECT_PTR with a per-process cookie added.  A slot the attacker
+ * overwrites with a chosen address demangles to garbage, so the next
+ * umem_alloc() of that class cannot be steered to a live buffer.
+ *
+ * EVERY reader of a bin slot must decode; every writer must encode.  Sites:
+ * umem.c _umem_alloc()/_umem_free() inlined PTC fast paths; umem_ptc.c
+ * umem_ptc_alloc(), umem_ptc_free(), umem_ptc_bin_refill(),
+ * umem_ptc_bin_flush_impl() (the exit batch goes through a demangled
+ * scratch array).  The fork child (umem_ptc_fork_release_child) adjusts
+ * counts only and never reads a slot.  Same -DUMEM_NO_LINK_MANGLE control
+ * arm; test/security/test_ptc_slot_mangle must FAIL against it.
+ */
+#ifdef	UMEM_NO_LINK_MANGLE
+#define	UMEM_SLOT_MANGLE(slotp, val)	((void *)(val))
+#else
+#define	UMEM_SLOT_MANGLE(slotp, val)					\
+	((void *)((uintptr_t)(val) ^ umem_link_cookie ^			\
+	    ((uintptr_t)(slotp) >> 12)))
+#endif
+#define	UMEM_SLOT_DEMANGLE(slotp, val)	UMEM_SLOT_MANGLE(slotp, val)
+
 #define	UMEM_SLAB(cp, buf)		\
 	((umem_slab_t *)P2END((uintptr_t)(buf), (cp)->cache_slabsize) - 1)
 

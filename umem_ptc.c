@@ -79,8 +79,9 @@ static int ptc_key_initialized = 0;
  * umem_ptc_t objects, so no user buffer is ever adjacent to one.  The
  * arena is separate address space from the user heap (its spans are
  * imported from the heap arena, not shared with umem_default_arena).  This
- * does not mangle the slots (a per-op XOR on the hot path; P5.13, open);
- * it removes the adjacency that makes an overrun reach them.
+ * does not mangle the slots; P5.13 does (UMEM_SLOT_MANGLE, umem_impl.h), so
+ * the two are independent: adjacency removed here, chosen-address writes
+ * defeated there.
  */
 struct umem_cache *umem_ptc_cache;	/* set by umem_cache_init() */
 
@@ -446,6 +447,27 @@ umem_ptc_init(void)
 }
 
 /*
+ * Bin slot push/pop.  Slots are stored mangled (P5.13, UMEM_SLOT_MANGLE in
+ * umem_impl.h); these are the only readers and writers in this file.  The
+ * inlined fast paths in umem.c do the same transform in place.
+ */
+static inline void
+ptc_slot_push(umem_ptc_bin_t *bin, void *ptr)
+{
+	void **sp = &bin->slots[bin->count++];
+
+	*sp = UMEM_SLOT_MANGLE(sp, ptr);
+}
+
+static inline void *
+ptc_slot_pop(umem_ptc_bin_t *bin)
+{
+	void **sp = &bin->slots[--bin->count];
+
+	return (UMEM_SLOT_DEMANGLE(sp, *sp));
+}
+
+/*
  * Map allocation size to bin index
  * Returns -1 if size is not eligible for per-thread caching
  */
@@ -576,14 +598,14 @@ umem_ptc_alloc(size_t size)
 
 	/* Fast path: take from cache */
 	if (bin->count > 0) {
-		ptr = bin->slots[--bin->count];
+		ptr = ptc_slot_pop(bin);
 		return (ptr);
 	}
 
 	/* Cache miss - try to refill from magazine layer */
 	if (umem_ptc_bin_refill(bin, umem_ptc_bin_size(bin_idx)) == 0) {
 		if (bin->count > 0) {
-			ptr = bin->slots[--bin->count];
+			ptr = ptc_slot_pop(bin);
 			return (ptr);
 		}
 	}
@@ -619,7 +641,7 @@ umem_ptc_free(void *ptr, size_t size)
 
 	/* Fast path: cache it */
 	if (bin->count < ptc_bin_capacity(bin_idx)) {
-		bin->slots[bin->count++] = ptr;
+		ptc_slot_push(bin, ptr);
 		return (0);
 	}
 
@@ -628,7 +650,7 @@ umem_ptc_free(void *ptr, size_t size)
 
 	/* Try again after flush */
 	if (bin->count < ptc_bin_capacity(bin_idx)) {
-		bin->slots[bin->count++] = ptr;
+		ptc_slot_push(bin, ptr);
 		return (0);
 	}
 
@@ -713,7 +735,17 @@ umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 		 * cannot take goes to the slab layer inside it and is counted
 		 * in its return, so it never leaves an object behind.
 		 */
-		int n = umem_cache_free_batch(cp, bin->slots, flush_count);
+		int n;
+
+		/*
+		 * Demangle in place: the bin is being torn down (all == 1
+		 * is umem_ptc_destroy only), so slots[0 .. count) are never
+		 * read as slots again after this.
+		 */
+		for (i = 0; i < flush_count; i++)
+			bin->slots[i] = UMEM_SLOT_DEMANGLE(&bin->slots[i],
+			    bin->slots[i]);
+		n = umem_cache_free_batch(cp, bin->slots, flush_count);
 
 		ASSERT(n == flush_count);
 		UMEM_PTC_PROBE_COUNT(umem_ptc_probe_exit_bins, 1);
@@ -722,7 +754,7 @@ umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 		return;
 	}
 	for (i = 0; i < flush_count; i++) {
-		ptr = bin->slots[--bin->count];
+		ptr = ptc_slot_pop(bin);
 		_umem_cache_free(cp, ptr);
 	}
 }
@@ -774,7 +806,7 @@ umem_ptc_bin_refill(umem_ptc_bin_t *bin, size_t size)
 		if (ptr == NULL) {
 			break;
 		}
-		bin->slots[bin->count++] = ptr;
+		ptc_slot_push(bin, ptr);
 	}
 
 	return (i > 0 ? 0 : -1);
