@@ -780,9 +780,6 @@ umem_cache_t            umem_null_cache = {
 #ifdef UMEM_RSEQ_AVAILABLE
 	NULL,					/* cache_rseq */
 #endif
-#ifdef UMEM_NUMA_AVAILABLE
-	NULL,					/* cache_numa_info */
-#endif
 	{
 		{
 			/* umem_cpu_cache_t: cc_lock, cc_alloc, cc_free, cc_loaded, cc_ploaded, cc_rounds, cc_prounds, cc_magsize, cc_flags */

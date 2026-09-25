@@ -624,13 +624,6 @@ struct umem_cache {
 	umem_rseq_cache_t *cache_rseq;		/* per-CPU rseq caches */
 #endif
 
-#ifdef UMEM_NUMA_AVAILABLE
-	/*
-	 * NUMA layer
-	 */
-	void *cache_numa_info;			/* NUMA-aware depot info */
-#endif
-
 	/*
 	 * Per-CPU layer
 	 * Each CPU cache is cache-line aligned to prevent false sharing.
