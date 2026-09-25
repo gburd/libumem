@@ -194,11 +194,6 @@ extern "C" {
  */
 extern __thread int cached_cpu_hint;
 
-/*
- * rseq integration for CPU hint caching.
- * When rseq is available and registered, we read the kernel-maintained
- * cpu_id instead of calling sched_getcpu() or using thread ID hashing.
- */
 #if defined(__linux__) && defined(HAVE_LINUX_RSEQ_H)
 #include "umem_rseq.h"
 #endif
@@ -595,7 +590,7 @@ struct umem_cache {
 	umem_maglist_t	cache_empty;		/* empty magazines */
 
 	/*
-	 * Per-CPU depot layer — eliminates cross-CPU contention.
+	 * Per-CPU depot layer: one full/empty maglist pair per CPU stripe.
 	 *
 	 * cache_depot_full, cache_depot_empty and (with rseq) cache_rseq are
 	 * three arrays carved from ONE mapping, cache_percpu_map of
@@ -604,8 +599,10 @@ struct umem_cache {
 	 * each on an 8-CPU box: 12 KB of an 18.6 KB per-cache footprint was
 	 * page rounding, and destroying a cache munmap()ed three holes into
 	 * whatever the kernel had merged the mappings into -- 29,159 VMAs
-	 * left behind by 50k destroyed caches.  vmem memory is never
-	 * unmapped, so destroy leaves no hole at all.
+	 * left behind by 50k destroyed caches (e00fdf2's measurement, 8-vCPU
+	 * intel-lo; test/integration/test_cache_footprint.c is the
+	 * regression).  vmem memory is never unmapped, so destroy leaves no
+	 * hole at all.
 	 */
 	void		*cache_percpu_map;	/* the one block, or NULL */
 	size_t		cache_percpu_len;	/* its length */
@@ -706,8 +703,9 @@ typedef struct umem_cpu {
  * Cost: a hashed cache whose objects are 1-4 KiB now reserves a 16-64 KiB slab
  * on first use instead of one page.  That is more address space held per
  * lightly-used cache; it is NOT more RSS until the pages are touched, since
- * spans are MAP_NORESERVE.  Measured on a small workload before/after in the
- * commit that introduced this.
+ * spans are MAP_NORESERVE.  Measured on a small workload before/after in
+ * 3f2e67c, the commit that introduced this (table in
+ * docs/results/2026-09-22-umem-heap-ceiling-vma.md, "2026-09-23 resolution").
  */
 #define	UMEM_MIN_SLAB_OBJECTS	16
 #define	UMEM_MIN_SLAB_CEILING	(64 * 1024)
