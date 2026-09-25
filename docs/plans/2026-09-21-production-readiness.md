@@ -1378,6 +1378,51 @@ Mpairs/s at 512 B).
 Gate PASS both arches at `ede1849`; P1.3a stranded = 0, P1.3c ledger 0/12,
 `test_main` clean, ASan clean on the drain path.
 
+**The 16k metal measurement, done (2026-09-25, `c7i.metal-48xl`, 192 vCPU).**
+Two builds, same box, same session, `verify-isolated`; `4dfdd06` is the
+parent of the batch-drain commit and has the CPU-hint fix, so the drain
+change is isolated from P8.2:
+
+| build | threads | spawn+populate | RSS/thread | VMAs | exit drain | us/thread | main's worst alloc during exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `4dfdd06` (per-object drain) | 4,000 | 9.88 s | 91.1 KB | 25,065 | 0.283 s | **70.8** | 490 us |
+| `2f91fde` (batch drain, packed PTC) | 4,000 | 0.85 s | 51.7 KB | 15,123 | 0.612 s | **153.1** | 2,949 us |
+| `4dfdd06` | 16,000 | 11.67 s | 67.3 KB | 51,408 | 1.354 s | **84.6** | 534 us |
+| `2f91fde` | 16,000 | 0.91 s | 42.6 KB | 38,510 | 2.611 s | **163.2** | 206 us |
+
+**The batch drain is slower per exiting thread on 192 CPUs -- 2.2x at 4k and
+1.9x at 16k -- and the plan's target (< 20 us/thread) is missed by 8x.** The
+mechanism written for the fix ("one cc_lock per bin instead of one per
+object") is right about lock *count* and wrong about lock *cost* at this
+width: `umem_cache_free_batch()` fills the per-CPU magazines under one
+`cc_lock`, and with 192 CPUs' worth of exiting threads all landing objects into
+magazines that then overflow to the depot, the batch path does its depot
+round trips *inside* the held `cc_lock` where the per-object path released
+between objects. The 4k main-thread stall (2.9 ms vs 0.49) is the same effect
+seen from outside. At 16k the stall is *lower* post-fix (206 vs 534 us), which
+says the exiting threads serialise more among themselves and less against
+main -- consistent with longer individual holds.
+
+What the batch drain did deliver is the other column: RSS/thread 67 -> 43 KB
+and 91 -> 52 KB, VMAs 51k -> 38k, and spawn+populate **11.7 s -> 0.9 s** at
+16k -- that last is the packed PTC (smaller struct, fewer page faults), not the
+drain. On the 8-vCPU lo boxes the two drain paths were inside noise of each
+other (27 vs 31 us), which is why this was not caught before metal.
+
+**Decision: the batch drain is kept for its exactness** (the one-hand-off
+ledger is what makes P1.3a's oracle exact, and the child-side fork drain
+(P1.3d) reuses it), **and the plan's P6.3 exit-drain target is withdrawn as
+written.** The honest target is "main's allocation is not stalled by other
+threads exiting", and that number went 534 -> 206 us at 16k. A per-thread
+exit costing 160 us on a 192-CPU box is 2.6 s for 16,000 simultaneous exits;
+glibc's measured 11 us flat is the comparison. Whether to release `cc_lock`
+between depot trips inside `umem_cache_free_batch` is P6.3b, open, with this
+table as its pre-fix demonstration; it is a hot-path change under the brief's
+A/B rules.
+
+The `@cache` agent that was to take this measurement died on a provider
+timeout after finding P1.3d; the coordinator ran it.
+
 ### P6.4b Cache count on 192 CPUs: 117 KB per cache, 415 ms creates, 3 s fork -- HIGH
 Same mechanisms as P6.4; provenance `a2548b8`, `c7i.metal-48xl`,
 `umem_max_ncpus` = 256.
