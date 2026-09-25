@@ -514,9 +514,9 @@ size_t pagesize;
  * zero.
  */
 /*
- * Size classes with ~1.25x spacing to reduce internal fragmentation.
- * Old doubling scheme wasted ~50% at boundaries (e.g., 33B in 64B class).
- * New spacing keeps worst-case waste under ~25%.
+ * Size classes at ~1.25x spacing from 128 B up (worst-case internal waste
+ * ~25 %); below 128 B the LP64 step is 16 B, so 8 -> 16 is 2x and the 25 %
+ * bound does not hold there.  Arithmetic, not a measurement.
  */
 static int umem_alloc_sizes[] = {
 #ifdef _LP64
@@ -546,7 +546,6 @@ static int umem_alloc_sizes[] = {
  * Magazine type table: {magsize, align, minbuf, maxbuf}
  *
  * Larger magazines for small objects amortize depot access cost.
- * A 64-byte object now gets 127-slot magazines instead of 15-slot.
  *
  * The 2048..8192 band was 31 rounds for 2-4 KB chunks and 15 for 4-8 KB,
  * Solaris tuning that assumed a 64 KB heap quantum and hence a slab of 16
@@ -672,8 +671,12 @@ static uint32_t umem_cpu_mask = 0;                      /* global cpu mask */
 umem_cpu_t *umem_cpus = &umem_startup_cpu;              /* cpu list */
 
 /*
- * Per-thread cached CPU hint to reduce CPUHINT() syscall overhead.
- * Initialized to -1 to force refresh on first access.
+ * Per-thread cached CPU hint; -1 means not yet derived.  Which per-CPU
+ * cache this thread uses, how it is derived, and when it is reset are
+ * documented at its declaration in umem_impl.h (get_cached_cpu_hint).
+ * (The old comment here said the cache existed "to reduce CPUHINT()
+ * syscall overhead"; CPUHINT() was pthread_self(), no syscall, and the
+ * point of the hint is spread across cache_cpu[], not syscall cost.)
  */
 __thread int cached_cpu_hint = -1;
 
@@ -1135,9 +1138,10 @@ umem_findslab(umem_cache_t *cp, void *buf)
 }
 
 /*
- * Debugger breakpoint hook.  See umem_inspect.h.  Deliberately weak and
- * separate from umem_event_error so the debugger hook stays callable
- * even when UMEM_INSPECT_EVENTS is off.
+ * Debugger breakpoint hook.  See umem_inspect.h.  Defined in
+ * umem_inspect.c as noinline,used (not weak, as this comment used to
+ * say) and called unconditionally below, so the hook is a breakpoint
+ * target whether or not UMEM_INSPECT_EVENTS is on.
  */
 extern void umem_event_error(int code, void *buf, void *cache);
 
@@ -2996,8 +3000,9 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 
 #ifdef UMEM_RSEQ_AVAILABLE
 /*
- * UNUSED: see docs/results/2026-09-09-rseq-reload-analysis-v2.md (and the
- * original docs/results/2026-08-06-rseq-reload-analysis.md) for the full,
+ * UNUSED: see docs/results/2026-09-09-rseq-reload-analysis-v2.md (the
+ * original 2026-08-06-rseq-reload-analysis.md it supersedes was deleted in
+ * ebcb467; `git show ebcb467^:docs/results/...`) for the full,
  * hardware-verified analysis of why arming this needs new asm, not a C
  * wrapper. A plain-C reload here races the lock-free rseq asm fastpath
  * across a CPU migration; a lock does not help because the fastpath never
@@ -6180,8 +6185,8 @@ umem_init(void)
 
 #ifndef UMEM_STANDALONE
 	/*
-	 * Initialize per-thread cache for fast small allocations.
-	 * This provides zero-lock access for sizes 8-448 bytes.
+	 * Per-thread cache for sizes up to umem_ptc_maxsize (8192 by
+	 * default, umem_ptc.c).  (This used to say "8-448 bytes".)
 	 */
 	umem_ptc_init();
 #endif
