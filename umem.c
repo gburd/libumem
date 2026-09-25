@@ -754,6 +754,20 @@ umem_cache_t            umem_null_cache = {
 	}, {
 		DEFAULTMUTEX, NULL, 0, 0, 0, 0 /* cache_empty */
 	},
+	/*
+	 * This initializer is POSITIONAL.  e00fdf2 added the two
+	 * cache_percpu_* fields to umem_cache_t ahead of cache_depot_ncpus
+	 * and did not add them here, so from e00fdf2 to this commit every
+	 * following value landed one or two slots early -- cache_depot_ncpus
+	 * got a NULL, cache_depot_full got an int, and the cache_cpu[0]
+	 * brace block spilled -- with only -Wint-conversion warnings to say
+	 * so.  umem_null_cache never allocates, which is why nothing failed,
+	 * and the gate does not treat warnings as errors, which is why nothing
+	 * noticed.  Both are now recorded as follow-ups (designated
+	 * initializers here; -Werror on the gate build).
+	 */
+	NULL,					/* cache_percpu_map */
+	0,					/* cache_percpu_len */
 	0,					/* cache_depot_ncpus */
 	NULL,					/* cache_depot_full */
 	NULL,					/* cache_depot_empty */
