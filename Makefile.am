@@ -55,6 +55,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/security/test_forged_free \
 		  test/security/test_forged_bootstrap \
 		  test/security/test_reap_interval_zero \
+		  test/security/test_ptc_adjacency \
 		  test/security/test_stack_bounds \
 		  test/security/test_introspect_peer_uid \
 		  tools/umem_profile_dump
@@ -869,6 +870,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_forged_free \
 	test/security/test_forged_bootstrap \
 	test/security/test_reap_interval_zero.sh \
+	test/security/test_ptc_adjacency \
 	test/security/test_abort_option.sh \
 	test/security/test_stack_bounds.sh \
 	test/security/test_introspect_sock_path.sh \
@@ -892,6 +894,12 @@ test_security_test_forged_bootstrap_CPPFLAGS = -I$(srcdir)
 test_security_test_reap_interval_zero_SOURCES = test/security/test_reap_interval_zero.c
 test_security_test_reap_interval_zero_LDADD = libumem.la
 test_security_test_reap_interval_zero_CPPFLAGS = -I$(srcdir)
+
+# P5.12: no user buffer adjacent to a per-thread cache struct.
+test_security_test_ptc_adjacency_SOURCES = test/security/test_ptc_adjacency.c
+test_security_test_ptc_adjacency_LDADD = libumem.la
+test_security_test_ptc_adjacency_LDFLAGS = -pthread
+test_security_test_ptc_adjacency_CPPFLAGS = -I$(srcdir)
 
 # P5.9: needs frame pointers in the TEST (it corrupts its own frame) and a real
 # pthread stack it allocates itself.  -fno-omit-frame-pointer is on the test,
