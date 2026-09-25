@@ -38,6 +38,18 @@
  * SKIP.
  *
  * ASan intercepts free() ahead of the interposer: SKIP under --enable-asan.
+ *
+ * NOT RUN with umem_output on (UMEM_DEBUG=verbose).  With stderr output
+ * enabled the recoverable path symbolises the stack through libdw on every
+ * refused free(), by design (someone asked to see it).  On aarch64 that is
+ * ~34 frames and milliseconds per call, so a 50 us timer whose handler
+ * refuses a free never lets the main loop finish: 436,000 stderr lines in
+ * 4 s, gdb showing the process RUNNING in libdw and mmap, not blocked.  That
+ * is the cost of a diagnostic the user turned on, not a lock, and this test
+ * is about the lock.  It reports SKIP rather than misreport expense as
+ * deadlock.  (libdw is also not async-signal-safe, so a program that
+ * enables verbose output and frees from signal handlers is in glibc's
+ * "malloc from a handler" territory either way.)
  */
 
 #include <stdio.h>
@@ -90,6 +102,15 @@ main(void)
 	if (asan_active()) {
 		printf("SKIP: ASan intercepts free()\n");
 		return (77);
+	}
+	{
+		const char *d = getenv("UMEM_DEBUG");
+		if (d != NULL && strstr(d, "verbose") != NULL) {
+			printf("SKIP: umem_output on -- the recoverable path "
+			    "symbolises via libdw per refusal; that is expense, "
+			    "not the lock this test is about\n");
+			return (77);
+		}
 	}
 	warm = malloc(64);
 	free(warm);
