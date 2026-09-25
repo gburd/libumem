@@ -491,7 +491,15 @@ typedef struct umem_magtype {
 	((size_t)(&((umem_cache_t *)0)->cache_cpu[ncpus]))
 
 typedef struct umem_cpu_cache {
-	mutex_t		cc_lock;	/* protects slow path (magazine reload) */
+	/*
+	 * cc_lock protects every cc_* field below on every non-rseq, non-PTC
+	 * alloc and free (_umem_cache_alloc/_umem_cache_free take it before
+	 * reading cc_rounds/cc_loaded), not only the magazine reload.  It is
+	 * held across umem_depot_alloc()/umem_depot_free(), which block on
+	 * ml_lock: umem_fork.c order 6a.  (Used to say "protects slow path
+	 * (magazine reload)".)
+	 */
+	mutex_t		cc_lock;
 	int		cc_rounds;	/* number of objects in loaded mag */
 	int		cc_prounds;	/* number of objects in previous mag */
 	umem_magazine_t	*cc_loaded;	/* the currently loaded magazine */

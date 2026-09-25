@@ -373,26 +373,44 @@
  * 6. Lock Ordering
  * ----------------
  * umem has a few more locks than kmem does, mostly in the update path.  The
- * overall lock ordering (earlier locks must be acquired first) is:
+ * overall lock ordering (earlier locks must be acquired first) is the one
+ * umem_fork.c's THE ONE TRUE LOCK ORDER enforces; the fork handlers take
+ * every lock below in this order, so a disagreement between the two lists
+ * is a bug in this one.  (Until 2026-09-24 this list omitted the
+ * interposer locks, umem_ptc_list_lock, vmem_segfree_lock and
+ * sbrk_faillock, and named only cache_full/cache_empty of the depot.)
  *
+ *	malloc_interpose.c (libumem_malloc.so only; weak):
+ *		static_buffer_lock
+ *		libc_ptr_lock
+ *	umem_ptc_list_lock
  *	umem_init_lock
  *
  *	vmem_list_lock
  *	vmem_nosleep_lock.vmpl_mutex
  *	vmem_t's:
  *		vm_lock
+ *	vmem_segfree_lock
  *	sbrk_lock
+ *	sbrk_faillock
  *
  *	umem_cache_lock
  *	umem_update_lock
  *	umem_flags_lock
  *	umem_cache_t's:
- *		cache_cpu[*].cc_lock
- *		cache_full.ml_lock / cache_empty.ml_lock
+ *		cache_cpu[*].cc_lock                 (ascending)
+ *		cache_full.ml_lock, cache_empty.ml_lock,
+ *		cache_depot_full[i].ml_lock / cache_depot_empty[i].ml_lock
+ *		                                     (ascending stripe)
  *		cache_lock
  *	umem_log_header_t's:
  *		lh_cpu[*].clh_lock
  *		lh_lock
+ *
+ * Not in the fork order because they are leaves taken with no allocator
+ * lock held: umem_introspect.c's brk_lock (after an allocation completes),
+ * and vmem_heap's vm_lock from free() via umem_may_own() -> hull_refresh()
+ * (malloc.c), which is entry 2 above reached from a path holding nothing.
  *
  * \endcode
  *
