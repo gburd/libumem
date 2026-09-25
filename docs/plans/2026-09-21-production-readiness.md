@@ -614,6 +614,90 @@ A/B and the depot is not in a user buffer's overrun reach (it lives in
 exposure — the per-thread slots one write away from the next allocation — is
 closed. Magazine mangling is recorded as P5.13b, open.
 
+### P5.13b Magazine round pointers are now mangled (closes P5.13b)
+
+The layer behind the P5.13 bins. `umem_magazine_t.mag_round[]` held raw
+object addresses; the per-thread bins were mangled in P5.13 but the per-thread
+magazine and depot magazines they spill into were not. A write that reaches a
+cached round steered the next `umem_alloc()` of that class to a chosen address
+(attacker position D: controls allocation patterns and buffer contents, not
+the environment and not the code). `e4e3d45` applies the SAME transform as the
+bins -- `ptr ^ umem_link_cookie ^ (&round >> 12)`, `UMEM_SLOT_MANGLE`,
+hidden-visibility cookie -- to every `mag_round[]` access.
+
+**Sites (grep `mag_round`; counted before starting):** 26 in `umem.c`, 6 in
+`umem_inspect.c`, 0 code sites in `umem_ptc.c` (one comment only), 0 in
+`umem_introspect.c`, 0 in `tools/umem.c`. The gdb/lldb helpers do not read
+`mag_round` either, so there is NO out-of-process reader to teach or to leave
+half-decoded. Writers (mangle): `_umem_cache_free`, `umem_cache_free_batch`,
+the three inlined `_umem_free` PTC magazine pushes, `umem_depot_destroy_stale`
+and `umem_mag_drain` (which write the mangled form of NULL after draining),
+and the unused `umem_rseq_free_slowpath`. Readers (demangle):
+`umem_magazine_destroy`, the `UMEM_PTC_RESIZE_PROBE` ledger,
+`_umem_cache_alloc`, `umem_cache_alloc_batch`, the three inlined `_umem_alloc`
+PTC magazine pops, the unused `umem_rseq_alloc_slowpath`, and the four
+`umem_inspect.c` cached-set builders. `__builtin_prefetch`/`UMEM_PREFETCH_READ`
+take an address, not a value, and are unchanged.
+
+**Empty-slot discipline (the design point): rounds are COUNT-DRIVEN, not
+NULL-terminated.** Live rounds are exactly `[0, rounds)`; the alloc/free fast
+paths pop `mag_round[--rounds]` and push `mag_round[rounds++]` by index and
+never NULL-test a slot to find the boundary. A slot ABOVE `rounds` is
+therefore never value-read on any count-driven path, so `umem_mag_init_fast()`
+still writes RAW zero (a plain `memset`, unchanged, zero cost) -- its output is
+read only below `rounds`, after a mangled write. The only readers of
+`[0, rounds)` are the depot drain/destroy paths and the inspectors, and by the
+depot full/empty contract every slot they touch is occupied (a full depot
+magazine holds exactly its capacity; the inspectors' full-list walk relies on
+the same), so a demangle there never yields NULL. `umem_mag_scan_notnull()`
+stays a raw fast-out: a mangled occupied slot is non-zero, so it never skips a
+magazine that holds objects (callers only pass `nrounds` in `{0, magsize}`).
+This is the same count-driven model the P5.13 bin slots (`slots[count]`) use.
+
+**Evidence (`test/security/test_mag_round_mangle`, committed alone `49f4da6`
+before the fix; fill a PTC bin and spill into the loaded magazine, overwrite
+`mag_round[rounds-1]` with a live buffer's address, drain the bin then pull
+from the magazine):**
+
+| arm | pre-fix / `-DUMEM_NO_LINK_MANGLE` | default (post `e4e3d45`) |
+|---|---|---|
+| intel-lo (c7i.2xlarge) | FAIL: returns the LIVE buffer after 128 pops | PASS: 1024 pops, chosen address never returned |
+| arm-lo (c7g.2xlarge) | FAIL: returns the LIVE buffer after 128 pops | PASS: 1024 pops, chosen address never returned |
+
+Pre-fix run is against committed content via `verify-isolated.sh 49f4da6`;
+post-fix and control arm via `verify-isolated.sh e4e3d45`, both arches.
+
+**Cost (A/B `hotpath_ab.sh`, pre `49f4da6` -> post `e4e3d45`, `bench_pairs`,
+median of 9, null = pre-vs-pre2 measured first at every point):** the CPU-
+layer alloc/pop cost is amortized to ZERO at almost every point, because the
+P5.13 PTC bins absorb steady-state traffic and the magazine transform only
+runs when a batch spills past the bin. `insn/pair` moved +0.00% (within the
++-0.07% null) at every point EXCEPT `s=512 N=128` -- where the batch size
+exceeds the bin and forces magazine traffic -- which cost `insn/pair` **+2.89%
+(x86)** / **+3.85% (arm64)** against a +0.00% null, and throughput at that
+single point `-1.19%` t=1 / `-3.31%` t=8 (x86), `-3.82%` t=1 / `-3.93%` t=8
+(arm64), each against a null under +-0.24%. Every other of the 13 points is
+inside its null. **Shipped per AGENTS.md 7a** (hardening is not traded for
+single-digit percent); the number is on the record.
+
+**Gate (`verify-isolated.sh e4e3d45`, both arches, default AND
+`--enable-introspect`):** all five exact PTC/depot oracles PASS
+(`test_ptc_thread_exit_drain`, `test_ptc_resize_no_loss`,
+`test_fork_ptc_drain_probe`, `test_ptc_footprint`, `test_ptc_mag_primed`,
+`test_cpu_hint_spread`), `test_ptc_slot_mangle` and `test_mag_round_mangle`
+PASS, `stress_concurrency_oracle` PASS (188M/88M/256M allocs, 0 failures),
+`oracle_matrix` PASS (all 4 configs), every `test/security/` binary and `.sh`
+PASS or SKIP. arm-lo: 0 failures both configs. intel-lo: the ONLY non-PASS is
+`test_ptc_resize_no_loss`'s statistical corroborating arm under introspect
+(floor delta 544 > its 512 margin) -- refuted deterministically by that
+test's OWN primary oracle, `test_ptc_resize_no_loss_probe` (exact P1.3c
+ledger): OBJECTS STILL INSIDE WHEN FREED = 0 on all 5 of 5 probe runs, with
+the corroborating floor delta swinging +853/+472/+384/+339/+359 across those
+same runs -- exactly the margin-straddle the test's own header documents
+("seen to straddle its own margin ... where the ledger exists, the ledger
+decides"). Populated magazines are drained, not discarded; the mangle change
+did not regress the depot.
+
 ### P5.5 `errno` erasure fix was not merely incomplete — it was ineffective (MEDIUM)
 `vmem_mmap.c` — `vmem_mmap_alloc()` erases `errno` on failure **twice**, and
 the second erasure sits on the exhaustion path the v3.0.0 fix was written for
@@ -777,7 +861,8 @@ imply, and that is a documentation accuracy issue independent of hardening.
 | P5.10 free() reads caller bytes to classify bootstrap pointers, then munmaps by them | **FIXED** `3767b4c` | `test_forged_bootstrap`: pre SIGSEGV, post PASS; ratio regression 0.598 |
 | P5.11 `reap_interval=0` spins a core; honoured under AT_SECURE | **FIXED** `cbb1a2e` | `test_reap_interval_zero.sh`: 2.003 s -> 0.004 s CPU in a 2 s sleep |
 | P5.12 `umem_ptc_t` in user size-class slabs; slot pointers reachable by overrun | **FIXED** `444b062`/`ec5c10f` | `test_ptc_adjacency`: 8/8 adjacent -> 0 |
-| P5.13 PTC slot pointers unmangled (bins) | **FIXED (bins)** `8c79ac3`, `f1b4f12` | `test_ptc_slot_mangle`: default refuses the chosen address, `-DUMEM_NO_LINK_MANGLE` returns the live buffer (double alloc). A/B below. Magazine rounds: deferred -- see note. |
+| P5.13 PTC slot pointers unmangled (bins) | **FIXED (bins)** `8c79ac3`, `f1b4f12` | `test_ptc_slot_mangle`: default refuses the chosen address, `-DUMEM_NO_LINK_MANGLE` returns the live buffer (double alloc). A/B below. Magazine rounds: see P5.13b. |
+| P5.13b PTC magazine round pointers unmangled | **FIXED** `e4e3d45` (test `49f4da6`) | `test_mag_round_mangle`: default refuses the chosen address (1024 pops), `-DUMEM_NO_LINK_MANGLE` returns the live buffer after 128 pops, both arches. Count-driven discipline; A/B ~0 except +2.9-3.9% insn/pair at the one bin-spilling point. |
 | P5.14 `mmap_guard` honoured under AT_SECURE (hardening downgrade from env) | **FIXED** `a1912e2` | option gated; default 16 MiB for setuid |
 | P5.15 error path deadlocks vs signal handlers: `umem_error_lock` (review 4.6) AND `vm_lock` via `umem_may_own`'s hull refresh (found by the test) | **FIXED** `5286dcb`, `3e5d326` | `test_errlog_signal.sh`: pre hangs; post 6,000 handler frees, ~1,700 lines dropped, no hang |
 | P5.16 libdw stack symbolisation on every refused `free()` (steady state under LD_PRELOAD) | **FIXED** `a074636` | recoverable path traces only if `umem_output` or abort; arm livelock 436k lines/4 s -> PASS |

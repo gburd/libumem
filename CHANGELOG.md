@@ -3,6 +3,34 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Security -- fixed
+
+- **Per-thread magazine round pointers are now pointer-mangled** (P5.13b,
+  `e4e3d45`, test `49f4da6`). P5.13 mangled the per-thread cache bin slots but
+  left the magazine layer behind them raw: `umem_magazine_t.mag_round[]` held
+  plain object addresses, so a write that reached a cached round steered the
+  next `malloc`/`umem_alloc` of that size class to a chosen address -- the
+  same double-allocation primitive P5.13 closed for the bins, one layer down.
+  Every round is now stored `ptr ^ umem_link_cookie ^ (&round >> 12)` (the
+  same `UMEM_SLOT_MANGLE` and per-process `AT_RANDOM` cookie as the bins, a
+  secret glibc's safe-linking does not have). Rounds are count-driven, so
+  fresh magazines still zero-initialise at no cost and only in-use rounds are
+  encoded. `test/security/test_mag_round_mangle` returns the overwritten live
+  buffer after 128 pops under `-DUMEM_NO_LINK_MANGLE` and refuses the chosen
+  address across 1024 pops by default, on both x86-64 and arm64. Attacker
+  position D (controls allocation patterns and buffer contents, not the
+  environment and not the code). No API/ABI change.
+
+  Cost is amortised to zero on the fast path -- the P5.13 bins absorb
+  steady-state traffic and the magazine transform runs only when a batch
+  spills past a bin -- so `bench_pairs` instructions/pair moved +0.00% (inside
+  the +-0.07% null) at 12 of 13 A/B points; the exception is a bin-spilling
+  512 B, N=128 batch, which cost +2.89% (x86-64) / +3.85% (arm64)
+  instructions/pair and up to -3.9% throughput at that one point. Shipped per
+  the hardening policy (AGENTS.md 7a); the number is on the record.
+
 ## [3.3.0] - 2026-09-25
 
 The theme is *finishing the hardening and closing the open limits with
