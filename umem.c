@@ -4117,7 +4117,8 @@ _umem_free(void *buf, size_t size)
 				if (likely(ptc != NULL)) {
 					umem_ptc_bin_t *b =
 					    &ptc->bins[(int)bin];
-					if (likely(b->count <
+					uint16_t c = b->count;
+					if (likely(c <
 					    ptc_bin_capacity((int)bin))) {
 						/*
 						 * Slot first, count second,
@@ -4125,11 +4126,16 @@ _umem_free(void *buf, size_t size)
 						 * snapshot between the two
 						 * sees the old count and not
 						 * a stale slot (P1.3d rule 1,
-						 * umem_ptc.h).
+						 * umem_ptc.h).  c is loaded
+						 * once: the release store
+						 * would otherwise force a
+						 * reload of count the
+						 * pre-P1.3d code folded into
+						 * its single store.
 						 */
-						b->slots[b->count] = buf;
+						b->slots[c] = buf;
 						__atomic_store_n(&b->count,
-						    b->count + 1,
+						    (uint16_t)(c + 1),
 						    __ATOMIC_RELEASE);
 						return;
 					}
@@ -4144,12 +4150,12 @@ _umem_free(void *buf, size_t size)
 						mag->cache = cp;
 					if (mag->loaded != NULL &&
 					    mag->rounds < mag->magsize) {
-						mag->loaded->
-						    mag_round[mag->rounds] =
-						    buf;
+						{
+						int r = mag->rounds;
+						mag->loaded->mag_round[r] = buf;
 						__atomic_store_n(&mag->rounds,
-						    mag->rounds + 1,
-						    __ATOMIC_RELEASE);
+						    r + 1, __ATOMIC_RELEASE);
+						}
 						return;
 					}
 					/*
@@ -4172,12 +4178,12 @@ _umem_free(void *buf, size_t size)
 						mag->pmagsize = tmp_r;
 						__atomic_store_n(&ptc->fork_busy,
 						    0, __ATOMIC_RELEASE);
-						mag->loaded->
-						    mag_round[mag->rounds] =
-						    buf;
+						{
+						int r = mag->rounds;
+						mag->loaded->mag_round[r] = buf;
 						__atomic_store_n(&mag->rounds,
-						    mag->rounds + 1,
-						    __ATOMIC_RELEASE);
+						    r + 1, __ATOMIC_RELEASE);
+						}
 						return;
 					}
 					/*
@@ -4226,12 +4232,12 @@ _umem_free(void *buf, size_t size)
 						UMEM_PTC_PROBE_OBSERVE(emp,
 						    mag->magsize);
 						umem_ptc_mag_check(mag);
-						mag->loaded->
-						    mag_round[mag->rounds] =
-						    buf;
+						{
+						int r = mag->rounds;
+						mag->loaded->mag_round[r] = buf;
 						__atomic_store_n(&mag->rounds,
-						    mag->rounds + 1,
-						    __ATOMIC_RELEASE);
+						    r + 1, __ATOMIC_RELEASE);
+						}
 						return;
 					}
 					/*
