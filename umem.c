@@ -3930,6 +3930,7 @@ umem_alloc_retry:
 					if (mag->prounds > 0) {
 						umem_magazine_t *tmp;
 						int tmp_r;
+						ptc->fork_busy = 1; /* P1.3d */
 						tmp = mag->loaded;
 						tmp_r = mag->rounds;
 						mag->loaded = mag->previous;
@@ -3939,6 +3940,8 @@ umem_alloc_retry:
 						tmp_r = mag->magsize;
 						mag->magsize = mag->pmagsize;
 						mag->pmagsize = tmp_r;
+						__atomic_store_n(&ptc->fork_busy,
+						    0, __ATOMIC_RELEASE);
 						mag->rounds--;
 						buf = mag->loaded->
 						    mag_round[mag->rounds];
@@ -3955,6 +3958,7 @@ umem_alloc_retry:
 					fmp = umem_depot_alloc_trylock(cp,
 					    &cp->cache_full);
 					if (fmp != NULL) {
+					    ptc->fork_busy = 1; /* P1.3d */
 					    UMEM_PTC_RESIZE_PROBE_POINT();
 					    /*
 					     * Retire the empty magazines we
@@ -3990,6 +3994,8 @@ umem_alloc_retry:
 					    mag->magsize =
 						umem_mag_capacity(fmp);
 					    mag->rounds = mag->magsize;
+					    __atomic_store_n(&ptc->fork_busy, 0,
+						__ATOMIC_RELEASE);
 					    UMEM_PTC_PROBE_OBSERVE(fmp,
 						mag->magsize);
 					    umem_ptc_mag_check(mag);
@@ -4113,7 +4119,18 @@ _umem_free(void *buf, size_t size)
 					    &ptc->bins[(int)bin];
 					if (likely(b->count <
 					    ptc_bin_capacity((int)bin))) {
-						b->slots[b->count++] = buf;
+						/*
+						 * Slot first, count second,
+						 * count released: a fork()
+						 * snapshot between the two
+						 * sees the old count and not
+						 * a stale slot (P1.3d rule 1,
+						 * umem_ptc.h).
+						 */
+						b->slots[b->count] = buf;
+						__atomic_store_n(&b->count,
+						    b->count + 1,
+						    __ATOMIC_RELEASE);
 						return;
 					}
 					/*
@@ -4130,7 +4147,9 @@ _umem_free(void *buf, size_t size)
 						mag->loaded->
 						    mag_round[mag->rounds] =
 						    buf;
-						mag->rounds++;
+						__atomic_store_n(&mag->rounds,
+						    mag->rounds + 1,
+						    __ATOMIC_RELEASE);
 						return;
 					}
 					/*
@@ -4141,6 +4160,7 @@ _umem_free(void *buf, size_t size)
 					    mag->prounds < mag->pmagsize) {
 						umem_magazine_t *tmp;
 						int tmp_r;
+						ptc->fork_busy = 1; /* P1.3d */
 						tmp = mag->loaded;
 						tmp_r = mag->rounds;
 						mag->loaded = mag->previous;
@@ -4150,10 +4170,14 @@ _umem_free(void *buf, size_t size)
 						tmp_r = mag->magsize;
 						mag->magsize = mag->pmagsize;
 						mag->pmagsize = tmp_r;
+						__atomic_store_n(&ptc->fork_busy,
+						    0, __ATOMIC_RELEASE);
 						mag->loaded->
 						    mag_round[mag->rounds] =
 						    buf;
-						mag->rounds++;
+						__atomic_store_n(&mag->rounds,
+						    mag->rounds + 1,
+						    __ATOMIC_RELEASE);
 						return;
 					}
 					/*
@@ -4163,6 +4187,7 @@ _umem_free(void *buf, size_t size)
 					 */
 					{
 					umem_magazine_t *emp;
+					ptc->fork_busy = 1; /* P1.3d rule 2 */
 					if (mag->loaded != NULL) {
 						/*
 						 * Hand over the count with
@@ -4196,21 +4221,28 @@ _umem_free(void *buf, size_t size)
 						mag->magsize =
 						    umem_mag_capacity(emp);
 						mag->rounds = 0;
+						__atomic_store_n(&ptc->fork_busy,
+						    0, __ATOMIC_RELEASE);
 						UMEM_PTC_PROBE_OBSERVE(emp,
 						    mag->magsize);
 						umem_ptc_mag_check(mag);
 						mag->loaded->
 						    mag_round[mag->rounds] =
 						    buf;
-						mag->rounds++;
+						__atomic_store_n(&mag->rounds,
+						    mag->rounds + 1,
+						    __ATOMIC_RELEASE);
 						return;
 					}
 					/*
 					 * No empty magazine from the depot
 					 * and none could be allocated -- loaded
-					 * was already donated, so fall through
-					 * with none.
+					 * was already donated (NULL, rounds 0:
+					 * consistent), so fall through with
+					 * none.
 					 */
+					__atomic_store_n(&ptc->fork_busy, 0,
+					    __ATOMIC_RELEASE);
 					}
 					}
 				}

@@ -182,6 +182,36 @@ typedef struct umem_ptc {
 	uint64_t free_count;
 	uint64_t hits;
 	uint64_t misses;
+	/*
+	 * FORK CONSISTENCY (P1.3d).  A PTC is thread-private and lock-free,
+	 * so fork() can snapshot it mid-update; the child then holds a copy
+	 * whose owning thread does not exist.  Two rules make that copy
+	 * usable by the child's fork handler instead of leaked:
+	 *
+	 *  1. Every PUSH stores the slot/round first and the count second,
+	 *     with a release store on the count (umem.c _umem_free PTC paths).
+	 *     A snapshot between the two stores then shows the OLD count, and
+	 *     the in-flight object is simply not in the copy -- it is the
+	 *     parent's, and the parent finishes the push.  Pops are a single
+	 *     count store and are already tear-free.  Before this rule the
+	 *     compiler was free to bump the count first, and a snapshot then
+	 *     showed a count one too high over a STALE slot: a pointer to an
+	 *     object the application may own, which the child would free.
+	 *
+	 *  2. Every MULTI-STORE block (the loaded/previous swaps on both
+	 *     sides, the depot refill, the retire) sets fork_busy = 1 before
+	 *     and 0 (release) after.  A snapshot with fork_busy set is
+	 *     mid-swap -- loaded may equal previous -- and the child's
+	 *     handler SKIPS that PTC (leaks it, which is the pre-P1.3d
+	 *     behaviour for every PTC) rather than drain one magazine twice.
+	 *
+	 * fork_busy is written only by the owning thread and read only by a
+	 * fork child (a different process); no atomics beyond the release
+	 * store are needed, and the stores cost nothing on the hit paths,
+	 * which touch neither rule -- the bin push is rule 1 and is one
+	 * store either way.
+	 */
+	volatile int fork_busy;
 	void *pool[PTC_TOTAL_SLOTS];    /* bins' slot arrays, packed */
 } umem_ptc_t;
 
