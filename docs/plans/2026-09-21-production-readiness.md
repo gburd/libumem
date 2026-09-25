@@ -737,6 +737,8 @@ imply, and that is a documentation accuracy issue independent of hardening.
 | P5.12 `umem_ptc_t` in user size-class slabs; slot pointers reachable by overrun | **FIXED** `444b062`/`ec5c10f` | `test_ptc_adjacency`: 8/8 adjacent -> 0 |
 | P5.13 PTC slot / magazine round pointers unmangled | open | needs hot-path A/B; glibc safe-links its equivalent |
 | P5.14 `mmap_guard` honoured under AT_SECURE (hardening downgrade from env) | **FIXED** `a1912e2` | option gated; default 16 MiB for setuid |
+| P5.15 error path deadlocks vs signal handlers: `umem_error_lock` (review 4.6) AND `vm_lock` via `umem_may_own`'s hull refresh (found by the test) | **FIXED** `5286dcb`, `3e5d326` | `test_errlog_signal.sh`: pre hangs; post 6,000 handler frees, ~1,700 lines dropped, no hang |
+| P5.16 libdw stack symbolisation on every refused `free()` (steady state under LD_PRELOAD) | **FIXED** `a074636` | recoverable path traces only if `umem_output` or abort; arm livelock 436k lines/4 s -> PASS |
 | P5.10 minor / verified-good | **DONE** | gdb whitelist confirmed sound, left alone |
 
 Qualified at `56dbe8d` on x86_64 and aarch64, isolated builds, both configs:
@@ -827,6 +829,30 @@ position, glibc comparison and fix. Two of the three HIGHs (P5.11, P5.12) were
 introduced by this week's own fixes (`9bbe58b`, `b8c39e6`); the correctness
 review of those changes did not ask the four-position question. That is the
 process finding.
+
+### P5.15 / P5.16 -- the error path under a signal handler (review 4.6, and what the test found beyond it)
+`misc.c` `umem_log_enter` (`umem_error_lock`); `malloc.c` `umem_may_own` /
+`hull_refresh` (`vm_lock` via `vmem_walk`); `umem_fail.c` `print_stacktrace`
+(libdw). Position **D** (a program bug plus a signal), and under `LD_PRELOAD`
+with `umem_abort = 0` the recoverable path is steady state, which is what
+makes this different from glibc's abort-and-done `malloc_printerr`.
+
+The review named one lock. `test_errlog_signal` (SIGALRM every 50 us, handler
+frees a forged pointer, main frees forged pointers in a loop) found three
+things in sequence, each fix exposing the next:
+
+| # | what | evidence | fix |
+|---|---|---|---|
+| 1 | `umem_log_enter` took `umem_error_lock` with `mutex_lock`; a handler re-entering on the same thread deadlocks | the review's claim | trylock; drop the line and count it (`umem_error_dropped`) -- `5286dcb` |
+| 2 | **`umem_may_own`'s miss path called `vmem_walk(vmem_heap)` under `vm_lock`** -- on EVERY foreign `free()`, since a miss is the common case for a foreign pointer; the handler deadlocked there first | gdb: `vmem_walk` at frames #2 and #7 of the same thread | `vmem_span_create()` publishes `vmem_heap_lo/hi` (release, under `vm_lock`, before the span is allocatable); `umem_may_own` reads them lock-free; `hull_refresh` and friends deleted -- `3e5d326` |
+| 3 | `umem_err_recoverable` symbolised the full stack via libdw per refusal; on aarch64 ~34 frames, ms per call, libdw's mallocs each an `mmap` through `bootstrap_malloc`; the 50 us handler never finished before the next tick | arm gate FAIL at `3e5d326`, x86 PASS (2-frame capture); gdb: RUNNING in `__libdwfl_getsym`, 436k stderr lines in 4 s with output on | trace on the recoverable path only when `umem_output` is on or abort will fire -- `a074636` |
+
+(2) is the one that matters beyond signals: every foreign `free()` under
+`LD_PRELOAD` took the heap arena's lock and walked every span, so position D
+could serialise every thread on `vm_lock` by freeing foreign pointers in a
+loop. glibc's `free()` takes no global lock to classify a pointer. Now
+neither does libumem's. Interposer ratio 0.58-0.61 after (unchanged to
+better); heap ceiling 9 GB PASS (bounds track growth).
 
 ## Phase 6 — Hard limits
 

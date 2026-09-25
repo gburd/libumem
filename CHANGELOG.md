@@ -31,6 +31,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   pointers; glibc safe-links its tcache, libumem's slots are raw. Now from
   its own `UMC_INTERNAL` cache, as the magazines always were. Slot mangling
   itself remains open (P5.13). `test_ptc_adjacency`.
+- **Every foreign `free()` under `LD_PRELOAD` walked the heap under `vm_lock`**
+  (P5.15, `3e5d326`). `umem_may_own()`'s ownership check refreshed its bounds
+  on a miss by walking every span under the heap arena's lock -- and a miss is
+  the common case for a foreign pointer. A signal handler freeing a foreign
+  pointer while the interrupted thread was in that walk deadlocked; a program
+  freeing foreign pointers in a loop serialised every thread. The heap arena
+  now publishes its bounds when it grows and the check is two lock-free loads.
+  The error log's own lock (`umem_error_lock`) is a trylock that drops the
+  line under contention (`5286dcb`), and the recoverable path no longer
+  symbolises a stack through libdw unless the output will be seen (`a074636`;
+  on aarch64 that was ~34 frames and milliseconds per refused free).
+  `test_errlog_signal.sh`.
 - **`mmap_guard` is now ignored under `AT_SECURE`** (P5.14, `a1912e2`):
   `mmap_guard=0` from the environment would have disabled the `PROT_NONE`
   use-after-free guard on a setuid target.
