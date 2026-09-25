@@ -36,6 +36,7 @@ the pre-fix failure, EC2 verification on x86_64 and aarch64.
 | P1.3a PTC thread-exit drain | FIXED | `2026-09-22-p1.3-ptc-lifetime.md` |
 | P1.3b magazine capacity/resize race | FIXED | `2026-09-22-p1.3bc-magazine-resize.md` |
 | P1.3c populated magazine discarded | FIXED | `2026-09-22-p1.3bc-magazine-resize.md` |
+| P1.3d fork children leak every non-forking thread's PTC | **FIXED** `1efdaa0` | `test_fork_ptc_drain_probe`; hot path +0.00 % insn, inside null |
 | P1.4 destroy with retained slabs | FIXED | `2026-09-21` reclaim report |
 | P1.5a/b/c reclaim metadata + publication | FIXED | TSAN 1 -> 0, aborts pre-fix |
 | P1.6 maintenance-thread startup | FIXED | evidence retracted once, then redone |
@@ -122,6 +123,65 @@ that path. Both return functions now take the round count, drain before
 discarding, and put a magazine on the depot's full list only when it is exactly
 full. Pre-fix: exactly 127 objects destroyed per discarded magazine, counted at
 the point of loss. See `2026-09-22-p1.3bc-magazine-resize.md`.
+
+### P1.3d Fork children leaked every non-forking thread's PTC -- HIGH, FIXED
+`umem_ptc.c` (registry, `umem_ptc_fork_release_child`), `umem_fork.c`
+(lock order 1a; child-side call), `umem.c` `_umem_alloc`/`_umem_free` PTC
+paths (`fork_busy`), `umem_ptc.h` (the rules)
+
+**Found by** the 2026-09-24 production-readiness review (1.6): the PTC had no
+fork handler. After `fork()` the child inherits every parent thread's
+`umem_ptc_t` -- up to 36 bins x 128 slots plus two magazines x 255 rounds,
+~24 KB -- whose owning threads do not exist in the child, and nothing drained
+them. P1.3a with fork as the thread death; for a process that forks
+repeatedly from a multithreaded parent, `forks x threads x cached objects`.
+
+**Why it is not just "drain them" -- the `@cache` agent's finding, verified.**
+The PTC fast paths are lock-free and the fork handler cannot quiesce them, so
+the child's copy may be TORN: a push is `slot[count] = buf; count++` and the
+compiler may store `count` first, so a snapshot can show `count = k+1` over a
+stale `slot[k]` -- a pointer to an object the application owns. The
+loaded/previous swaps and depot refills are 4-8 stores during which `loaded`
+may alias `previous`, so a drain would free one magazine twice. Draining torn
+state trades a leak for corruption.
+
+**What was tried, measured, and decided** (`c7i.2xlarge`, `hotpath_ab.sh`,
+9 alternating pairs, null +-1 %, `bench_pairs` t=1 and t=8):
+
+| variant | bin push | mag pushes | t=8 | t=1 | insn/pair |
+|---|---|---|---|---|---|
+| `0e832a5` | release store | release store | **-3.5..-7.8 %** | -2..-5 % | +1.2..1.9 % |
+| `2fd72a1` load-once | release store | release store | -3.2..-6.9 % | -1..-5 % | +1.2..1.9 % |
+| signal fence only | fence | release | -4.5 % | | same as above |
+| plain slot-then-count | plain, ordered in source | release | -4.5 % | | same |
+| bins only (mags plain) | plain, ordered | plain | **-4..-6 %** | | |
+| mags only (bin plain) | pre form | release | **+-0.3 %** | -2..-3 % | |
+| **`1efdaa0` (shipped)** | pre form | pre form | **-0.5..+0.6 %** | **-0.4..+1.2 %** | **+0.00 %** |
+
+Every ordered form of the bin push cost 4-5 % at t=8 with an identical
+instruction stream (the cost is in the store-to-store ordering; not explained
+further). The magazine release stores were free at t=8 and cost 2-3 % at t=1.
+Neither is paid.
+
+**The fix that holds** (`9baf20f`, `1efdaa0`): (1) a registry of live PTCs
+under `umem_ptc_list_lock`, in the fork lock order at 1a; (2) `fork_busy`
+set/cleared around every multi-store block (measured free: the m2 variant);
+(3) the child's release handler, after every allocator lock is released and
+the interposer/introspection child hooks have run, walks the registry and
+`umem_ptc_destroy()`s each orphan -- the same drain a thread exit does; (4)
+before draining, the child DROPS the top entry of every non-empty bin and of
+each loaded/previous magazine. A PTC has one owner, so at most one push is in
+flight at the snapshot and only a top entry can be torn: at most 36 + 2
+objects are leaked per orphaned PTC instead of the whole PTC, and a stale
+entry is never freed. A PTC with `fork_busy` set is skipped whole.
+
+**Regression** `test_fork_ptc_drain_probe` (probe build): 8 workers cache
+600 objects each and park; fork; the child asserts `drained == 8`,
+`stranded == 0`, `busy_leaked == 0`, `top_dropped <= 8 x 38`. A second arm
+forks under churn and asserts `drained + busy_leaked == 8`, `stranded == 0`.
+Pre-fix (`3c84597` + test): no registry, does not link. Post: PASS both arms,
+both arches, ASan clean. Every exact PTC oracle PASS; P1.3c ledger 0/12; gate
+PASS both arches all configs (46/43/3/0, 46/46 introspect).
 
 ### P1.4 Cache destruction with retained empty slabs
 `umem.c:1750–1758, 4624–4703`

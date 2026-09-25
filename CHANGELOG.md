@@ -20,6 +20,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Fork children leaked every non-forking thread's per-thread cache**
+  (P1.3d, `1efdaa0`). The PTC had no fork handler: after `fork()` the child
+  held a copy of every parent thread's `umem_ptc_t` (up to ~24 KB and ~600
+  cached objects each) with no owner and no drain. A registry of live PTCs is
+  now walked by the child's atfork handler and each orphan is drained as a
+  thread exit would. Because the PTC push paths are lock-free and were left
+  unordered -- every ordered form measured a 4-5 % hot-path cost -- the child
+  drops the top entry of each non-empty bin and magazine before draining (at
+  most 38 objects per PTC, never a stale pointer) and skips a PTC caught
+  mid-swap. Hot path: +0.00 % instructions, inside the null control.
+  Regression `test_fork_ptc_drain_probe`.
 - **`umem_free(NULL, size)` with a non-zero size put NULL on a free list, and
   the next `umem_alloc(size)` on that thread returned it -- NULL with
   `errno == 0`.** `_umem_free()` indexed the size-class table and stored the
