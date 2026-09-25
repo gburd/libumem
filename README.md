@@ -526,9 +526,12 @@ affected. Details: P5.9 in
 
 ### Per-Thread Cache (PTC)
 
-Lock-free fast path for allocations up to 2 KB.  Default on.  Tune via
-`UMEM_OPTIONS=perthread_cache=2m` or disable with
-`perthread_cache=0`.
+Lock-free fast path for allocations up to 8 KB (`tcache_max`, default 8192
+since P8.2b).  Default on.  Disable with `UMEM_OPTIONS=tcache=0`; lower the
+size ceiling with `tcache_max=N`.  This paragraph used to say
+`perthread_cache=0` disables it: it does not, and never did in this port --
+that option is Solaris's byte-sized knob, accepted for compatibility and read
+by nothing (production-readiness review 2026-09-24, 3.3).
 
 ### Stack-Based allocation (SBO)
 

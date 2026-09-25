@@ -265,8 +265,14 @@ static umem_env_item_t umem_options_items[] = {
 		"Seconds before dirty slabs are reclaimed (default 30)",
 		NULL, 0,	&umem_reclaim_delay
 	},
-	{ "perthread_cache",	"Evolving",	ITEM_SIZE,
-		"Size (in bytes) of per-thread allocation cache",
+	{ "perthread_cache",	"Obsolete",	ITEM_SIZE,
+		"ACCEPTED AND IGNORED.  Solaris libumem sized its per-thread "
+		    "cache in bytes with this; this port's per-thread cache is "
+		    "sized per size class (umem_ptc.h PTC_NSLOTS_*) and bounded "
+		    "by tcache_max; disable it with tcache=0.  The variable is "
+		    "parsed so old UMEM_OPTIONS strings keep working, and "
+		    "nothing reads it (production-readiness review 2026-09-24, "
+		    "3.3).",
 		NULL, 0, NULL, &umem_ptc_size
 	},
 	{ "tcache",		"Evolving",	ITEM_UINT,

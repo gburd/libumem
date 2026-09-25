@@ -619,7 +619,12 @@ size_t umem_lite_minsize = 0;   /* minimum buffer size for UMF_LITE */
 size_t umem_lite_maxalign = 1024; /* maximum buffer alignment for UMF_LITE */
 size_t umem_maxverify;          /* maximum bytes to inspect in debug routines */
 size_t umem_minfirewall;        /* hardware-enforced redzone threshold */
-size_t umem_ptc_size = 1048576;	/* size of per-thread cache (in bytes) */
+/*
+ * Accepted and ignored.  UMEM_OPTIONS=perthread_cache=N sets it and nothing
+ * reads it: this port's PTC is sized per class (umem_ptc.h), bounded by
+ * tcache_max, disabled by tcache=0.  Kept so old option strings parse.
+ */
+size_t umem_ptc_size = 1048576;
 
 uint32_t umem_reclaim_enabled = 1;  /* background page reclamation via madvise */
 uint32_t umem_reclaim_delay = 30;   /* seconds before reclaiming dirty slabs */
