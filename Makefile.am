@@ -57,6 +57,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/security/test_reap_interval_zero \
 		  test/security/test_ptc_adjacency \
 		  test/security/test_ptc_slot_mangle \
+		  test/security/test_mag_round_mangle \
 		  test/security/test_errlog_signal \
 		  test/security/test_stack_bounds \
 		  test/security/test_introspect_peer_uid \
@@ -874,6 +875,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_reap_interval_zero.sh \
 	test/security/test_ptc_adjacency \
 	test/security/test_ptc_slot_mangle \
+	test/security/test_mag_round_mangle \
 	test/security/test_errlog_signal.sh \
 	test/security/test_abort_option.sh \
 	test/security/test_stack_bounds.sh \
@@ -910,6 +912,13 @@ test_security_test_ptc_adjacency_CPPFLAGS = -I$(srcdir)
 test_security_test_ptc_slot_mangle_SOURCES = test/security/test_ptc_slot_mangle.c
 test_security_test_ptc_slot_mangle_LDADD = libumem.la
 test_security_test_ptc_slot_mangle_CPPFLAGS = -I$(srcdir)
+
+# P5.13b: an overwritten per-thread magazine round must not yield the chosen
+# address.  Control arm: build the library with -DUMEM_NO_LINK_MANGLE; this
+# then FAILS (allocator returns the live buffer).
+test_security_test_mag_round_mangle_SOURCES = test/security/test_mag_round_mangle.c
+test_security_test_mag_round_mangle_LDADD = libumem.la
+test_security_test_mag_round_mangle_CPPFLAGS = -I$(srcdir)
 
 # Error log vs signal handler: must not deadlock.  Both libraries: the free()
 # in the handler is the interposer's, with umem_abort = 0.
