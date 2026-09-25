@@ -2941,6 +2941,46 @@ next metal run, with the contention dump beside it.  (1), the slab-layer
 batch, is the remaining lo-box mechanism and is not attempted in this
 pass.
 
+**STATUS round 3 (2026-09-25, `9f1a9f8`, `c7i.2xlarge`): re-profiled, (1)
+deliberately declined; P8.5 closed as PARTIAL-shipped with the tail
+characterised.** `perf record` of `frag -w -t 8 -s 16:64` at HEAD reproduces
+the post-`0532c38` profile exactly: `umem_slab_alloc` **15.3 %** of cycles
+(under it `umem_slab_create` 4.45 % = the `mmap`, `pthread_mutex_lock` on
+`cache_lock` 3.43 %), against the bench's own `td_qsort`/`td_add`/`td_compress`
+t-digest at ~50 %. Three facts settle (1):
+
+1. **Batching cannot meet target (4).** Target (4) is p999 < 5 us at t=8. The
+   19 us tail is `umem_slab_create` under `mmap_lock` (4.45 %), which fires
+   when the growing working set exhausts umem_va's qcache; carving N objects
+   per `cache_lock` removes the 3.43 % lock share but not one `mmap`. A perfect
+   slab batch would raise throughput and leave the tail where it is.
+2. **The correctness surface is not justified for the gain.** A batch carve
+   duplicates or must share `umem_slab_alloc`'s P5.4 demangle+validate
+   (`umem_slab_link_valid`), the `UMF_HASH` insert, the `SLAB_RECLAIMING` skip
+   and the create-drops-the-lock dance -- ~120 lines with the same invariants,
+   to move a throughput number the harness measures at ~50 % t-digest overhead.
+   The empty-stripe fix (`0532c38`) that shipped was two lines for +28-42 %;
+   this is the opposite ratio.
+3. **The real architectural gap is jemalloc's owning-thread free**, recorded
+   above: freed objects go to the freeing CPU's stripe (an N-way mutex
+   exchange) instead of the owning thread's page (a lock-free push). That is a
+   depot redesign, not a v3.3.0 item, and it -- not a slab batch -- is what
+   closes the 8-19x t=192 gap.
+
+Shipped for P8.5: the `0532c38` empty-stripe half (+28 % x86 / +42 % arm
+sustained, `dep_conten` 434k -> 0). Open and characterised: the p999 tail
+(`mmap` on slab growth) and the t=192 all-to-all depot exchange (needs the
+owning-thread free). **P8.5 CLOSED as PARTIAL; (1) declined with reason; the
+remainder is P8.5b (owning-thread free), a post-v3.3.0 architectural item.**
+
+**Not done.**  The t=192 metal re-measurement (the 95 % cross-stripe
+figure, sustained 3x behind) -- `c7i.metal-48xl` had no capacity and
+`c8g.metal` was used for P8.2b and terminated per the brief; the brief
+said not to launch metal for this alone.  The fix here removes lock
+traffic that the t=192 profile (59 % in `pthread_mutex_trylock`) also
+shows, but whether stealing or scanning dominates there is a claim for the
+next metal run, with the contention dump beside it.  (1), the slab-layer
+
 ### Gate record, 2026-09-24 hot-path round (`343177c`)
 
 `scripts/ec2/exit_criteria_gate.sh` via `verify-isolated.sh` on
