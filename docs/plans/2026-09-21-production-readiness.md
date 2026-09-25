@@ -2032,7 +2032,7 @@ same). Known-open items measured but owned elsewhere: the ~5 GB heap ceiling
 | P8.2 API path collapses at 1k:4k under threads | 0.06x glibc at 64+ t on both metals, -78..-96 % vs best, p999 32-68 us; deterministic (umem@null identical) | **FIXED** `ae86536`: CPU hint was `pthread_self() & mask == 0` -- one `cc_lock` per process; 1.4 -> 16.4 Mops at t=8 |
 | P8.2b 1k:4k cliff at t>=128 on both metals (hidden by P8.2) | at `d6f04ab`: x86 105 -> 91 Mops t=64 -> 128 (libc 165 -> 253); arm 277 -> 77 (libc 255 -> 200); null falls with it; umem p999 11 us vs libc 0.4 | **FIXED** `ad72787` (PTC bins through 8192 B; `eb68575` 63-round magazines is inside the null): `c8g.metal` t=64/128/192 275/128/179 -> 314/352/429 Mops, 0.42x -> 1.24x libc at t=128, p999 2.8 us -> 39 ns; `c7i.2xlarge` t=8 0.69x -> 1.22x. x86 metal not re-measured (no capacity) |
 | P8.6 PTC per-thread magazines never primed | 28x cliff at the bin boundary, single thread (157 -> 5.5 Mpairs/s at N=64 -> 65 for 512 B); 39 % trylock + 34 % unlock | **FIXED** `a2177b9`: one magazine allocated on the first free-side miss; cliff 26.9x -> 1.16x (x86), 26.3x -> 1.05x (arm); depot trylocks per 200 rounds 25,600 -> 0; inside the bin within null |
-| P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | fixed in part at `bc6c911`: bare-loop insn/pair 418 -> 277, preload/API 0.31 -> 0.59 (x86 t=1); 0.95 not reachable with this header design, see entry |
+| P8.3 interposer per-call residual after P8.1 | preload/API 0.69-0.81 at every thread count, flat | fixed in part at `bc6c911`: bare-loop insn/pair 418 -> 277, preload/API 0.31 -> 0.59 (x86 t=1); after P5.10/P5.15 (bootstrap registry, lock-free ownership bounds) 0.58-0.63 x86 / 0.52-0.54 arm, regression bar 0.48; 0.95 not reachable with this header design, see entry |
 | P8.4 API `multi` 16:64 8-24 % behind best at 128-192 t on x86_64 metal | -20 %/-24 % at t=128/192 (null sd 8.5 %); inside null on aarch64 | **CLOSED** by `ae86536` (P8.2's fix): at `d6f04ab` x86 t=192 umem 528.8 = null 527.8 > libc 486.8 -- PTC misses had also gone to `cache_cpu[0]` |
 | P8.5 `frag` 20-42 % behind size-class allocators at t=1..8; **8-19x behind sustained at 192 threads, p999 6-10 ms** | all four boxes; sustained frag 16:64 at 192 t: umem 2.0 / 1.2 Mops vs 15-24 for every other allocator incl. glibc; perf: 13 % of cycles in depot mutex trylock/unlock | **PARTIAL** `0532c38`: at t=8 the cost was steal SCANS locking empty stripes (98.6 % of 17M pops), not steals (dep_remote/dep_local 0.11); unlocked head check -> dep_conten 434k -> 0, sustained 0.57x -> 0.72x (x86) / 0.77x (arm) glibc; p999 19 us unchanged (slab layer, plan's (1)); t=192 not re-measured (no metal) |
 
@@ -2573,8 +2573,16 @@ stays; the comment now says what it does. Consequence for a foreign
 pointer: `buf[-1]` is read before ownership is known, and if it equals
 `BOOTSTRAP_MAGIC` the pointer goes to `bootstrap_free()` ->
 `munmap(hdr, hdr->size)`. Attacker position D (controls buffer contents,
-not the environment); the same exposure existed before this work. Open
-as a P5 item; (b) would have closed it at steady state and cost 1.6 %.
+not the environment); the same exposure existed before this work.
+**Closed as P5.10 (`3767b4c`, `98d71a7`, `2f91fde`) after this entry was
+written -- and not by (b).** The live-count gate was reinstated (`6842a35`)
+and shown by `test_forged_bootstrap` NOT to close the exposure: 28 bootstrap
+mappings survive `umem_init()` in every process, so the count is never zero
+and the read ran on every `free()` regardless. What holds is a registry of
+bootstrap mappings behind a lock-free page set and a shape filter, at parity
+with the pre-P5.10 instruction count (323.9 vs 323.8 insn/pair, arm). The
+"would have closed it at steady state" claim above was the second wrong
+prediction about this path in two days; it stays here, corrected.
 
 *Regression.* `test/stress/repro_interpose_free_ratio` (in `make check`
 via `interpose_regress.sh`): preload/API at t=8, 9 alternating pairs,
