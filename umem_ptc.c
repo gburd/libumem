@@ -706,7 +706,9 @@ umem_ptc_bin_flush_impl(umem_ptc_bin_t *bin, size_t size, int all)
 		 * (P6.3).  Per-object _umem_cache_free took cc_lock once per
 		 * object -- up to 600 acquisitions per exiting thread -- and
 		 * at 16,000 simultaneous exits that queue stalled unrelated
-		 * threads for 37 ms.  umem_cache_free_batch fills the per-CPU
+		 * threads for 37 ms (P6.3 table in
+		 * docs/plans/2026-09-21-production-readiness.md; fixed b8c39e6,
+		 * 06559e5: 1 ms).  umem_cache_free_batch fills the per-CPU
 		 * magazines under one cc_lock; anything the magazine layer
 		 * cannot take goes to the slab layer inside it and is counted
 		 * in its return, so it never leaves an object behind.
