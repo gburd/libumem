@@ -2824,7 +2824,7 @@ introspect / `--disable-rseq` / oracle-matrix pass in the same isolated tree:
 | `--disable-rseq` `make check` | 43 / 40 / 3 / 0 | 43 / 40 / 3 / 0 |
 
 The default-config exact oracles were also run at each fix sha separately
-(`a2177b9`, `ad72787`, `eb68575`, `0532c38`, `4441514`): see the STATUS
+(`a2177b9`, `ad72787`, `eb68575`, `0532c38`, `efe93c7` -- the last was `4441514` before the comment-review agent's amend renamed it; same tree): see the STATUS
 entries above.
 
 ### Phase 8 exit criteria
