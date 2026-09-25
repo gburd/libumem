@@ -125,6 +125,7 @@ static uint_t umem_env_secure_ignored;
 
 #ifndef UMEM_STANDALONE
 static arg_process_t umem_backend_process;
+static arg_process_t umem_reap_interval_process;
 static arg_process_t umem_allocator_process;
 #endif
 
@@ -188,9 +189,19 @@ static umem_env_item_t umem_options_items[] = {
 		"no caches will be multithreaded, and no caching will occur.",
 		&umem_flags,	UMF_NOMAGAZINE
 	},
-	{ "reap_interval",	"Private",	ITEM_UINT,
-		"Minimum time between reaps and updates, in seconds.",
-		NULL, 0,	&umem_reap_interval
+	{ "reap_interval",	"Private",	ITEM_SPECIAL,
+		"Minimum time between reaps and updates, in seconds "
+		    "(>= 1; 0 is rejected).",
+		NULL, 0, NULL, NULL,
+		&umem_reap_interval_process
+		/* Honoured under AT_SECURE: a pure tuning knob -- because the
+		 * processor below refuses 0.  With 0 the update thread's
+		 * deadline is always already past and it runs applyall back to
+		 * back forever, a core at 100 % (P5.11); an environment-
+		 * controlled CPU-burn on a setuid target is a side effect
+		 * glibc does not offer, since it ignores every MALLOC_ tunable
+		 * there.  Rejecting the one bad value keeps the option
+		 * available in secure mode without the side effect. */
 	},
 	{ "magazine_tune",	"Evolving",	ITEM_UINT,
 		"Enable magazine size auto-tuning (1=enable, 0=disable)",
@@ -615,6 +626,33 @@ umem_size_process(const umem_env_item_t *item, const char *item_arg)
 }
 
 #ifndef UMEM_STANDALONE
+/*
+ * reap_interval: parsed like any ITEM_UINT, then refused if 0 (P5.11; see the
+ * table entry).  The floor is 1 second because that is the granularity the
+ * update thread's deadline arithmetic uses (umem_update_thread.c: tv_sec +=
+ * umem_reap_interval).
+ */
+static int
+umem_reap_interval_process(const umem_env_item_t *item, const char *item_arg)
+{
+	umem_env_item_t tmp = *item;
+	uint_t val = 0;
+	int rc;
+
+	tmp.item_type = ITEM_UINT;
+	tmp.item_uint_target = &val;
+	rc = item_uint_process(&tmp, item_arg);
+	if (rc != ARG_SUCCESS)
+		return (rc);
+	if (val == 0) {
+		log_message("%s: %s: 0 would make the update thread spin; "
+		    "minimum is 1. ignored\n", CURRENT, item->item_name);
+		return (ARG_BAD);
+	}
+	umem_reap_interval = val;
+	return (ARG_SUCCESS);
+}
+
 static int
 umem_backend_process(const umem_env_item_t *item, const char *item_arg)
 {
