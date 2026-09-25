@@ -53,6 +53,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/security/test_errno_preserved \
 		  test/security/test_free_errno \
 		  test/security/test_forged_free \
+		  test/security/test_forged_span_gap \
 		  test/security/test_forged_bootstrap \
 		  test/security/test_reap_interval_zero \
 		  test/security/test_ptc_adjacency \
@@ -871,6 +872,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_errno_preserved \
 	test/security/test_free_errno \
 	test/security/test_forged_free \
+	test/security/test_forged_span_gap \
 	test/security/test_forged_bootstrap \
 	test/security/test_reap_interval_zero.sh \
 	test/security/test_ptc_adjacency \
@@ -889,6 +891,16 @@ TESTS += test/security/test_no_path_exec.sh \
 test_security_test_forged_free_SOURCES = test/security/test_forged_free.c
 test_security_test_forged_free_LDADD = libumem.la libumem_malloc.la
 test_security_test_forged_free_CPPFLAGS = -I$(srcdir)
+
+# P7.4: forges a malloc header in the address GAP between two heap spans --
+# inside the [vmem_heap_lo,vmem_heap_hi) hull but owned by no span -- and
+# asserts free() refuses it (pre-fix the convex hull accepts it, the address
+# lands on a per-thread bin, and a later malloc() returns it).  Same two-
+# library link as test_forged_free, for the LD_PRELOAD free() path.  Reads the
+# published hull bounds, so it links libumem directly.
+test_security_test_forged_span_gap_SOURCES = test/security/test_forged_span_gap.c
+test_security_test_forged_span_gap_LDADD = libumem.la libumem_malloc.la
+test_security_test_forged_span_gap_CPPFLAGS = -I$(srcdir)
 
 # P5.10: a forged BOOTSTRAP_MAGIC header must not make free() munmap the
 # caller's page.  Same two-library link for the same reason.
