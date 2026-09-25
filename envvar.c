@@ -239,10 +239,21 @@ static umem_env_item_t umem_options_items[] = {
 		    "MADV_DONTNEED'd, which returns the pages equally but does "
 		    "not split the mapping into a new VMA.  Default 16M; 0 = "
 		    "never guard.",
-		NULL, 0, NULL,	&vmem_mmap_guard_min
-		/* Not secure-unsafe in either direction: raising it trades a
-		 * fault-on-UAF property for VMA count and back; neither is a
-		 * file, socket, exec or disclosure side effect. */
+		NULL, 0, NULL,	&vmem_mmap_guard_min,
+		/* SECURE-UNSAFE (P5.14).  The comment this replaces said "not
+		 * secure-unsafe in either direction ... neither is a file,
+		 * socket, exec or disclosure side effect".  That was the wrong
+		 * test.  mmap_guard=0 turns off the PROT_NONE remap for every
+		 * freed span, so a use-after-free into a freed large buffer
+		 * reads zeros (or the next tenant) instead of faulting: an
+		 * environment-controlled DOWNGRADE of a hardening property on a
+		 * setuid target, position C.  The gate is per option, not per
+		 * direction, so a setuid target cannot raise it either; it gets
+		 * the 16 MiB default, which is the point.  glibc has no
+		 * equivalent knob and no PROT_NONE-on-free at all, so this was
+		 * not worse than glibc -- but AGENTS.md 7a is about not letting
+		 * the environment weaken a privileged target, not about parity. */
+		1
 	},
 #endif
 #endif
