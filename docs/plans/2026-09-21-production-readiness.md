@@ -2578,6 +2578,29 @@ Solaris table originally did (15 rounds at 4-8 KB) -- is the fix if a
 workload shows it. Recorded as **P8.2c**; needs `probe_threads` run at
 `-s 4096..8192` on a box with many threads before anything is changed.
 
+**STATUS round 3 (2026-09-25, `4b64fdd`, `c7i`/`c7g.2xlarge`): MEASURED, the
+5.4 MB worst case does NOT materialise; P8.2c CLOSED, no fix.** `probe_threads
+4000 2000 <lo:hi>` (a new size-tier flag, `4b64fdd`), 4,000 threads each
+cycling the tier, RSS/thread:
+
+| tier | x86 KB/thread | arm KB/thread |
+|---|---:|---:|
+| baseline (16-240 B) | 42.8 | 45.9 |
+| 4096 B | 286.0 | 289.3 |
+| 2560-8192 B (every XLARGE class) | 278.8 | 282.4 |
+
+**~280 KB/thread, not 5.4 MB** -- 19x below the arithmetic. The arithmetic
+assumed a thread holds a full 63-round magazine *per class simultaneously*; in
+practice the PTC bin caps at its slot count and the magazine layer holds ONE
+primed magazine (P8.6), not a full one per class at once, so a thread cycling
+the whole tier retains bins + one magazine's worth, bounded and measured. At
+4,000 threads that is ~1.1 GB (matches the RSS delta), real but not
+pathological, and it is the cache doing its job on a synthetic all-classes
+sweep no real workload runs. The byte-bound / size-scaled-`mt_magsize` fix is
+not warranted; if a real workload ever shows > ~300 KB/thread in this tier,
+the lever (`mt_magsize` scaled by object size, Solaris's 15 rounds at 4-8 KB)
+is recorded here. **CLOSED as measured-fine.**
+
 `multi` 16:64 at t=192 (the no-regression point for the PTC table growth):
 pre umem 521.4 / null 538.7 / libc 576.9; (a) 530.5 / 578.7 / 555.6;
 (a)+(b) 541.7 / 548.7 / 558.2.  Inside the null's own spread (-20..+40
