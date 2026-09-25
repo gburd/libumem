@@ -82,7 +82,7 @@ static int ptc_key_initialized = 0;
  * does not mangle the slots (a per-op XOR on the hot path; P5.13, open);
  * it removes the adjacency that makes an overrun reach them.
  */
-umem_cache_t *umem_ptc_cache;	/* set by umem_cache_init() */
+struct umem_cache *umem_ptc_cache;	/* set by umem_cache_init() */
 
 #ifdef UMEM_PTC_RESIZE_PROBE
 volatile long umem_ptc_probe_exit_stranded = 0;

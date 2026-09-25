@@ -29,7 +29,7 @@
  * [buf, buf + class_size) is within one class_size of any recorded PTC --
  * i.e. shares a slab neighbourhood with it.
  *
- *   PASS: no user buffer within one object-size of any live PTC.
+ *   PASS: no user buffer within one object-size (inclusive) of any live PTC.
  *   FAIL: at least one is.  Pre-fix, with 8 PTCs live and hundreds of
  *         same-class user buffers, adjacency is near-certain.
  *
@@ -115,7 +115,15 @@ main(void)
 			uintptr_t u = (uintptr_t)user[i];
 			uintptr_t d = u > ptc_addr[t] ? u - ptc_addr[t] :
 			    ptc_addr[t] - u;
-			if (d < class_sz) {
+			/*
+			 * <= not <: in this class a slab holds ONE object (the
+			 * 16-object floor stops at 64 KiB slabs), so the next
+			 * object is the next span, exactly class_sz away, and
+			 * spans from the va arena's 4 MiB qcache slab are
+			 * contiguous.  An overrun of one byte past the end of
+			 * a user object lands in the PTC at +class_sz.
+			 */
+			if (d <= class_sz) {
 				if (adjacent < 5)
 					printf("  user %p is %zu B from PTC %p\n",
 					    user[i], (size_t)d,

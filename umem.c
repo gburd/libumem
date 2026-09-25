@@ -2115,43 +2115,6 @@ done:
 }
 
 /*
- * Atomic load of tagged pointer.
- * Uses C11 acquire ordering for safe publication.
- */
-static inline umem_tagged_ptr_t
-atomic_load_tagged_ptr(volatile umem_tagged_ptr_t *ptr)
-{
-	umem_tagged_ptr_t val;
-	val.raw = atomic_load_explicit(
-	    (_Atomic(uint64_t) *)&ptr->raw, memory_order_acquire);
-	return val;
-}
-
-/*
- * Atomic compare-and-swap of tagged pointer.
- * Returns 1 on success, 0 on failure.
- * On failure, 'expected' is updated with the current value.
- * Uses acq_rel for success (publish new head), acquire for failure.
- */
-static inline int
-atomic_cas_tagged_ptr(volatile umem_tagged_ptr_t *ptr,
-                     umem_tagged_ptr_t *expected,
-                     umem_tagged_ptr_t desired)
-{
-	return atomic_compare_exchange_strong_explicit(
-	    (_Atomic(uint64_t) *)&ptr->raw,
-	    &expected->raw, desired.raw,
-	    memory_order_acq_rel, memory_order_acquire);
-}
-
-/*
- * Select depot stripe based on thread ID and NUMA node.
- * When NUMA is enabled, stripes are partitioned by node so threads on the
- * the depot is a cold path — complexity budget goes to the magazine
- * fast path, not here.
- */
-
-/*
  * P8.5 ledger (COMPILED OUT unless -DUMEM_PTC_RESIZE_PROBE, like the P1.3
  * probes below): depot stripe pops attempted, and how many of them found the
  * list EMPTY.  A pop that takes a stripe's lock only to read a NULL head paid
