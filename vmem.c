@@ -612,7 +612,8 @@ vmem_populate(vmem_t *vmp, int vmflag)
 	 * process with "Assertion failed: vmflag & VM_NOSLEEP" and no hint that
 	 * the caller's flags were at fault, which is how a test's misuse of
 	 * VM_SLEEP looked for years like an allocator crash
-	 * (docs/results/2026-09-22-prop-fragmentation-vmem-abort.md).  Under
+	 * (docs/results/2026-09-22-prop-fragmentation-vmem-abort.md, STATUS:
+	 * FIXED, restored after 7ba9914 deleted it).  Under
 	 * NDEBUG the assertion vanished entirely and execution continued into a
 	 * path the comment above says is not allowed -- strictly worse.
 	 *

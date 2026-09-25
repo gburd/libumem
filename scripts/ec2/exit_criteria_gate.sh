@@ -15,7 +15,6 @@
 # it -- that is how an aborting prop_fragmentation (rc=134) was first reported
 # here as rc=0, the same defect class as oracle_matrix.sh's `echo "exit=$?"`.
 # Exit status is the number of gate failures, so it is usable as a gate.
-# reported as rc=0 by this very script. Same defect class as oracle_matrix.sh's.
 r() { printf '\n=== %s ===\n' "$*"; }
 fails=0
 note_fail() { fails=$((fails+1)); echo "GATE-FAIL: $*"; }
@@ -41,7 +40,8 @@ for p in test/property/.libs/prop_alloc_free2 test/property/.libs/prop_cache tes
   echo "$(basename $p) rc=$rc"
   # No allowances here.  Every property test must pass; if one starts failing,
   # that is a gate failure, not a footnote.  (prop_fragmentation used to be
-  # exempted for a vmem abort -- that was fixed, so the exemption is gone.)
+  # exempted for a vmem abort -- that was fixed, so the exemption is gone;
+  # docs/results/2026-09-22-prop-fragmentation-vmem-abort.md has the record.)
   [ $rc -ne 0 ] && note_fail "$(basename $p) rc=$rc"
 done
 
