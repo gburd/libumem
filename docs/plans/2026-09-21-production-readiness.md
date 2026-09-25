@@ -1870,7 +1870,7 @@ this phase died on provider content filters; the coordinator did it directly.
 | P7.1 P5.4 mangling not independently tested | **CLOSED** | `inslab` case: FAIL with `-DUMEM_NO_LINK_MANGLE`, PASS default (`c8d83bd`) |
 | P7.2 `UMEM_OPTIONS=abort` documented but nonexistent | **FIXED** | `test_abort_option.sh`: pre rc=0, post SIGABRT (`1c604df`) |
 | P7.3 P1.3c ledger false positive | **FIXED** | stale-tail split 0/254/127; drain-disabled 635/1016/635 (`64ca9af`) |
-| P7.4 `umem_may_own()` convex hull | **OPEN, characterised** | below |
+| P7.4 `umem_may_own()` convex hull | **OPEN, decided**: exact span table (jemalloc's answer), after v3.3.0 | below |
 | P7.5 leading-component symlinks | **OPEN, by design** | below |
 | P7.6 update thread never started | **FIXED** (found via P6.8) | `9bbe58b` |
 
@@ -1947,6 +1947,36 @@ ownership structure cheap enough for the free path (a radix over span bases,
 which is what jemalloc's `rtree` is). Both are real projects; neither is a
 line. Recorded as the honest boundary of the interposer's hardening:
 **a forged header inside the hull but outside every span is accepted.**
+
+**DECISION (2026-09-25): exact span table, published the way `vmem_heap_lo/hi`
+now is; not for v3.3.0.**
+
+The two candidates and why one wins:
+
+| | exact span table | unforgeable header |
+|---|---|---|
+| what it closes | a forged header *between* spans (the hull gap) | a forged header *anywhere*, including inside a span |
+| what it costs on `free()` | a binary search over N spans: ~log2(N) loads; a 9 GB heap is ~80 spans at 4 MiB qcache slabs, so 6-7 loads | one XOR on write, one on read, PLUS a per-process secret in the header that every reader must know |
+| readers to change | `umem_may_own()` only | `process_free`, `umem_malloc`, `realloc`, `malloc_usable_size`, `umem_inspect.c`, `umem_introspect.c`, `tools/umem.c`, the gdb/lldb scripts -- the on-heap format |
+| publication | `vmem_span_create()` appends under `vm_lock`; readers take a seqlock or read a version-stamped immutable array (spans only ever grow -- P5.15 established the pattern) | none; it is a format |
+| what it does NOT close | a forged header inside a real span aimed at a *live* object -- but P5.4's freelist mangling + `umem_slab_link_valid` already cover the slab-side consequence of that | nothing in scope; but the secret is process-wide, so one info leak of one header defeats it for the process |
+| compare | jemalloc's rtree (exact ownership, no secret) | scudo (checksummed header) |
+
+The span table is the smaller change, touches one function, has no format
+consequence, and matches the allocator that is otherwise closest in design
+(jemalloc). The unforgeable header is the stronger property but couples a
+secret to a format that a dozen readers -- including out-of-process debugger
+scripts -- decode. jemalloc's answer is the right one for a slab allocator.
+
+Cost estimate before doing it: P5.15's `vmem_heap_lo/hi` was two loads; the
+table is ~7 dependent loads on the `free()` miss path only (a hit against the
+hull short-circuits first, so a *heap* pointer pays nothing new; only a
+foreign or between-spans pointer pays the search). That is the case where we
+want to spend the cycles. Regression: the P7.4 shape from Phase 7 -- a forged
+`MALLOC_MAGIC` header in a caller `mmap` placed between two heap spans, `free()`
+must refuse it; today it is accepted and lands in a PTC bin. Recorded as the
+fix; not started, because it is a hardening change that deserves its own A/B
+with a stable base, and this release's base moves until P5.13 lands.
 
 ### P7.5 Leading-component symlinks -- by design, stated
 `umem_open_write()` (`misc.c`); callers in `umem_profile.c`, `umem_inspect.c`
