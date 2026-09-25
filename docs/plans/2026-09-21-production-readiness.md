@@ -1458,6 +1458,37 @@ change is isolated from P8.2:
 | `4dfdd06` | 16,000 | 11.67 s | 67.3 KB | 51,408 | 1.354 s | **84.6** | 534 us |
 | `2f91fde` | 16,000 | 0.91 s | 42.6 KB | 38,510 | 2.611 s | **163.2** | 206 us |
 
+**P6.3b (release `cc_lock` between depot trips) -- REFUTED, not done, no fix
+warranted.** The premise was that `umem_cache_free_batch` holds `cc_lock`
+across the whole bin's depot exchanges while per-object `_umem_cache_free`
+releases it between objects, so at 16k exits the batch serialises unrelated
+threads. Measured at `d6a9322` (b0b22b3 + a `-DUMEM_PTC_DRAIN_PER_OBJECT`
+control arm), `c7i.metal-48xl`, batch (default) vs per-object, both drained
+4,000 and 16,000 threads:
+
+| build | 4,000 us/thread | 16,000 us/thread |
+|---|---:|---:|
+| batch (run 1) | 98.6 | 416.5 |
+| per-object | 160.1 | 219.6 |
+| batch (run 2, null re-check) | 106.1 | 248.0 |
+
+Two facts kill the fix: (1) at 4,000 the batch is *faster* (99-106 vs 160);
+(2) at 16,000 the batch's own run-to-run spread (416 -> 248 for the identical
+binary) is larger than its gap to per-object. `perf record` during the 16k
+drain: **36% `rwsem_optimistic_spin`** -- the kernel per-process `mmap_lock`
+rwsem -- and `strace -c` shows **31,989 `mmap` and 775 `munmap`** for the run,
+i.e. ~2 mmaps/thread: those are `pthread_create` **thread-stack** mmaps whose
+teardown contends `mmap_lock`, overlapping spawn and exit. `umem_depot_alloc`
+is 2.36% and the allocator's `cc_lock`/`ml_lock` do not appear near the top.
+Releasing `cc_lock` between depot trips cannot touch a kernel rwsem. The
+"163 vs 85" that opened P6.3b compared two different shas and was caught by
+this same variance. Batch stays: it is faster at the thread counts a real
+program hits, and its one-hand-off-per-bin ledger is what makes the P1.3a/P1.3d
+drain oracles exact. The `mmap_lock` ceiling at 16k simultaneous thread exits
+is a kernel property (glibc's own `probe_threads` equivalent hits it too); not
+an allocator defect. The control arm (`d6a9322`) is left `#ifdef`'d out as the
+only way to reproduce this. **CLOSED.**
+
 **The batch drain is slower per exiting thread on 192 CPUs -- 2.2x at 4k and
 1.9x at 16k -- and the plan's target (< 20 us/thread) is missed by 8x.** The
 mechanism written for the fix ("one cc_lock per bin instead of one per
