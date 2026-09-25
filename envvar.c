@@ -389,6 +389,9 @@ static umem_env_item_t umem_debug_items[] = {
 	{ "random",		"Private",	ITEM_FLAG,
 		"randomize flags on a per-cache basis",
 		&umem_flags,	UMF_RANDOMIZE
+		/* Not secure-unsafe: only picks which debug checks a cache
+		 * gets; no file, socket, exec or disclosure side effect and
+		 * no hardening is downgraded. */
 	},
 	{ "allverbose",		"Private",	ITEM_FLAG,
 		"Enables writing all logged messages to stderr",
@@ -400,6 +403,8 @@ static umem_env_item_t umem_debug_items[] = {
 	{ "checknull",		"Private",	ITEM_FLAG,
 		"Abort if an allocation would return null",
 		&umem_flags,	UMF_CHECKNULL
+		/* Not secure-unsafe: arming an abort is the safe direction,
+		 * as with "abort". */
 	},
 
 	{ NULL, "-- end of UMEM_DEBUG --",	ITEM_INVALID }
