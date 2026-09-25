@@ -2651,27 +2651,6 @@ umem_depot_free_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
 }
 
 /*
- * Allocate a magazine from the depot.
- * Tries per-CPU depot first (our CPU, then steal from same NUMA node,
- * then steal from any CPU), then falls back to the global depot list.
- *
- * NUMA-aware stealing order:
- *   1. Local CPU depot
- *   2. Other CPUs on the same NUMA node
- *   3. CPUs on remote NUMA nodes
- *   4. Global depot
- *
- * This ordering keeps memory locality high on NUMA systems: objects freed
- * on a CPU are physically close to that CPU's node, so stealing from a
- * same-node CPU avoids cross-node memory traffic.
- *
- * Lock ordering: caller must NOT hold cp->cache_lock.
- * The depot locks (ml_lock) are below cache_lock in the hierarchy.
- * Holding cache_lock while acquiring ml_lock would invert the order
- * used by umem_lockup_cache() in the fork handler.
- */
-
-/*
  * Destroy a magazine that belongs to a stale magtype.
  * After a magazine resize, PTC or rseq threads may return magazines
  * allocated from the old magtype. When popped, these fail
@@ -2705,6 +2684,31 @@ umem_depot_destroy_stale(umem_cache_t *cp, int is_full,
 	_umem_cache_free(mag_cache, mp);
 }
 
+/*
+ * Allocate a magazine from the depot.
+ * Tries per-CPU depot first (our CPU, then steal from same NUMA node,
+ * then steal from any CPU), then falls back to the global depot list.
+ *
+ * NUMA-aware stealing order:
+ *   1. Local CPU depot
+ *   2. Other CPUs on the same NUMA node
+ *   3. CPUs on remote NUMA nodes
+ *   4. Global depot
+ *
+ * This ordering keeps memory locality high on NUMA systems: objects freed
+ * on a CPU are physically close to that CPU's node, so stealing from a
+ * same-node CPU avoids cross-node memory traffic.
+ *
+ * Lock ordering (umem_fork.c, THE ONE TRUE LOCK ORDER, 6a/6b/6c):
+ * cc_lock, then ml_lock, then cache_lock.  The caller holds cc_lock and
+ * must NOT hold cp->cache_lock: this function blocks on ml_lock (6b) and,
+ * via umem_depot_destroy_stale() -> umem_slab_free(), takes cache_lock
+ * (6c) after ml_lock has been released.  Holding cache_lock on entry
+ * would take 6b after 6c, inverting the order umem_lockup_cache() uses.
+ * (An earlier version of this comment said ml_lock was "below"
+ * cache_lock, the opposite of what umem_fork.c documents and the code
+ * does.)
+ */
 static umem_magazine_t *
 umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
 {
@@ -2837,8 +2841,8 @@ umem_depot_alloc(umem_cache_t *cp, umem_maglist_t *mlp)
  * Free a magazine to the depot.
  * Pushes to per-CPU depot if available, otherwise to global list.
  *
- * Lock ordering: caller must NOT hold cp->cache_lock.
- * See umem_depot_alloc() for rationale.
+ * Lock ordering: caller holds cc_lock and must NOT hold cp->cache_lock;
+ * this blocks on ml_lock (6b).  See umem_depot_alloc().
  */
 static void
 umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp,
