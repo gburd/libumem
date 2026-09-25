@@ -1046,6 +1046,15 @@ test_bench_bench_pairs_LDADD = libumem.la
 test_bench_bench_pairs_LDFLAGS = -pthread
 test_bench_bench_pairs_CPPFLAGS = -I$(srcdir)
 
+# P7.4: cost of classifying a NON-owned free().  Links the interposer so
+# free() is umem_malloc_free(); reads vmem_heap_lo/hi + MALLOC_MAGIC to build
+# the in-hull no-span (position-D) target.  Instrument, never in TESTS.
+noinst_PROGRAMS += test/bench/bench_foreign_free
+test_bench_bench_foreign_free_SOURCES = test/bench/bench_foreign_free.c
+test_bench_bench_foreign_free_LDADD = libumem.la libumem_malloc.la
+test_bench_bench_foreign_free_LDFLAGS = -pthread
+test_bench_bench_foreign_free_CPPFLAGS = -I$(srcdir)
+
 # P6.4: per-cache footprint and VMAs left behind by destroy.
 noinst_PROGRAMS += test/integration/test_cache_footprint
 test_integration_test_cache_footprint_SOURCES = test/integration/test_cache_footprint.c
