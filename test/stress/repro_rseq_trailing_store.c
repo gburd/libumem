@@ -49,6 +49,22 @@ extern void *umem_rseq_alloc_fastpath(umem_rseq_cache_t *cache, int cpu_id);
 extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
     int cpu_id);
 
+/*
+ * P5.13b demangle bridge: the fast path stores mag_round[] slots mangled
+ * (stored = ptr ^ umem_link_cookie ^ (&slot >> 12)) and demangles on pop.
+ * This direct-asm repro must therefore build mangled magazines and demangle
+ * on inspection.  umem_link_cookie is linked from libumem and initialized
+ * by umem_rseq_init() in main().
+ */
+extern uintptr_t umem_link_cookie;
+static inline void *
+tslot_mangle(void *slotp, void *val)
+{
+	return ((void *)((uintptr_t)val ^ umem_link_cookie ^
+	    ((uintptr_t)slotp >> 12)));
+}
+#define	tslot_demangle(slotp, val)	tslot_mangle((slotp), (val))
+
 typedef struct test_magazine {
 	void *mag_next;
 	void *mag_round[64];
@@ -101,7 +117,8 @@ repro_alloc_leak(int cpu, long iters)
 		memset(&mag, 0, sizeof(mag));
 		uintptr_t base = 0x10000 + (uintptr_t)iter * 0x1000;
 		for (int i = 0; i < magsize; i++)
-			mag.mag_round[i] = (void *)(base + (uintptr_t)i * 0x10);
+			mag.mag_round[i] = tslot_mangle(&mag.mag_round[i],
+			    (void *)(base + (uintptr_t)i * 0x10));
 
 		memset(&rc, 0, sizeof(rc));
 		rc.loaded_mag = &mag;
@@ -190,7 +207,8 @@ repro_free_double_presence(int cpu, long iters)
 				 */
 				int committed_anyway =
 				    (rc.rounds != rounds_before) ||
-				    (mag.mag_round[rounds_before] == buf &&
+				    (tslot_demangle(&mag.mag_round[rounds_before],
+				    mag.mag_round[rounds_before]) == buf &&
 				    rounds_before < rc.rounds);
 				if (rc.rounds > rounds_before) {
 					double_presence++;
