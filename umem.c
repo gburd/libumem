@@ -725,8 +725,7 @@ umem_cache_t            umem_null_cache = {
 	0, 0,
 	0, 0,
 	0, 0,
-	0, 0,
-	0, 0,
+	0,
 	"invalid_cache",
 	0, 0,
 	NULL, NULL, NULL, NULL,
@@ -4897,8 +4896,16 @@ umem_cache_update(umem_cache_t *cp)
 	(void) mutex_unlock(&cp->cache_full.ml_lock);
 
 	/*
-	 * Magazine size auto-tuning based on reload frequency.
-	 * Only active when umem_magazine_tuning is enabled.
+	 * umem_magazine_tuning (UMEM_OPTIONS=magazine_tune=1, or set by
+	 * UMEM_PROFILE) refreshes cache_alloc_ops here.  It used to also
+	 * request UMU_MAGAZINE_RESIZE when the reload/alloc ratio exceeded
+	 * 15 %, from a cache_mag_reloads counter.  921b502 (2026-04-20)
+	 * removed that counter's hot-path increments and kept this reader,
+	 * so from then until the counter was deleted the ratio was always 0
+	 * and the resize never fired.  The reload-driven resize is gone
+	 * with the counter; the contention-driven resize above is the only
+	 * one.  Re-adding it means a counted increment in umem_cpu_reload()
+	 * and an A/B per the team brief.
 	 */
 	if (unlikely(umem_magazine_tuning) && cp->cache_magtype != NULL) {
 		/*
@@ -4914,23 +4921,6 @@ umem_cache_update(umem_cache_t *cp)
 			allocs += tc->cc_alloc;
 		}
 		cp->cache_alloc_ops = allocs;
-
-		uint64_t reloads = cp->cache_mag_reloads;
-		uint64_t reload_delta = reloads - cp->cache_mag_reloads_prev;
-		uint64_t alloc_delta = allocs - cp->cache_alloc_ops_prev;
-
-		cp->cache_mag_reloads_prev = reloads;
-		cp->cache_alloc_ops_prev = allocs;
-
-		if (alloc_delta > 100) {
-			uint64_t reload_pct = (reload_delta * 100) /
-			    alloc_delta;
-			if (reload_pct > 15 &&
-			    cp->cache_chunksize <
-			    cp->cache_magtype->mt_maxbuf) {
-				update_flags |= UMU_MAGAZINE_RESIZE;
-			}
-		}
 	}
 
 	if (update_flags)

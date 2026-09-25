@@ -197,7 +197,7 @@ push_leakset(FILE *sock, const char *setfile)
 struct stats {
 	long pid, caches, rss_kb;
 	unsigned long long inuse, total, slab_create, slab_destroy;
-	unsigned long long depot_contention, mag_reloads;
+	unsigned long long depot_contention;
 };
 
 static void
@@ -220,7 +220,6 @@ fetch_stats(FILE *sock, struct stats *s)
 		else if (!strcmp(key, "slab_create")) s->slab_create = v;
 		else if (!strcmp(key, "slab_destroy")) s->slab_destroy = v;
 		else if (!strcmp(key, "depot_contention")) s->depot_contention = v;
-		else if (!strcmp(key, "mag_reloads")) s->mag_reloads = v;
 		else if (!strcmp(key, "rss_kb")) s->rss_kb = (long)v;
 	}
 }
@@ -283,7 +282,6 @@ monitor(long pid, int once)
 		printf("  slabs created     %llu\n", s.slab_create);
 		printf("  slabs destroyed   %llu\n", s.slab_destroy);
 		printf("  depot contention  %llu\n", s.depot_contention);
-		printf("  magazine reloads  %llu\n", s.mag_reloads);
 		printf("  RSS               %ld KiB\n", s.rss_kb);
 
 		print_top_caches(sock, 12);

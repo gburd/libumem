@@ -286,7 +286,7 @@ cmd_stats(FILE *out)
 {
 	umem_cache_t *cp;
 	uint64_t inuse = 0, total = 0, slab_create = 0, slab_destroy = 0;
-	uint64_t depot_contention = 0, mag_reloads = 0;
+	uint64_t depot_contention = 0;
 	int ncaches = 0;
 
 	(void) mutex_lock(&umem_cache_lock);
@@ -298,7 +298,6 @@ cmd_stats(FILE *out)
 		slab_create += cp->cache_slab_create;
 		slab_destroy += cp->cache_slab_destroy;
 		depot_contention += cp->cache_depot_contention;
-		mag_reloads += cp->cache_mag_reloads;
 		(void) mutex_unlock(&cp->cache_lock);
 		ncaches++;
 	}
@@ -313,7 +312,6 @@ cmd_stats(FILE *out)
 	fprintf(out, "slab_destroy %llu\n", (unsigned long long)slab_destroy);
 	fprintf(out, "depot_contention %llu\n",
 	    (unsigned long long)depot_contention);
-	fprintf(out, "mag_reloads %llu\n", (unsigned long long)mag_reloads);
 	fprintf(out, "rss_kb %ld\n", self_rss_kb());
 	fprintf(out, ".\n");
 }
@@ -350,7 +348,7 @@ cmd_cache(FILE *out, const char *name)
 		int flags;
 		uint64_t slab_alloc, slab_free, buftotal;
 		uint64_t slab_create, slab_destroy;
-		uint64_t depot_contention, mag_reloads;
+		uint64_t depot_contention;
 	} c;
 
 	(void) mutex_lock(&umem_cache_lock);
@@ -374,7 +372,6 @@ cmd_cache(FILE *out, const char *name)
 	c.slab_create = cp->cache_slab_create;
 	c.slab_destroy = cp->cache_slab_destroy;
 	c.depot_contention = cp->cache_depot_contention;
-	c.mag_reloads = cp->cache_mag_reloads;
 	(void) mutex_unlock(&cp->cache_lock);
 	(void) mutex_unlock(&umem_cache_lock);
 
@@ -394,7 +391,6 @@ cmd_cache(FILE *out, const char *name)
 	    (unsigned long long)c.slab_destroy);
 	fprintf(out, "depot_contention %llu\n",
 	    (unsigned long long)c.depot_contention);
-	fprintf(out, "mag_reloads %llu\n", (unsigned long long)c.mag_reloads);
 	fprintf(out, ".\n");
 }
 

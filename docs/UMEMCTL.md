@@ -54,14 +54,14 @@ umemctl <pid> monitor [--once]         # full-screen ANSI TUI
 ### stats
 
 Process-wide roll-up: `pid`, `caches`, `bufs_inuse`, `bufs_total`,
-`slab_create`, `slab_destroy`, `depot_contention`, `mag_reloads`, `rss_kb`.
+`slab_create`, `slab_destroy`, `depot_contention`, `rss_kb`.
 
 ### caches / cache
 
 `caches` prints `name  bufsize  inuse  total  flags` (one row per cache, walked
 off the live circular `cache_next` list). `cache <name>` adds per-cache detail:
 `align`, `chunksize`, `slabsize`, `slab_alloc`/`slab_free`, `buftotal`, and the
-per-cache `depot_contention` / `mag_reloads` counters.
+per-cache `depot_contention` counter.
 
 ### whatis
 

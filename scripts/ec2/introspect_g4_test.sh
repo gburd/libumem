@@ -24,7 +24,7 @@ echo "$OUT"
 echo "===== assertions ====="
 fail=0
 for pat in "libumem monitor" "caches" "bufs in-use" "slabs created" \
-           "depot contention" "magazine reloads" "RSS" "cache"; do
+           "depot contention" "RSS" "cache"; do
     if echo "$OUT" | grep -qi "$pat"; then
         echo "OK: panel '$pat'"
     else

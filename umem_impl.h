@@ -633,10 +633,7 @@ struct umem_cache {
 	uint64_t	cache_lookup_depth;	/* hash lookup depth */
 	uint64_t	cache_depot_contention;	/* mutex contention count */
 	uint64_t	cache_depot_contention_prev; /* previous snapshot */
-	uint64_t	cache_mag_reloads;	/* total magazine reloads */
-	uint64_t	cache_mag_reloads_prev;	/* previous reload snapshot */
 	uint64_t	cache_alloc_ops;	/* total allocation operations */
-	uint64_t	cache_alloc_ops_prev;	/* previous alloc snapshot */
 
 	/*
 	 * Cache properties

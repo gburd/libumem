@@ -129,8 +129,6 @@ typedef struct profile_state {
 	uint64_t peak_buftotal[UMP_MAX_CACHES];
 	uint64_t steady_buftotal[UMP_MAX_CACHES];
 	uint32_t stable_intervals[UMP_MAX_CACHES];
-	uint64_t mag_reloads_prev[UMP_MAX_CACHES];
-	uint64_t mag_reloads_cur[UMP_MAX_CACHES];
 
 	/* Phase tracking */
 	uint32_t            num_phases;
@@ -204,8 +202,6 @@ find_or_add_cache(const char *name, size_t bufsize)
 	ps->peak_buftotal[i] = 0;
 	ps->steady_buftotal[i] = 0;
 	ps->stable_intervals[i] = 0;
-	ps->mag_reloads_prev[i] = 0;
-	ps->mag_reloads_cur[i] = 0;
 	ps->prev_rates[i] = 0.0;
 
 	return (int)i;
@@ -229,33 +225,6 @@ phase_matches(double *current, double *profiled, int n)
 			return 0;
 	}
 	return (sum_total > 0 && sum_diff / sum_total < 0.2);
-}
-
-/*
- * Determine optimal magazine size from observed reload frequency.
- * Higher reload rates mean the magazine is too small.
- */
-static uint32_t
-compute_optimal_magsize(uint64_t total_reloads, uint64_t total_allocs)
-{
-	if (total_allocs == 0 || total_reloads == 0)
-		return 15;
-
-	double ratio = (double)total_allocs / (double)total_reloads;
-
-	if (ratio < 4)
-		return 3;
-	if (ratio < 16)
-		return 7;
-	if (ratio < 32)
-		return 15;
-	if (ratio < 64)
-		return 31;
-	if (ratio < 128)
-		return 63;
-	if (ratio < 256)
-		return 127;
-	return 255;
 }
 
 static int write_profile(const char *path);
@@ -311,7 +280,6 @@ umem_profile_sample(void)
 		}
 		uint64_t slab_free = cp->cache_slab_free;
 		uint64_t buftotal = cp->cache_buftotal;
-		uint64_t mag_reloads = cp->cache_mag_reloads;
 
 		double alloc_rate = (double)(alloc_ops - ps->prev_alloc_ops[idx]);
 		double free_rate = (double)(slab_free - ps->prev_free_ops[idx]);
@@ -321,7 +289,6 @@ umem_profile_sample(void)
 		ps->prev_buftotal[idx] = buftotal;
 		ps->cur_alloc_rates[idx] = alloc_rate;
 		ps->cur_free_rates[idx] = free_rate;
-		ps->mag_reloads_cur[idx] = mag_reloads;
 
 		/* Track peak */
 		if (buftotal > ps->peak_buftotal[idx])
@@ -478,9 +445,15 @@ write_profile(const char *path)
 		rec.peak_buftotal = ps->peak_buftotal[i];
 		rec.alloc_rate = ps->cur_alloc_rates[i];
 		rec.free_rate = ps->cur_free_rates[i];
-		rec.optimal_magazine_size = compute_optimal_magsize(
-		    ps->mag_reloads_cur[i] - ps->mag_reloads_prev[i],
-		    ps->prev_alloc_ops[i]);
+		/*
+		 * On-disk field kept for format compatibility; always 15.
+		 * It was computed from cache_mag_reloads, a counter nothing
+		 * incremented after 921b502, so compute_optimal_magsize()
+		 * always took its total_reloads == 0 branch and returned 15.
+		 * Field and function deleted; the constant is what every
+		 * profile ever written contained.
+		 */
+		rec.optimal_magazine_size = 15;
 
 		/* Estimate slab count: peak_buftotal / estimated bufs_per_slab
 		 * A rough heuristic: slabsize is typically 64K, so bufs_per_slab

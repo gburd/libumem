@@ -141,6 +141,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   hull test by design (a bootstrap mmap can lie inside the hull's gaps),
   and the comment now says so. (P8.3)
 
+### Removed
+
+- **`cache_mag_reloads`, a counter nothing incremented.** `921b502`
+  (2026-04-20) removed its hot-path increments and left every reader:
+  `umemctl stats`/`cache` and the introspect socket printed `mag_reloads 0`
+  forever, `UMEM_PROFILE`'s `optimal_magazine_size` column was always 15
+  (the `total_reloads == 0` branch), the reload-ratio arm of
+  `magazine_tune=1` could never fire, and `test_umem_stats/mag_reloads` had
+  returned SKIP on it since. Field, `_prev` twin, printers, the profile
+  function and the test are gone; the profile file keeps the column at its
+  historical constant 15 for format compatibility. `cache_alloc_ops_prev`,
+  which only that arm read, goes with it. Comment review #4.
+
 ## [3.2.0] - 2026-09-24
 
 The theme of this release is *things that were never running*. Three of its

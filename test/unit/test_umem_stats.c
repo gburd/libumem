@@ -5,7 +5,6 @@
  * - cache_slab_alloc/free counts match operations
  * - cache_buftotal/bufmax track correctly
  * - cache_depot_contention increments under contention
- * - cache_mag_reloads counts magazine operations
  * - Per-CPU cc_alloc/cc_free statistics
  *
  * Modeled after jemalloc's mallctl stats tests: allocate N times,
@@ -401,58 +400,6 @@ test_percpu_free_count(const MunitParameter params[], void *data)
 }
 
 /*
- * Test: magazine reload counter increments
- *
- * By doing many alloc/free cycles we force magazine reloads from
- * the depot. cache_mag_reloads should increment.
- *
- * NOTE: This counter is defined in the structure but not yet
- * implemented in the allocation code paths. Skip until implemented.
- */
-static MunitResult
-test_mag_reloads(const MunitParameter params[], void *data)
-{
-	(void)params;
-	(void)data;
-	ensure_umem_initialized();
-
-	umem_cache_t *cp = umem_cache_create("stats_mag_reloads", 64, 0,
-	    NULL, NULL, NULL, NULL, NULL, 0);
-	munit_assert_not_null(cp);
-
-	uint64_t before = cp->cache_mag_reloads;
-
-	/*
-	 * Allocate and free in batches larger than magazine size
-	 * to force magazine reloads from depot/slab.
-	 */
-	for (int cycle = 0; cycle < 20; cycle++) {
-		#define MAG_RELOAD_BATCH 100
-		void *ptrs[MAG_RELOAD_BATCH];
-		for (int i = 0; i < MAG_RELOAD_BATCH; i++) {
-			ptrs[i] = umem_cache_alloc(cp, UMEM_DEFAULT);
-			munit_assert_not_null(ptrs[i]);
-		}
-		for (int i = 0; i < MAG_RELOAD_BATCH; i++)
-			umem_cache_free(cp, ptrs[i]);
-	}
-
-	uint64_t after = cp->cache_mag_reloads;
-
-	umem_cache_destroy(cp);
-
-	/* Check if counter is implemented */
-	if (after == before) {
-		/* Counter not yet implemented - skip test */
-		return MUNIT_SKIP;
-	}
-
-	/* Reloads should have occurred */
-	munit_assert_uint64(after, >, before);
-	return MUNIT_OK;
-}
-
-/*
  * Test: statistics survive alloc/free stress
  *
  * After heavy allocation, stats should still be internally consistent:
@@ -545,8 +492,6 @@ static MunitTest stats_tests[] = {
 	{ "/percpu_alloc_count", test_percpu_alloc_count,
 	    NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 	{ "/percpu_free_count", test_percpu_free_count,
-	    NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
-	{ "/mag_reloads", test_mag_reloads,
 	    NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 	{ "/stats_consistency_under_stress", test_stats_consistency_under_stress,
 	    NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
