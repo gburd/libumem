@@ -126,6 +126,51 @@ static struct bootstrap_ent bootstrap_ptrs[MAX_BOOTSTRAP_PTRS];
 static pthread_mutex_t bootstrap_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
 static _Atomic long bootstrap_live;
 
+/*
+ * Convex hull of every registered bootstrap mapping, [lo, hi).  The live
+ * count alone is not a usable fast-path gate: 28 bootstrap allocations
+ * survive umem_init() in an ordinary process and are never freed, so the
+ * count is nonzero for the life of nearly every process, and a locked
+ * 256-slot scan on every free() reproduced P8.1's collapse exactly
+ * (preload/API 0.005 at t=8 with the count-only gate).
+ *
+ * The hull is exact enough: a pointer outside [lo, hi) cannot be
+ * registered, and that is two relaxed loads and two compares.  A pointer
+ * inside takes the locked scan, which is the exact answer; bootstrap
+ * mappings are their own mmaps in a region the heap does not share, so the
+ * hull is tight and ordinary heap pointers miss it.  lo only falls and hi
+ * only rises (a freed mapping does not shrink them), so a stale read is a
+ * superset -- the same argument as umem_may_own()'s hull.
+ */
+static _Atomic uintptr_t bootstrap_lo = UINTPTR_MAX;
+static _Atomic uintptr_t bootstrap_hi = 0;
+
+static void
+bootstrap_hull_add(const void *buf, size_t total_size)
+{
+	uintptr_t b = (uintptr_t)buf - sizeof (bootstrap_header_t);
+	uintptr_t e = b + total_size;
+	uintptr_t cur;
+
+	cur = atomic_load_explicit(&bootstrap_lo, memory_order_relaxed);
+	while (b < cur && !atomic_compare_exchange_weak_explicit(&bootstrap_lo,
+	    &cur, b, memory_order_release, memory_order_relaxed))
+		;
+	cur = atomic_load_explicit(&bootstrap_hi, memory_order_relaxed);
+	while (e > cur && !atomic_compare_exchange_weak_explicit(&bootstrap_hi,
+	    &cur, e, memory_order_release, memory_order_relaxed))
+		;
+}
+
+static inline int
+bootstrap_hull_may_contain(const void *buf)
+{
+	uintptr_t a = (uintptr_t)buf;
+
+	return (a >= atomic_load_explicit(&bootstrap_lo, memory_order_acquire) &&
+	    a < atomic_load_explicit(&bootstrap_hi, memory_order_acquire));
+}
+
 /* Returns 1 and records the mapping, or 0 if the table is full. */
 static int
 bootstrap_register(void *buf, size_t total_size)
@@ -141,6 +186,7 @@ bootstrap_register(void *buf, size_t total_size)
 			    memory_order_release);
 			bootstrap_ptrs[i].ptr = buf;
 			bootstrap_ptrs[i].size = total_size;
+			bootstrap_hull_add(buf, total_size);
 			ok = 1;
 			break;
 		}
@@ -268,6 +314,8 @@ static inline int
 bootstrap_pointer_p(const void *buf)
 {
 	if (atomic_load_explicit(&bootstrap_live, memory_order_acquire) == 0)
+		return (0);
+	if (!bootstrap_hull_may_contain(buf))
 		return (0);
 	return (bootstrap_registered(buf));
 }
