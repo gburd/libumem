@@ -12,13 +12,23 @@
 /*
  * Regression: the heap must not be capped by vm.max_map_count at ~5 GB.
  *
- * DEFECT (pre-fix): on platforms without MAP_ALIGN (i.e. Linux), the mmap
- * heap's parent arena used a PAGE-SIZED quantum where Solaris uses 64 KiB, so
- * the heap accumulated roughly one kernel VMA per ~76 KiB of address space.
- * The kernel caps VMAs per process at vm.max_map_count (default 65530), so
- * umem_alloc() began returning NULL at about 5 GB -- measured 65,532 VMAs at
- * failure, 100% of the limit, with ~39% of allocations failing at 192 threads
- * while glibc on the same box reached 96 GB without a single failure.
+ * DEFECT (pre-fix): umem_cache_create()'s best-fit slab-sizing loop was
+ * written against Solaris's 64 KiB heap quantum, where it yields 16 objects
+ * per slab for a 4 KiB chunk.  On Linux the quantum is the 4 KiB page, so
+ * the same loop yields ONE object per slab: one span, one mprotect, one
+ * kernel VMA per 4 KiB allocation.  The kernel caps VMAs per process at
+ * vm.max_map_count (default 65530), so umem_alloc() began returning NULL at
+ * about 5 GB -- measured 65,532 VMAs at failure, 100% of the limit, with
+ * ~39% of allocations failing at 192 threads while glibc on the same box
+ * reached 96 GB without a single failure.  Fixed by UMEM_MIN_SLAB_OBJECTS /
+ * UMEM_MIN_SLAB_CEILING (umem_impl.h, 3f2e67c) and, for the qcache path,
+ * UMEM_MIN_QCACHE_SLAB; docs/results/2026-09-22-umem-heap-ceiling-vma.md.
+ *
+ * (This paragraph used to blame "the mmap heap's parent arena used a
+ * PAGE-SIZED quantum where Solaris uses 64 KiB" -- the mechanism the FAILED
+ * first attempt targeted (553d42e, reverted; recorded in that results doc).
+ * The quantum was the input; the defect was in slab density downstream of
+ * it, as the table further down and the CHUNK comment already said.)
  *
  * HOW THIS DETECTS IT
  *   Allocate past the old ceiling in large-but-not-oversize chunks, holding
