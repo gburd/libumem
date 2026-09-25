@@ -38,6 +38,10 @@
  * THE ONE TRUE LOCK ORDER.  Every lock below is acquired in this order, by
  * the fork handlers and by ordinary allocation paths alike:
  *
+ *   0.  malloc_interpose.c's static_buffer_lock, then libc_ptr_lock
+ *       (libumem_malloc.so only, via the weak umem_interpose_lockup();
+ *       free()/realloc() take them before entering the allocator -- see
+ *       the interposer paragraph below)
  *   1a. umem_ptc_list_lock (umem_ptc.c: the PTC registry; taken by
  *       umem_ptc_get()/umem_ptc_cleanup() while holding no allocator lock,
  *       and nothing takes an allocator lock while holding it -- P1.3d)
