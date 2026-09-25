@@ -804,7 +804,6 @@ test_rapid_cache_lifecycle(const MunitParameter params[], void *data)
 /* Forward declarations for tests defined after the array */
 static MunitResult test_cov_update_thread_trigger(const MunitParameter[], void *);
 static MunitResult test_cov_malloc_interpose(const MunitParameter[], void *);
-static MunitResult test_cov_vmem_operations(const MunitParameter[], void *);
 static MunitResult test_cache_audit_flag(const MunitParameter[], void *);
 static MunitResult test_cache_deadbeef_flag(const MunitParameter[], void *);
 static MunitResult test_cache_redzone_flag(const MunitParameter[], void *);
@@ -910,8 +909,6 @@ static MunitTest coverage_tests[] = {
     { "/update_thread_trigger", test_cov_update_thread_trigger, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
     { "/malloc_interpose_paths", test_cov_malloc_interpose, NULL, NULL,
-      MUNIT_TEST_OPTION_NONE, NULL },
-    { "/vmem_operations", test_cov_vmem_operations, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
     { "/cache_audit_flag", test_cache_audit_flag, NULL, NULL,
       MUNIT_TEST_OPTION_NONE, NULL },
@@ -1060,15 +1057,16 @@ test_cov_malloc_interpose(const MunitParameter params[], void *data)
     return MUNIT_OK;
 }
 
-static MunitResult
-test_cov_vmem_operations(const MunitParameter params[], void *data)
-{
-    (void)params; (void)data;
-    /* vmem_create with no import source crashes on destroy — skip */
-    return MUNIT_SKIP;
-}
-
-/* ---- Cache with UMF_AUDIT flag ---- */
+/*
+ * ---- Cache with UMF_AUDIT flag ----
+ *
+ * NOTE: UMF_AUDIT and UMF_FIREWALL (below) are cache_flags values, not
+ * UMC_* cflags.  Passing them as cflags works only because
+ * umem_cache_create() does `cache_flags = umem_flags | (cflags & UMF_DEBUG)`
+ * (umem.c), so 0x1 and 0x40 pass through by accident.  Fragile; a
+ * cflags-validating umem_cache_create would reject these calls.  Left
+ * as-is and recorded.
+ */
 
 static MunitResult
 test_cache_audit_flag(const MunitParameter params[], void *data)
