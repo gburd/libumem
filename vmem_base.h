@@ -31,6 +31,8 @@
 
 #include <sys/vmem.h>
 #include <umem.h>
+#include <stdint.h>
+#include <stdatomic.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -71,6 +73,8 @@ extern uint_t vmem_backend;
 extern uint_t vmem_allocator;
 
 extern vmem_t *vmem_heap;
+/* [lo, hi) over every span ever added to vmem_heap; see vmem.c. */
+extern _Atomic uintptr_t vmem_heap_lo, vmem_heap_hi;
 extern vmem_alloc_t *vmem_heap_alloc;
 extern vmem_free_t *vmem_heap_free;
 

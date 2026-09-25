@@ -643,82 +643,33 @@ umem_memalign(size_t align, size_t size_arg)
  * magic check.  It cannot be fooled by a header forged in a foreign heap or
  * on the stack, which is the exposure it closes.
  *
- * WHY A CACHED HULL and not vmem_contains(): vmem_contains() walks the span
- * list under the arena lock, and this runs on every free().  The hull is two
- * compares.  It only ever WIDENS -- the updates below are CAS loops, so a
- * concurrent pair cannot narrow it by losing an update -- which means a stale
- * read can produce a false MISS but never a false hit.  A miss then refreshes
- * and re-tests, so a valid pointer is never rejected.
+ * WHY NOT vmem_contains(): it walks the span list under the arena lock, and
+ * this runs on every free().  The bounds are two compares.
  *
- * NO LOCK OF ITS OWN, deliberately: this is on the free() path, and a new
- * lock there would have to be placed in the fork/vmem lock order.  vmem_walk()
- * takes only the arena's own lock, which free() does not already hold.
+ * WHERE THE BOUNDS COME FROM, and why that changed.  This file used to keep
+ * its own copy (umem_heap_lo/hi) and, on a miss, call vmem_walk(vmem_heap)
+ * under vm_lock to see whether the heap had grown since the copy was taken.
+ * But a miss is the COMMON case for a foreign pointer, so under LD_PRELOAD
+ * every foreign free() took the heap arena's lock and walked every span --
+ * and a signal handler freeing a foreign pointer while the interrupted
+ * thread was inside that walk deadlocked on vm_lock.  test_errlog_signal
+ * found it while looking for a different lock (production-readiness review
+ * 2026-09-24, 4.6).  Position D could also make every thread serialise on
+ * vm_lock by freeing foreign pointers in a loop.
  *
- * ponytail: convex hull, refreshed on miss.  If a between-spans foreign
- * pointer with a forged header ever matters, the upgrade is a sorted span
- * table with a binary search, or vmem_contains() gated on the hull hit.
+ * Now vmem_span_create() publishes vmem_heap_lo/hi (vmem.c) under vm_lock
+ * every time the heap grows, and this file only reads them.  There is no
+ * miss path: the bounds are always current up to a release store made
+ * BEFORE the span became allocatable, so a pointer umem could have handed
+ * out is always inside what a reader sees.  They only widen, so a stale
+ * read is a smaller superset -- still never "no" for a heap pointer.
+ *
+ * ponytail: convex hull.  If a between-spans foreign pointer with a forged
+ * header ever matters (P7.4), the upgrade is a sorted span table with a
+ * binary search, published the same way.
  */
-static _Atomic uintptr_t umem_heap_lo = (uintptr_t)UINTPTR_MAX;
-static _Atomic uintptr_t umem_heap_hi;
-
-static void
-hull_span_cb(void *arg, void *addr, size_t size)
-{
-	uintptr_t *hull = arg;	/* [0] = lo, [1] = hi */
-	uintptr_t start = (uintptr_t)addr;
-
-	if (start < hull[0])
-		hull[0] = start;
-	if (start + size > hull[1])
-		hull[1] = start + size;
-}
-
-/* Widen lo downward / hi upward, never the other way (see above). */
-static void
-hull_lower(_Atomic uintptr_t *slot, uintptr_t v)
-{
-	uintptr_t cur = atomic_load(slot);
-
-	while (v < cur) {
-		if (atomic_compare_exchange_weak(slot, &cur, v))
-			return;
-	}
-}
-
-static void
-hull_raise(_Atomic uintptr_t *slot, uintptr_t v)
-{
-	uintptr_t cur = atomic_load(slot);
-
-	while (v > cur) {
-		if (atomic_compare_exchange_weak(slot, &cur, v))
-			return;
-	}
-}
-
-/*
- * Re-read vmem_heap's spans and widen the cached hull.  Called only when a
- * candidate missed the hull, i.e. never on the common path.  vmem_walk()
- * without VMEM_REENTRANT in typemask (as here: VMEM_SPAN alone) calls the
- * callback with the arena's vm_lock held, so the callback must not
- * allocate -- it does not.  A caller that adds VMEM_REENTRANT gets the
- * lock dropped around the callback and a different set of hazards.
- */
-static void
-hull_refresh(void)
-{
-	uintptr_t hull[2];
-
-	if (vmem_heap == NULL)
-		return;
-	hull[0] = (uintptr_t)UINTPTR_MAX;
-	hull[1] = 0;
-	vmem_walk(vmem_heap, VMEM_SPAN, hull_span_cb, hull);
-	if (hull[1] == 0)
-		return;			/* no spans yet */
-	hull_lower(&umem_heap_lo, hull[0]);
-	hull_raise(&umem_heap_hi, hull[1]);
-}
+#define	umem_heap_lo	vmem_heap_lo
+#define	umem_heap_hi	vmem_heap_hi
 
 /*
  * Is [addr, addr + len) inside the hull [lo, hi)?  lo/hi are bounds the
@@ -740,16 +691,14 @@ hull_contains(uintptr_t lo, uintptr_t hi, const void *addr, size_t len)
 
 /*
  * Could [addr, addr + len) be memory umem handed out?  Conservative: a false
- * "yes" is possible (the hull is a superset), a false "no" is not.  This is
- * the MISS path, reached only when hull_contains() against the caller's
- * loaded pair said no: the heap may simply have grown since the last
- * refresh, so re-read the spans and re-test before rejecting anything.
- * The hit path is MAY_OWN in process_free_umem().
+ * "yes" is possible (the hull is a superset), a false "no" is not.  Reached
+ * when hull_contains() against the caller's loaded pair said no; re-reads
+ * the published bounds (they may have widened since the caller loaded them)
+ * and re-tests.  No walk, no lock: see the block above.
  */
 static int
 umem_may_own(const void *addr, size_t len)
 {
-	hull_refresh();
 	return (hull_contains(atomic_load(&umem_heap_lo),
 	    atomic_load(&umem_heap_hi), addr, len));
 }

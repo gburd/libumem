@@ -129,6 +129,7 @@
 #include <atomic.h>
 #endif
 
+#include <stdatomic.h>
 #include "vmem_base.h"
 #include "umem_base.h"
 
@@ -228,6 +229,32 @@ static vmem_t *vmem_hash_arena;
 static vmem_t *vmem_vmem_arena;
 
 vmem_t *vmem_heap;
+
+/*
+ * Address bounds of every span ever added to vmem_heap: [vmem_heap_lo,
+ * vmem_heap_hi).  Published here, at span creation, under vm_lock, with
+ * release stores; read lock-free by umem_may_own() (malloc.c), the free()
+ * ownership check that runs on every LD_PRELOAD free.
+ *
+ * Before this, umem_may_own() kept its own copy and on a miss called
+ * vmem_walk(vmem_heap) -- taking vm_lock and walking every span -- to see
+ * whether the heap had grown.  A miss is the COMMON case for a foreign
+ * pointer, so every foreign free() under LD_PRELOAD took the heap arena's
+ * lock, and a signal handler freeing a foreign pointer while the interrupted
+ * thread was inside that walk deadlocked on vm_lock (found by
+ * test_errlog_signal, which was written for a different lock).  Position D
+ * can also make every thread serialise on vm_lock by freeing foreign
+ * pointers in a loop.  glibc's free() takes no global lock to classify.
+ *
+ * The bounds only widen (a returned span is not removed: the hull is a
+ * superset, and umem_may_own()'s contract is "a false yes is possible, a
+ * false no is not"), so a stale read is a smaller superset and still never
+ * says no to a heap pointer.  The single writer is vmem_span_create() under
+ * vm_lock; readers need no lock.  Only vmem_heap's own spans count: the
+ * sub-arenas import from it, so their addresses are inside it.
+ */
+_Atomic uintptr_t vmem_heap_lo = UINTPTR_MAX;
+_Atomic uintptr_t vmem_heap_hi = 0;
 vmem_alloc_t *vmem_heap_alloc;
 vmem_free_t *vmem_heap_free;
 
@@ -472,6 +499,18 @@ vmem_span_create(vmem_t *vmp, void *vaddr, size_t size, uint8_t import)
 	if ((start | end) & (vmp->vm_quantum - 1)) {
 		umem_panic("vmem_span_create(%p, %p, %lu): misaligned",
 		    vmp, vaddr, size);
+	}
+
+	/* Publish the heap's bounds for the lock-free ownership check. */
+	if (vmp == vmem_heap) {
+		if (start < atomic_load_explicit(&vmem_heap_lo,
+		    memory_order_relaxed))
+			atomic_store_explicit(&vmem_heap_lo, start,
+			    memory_order_release);
+		if (end > atomic_load_explicit(&vmem_heap_hi,
+		    memory_order_relaxed))
+			atomic_store_explicit(&vmem_heap_hi, end,
+			    memory_order_release);
 	}
 
 	span = vmem_seg_create(vmp, knext->vs_aprev, start, end);
