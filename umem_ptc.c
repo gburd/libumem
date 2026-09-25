@@ -182,12 +182,14 @@ umem_ptc_fork_release_child(void)
 			continue;
 		}
 		/*
-		 * Bin pushes are not fork-ordered (umem_ptc.h, rule 1), so the
-		 * top slot of every non-empty bin may be a stale pointer over a
-		 * count bumped one too far.  Drop it: leak at most one object
-		 * per bin rather than risk freeing something the application
-		 * owns.  The magazines ARE ordered and are drained in full by
-		 * umem_ptc_destroy().
+		 * Pushes are not fork-ordered (umem_ptc.h, rule 1), so the top
+		 * entry of every non-empty bin and of each loaded/previous
+		 * magazine may be a stale pointer over a count bumped one too
+		 * far.  Drop them: leak at most 36 + 2 objects per PTC rather
+		 * than risk freeing something the application owns.  A dropped
+		 * magazine round leaves a non-NULL stale entry at mag_round
+		 * [rounds]; umem_mag_drain() reads only [0, rounds) so it is
+		 * never touched.
 		 */
 		{
 			int b, dropped = 0;
@@ -195,6 +197,16 @@ umem_ptc_fork_release_child(void)
 			for (b = 0; b < PTC_NBINS; b++) {
 				if (p->bins[b].count > 0) {
 					p->bins[b].count--;
+					dropped++;
+				}
+				if (p->mags[b].loaded != NULL &&
+				    p->mags[b].rounds > 0) {
+					p->mags[b].rounds--;
+					dropped++;
+				}
+				if (p->mags[b].previous != NULL &&
+				    p->mags[b].prounds > 0) {
+					p->mags[b].prounds--;
 					dropped++;
 				}
 			}

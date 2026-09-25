@@ -4152,12 +4152,10 @@ _umem_free(void *buf, size_t size)
 						mag->cache = cp;
 					if (mag->loaded != NULL &&
 					    mag->rounds < mag->magsize) {
-						{
-						int r = mag->rounds;
-						mag->loaded->mag_round[r] = buf;
-						__atomic_store_n(&mag->rounds,
-						    r + 1, __ATOMIC_RELEASE);
-						}
+						mag->loaded->
+						    mag_round[mag->rounds] =
+						    buf;
+						mag->rounds++;
 						return;
 					}
 					/*
@@ -4180,12 +4178,10 @@ _umem_free(void *buf, size_t size)
 						mag->pmagsize = tmp_r;
 						__atomic_store_n(&ptc->fork_busy,
 						    0, __ATOMIC_RELEASE);
-						{
-						int r = mag->rounds;
-						mag->loaded->mag_round[r] = buf;
-						__atomic_store_n(&mag->rounds,
-						    r + 1, __ATOMIC_RELEASE);
-						}
+						mag->loaded->
+						    mag_round[mag->rounds] =
+						    buf;
+						mag->rounds++;
 						return;
 					}
 					/*
@@ -4234,12 +4230,10 @@ _umem_free(void *buf, size_t size)
 						UMEM_PTC_PROBE_OBSERVE(emp,
 						    mag->magsize);
 						umem_ptc_mag_check(mag);
-						{
-						int r = mag->rounds;
-						mag->loaded->mag_round[r] = buf;
-						__atomic_store_n(&mag->rounds,
-						    r + 1, __ATOMIC_RELEASE);
-						}
+						mag->loaded->
+						    mag_round[mag->rounds] =
+						    buf;
+						mag->rounds++;
 						return;
 					}
 					/*

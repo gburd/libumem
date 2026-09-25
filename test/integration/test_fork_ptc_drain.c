@@ -31,10 +31,11 @@
  *
  *   umem_ptc_probe_fork_drained     PTCs the child handler drained
  *   umem_ptc_probe_fork_busy_leaked PTCs skipped because fork_busy was set
- *   umem_ptc_probe_fork_top_dropped bin top slots the child deliberately
- *                                   leaked (one per non-empty bin: the bin
- *                                   push is not fork-ordered, so that slot
- *                                   may be stale -- umem_ptc.h rule 1)
+ *   umem_ptc_probe_fork_top_dropped top entries the child deliberately
+ *                                   leaked (one per non-empty bin and per
+ *                                   loaded/previous magazine: pushes are
+ *                                   not fork-ordered, so the top entry may
+ *                                   be stale -- umem_ptc.h rule 1)
  *   umem_ptc_probe_exit_stranded    objects still in a bin when a PTC was
  *                                   freed (the P1.3a oracle; the child's
  *                                   drain goes through the same
@@ -152,7 +153,7 @@ run_arm(const char *label, void *(*fn)(void *), int expect_no_leaked)
 		printf("  [%s] child: drained=%ld busy_leaked=%ld "
 		    "stranded=%ld top_dropped=%ld (threads=%d)\n", label,
 		    d, l, s, t, NTHREADS);
-		if (t > d * 40) {	/* PTC_NBINS is 36; one per bin at most */
+		if (t > d * 40 * 3) {	/* <= 36 bins + 2 mags per class per PTC */
 			printf("  [%s] FAIL: %ld top slots dropped for %ld "
 			    "PTCs -- more than one per bin\n", label, t, d);
 			rc = 1;

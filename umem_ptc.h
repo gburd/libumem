@@ -189,24 +189,25 @@ typedef struct umem_ptc {
 	 * whose owning thread does not exist.  Two rules make that copy
 	 * usable by the child's fork handler instead of leaked:
 	 *
-	 *  1. MAGAZINE pushes store the round first and the count second with
-	 *     a release store (umem.c _umem_free PTC paths; measured free at
-	 *     t=8).  A snapshot between the two shows the old count and the
-	 *     in-flight object is the parent's.  Pops are a single count
-	 *     store and are already tear-free.
-	 *
-	 *     BIN pushes are NOT ordered: every ordered form measured -4..-5 %
-	 *     at t=8 (c7i.2xlarge, 9 alternating pairs, null +-1 %; release
-	 *     store, signal fence and plain slot-then-count all the same,
-	 *     with identical instruction streams -- the cost is in the
-	 *     store-to-store ordering itself and was not explained further).
-	 *     So a bin snapshot may show count = k+1 over a stale slots[k].
-	 *     Since a PTC has one owner, at most ONE push is in flight, and
-	 *     only the top slot can be torn.  The child therefore drains each
-	 *     bin's slots [0, count-1) and LEAKS slots[count-1]: at most one
-	 *     object per non-empty bin per orphaned PTC, instead of the whole
-	 *     PTC.  A stale top slot is thereby never freed; a live one is
-	 *     leaked, which is the pre-P1.3d outcome for that object.
+	 *  1. PUSHES ARE NOT ORDERED FOR FORK, and the child compensates.  A
+	 *     push is `slot[count] = buf; count++` and the compiler may store
+	 *     count first, so a fork() snapshot may show count = k+1 over a
+	 *     stale slot[k] -- a pointer to an object the application owns.
+	 *     Every ordered form was measured (c7i.2xlarge, 9 alternating
+	 *     pairs, null +-1 %): on the bin push, release store / signal
+	 *     fence / plain slot-then-count all cost -4..-5 % at t=8 with
+	 *     identical instruction streams (the cost is in the store-to-
+	 *     store ordering itself; not explained further); on the three
+	 *     magazine pushes a release store was free at t=8 but -2..-3 %
+	 *     at t=1.  Neither is paid.  Instead: a PTC has ONE owner, so at
+	 *     most one push is in flight at the snapshot, and only the TOP
+	 *     slot of one bin, or the TOP round of one magazine, can be torn.
+	 *     The child therefore drops the top entry of every non-empty bin
+	 *     and of each loaded/previous magazine before draining: at most
+	 *     36 + 2 objects leaked per orphaned PTC, instead of the whole
+	 *     PTC.  A stale top entry is thereby never freed; a live one is
+	 *     leaked, which is the pre-P1.3d outcome for that object.  Pops
+	 *     are a single count store and cannot tear.
 	 *
 	 *  2. Every MULTI-STORE block (the loaded/previous swaps on both
 	 *     sides, the depot refill, the retire) sets fork_busy = 1 before
