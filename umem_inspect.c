@@ -832,6 +832,11 @@ cached_set_destroy(struct cached_set *cs)
 /*
  * Walk a magazine list and add up to `cap` rounds per magazine.  The
  * mag_round[] array is indexed [0..rounds-1] for the rounds in use.
+ *
+ * P5.13b: rounds are stored mangled (ptr ^ cookie ^ (&slot >> 12)); each is
+ * demangled before it is recorded.  Only the FULL depot lists are walked
+ * here (see the callers), so every slot in [0,cap) is an occupied,
+ * demangles-to-a-real-object round; no empty slot is scanned.
  */
 static void
 cached_set_add_maglist(struct cached_set *cs, umem_magazine_t *mp,
@@ -850,7 +855,8 @@ cached_set_add_maglist(struct cached_set *cs, umem_magazine_t *mp,
 	while (mp != NULL && safety++ < safety_max) {
 		int cap = UMEM_MAGAZINE_CAPACITY(mp);
 		for (int r = 0; r < cap; r++)
-			cached_set_add(cs, mp->mag_round[r]);
+			cached_set_add(cs, UMEM_SLOT_DEMANGLE(
+			    &mp->mag_round[r], mp->mag_round[r]));
 		mp = (umem_magazine_t *)mp->mag_next;
 	}
 }
@@ -913,16 +919,18 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 			int cap = UMEM_MAGAZINE_CAPACITY(ccp->cc_loaded);
 			if (r > cap) r = cap;
 			for (int i = 0; i < r; i++)
-				cached_set_add(cs,
-				    ccp->cc_loaded->mag_round[i]);
+				cached_set_add(cs, UMEM_SLOT_DEMANGLE(
+				    &ccp->cc_loaded->mag_round[i],
+				    ccp->cc_loaded->mag_round[i]));
 		}
 		if (ccp->cc_ploaded != NULL && ccp->cc_prounds > 0) {
 			int r = ccp->cc_prounds;
 			int cap = UMEM_MAGAZINE_CAPACITY(ccp->cc_ploaded);
 			if (r > cap) r = cap;
 			for (int i = 0; i < r; i++)
-				cached_set_add(cs,
-				    ccp->cc_ploaded->mag_round[i]);
+				cached_set_add(cs, UMEM_SLOT_DEMANGLE(
+				    &ccp->cc_ploaded->mag_round[i],
+				    ccp->cc_ploaded->mag_round[i]));
 		}
 	}
 
@@ -945,8 +953,10 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 			if (mp != NULL && r > 0) {
 				int cap = UMEM_MAGAZINE_CAPACITY(mp);
 				if (r > cap) r = cap;
+				/* P5.13b: rounds are mangled; demangle. */
 				for (int k = 0; k < r; k++)
-					cached_set_add(cs, mp->mag_round[k]);
+					cached_set_add(cs, UMEM_SLOT_DEMANGLE(
+					    &mp->mag_round[k], mp->mag_round[k]));
 			}
 
 			mp = (umem_magazine_t *)rc->previous_mag;
@@ -954,8 +964,10 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 			if (mp != NULL && r > 0) {
 				int cap = UMEM_MAGAZINE_CAPACITY(mp);
 				if (r > cap) r = cap;
+				/* P5.13b: rounds are mangled; demangle. */
 				for (int k = 0; k < r; k++)
-					cached_set_add(cs, mp->mag_round[k]);
+					cached_set_add(cs, UMEM_SLOT_DEMANGLE(
+					    &mp->mag_round[k], mp->mag_round[k]));
 			}
 		}
 	}

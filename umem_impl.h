@@ -431,6 +431,33 @@ extern uintptr_t umem_link_cookie __attribute__((visibility("hidden")));
 #endif
 #define	UMEM_SLOT_DEMANGLE(slotp, val)	UMEM_SLOT_MANGLE(slotp, val)
 
+/*
+ * P5.13b: the SAME transform for the per-thread magazine rounds
+ * (umem_magazine_t.mag_round[]).  The magazine layer sits behind the PTC
+ * bins; a round holds a freed object address the next umem_alloc() of that
+ * class hands out (umem.c, the inlined PTC magazine fast path).  Same
+ * exposure and same macro as the bin slots above.
+ *
+ * EMPTY-SLOT DISCIPLINE (the design point): rounds are COUNT-DRIVEN, never
+ * NULL-terminated.  A magazine's live rounds are exactly [0, rounds); the
+ * alloc/free fast paths pop mag_round[--rounds] and push mag_round[rounds++]
+ * by index and NEVER test a slot for NULL to find the boundary.  So a slot
+ * ABOVE rounds is never value-read on any count-driven path, and
+ * umem_mag_init_fast() therefore still writes RAW zero (a plain memset): a
+ * fresh, never-mangled slot above rounds is harmless because nothing reads
+ * its value.  Every WRITE of an in-use slot mangles; every READ of an
+ * in-use slot demangles.  The only readers of [0, rounds) are the depot
+ * drain/destroy paths (umem.c umem_magazine_destroy, umem_mag_drain,
+ * umem_depot_destroy_stale, the rseq slow paths) and the inspectors
+ * (umem_inspect.c) -- and by the depot's full/empty contract every slot
+ * they touch is occupied, so a demangle there never yields NULL.  This is
+ * exactly how the PTC bin slots (count-driven slots[count]) work.  Getting
+ * this wrong -- storing a mangled NULL that a count-driven reader then
+ * treats as a live pointer, or a raw slot a drain reader frees -- silently
+ * corrupts the depot; test/security/test_mag_round_mangle is the guard and
+ * FAILs under -DUMEM_NO_LINK_MANGLE.
+ */
+
 #define	UMEM_SLAB(cp, buf)		\
 	((umem_slab_t *)P2END((uintptr_t)(buf), (cp)->cache_slabsize) - 1)
 

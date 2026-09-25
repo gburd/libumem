@@ -2092,13 +2092,25 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 
 	ASSERT(cp->cache_next == NULL || IN_UPDATE());
 
-	/* All-NULL magazines skip the loop. */
+	/*
+	 * All-NULL magazines skip the loop.  P5.13b: rounds are stored
+	 * mangled (ptr ^ cookie ^ (&slot >> 12)), so an occupied slot is
+	 * non-zero and an unused slot holds the mangled form of NULL, which
+	 * is ALSO non-zero.  This scan therefore no longer distinguishes
+	 * empty from full -- but callers only ever pass nrounds == magsize
+	 * (a full depot magazine, every slot in [0,nrounds) occupied) or 0
+	 * (loop skipped), so a mangled magazine with nrounds > 0 always has
+	 * live rounds and the scan is a harmless fast-out that stays correct
+	 * (never skips a magazine that holds objects).  The loop below
+	 * demangles each slot.
+	 */
 	if (nrounds > 0 && !umem_mag_scan_notnull(mp->mag_round, nrounds)) {
 		goto done;
 	}
 
 	for (round = 0; round < nrounds; round++) {
-		void *buf = mp->mag_round[round];
+		void *buf = UMEM_SLOT_DEMANGLE(&mp->mag_round[round],
+		    mp->mag_round[round]);
 
 		if (round + 4 < nrounds) {
 			__builtin_prefetch(&mp->mag_round[round + 4], 0, 1);
@@ -2404,7 +2416,9 @@ umem_ptc_probe_shell_free(umem_magazine_t *mp, int rounds)
 	if (rounds > cap)
 		rounds = cap;
 	for (r = 0; r < rounds; r++) {
-		if (mp->mag_round[r] != NULL)
+		/* P5.13b: rounds are mangled; demangle before the NULL test. */
+		if (UMEM_SLOT_DEMANGLE(&mp->mag_round[r], mp->mag_round[r]) !=
+		    NULL)
 			live++;
 	}
 	(void) atomic_add_64((uint64_t *)&umem_ptc_probe_shell_frees, 1);
@@ -2636,8 +2650,11 @@ umem_depot_destroy_stale(umem_cache_t *cp, int is_full,
 		int magsize = (mag_cache->cache_bufsize /
 		    sizeof (void *)) - 1;
 		for (int r = 0; r < magsize; r++) {
-			void *buf = mp->mag_round[r];
-			mp->mag_round[r] = NULL;
+			/* P5.13b: rounds are mangled; demangle before free. */
+			void *buf = UMEM_SLOT_DEMANGLE(&mp->mag_round[r],
+			    mp->mag_round[r]);
+			mp->mag_round[r] =
+			    UMEM_SLOT_MANGLE(&mp->mag_round[r], NULL);
 			if (buf != NULL)
 				umem_slab_free(cp, buf);
 		}
@@ -2843,8 +2860,10 @@ umem_mag_drain(umem_cache_t *cp, umem_magazine_t *mp, int rounds, int cap)
 		rounds = cap;
 
 	for (r = 0; r < rounds; r++) {
-		void *buf = mp->mag_round[r];
-		mp->mag_round[r] = NULL;
+		/* P5.13b: rounds are mangled; demangle before free. */
+		void *buf = UMEM_SLOT_DEMANGLE(&mp->mag_round[r],
+		    mp->mag_round[r]);
+		mp->mag_round[r] = UMEM_SLOT_MANGLE(&mp->mag_round[r], NULL);
 		if (buf != NULL)
 			_umem_cache_free(cp, buf);
 	}
@@ -3031,7 +3050,9 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 	rc->loaded_mag = fmp;
 	rc->rounds = rc->magsize;
 	rc->rounds--;
-	buf = fmp->mag_round[rc->rounds];
+	/* P5.13b: rounds are mangled; demangle. */
+	buf = UMEM_SLOT_DEMANGLE(&fmp->mag_round[rc->rounds],
+	    fmp->mag_round[rc->rounds]);
 	rc->alloc_count++;
 
 	return (buf);
@@ -3061,7 +3082,7 @@ umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id, void *buf)
 
 	rc->loaded_mag = emp;
 	rc->rounds = 0;
-	emp->mag_round[0] = buf;
+	emp->mag_round[0] = UMEM_SLOT_MANGLE(&emp->mag_round[0], buf);
 	rc->rounds = 1;
 	rc->free_count++;
 	return (0);
@@ -3374,7 +3395,10 @@ retry:
 		if (rounds > 0) {
 			__builtin_prefetch(ccp->cc_loaded, 0, 3);
 			ccp->cc_rounds = rounds - 1;
-			buf = ccp->cc_loaded->mag_round[rounds - 1];
+			/* P5.13b: rounds are mangled; demangle. */
+			buf = UMEM_SLOT_DEMANGLE(
+			    &ccp->cc_loaded->mag_round[rounds - 1],
+			    ccp->cc_loaded->mag_round[rounds - 1]);
 			ccp->cc_alloc++;
 			(void) mutex_unlock(&ccp->cc_lock);
 			if (unlikely(ccp->cc_flags & UMF_BUFTAG) &&
@@ -3502,8 +3526,10 @@ umem_cache_alloc_batch(umem_cache_t *cp, void **bufs, int count, int umflag)
 			if (avail > count - got)
 				avail = count - got;
 			for (int i = 0; i < avail; i++) {
-				bufs[got++] =
-				    ccp->cc_loaded->mag_round[--ccp->cc_rounds];
+				/* P5.13b: rounds are mangled; demangle. */
+				void **__mr =
+				    &ccp->cc_loaded->mag_round[--ccp->cc_rounds];
+				bufs[got++] = UMEM_SLOT_DEMANGLE(__mr, *__mr);
 			}
 			ccp->cc_alloc += avail;
 			continue;
@@ -3611,7 +3637,10 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 		if ((uint_t)rounds < magsize) {
 			__builtin_prefetch(ccp->cc_loaded, 0, 3);
 			ccp->cc_rounds = rounds + 1;
-			ccp->cc_loaded->mag_round[rounds] = buf;
+			/* P5.13b: rounds are mangled; mangle before store. */
+			ccp->cc_loaded->mag_round[rounds] =
+			    UMEM_SLOT_MANGLE(&ccp->cc_loaded->mag_round[rounds],
+			    buf);
 			ccp->cc_free++;
 			(void) mutex_unlock(&ccp->cc_lock);
 			return;
@@ -3732,8 +3761,10 @@ umem_cache_free_batch(umem_cache_t *cp, void **bufs, int count)
 			if (space > count - freed)
 				space = count - freed;
 			for (int i = 0; i < space; i++) {
-				ccp->cc_loaded->mag_round[ccp->cc_rounds++] =
-				    bufs[freed++];
+				/* P5.13b: rounds are mangled; mangle store. */
+				void **__mr =
+				    &ccp->cc_loaded->mag_round[ccp->cc_rounds++];
+				*__mr = UMEM_SLOT_MANGLE(__mr, bufs[freed++]);
 			}
 			ccp->cc_free += space;
 			continue;
@@ -3875,8 +3906,12 @@ umem_alloc_retry:
 					    &ptc->mags[(int)bin];
 					if (mag->rounds > 0) {
 						mag->rounds--;
-						buf = mag->loaded->
-						    mag_round[mag->rounds];
+						/* P5.13b: demangle round. */
+						buf = UMEM_SLOT_DEMANGLE(
+						    &mag->loaded->mag_round[
+						    mag->rounds],
+						    mag->loaded->mag_round[
+						    mag->rounds]);
 						return (buf);
 					}
 					/*
@@ -3899,8 +3934,12 @@ umem_alloc_retry:
 						__atomic_store_n(&ptc->fork_busy,
 						    0, __ATOMIC_RELEASE);
 						mag->rounds--;
-						buf = mag->loaded->
-						    mag_round[mag->rounds];
+						/* P5.13b: demangle round. */
+						buf = UMEM_SLOT_DEMANGLE(
+						    &mag->loaded->mag_round[
+						    mag->rounds],
+						    mag->loaded->mag_round[
+						    mag->rounds]);
 						return (buf);
 					}
 					/*
@@ -3956,8 +3995,12 @@ umem_alloc_retry:
 						mag->magsize);
 					    umem_ptc_mag_check(mag);
 					    mag->rounds--;
-					    buf = mag->loaded->
-						mag_round[mag->rounds];
+					    /* P5.13b: demangle round. */
+					    buf = UMEM_SLOT_DEMANGLE(
+						&mag->loaded->mag_round[
+						mag->rounds],
+						mag->loaded->mag_round[
+						mag->rounds]);
 					    return (buf);
 					}
 					}
@@ -4110,9 +4153,12 @@ _umem_free(void *buf, size_t size)
 						mag->cache = cp;
 					if (mag->loaded != NULL &&
 					    mag->rounds < mag->magsize) {
-						mag->loaded->
-						    mag_round[mag->rounds] =
-						    buf;
+						/* P5.13b: mangle round. */
+						mag->loaded->mag_round[
+						    mag->rounds] =
+						    UMEM_SLOT_MANGLE(
+						    &mag->loaded->mag_round[
+						    mag->rounds], buf);
 						mag->rounds++;
 						return;
 					}
@@ -4136,9 +4182,12 @@ _umem_free(void *buf, size_t size)
 						mag->pmagsize = tmp_r;
 						__atomic_store_n(&ptc->fork_busy,
 						    0, __ATOMIC_RELEASE);
-						mag->loaded->
-						    mag_round[mag->rounds] =
-						    buf;
+						/* P5.13b: mangle round. */
+						mag->loaded->mag_round[
+						    mag->rounds] =
+						    UMEM_SLOT_MANGLE(
+						    &mag->loaded->mag_round[
+						    mag->rounds], buf);
 						mag->rounds++;
 						return;
 					}
@@ -4188,9 +4237,12 @@ _umem_free(void *buf, size_t size)
 						UMEM_PTC_PROBE_OBSERVE(emp,
 						    mag->magsize);
 						umem_ptc_mag_check(mag);
-						mag->loaded->
-						    mag_round[mag->rounds] =
-						    buf;
+						/* P5.13b: mangle round. */
+						mag->loaded->mag_round[
+						    mag->rounds] =
+						    UMEM_SLOT_MANGLE(
+						    &mag->loaded->mag_round[
+						    mag->rounds], buf);
 						mag->rounds++;
 						return;
 					}
