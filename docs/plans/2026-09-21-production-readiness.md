@@ -1597,6 +1597,35 @@ layering, and the honest levers are (3) and P6.3's fewer-locks-per-drain,
 not a lock-skipping trick. A pre-fork server with 50k caches on 192 CPUs is
 a shape this allocator does not serve well; recorded as such.
 
+**STATUS round 3 (2026-09-25, `c7i.metal-48xl`, `5874dde`): re-measured, both
+CLOSED as characterised, no fix shipped.** Base numbers unchanged from the
+table above: **117.1 KB/cache**, create 0.60 s (10k) / 2.86 s (50k),
+**fork() 2.97-3.40 s** at 50k, steady-state alloc with 50k caches live
+**worst 0.1 ms, 0 stalls > 1 ms**. Two findings settle it:
+
+(3) *Confirmed a hot-path change, declined.* `CPU_CACHED(cp->cache_cpu_mask)`
+is on all four CPU-layer entry points (`umem.c:3320/3494/3564/3722`), reached
+by every non-PTC alloc and free, and both the global `umem_cpus` array and the
+per-cache `cache_cpu[]` share one pow2 mask. Sizing `cache_cpu[]` to 192 while
+keeping the cheap `&` requires breaking that shared mask (a `%` = a `div` in
+the spin, or a 512-entry `uint16_t` indirection load on every alloc). The
+memory it saves (29 KB/cache -> 1.4 GB at 50k caches) helps only pathological
+cache-heavy programs; a real program has tens of caches and saves ~580 KB
+while paying a load on every allocation. Wrong trade; not shipped.
+
+(4) *The idle-cache lock-skip is provably unsound, as the brief predicted.*
+`_umem_cache_alloc`/`_umem_cache_free` take `cc_lock` (not `cache_lock`) and
+may then load `cc_loaded` from the depot, so a slot that reads idle
+(`cc_loaded == NULL`, no rounds) can have a thread holding its `cc_lock`
+mid-load at the instant `umem_lockup_cache` inspects it. Skipping the lock on
+an idle-looking slot would let the child fork with that half-updated state
+unresolved -- corruption, not just a leak. The only sound variant discards the
+child's per-CPU magazine contents (P1.3d's rule 2 for the CPU layer), which is
+a correctness-preserving *leak* but does nothing for the parent's 771-mutex
+walk that IS the 3 s. There is no lock-skip that is both sound and cheaper.
+glibc/jemalloc lock every arena at fork too; they have 8xncores arenas, not
+50k. The cost is structural to per-cache per-CPU layering. **CLOSED.**
+
 ### P6.5 Fragmentation over time: 18 minutes of repaired `frag` churn -- FINE (plateaus); MEDIUM on the level
 `test/bench/bench_framework.c:965-1071` (`frag_worker`, P2.2 live-byte
 accounting: `peak_rss / live_bytes_at_peak` sampled together); `umem.c:1903`
