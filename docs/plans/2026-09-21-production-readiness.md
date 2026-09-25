@@ -2431,6 +2431,21 @@ is kept because it is what the Solaris table would have said for a 16-
 object slab and costs nothing here, but it is not what fixed P8.2b -- (a)
 is, and (a) works because P8.6 gave those bins a working L2.
 
+**Footprint consequence, not yet measured (from the nedmalloc review, B1).**
+With (a) and (b) together, a thread that has touched every class in the new
+2.5-8 KB tier can retain, per thread: 8 classes x 16 slots (624 KB in bins)
+plus 8 classes x 2 magazines x 63 rounds (**4.9 MB in magazines**) --
+**5.4 MB worst case**, versus ~600 KB for the whole PTC before (a). That is
+the arithmetic; the actual number depends on how many large classes a
+thread cycles, and P6.3's probe (`probe_threads`) allocates 1 KB objects and
+so does not see it. nedmalloc bounds its per-thread cache by BYTES (1 MB)
+for exactly this reason; libumem bounds by slot count and, since (b), by
+63-round magazines regardless of object size. A byte-bounded ceiling on the
+XLARGE tier's magazines -- or `mt_magsize` scaled by object size as the
+Solaris table originally did (15 rounds at 4-8 KB) -- is the fix if a
+workload shows it. Recorded as **P8.2c**; needs `probe_threads` run at
+`-s 4096..8192` on a box with many threads before anything is changed.
+
 `multi` 16:64 at t=192 (the no-regression point for the PTC table growth):
 pre umem 521.4 / null 538.7 / libc 576.9; (a) 530.5 / 578.7 / 555.6;
 (a)+(b) 541.7 / 548.7 / 558.2.  Inside the null's own spread (-20..+40
