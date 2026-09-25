@@ -572,6 +572,48 @@ agent's in-flight work; it is not reached by a default build (it is inside
 known `make check` SKIPs), so the default gate is unaffected. Line `:249` in
 the same file is the hash chain and is correctly left plain.
 
+### P5.13 PTC bin slots are now mangled (HIGH, the last "worse than glibc")
+
+`umem_ptc_t.pool[]` slots held raw object addresses. P5.12 removed the
+adjacency that let an overrun reach the PTC structure; P5.13 closes the other
+half: a write to a cached slot (chosen address) steered the next `umem_alloc()`
+of that class to it. Now every slot is stored `ptr ^ umem_link_cookie ^
+(&slot >> 12)` (`UMEM_SLOT_MANGLE`, reusing P5.4's `AT_RANDOM` cookie);
+`8c79ac3` covers the inlined fast paths in `_umem_alloc`/`_umem_free` and every
+site in `umem_ptc.c`, demangling the exit-drain batch in place. The fork child
+touches counts only, never a slot.
+
+**Stronger than glibc, deliberately.** glibc safe-linking is `ptr ^ (pos >> 12)`
+with no secret: it relies on heap ASLR alone, so a heap-layout leak defeats it.
+libumem folds in a per-process random cookie, so the same leak does not. That
+margin is the reason for the cost below.
+
+**Cost (A/B `a3d5e56` pre → `f1b4f12` post, `bench_pairs`, median of 9,
+null = pre-vs-pre first):**
+
+| arm | x86 (c7i.2xlarge) | arm64 (c7g.2xlarge) | null spread |
+|---|---|---|---|
+| insn/pair t=1, 512 B | +6.6 % (137→146) | +7.0 % (142→152) | ±0.07 % |
+| insn/pair t=1, 16:64 | +5.6 % | +6.0 % | ±0.06 % |
+| throughput t=8, 512 B N=1 | −7.8 % | −7.8 % | ±0.3 % |
+| throughput t=8, 16:64 N=64 | −6.5 % | −5.6 % | ±0.2 % |
+
+The cost is ~9–10 insn/pair (two XORs, two `shr $0xc`, two cookie loads: it is
+per-op). `f1b4f12` gave `umem_link_cookie` hidden visibility, which collapsed
+the GOT double-load to one rip-relative `xor` and shaved ~2 insn/pair off both
+P5.13 and P5.4; the residual is the irreducible arithmetic of safe-linking.
+**Shipped per AGENTS.md 7a** (hardening is not traded for single-digit percent,
+and this is the item that made libumem worse than glibc); the number is on the
+record, not hidden.
+
+**Magazine rounds deferred.** `mag_round[]` is read by ~25 sites across the CPU
+layer, `umem_mag_drain`, `umem_depot_destroy_stale`, `umem_inspect.c`'s
+cached-set builder and `umem_introspect.c`; mangling them is a larger, separate
+A/B and the depot is not in a user buffer's overrun reach (it lives in
+`umem_ptc_cache`/magazine slabs, not user size-class slabs). The reachable
+exposure — the per-thread slots one write away from the next allocation — is
+closed. Magazine mangling is recorded as P5.13b, open.
+
 ### P5.5 `errno` erasure fix was not merely incomplete — it was ineffective (MEDIUM)
 `vmem_mmap.c` — `vmem_mmap_alloc()` erases `errno` on failure **twice**, and
 the second erasure sits on the exhaustion path the v3.0.0 fix was written for
@@ -735,7 +777,7 @@ imply, and that is a documentation accuracy issue independent of hardening.
 | P5.10 free() reads caller bytes to classify bootstrap pointers, then munmaps by them | **FIXED** `3767b4c` | `test_forged_bootstrap`: pre SIGSEGV, post PASS; ratio regression 0.598 |
 | P5.11 `reap_interval=0` spins a core; honoured under AT_SECURE | **FIXED** `cbb1a2e` | `test_reap_interval_zero.sh`: 2.003 s -> 0.004 s CPU in a 2 s sleep |
 | P5.12 `umem_ptc_t` in user size-class slabs; slot pointers reachable by overrun | **FIXED** `444b062`/`ec5c10f` | `test_ptc_adjacency`: 8/8 adjacent -> 0 |
-| P5.13 PTC slot / magazine round pointers unmangled | open | needs hot-path A/B; glibc safe-links its equivalent |
+| P5.13 PTC slot pointers unmangled (bins) | **FIXED (bins)** `8c79ac3`, `f1b4f12` | `test_ptc_slot_mangle`: default refuses the chosen address, `-DUMEM_NO_LINK_MANGLE` returns the live buffer (double alloc). A/B below. Magazine rounds: deferred -- see note. |
 | P5.14 `mmap_guard` honoured under AT_SECURE (hardening downgrade from env) | **FIXED** `a1912e2` | option gated; default 16 MiB for setuid |
 | P5.15 error path deadlocks vs signal handlers: `umem_error_lock` (review 4.6) AND `vm_lock` via `umem_may_own`'s hull refresh (found by the test) | **FIXED** `5286dcb`, `3e5d326` | `test_errlog_signal.sh`: pre hangs; post 6,000 handler frees, ~1,700 lines dropped, no hang |
 | P5.16 libdw stack symbolisation on every refused `free()` (steady state under LD_PRELOAD) | **FIXED** `a074636` | recoverable path traces only if `umem_output` or abort; arm livelock 436k lines/4 s -> PASS |

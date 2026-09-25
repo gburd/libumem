@@ -7,6 +7,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security -- fixed
 
+- **Per-thread cache bin slots are now pointer-mangled** (P5.13, `8c79ac3`,
+  `f1b4f12`). Slots in `umem_ptc_t.pool[]` held raw object addresses; a write to
+  a cached slot could steer the next `malloc`/`umem_alloc` of that size class to
+  a chosen address. Slots are now stored `ptr ^ cookie ^ (&slot >> 12)`,
+  glibc's tcache safe-linking plus a per-process `AT_RANDOM` cookie -- stronger
+  than glibc, which uses no cookie. This was the last item that left libumem
+  worse than glibc on freelist integrity. Costs ~7 % instructions and ~6-8 %
+  throughput on the per-thread fast path (measured, both arches); shipped
+  because hardening is not traded for single-digit percent. `umem_link_cookie`
+  gained hidden visibility, which also cheapened the P5.4 freelist mangling.
+  Magazine-round mangling (P5.13b) is deferred: the depot is not in an
+  overrun's reach.
+
 - **`free()` could unmap a range named by the caller's own bytes** (P5.10,
   `3767b4c`). The bootstrap-pointer check read the 8 bytes before every freed
   pointer and, on a magic match, `munmap`ed the address and length found there
