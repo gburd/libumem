@@ -4344,10 +4344,16 @@ umem_cache_reap(umem_cache_t *cp)
 
 	/*
 	 * Slab page reclamation (madvise) is handled by the update
-	 * thread via umem_cache_update() → umem_cache_reclaim_pages().
-	 * We don't call it here because reclaim_pages drops and
-	 * reacquires cache_lock internally, creating a race window
-	 * under heavy allocation pressure.
+	 * thread via umem_cache_update() -> umem_cache_reclaim_pages(),
+	 * under umem_cache_applyall()'s umem_cache_lock, which is what
+	 * serializes it against umem_cache_destroy().  umem_cache_reap() runs
+	 * from umem_process_updates() with no umem_cache_lock held, so it
+	 * does not call reclaim_pages.  (An earlier version of this comment
+	 * gave a different reason: that reclaim_pages "drops and reacquires
+	 * cache_lock internally, creating a race window".  That described
+	 * the pre-P1.4/P1.5 walk, which dropped the lock mid-walk and
+	 * SEGV'd; the current walk collects under the lock and drops once
+	 * after.  The decision stands; the reason given for it was stale.)
 	 */
 
 	/*
@@ -4622,8 +4628,12 @@ umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
  * DIRTY slabs that haven't yet reached the threshold, and destroy
  * CLEAN slabs that have sat idle for twice the reclaim delay.
  *
- * Must be called with cp->cache_lock held.  Drops and reacquires
- * the lock around madvise and slab destroy calls.
+ * Must be called with cp->cache_lock held.  The whole walk runs under
+ * it; the lock is dropped ONCE after the walk, for the collected
+ * madvise/destroy work, and retaken to publish SLAB_CLEAN (see the
+ * two comments in the body).  (This sentence used to read "Drops and
+ * reacquires the lock around madvise and slab destroy calls" -- the
+ * pre-P1.4/P1.5 per-slab drop that the body comment records as a SEGV.)
  *
  * Serialized per cache by umem_cache_lock: every caller reaches here
  * through umem_cache_applyall(umem_cache_update), which holds
