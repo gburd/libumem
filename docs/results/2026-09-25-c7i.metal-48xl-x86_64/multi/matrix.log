@@ -1,0 +1,8 @@
+  CRASH: umem-preload@null multi t=8 16:64 rc=139 (skipped)
+  CRASH: umem-preload@null multi t=64 16:64 rc=139 (skipped)
+  CRASH: umem-preload multi t=64 16:64 rc=139 (skipped)
+  CRASH: umem-preload@null multi t=64 16:64 rc=139 (skipped)
+  CRASH: umem-preload multi t=192 16:64 rc=139 (skipped)
+  CRASH: umem-preload@null multi t=192 16:64 rc=139 (skipped)
+  CRASH: umem-preload multi t=192 16:64 rc=139 (skipped)
+  CRASH: umem-preload@null multi t=192 16:64 rc=139 (skipped)

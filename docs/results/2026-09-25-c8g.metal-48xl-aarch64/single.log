@@ -1,0 +1,73 @@
+matrix: instance=c8g.metal-48xl arch=aarch64 vcpu=192 governor=unknown
+  allocators: libc umem umem@null umem-preload umem-preload@null jemalloc tcmalloc mimalloc snmalloc scudo rpmalloc
+  threads:    1
+  sizes:      16:64 256:1024 1024:4096
+  runs=3 warmups=1 replicates=2 pin=1 ops=20000000
+  -> /home/ec2-user/libumem-iso-r3cmp-323268b48a7f/docs/results/2026-09-25-c8g.metal-48xl-aarch64/single/matrix.toml
+  libc single 16:64 t=1 rep=1  17:11:50
+  umem single 16:64 t=1 rep=1  17:12:02
+  umem@null single 16:64 t=1 rep=1  17:12:15
+  umem-preload single 16:64 t=1 rep=1  17:12:28
+  umem-preload@null single 16:64 t=1 rep=1  17:12:41
+  jemalloc single 16:64 t=1 rep=1  17:12:55
+  tcmalloc single 16:64 t=1 rep=1  17:13:07
+  mimalloc single 16:64 t=1 rep=1  17:13:21
+  snmalloc single 16:64 t=1 rep=1  17:13:33
+  scudo single 16:64 t=1 rep=1  17:13:46
+  rpmalloc single 16:64 t=1 rep=1  17:14:00
+  libc single 16:64 t=1 rep=2  17:14:12
+  umem single 16:64 t=1 rep=2  17:14:25
+  umem@null single 16:64 t=1 rep=2  17:14:38
+  umem-preload single 16:64 t=1 rep=2  17:14:52
+  umem-preload@null single 16:64 t=1 rep=2  17:15:05
+  jemalloc single 16:64 t=1 rep=2  17:15:19
+  tcmalloc single 16:64 t=1 rep=2  17:15:31
+  mimalloc single 16:64 t=1 rep=2  17:15:45
+  snmalloc single 16:64 t=1 rep=2  17:15:57
+  scudo single 16:64 t=1 rep=2  17:16:09
+  rpmalloc single 16:64 t=1 rep=2  17:16:24
+  libc single 256:1024 t=1 rep=1  17:16:36
+  umem single 256:1024 t=1 rep=1  17:16:49
+  umem@null single 256:1024 t=1 rep=1  17:17:04
+  umem-preload single 256:1024 t=1 rep=1  17:17:17
+  umem-preload@null single 256:1024 t=1 rep=1  17:17:31
+  jemalloc single 256:1024 t=1 rep=1  17:17:46
+  tcmalloc single 256:1024 t=1 rep=1  17:17:59
+  mimalloc single 256:1024 t=1 rep=1  17:18:12
+  snmalloc single 256:1024 t=1 rep=1  17:18:25
+  scudo single 256:1024 t=1 rep=1  17:18:38
+  rpmalloc single 256:1024 t=1 rep=1  17:18:53
+  libc single 256:1024 t=1 rep=2  17:19:06
+  umem single 256:1024 t=1 rep=2  17:19:19
+  umem@null single 256:1024 t=1 rep=2  17:19:33
+  umem-preload single 256:1024 t=1 rep=2  17:19:46
+  umem-preload@null single 256:1024 t=1 rep=2  17:20:00
+  jemalloc single 256:1024 t=1 rep=2  17:20:15
+  tcmalloc single 256:1024 t=1 rep=2  17:20:28
+  mimalloc single 256:1024 t=1 rep=2  17:20:41
+  snmalloc single 256:1024 t=1 rep=2  17:20:54
+  scudo single 256:1024 t=1 rep=2  17:21:07
+  rpmalloc single 256:1024 t=1 rep=2  17:21:22
+  libc single 1024:4096 t=1 rep=1  17:21:35
+  umem single 1024:4096 t=1 rep=1  17:21:51
+  umem@null single 1024:4096 t=1 rep=1  17:22:06
+  umem-preload single 1024:4096 t=1 rep=1  17:22:21
+  umem-preload@null single 1024:4096 t=1 rep=1  17:22:37
+  jemalloc single 1024:4096 t=1 rep=1  17:22:54
+  tcmalloc single 1024:4096 t=1 rep=1  17:23:08
+  mimalloc single 1024:4096 t=1 rep=1  17:23:24
+  snmalloc single 1024:4096 t=1 rep=1  17:23:39
+  scudo single 1024:4096 t=1 rep=1  17:23:53
+  rpmalloc single 1024:4096 t=1 rep=1  17:24:10
+  libc single 1024:4096 t=1 rep=2  17:24:25
+  umem single 1024:4096 t=1 rep=2  17:24:41
+  umem@null single 1024:4096 t=1 rep=2  17:24:56
+  umem-preload single 1024:4096 t=1 rep=2  17:25:11
+  umem-preload@null single 1024:4096 t=1 rep=2  17:25:27
+  jemalloc single 1024:4096 t=1 rep=2  17:25:44
+  tcmalloc single 1024:4096 t=1 rep=2  17:25:59
+  mimalloc single 1024:4096 t=1 rep=2  17:26:14
+  snmalloc single 1024:4096 t=1 rep=2  17:26:29
+  scudo single 1024:4096 t=1 rep=2  17:26:43
+  rpmalloc single 1024:4096 t=1 rep=2  17:27:00
+matrix complete -> /home/ec2-user/libumem-iso-r3cmp-323268b48a7f/docs/results/2026-09-25-c8g.metal-48xl-aarch64/single/matrix.toml
