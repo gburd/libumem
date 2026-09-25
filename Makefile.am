@@ -56,6 +56,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/security/test_forged_bootstrap \
 		  test/security/test_reap_interval_zero \
 		  test/security/test_ptc_adjacency \
+		  test/security/test_errlog_signal \
 		  test/security/test_stack_bounds \
 		  test/security/test_introspect_peer_uid \
 		  tools/umem_profile_dump
@@ -871,6 +872,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_forged_bootstrap \
 	test/security/test_reap_interval_zero.sh \
 	test/security/test_ptc_adjacency \
+	test/security/test_errlog_signal.sh \
 	test/security/test_abort_option.sh \
 	test/security/test_stack_bounds.sh \
 	test/security/test_introspect_sock_path.sh \
@@ -900,6 +902,12 @@ test_security_test_ptc_adjacency_SOURCES = test/security/test_ptc_adjacency.c
 test_security_test_ptc_adjacency_LDADD = libumem.la
 test_security_test_ptc_adjacency_LDFLAGS = -pthread
 test_security_test_ptc_adjacency_CPPFLAGS = -I$(srcdir)
+
+# Error log vs signal handler: must not deadlock.  Both libraries: the free()
+# in the handler is the interposer's, with umem_abort = 0.
+test_security_test_errlog_signal_SOURCES = test/security/test_errlog_signal.c
+test_security_test_errlog_signal_LDADD = libumem.la libumem_malloc.la
+test_security_test_errlog_signal_CPPFLAGS = -I$(srcdir)
 
 # P5.9: needs frame pointers in the TEST (it corrupts its own frame) and a real
 # pthread stack it allocates itself.  -fno-omit-frame-pointer is on the test,
@@ -1112,6 +1120,7 @@ test_test_inspect_live_LDADD = libumem.la
 dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/security/test_abort_option.sh \
 	test/security/test_reap_interval_zero.sh \
+	test/security/test_errlog_signal.sh \
 	test/integration/test_heap_ceiling_512.sh \
 	test/integration/test_reclaim_returns.sh \
 	test/integration/test_fork_child_reclaim.sh \
