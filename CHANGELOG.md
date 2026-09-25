@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security -- fixed
+
+- **`free()` could unmap a range named by the caller's own bytes** (P5.10,
+  `3767b4c`). The bootstrap-pointer check read the 8 bytes before every freed
+  pointer and, on a magic match, `munmap`ed the address and length found there
+  -- before anything had established the pointer was libumem's. Position D. The
+  first fix (a live-count gate) did not hold: 28 bootstrap mappings survive
+  `umem_init()` in every process, so the count never reached zero; the second
+  (a registry) reintroduced P8.1's collapse; the third adds a hull in front of
+  the registry. `test/security/test_forged_bootstrap`: SIGSEGV before, PASS
+  after, interposer ratio unchanged. Found by the P8.3 work and the
+  production-readiness review independently.
+
 ### Fixed
 
 - **`umem_free(NULL, size)` with a non-zero size put NULL on a free list, and
