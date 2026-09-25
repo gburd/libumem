@@ -75,6 +75,8 @@ extern uint_t vmem_allocator;
 extern vmem_t *vmem_heap;
 /* [lo, hi) over every span ever added to vmem_heap; see vmem.c. */
 extern _Atomic uintptr_t vmem_heap_lo, vmem_heap_hi;
+/* Exact containment in a heap span (P7.4); lock-free reader.  See vmem.c. */
+extern int vmem_span_owns(uintptr_t addr, size_t len);
 extern vmem_alloc_t *vmem_heap_alloc;
 extern vmem_free_t *vmem_heap_free;
 

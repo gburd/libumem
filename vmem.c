@@ -258,6 +258,164 @@ _Atomic uintptr_t vmem_heap_hi = 0;
 vmem_alloc_t *vmem_heap_alloc;
 vmem_free_t *vmem_heap_free;
 
+/*
+ * Exact span table for umem_may_own() (P7.4).  The [lo,hi) hull above accepts
+ * any pointer between lo and hi, INCLUDING an address in a gap between two
+ * spans -- memory the heap does not own.  Under LD_PRELOAD a caller mmap that
+ * landed in such a gap, with a forged MALLOC_MAGIC header, was accepted by
+ * free() and pushed onto a per-thread bin (position D; test_forged_span_gap).
+ * This table lets umem_may_own() confirm EXACT containment: the hull stays as
+ * the cheap first reject, and a pointer inside the hull is checked against the
+ * spans by binary search.
+ *
+ * PUBLICATION.  Single writer: vmem_span_create() (insert) and
+ * vmem_span_destroy() (remove), both under vmem_heap's vm_lock, and only for
+ * vmem_heap's own spans (the sub-arenas import from it, so their addresses
+ * lie inside its spans).  Lock-free readers use a seqlock: the writer makes
+ * vmem_span_seq odd before mutating the array and even after; a reader that
+ * observes an odd seq, or a seq that changed across its search, retries.  A
+ * seqlock (not the grow-only released-count array vmem_heap_lo/hi could use)
+ * because spans are REMOVED as well as added: vmem_xfree() returns a fully
+ * free imported span to the source (vmem_span_destroy), so the table shrinks.
+ *
+ * WHY REMOVAL IS SAFE for the reader's contract ("a false yes is possible, a
+ * false no is not").  A span is destroyed only when it is entirely free --
+ * vmem_xfree()/vmem_span_destroy() require vs_aprev and vs_anext to both be
+ * VMEM_SPAN, i.e. no allocation remains inside it.  So the instant a span
+ * leaves the table there is no live umem object in its address range, and a
+ * reader that races the removal and reads the span as absent gives the
+ * correct answer (not owned) for any pointer there.  A reader that still sees
+ * a just-removed span gives a false yes, which the contract permits.  The
+ * hull bounds are intentionally NOT narrowed on removal (they only widen), so
+ * the cheap first test never rejects a live pointer.
+ *
+ * CAPACITY.  A fixed array; spans are few (a 9 GB heap of 4 MiB qcache slabs
+ * is ~80 spans, and contiguous growth coalesces).  On overflow the table is
+ * marked saturated and umem_may_own() falls back to the hull for any pointer
+ * -- a conservative false yes, never a false no.
+ */
+typedef struct vmem_span_ent {
+	uintptr_t vse_base;
+	uintptr_t vse_end;		/* exclusive */
+} vmem_span_ent_t;
+
+#define	VMEM_SPAN_MAX	4096
+
+static vmem_span_ent_t vmem_span_tab[VMEM_SPAN_MAX];
+static _Atomic uint32_t vmem_span_seq;	/* seqlock; odd = write in progress */
+static _Atomic uint32_t vmem_span_cnt;	/* live entries in vmem_span_tab */
+static _Atomic int vmem_span_saturated;	/* table full: fall back to hull */
+
+/* Writer helpers.  Caller holds vmem_heap's vm_lock (single writer). */
+static void
+vmem_span_write_begin(void)
+{
+	atomic_store_explicit(&vmem_span_seq,
+	    atomic_load_explicit(&vmem_span_seq, memory_order_relaxed) + 1,
+	    memory_order_release);
+}
+
+static void
+vmem_span_write_end(void)
+{
+	atomic_store_explicit(&vmem_span_seq,
+	    atomic_load_explicit(&vmem_span_seq, memory_order_relaxed) + 1,
+	    memory_order_release);
+}
+
+static void
+vmem_span_table_insert(uintptr_t base, uintptr_t end)
+{
+	uint32_t n = atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed);
+	uint32_t i, j;
+
+	if (n >= VMEM_SPAN_MAX) {
+		atomic_store_explicit(&vmem_span_saturated, 1,
+		    memory_order_release);
+		return;
+	}
+	/* insertion sort by base: keep the array sorted for binary search */
+	for (i = 0; i < n; i++)
+		if (vmem_span_tab[i].vse_base > base)
+			break;
+	vmem_span_write_begin();
+	for (j = n; j > i; j--)
+		vmem_span_tab[j] = vmem_span_tab[j - 1];
+	vmem_span_tab[i].vse_base = base;
+	vmem_span_tab[i].vse_end = end;
+	atomic_store_explicit(&vmem_span_cnt, n + 1, memory_order_relaxed);
+	vmem_span_write_end();
+}
+
+static void
+vmem_span_table_remove(uintptr_t base, uintptr_t end)
+{
+	uint32_t n = atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed);
+	uint32_t i;
+
+	for (i = 0; i < n; i++)
+		if (vmem_span_tab[i].vse_base == base &&
+		    vmem_span_tab[i].vse_end == end)
+			break;
+	if (i == n)
+		return;			/* untracked (e.g. lost to overflow) */
+	vmem_span_write_begin();
+	for (; i + 1 < n; i++)
+		vmem_span_tab[i] = vmem_span_tab[i + 1];
+	atomic_store_explicit(&vmem_span_cnt, n - 1, memory_order_relaxed);
+	vmem_span_write_end();
+}
+
+/*
+ * Lock-free reader (malloc.c's umem_may_own()).  Is [addr, addr+len) inside
+ * one heap span?  Seqlock retry protects against a concurrent insert/remove
+ * shifting the array under the search.  Returns 1 if contained, 0 if not; a
+ * saturated table returns 1 (fall back to the hull the caller already
+ * matched -- a conservative yes).  Declared in vmem_base.h.
+ */
+int
+vmem_span_owns(uintptr_t addr, size_t len)
+{
+	uintptr_t end = addr + len;
+	uint32_t s0, s1, n, i;
+	int found;
+
+	if (end < addr)
+		return (0);		/* wrapped: not a real object */
+	for (;;) {
+		s0 = atomic_load_explicit(&vmem_span_seq,
+		    memory_order_acquire);
+		if (s0 & 1)
+			continue;	/* write in progress; re-read */
+		if (atomic_load_explicit(&vmem_span_saturated,
+		    memory_order_acquire))
+			return (1);
+		n = atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed);
+		found = 0;
+		{			/* binary search the sorted-by-base table */
+			uint32_t blo = 0, bhi = n;
+			while (blo < bhi) {
+				i = blo + (bhi - blo) / 2;
+				if (addr < vmem_span_tab[i].vse_base)
+					bhi = i;
+				else if (addr >= vmem_span_tab[i].vse_end)
+					blo = i + 1;
+				else {
+					found =
+					    (end <= vmem_span_tab[i].vse_end);
+					break;
+				}
+			}
+		}
+		atomic_thread_fence(memory_order_acquire);
+		s1 = atomic_load_explicit(&vmem_span_seq,
+		    memory_order_relaxed);
+		if (s0 == s1)
+			return (found);
+		/* array shifted under us; retry */
+	}
+}
+
 uint32_t vmem_mtbf;		/* mean time between failures [default: off] */
 size_t vmem_seg_size = sizeof (vmem_seg_t);
 
@@ -511,6 +669,8 @@ vmem_span_create(vmem_t *vmp, void *vaddr, size_t size, uint8_t import)
 		    memory_order_relaxed))
 			atomic_store_explicit(&vmem_heap_hi, end,
 			    memory_order_release);
+		/* And the exact span, for the between-spans case (P7.4). */
+		vmem_span_table_insert(start, end);
 	}
 
 	span = vmem_seg_create(vmp, knext->vs_aprev, start, end);
@@ -539,6 +699,11 @@ vmem_span_destroy(vmem_t *vmp, vmem_seg_t *vsp)
 
 	ASSERT(MUTEX_HELD(&vmp->vm_lock));
 	ASSERT(span->vs_type == VMEM_SPAN);
+
+	/* Drop this span from the exact ownership table (P7.4).  Same [start,
+	 * end) that vmem_span_create() inserted; only heap spans are tracked. */
+	if (vmp == vmem_heap)
+		vmem_span_table_remove(span->vs_start, span->vs_end);
 
 	if (vsp->vs_import)
 		vmp->vm_kstat.vk_mem_import -= size;

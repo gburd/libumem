@@ -637,14 +637,19 @@ umem_memalign(size_t align, size_t size_arg)
  * lies inside a span of vmem_heap (the "mmap_heap"/sbrk heap arena), because
  * umem_internal/va/default/oversize/memalign/firewall all import from it.
  *
- * WHAT IT IS: the convex hull of vmem_heap's spans -- a SUPERSET of owned
- * memory, since spans are not contiguous.  So it is a necessary, not a
- * sufficient, condition: exactly the same character as is_bootstrap_pointer's
- * magic check.  It cannot be fooled by a header forged in a foreign heap or
- * on the stack, which is the exposure it closes.
+ * WHAT IT IS (P7.4): an EXACT ownership test.  The [umem_heap_lo,
+ * umem_heap_hi) hull is a cheap first filter -- a SUPERSET of owned memory,
+ * since spans are not contiguous -- and a pointer that passes it is then
+ * confirmed against vmem_heap's exact span table (vmem_span_owns, vmem.c) so
+ * a header forged in the GAP between two spans is rejected.  It cannot be
+ * fooled by a header forged in a foreign heap, on the stack, or in a
+ * between-spans gap, which is the exposure it closes.  Before P7.4 this was
+ * the hull alone, which accepted the between-spans case.
  *
  * WHY NOT vmem_contains(): it walks the span list under the arena lock, and
- * this runs on every free().  The bounds are two compares.
+ * this runs on every free().  vmem_span_owns() is a lock-free binary search
+ * over a table published under vm_lock; a heap pointer pays ~log2(N) loads,
+ * a far-foreign pointer is rejected by the hull with no search at all.
  *
  * WHERE THE BOUNDS COME FROM, and why that changed.  This file used to keep
  * its own copy (umem_heap_lo/hi) and, on a miss, call vmem_walk(vmem_heap)
@@ -657,16 +662,14 @@ umem_memalign(size_t align, size_t size_arg)
  * 2026-09-24, 4.6).  Position D could also make every thread serialise on
  * vm_lock by freeing foreign pointers in a loop.
  *
- * Now vmem_span_create() publishes vmem_heap_lo/hi (vmem.c) under vm_lock
- * every time the heap grows, and this file only reads them.  There is no
- * miss path: the bounds are always current up to a release store made
- * BEFORE the span became allocatable, so a pointer umem could have handed
- * out is always inside what a reader sees.  They only widen, so a stale
- * read is a smaller superset -- still never "no" for a heap pointer.
- *
- * ponytail: convex hull.  If a between-spans foreign pointer with a forged
- * header ever matters (P7.4), the upgrade is a sorted span table with a
- * binary search, published the same way.
+ * Now vmem_span_create() publishes vmem_heap_lo/hi AND the span table
+ * (vmem.c) under vm_lock every time the heap grows, and this file only reads
+ * them, lock-free.  The bounds only widen; the span table is current up to a
+ * release store made BEFORE the span became allocatable, so a pointer umem
+ * could have handed out is always inside a span a reader sees.  The
+ * conservative direction is unchanged: a false "yes" is still possible (a
+ * span just returned to the OS can read as present briefly; vmem.c explains
+ * why that is safe), a false "no" is not.
  */
 #define	umem_heap_lo	vmem_heap_lo
 #define	umem_heap_hi	vmem_heap_hi
@@ -690,17 +693,26 @@ hull_contains(uintptr_t lo, uintptr_t hi, const void *addr, size_t len)
 }
 
 /*
- * Could [addr, addr + len) be memory umem handed out?  Conservative: a false
- * "yes" is possible (the hull is a superset), a false "no" is not.  Reached
- * when hull_contains() against the caller's loaded pair said no; re-reads
- * the published bounds (they may have widened since the caller loaded them)
- * and re-tests.  No walk, no lock: see the block above.
+ * Could [addr, addr + len) be memory umem handed out?  EXACT since P7.4: it
+ * is inside one of vmem_heap's spans, not merely inside the [lo,hi) hull.
+ * Conservative direction unchanged -- a false "yes" is still possible (a span
+ * just returned to the OS may still read as present; vmem.c explains why that
+ * is safe), a false "no" is not.
+ *
+ * Reached when hull_contains() against the caller's LOADED pair said no.  The
+ * hull only widens, so a stale loaded pair can be narrower than the current
+ * hull and wrongly exclude a pointer in a span created since the load; re-read
+ * the published bounds here before treating a miss as a refusal, exactly as
+ * before.  Then confirm exact span containment (vmem_span_owns), which reads
+ * the span table lock-free (vmem.c).  No walk, no lock.
  */
 static int
 umem_may_own(const void *addr, size_t len)
 {
-	return (hull_contains(atomic_load(&umem_heap_lo),
-	    atomic_load(&umem_heap_hi), addr, len));
+	if (!hull_contains(atomic_load(&umem_heap_lo),
+	    atomic_load(&umem_heap_hi), addr, len))
+		return (0);
+	return (vmem_span_owns((uintptr_t)addr, len));
 }
 
 /*
@@ -806,15 +818,34 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 	/*
 	 * One read of the hull for every ownership test in this call.  A hit
 	 * against these bounds is a hit against the current hull (they only
-	 * widen); a miss goes to umem_may_own(), which refreshes and
-	 * re-tests, so a valid pointer is never refused on a stale pair.
+	 * widen); a miss goes to umem_may_own(), which refreshes and re-tests,
+	 * so a valid pointer is never refused on a stale pair.
 	 */
 	uintptr_t hlo = atomic_load_explicit(&umem_heap_lo,
 	    memory_order_relaxed);
 	uintptr_t hhi = atomic_load_explicit(&umem_heap_hi,
 	    memory_order_relaxed);
+	/*
+	 * MAY_READ: is it SAFE to read [p,p+n)?  The hull is enough -- reading
+	 * a header in a between-spans gap is harmless (it is the caller's own
+	 * mapped memory), and the accept gate below rejects it anyway.  Cheap:
+	 * two compares, no span search, so a foreign header read costs nothing
+	 * new.
+	 *
+	 * MAY_OWN: does umem actually OWN [p,p+n)?  EXACT (P7.4): inside one
+	 * heap span, not merely inside the hull.  This is the gate that decides
+	 * whether to mutate and free, so a between-spans forgery must fail it.
+	 * The hull is tested FIRST (cheap reject for a far-foreign pointer);
+	 * only a pointer inside the hull pays the ~log2(N) span search, and a
+	 * stale-hull miss falls through to umem_may_own()'s fresh re-read.
+	 */
+#define	MAY_READ(p, n) \
+	(hull_contains(hlo, hhi, (p), (n)) || \
+	    hull_contains(atomic_load(&umem_heap_lo), \
+	    atomic_load(&umem_heap_hi), (p), (n)))
 #define	MAY_OWN(p, n) \
-	(hull_contains(hlo, hhi, (p), (n)) || umem_may_own((p), (n)))
+	((hull_contains(hlo, hhi, (p), (n)) && \
+	    vmem_span_owns((uintptr_t)(p), (n))) || umem_may_own((p), (n)))
 
 	buf = (malloc_data_t *)buf_arg;
 
@@ -826,7 +857,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 	 * Only the FIRST header is covered here; the two-tag layouts re-check
 	 * before reading their second one.
 	 */
-	if (!MAY_OWN(buf, sizeof (malloc_data_t))) {
+	if (!MAY_READ(buf, sizeof (malloc_data_t))) {
 		umem_err_recoverable("%s(%p): not a libumem allocation "
 		    "(outside umem's heap)\n",
 		    do_free ? "free" : "realloc", buf_arg);
@@ -860,7 +891,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 		size_t high_size;
 
 		buf--;
-		if (!MAY_OWN(buf, sizeof (malloc_data_t))) {
+		if (!MAY_READ(buf, sizeof (malloc_data_t))) {
 			message = "invalid or corrupted buffer";
 			break;
 		}
@@ -892,7 +923,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 		overhead += sizeof (malloc_data_t);
 
 		buf--;
-		if (!MAY_OWN(buf, sizeof (malloc_data_t))) {
+		if (!MAY_READ(buf, sizeof (malloc_data_t))) {
 			message = "invalid or corrupted buffer";
 			break;
 		}
@@ -976,6 +1007,7 @@ validate:
 	*ep = old_errno;
 	return (1);
 #undef MAY_OWN
+#undef MAY_READ
 }
 
 /*
@@ -1010,17 +1042,18 @@ umem_malloc_free(void *buf)
 	 *   2. the header word lies inside the hull -- before it is read
 	 *   3. decode; the magic names the layout
 	 *   4. size >= the layout's overhead, and [base, base+size) is inside
-	 *      the hull -- before anything is written
+	 *      a heap span -- before anything is written
 	 *   5. poison the state word, then _umem_free(); errno is saved and
 	 *      restored around it, as process_free_umem() does
 	 *
 	 * Anything else -- the two-tag OVERSIZE and MEMALIGN layouts, a bad
-	 * magic, a double free, a hull miss on either test -- falls through
-	 * to process_free_umem(), which repeats these steps from the top (a
-	 * hull miss there also refreshes the hull) and reports.  So a pointer
-	 * this path refuses is decided by exactly the code that decided it
-	 * before, and one this path accepts passed the same tests it would
-	 * have passed there.
+	 * magic, a double free, a hull miss on either read, OR a base that is
+	 * in the hull but in no span (P7.4) -- falls through to
+	 * process_free_umem(), which repeats these steps from the top (a hull
+	 * miss there also refreshes the hull) and reports.  So a pointer this
+	 * path refuses is decided by exactly the code that decided it before,
+	 * and one this path accepts passed the same tests it would have passed
+	 * there.
 	 */
 	{
 		malloc_data_t *hdr = (malloc_data_t *)buf - 1;
@@ -1048,7 +1081,16 @@ umem_malloc_free(void *buf)
 		} else {
 			goto slow;
 		}
-		if (size < overhead || !hull_contains(hlo, hhi, base, size))
+		/*
+		 * size >= overhead, and [base,base+size) is inside an actual
+		 * heap span -- not merely inside the hull (P7.4).  The hull is
+		 * tested first (cheap); only a pointer inside it pays the span
+		 * search.  A between-spans forgery passes the hull and fails the
+		 * span search, so it goes to the slow path, which reports the
+		 * refusal (this fast path only frees or defers, never reports).
+		 */
+		if (size < overhead || !hull_contains(hlo, hhi, base, size) ||
+		    !vmem_span_owns((uintptr_t)base, size))
 			goto slow;
 		hdr->malloc_stat = UMEM_FREE_PATTERN_32;
 		ep = errno_addr();
