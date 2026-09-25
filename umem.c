@@ -5704,15 +5704,6 @@ umem_cache_init(void)
 	    sizeof (umem_slab_t), 0, NULL, NULL, NULL, NULL,
 	    umem_internal_arena, UMC_NOHASH | UMC_INTERNAL);
 
-	/*
-	 * Per-thread caches get their own internal cache so no user buffer
-	 * is ever adjacent to a PTC's slot pointers (P5.12; the reasoning is
-	 * on umem_ptc_cache in umem_ptc.c).  UMC_INTERNAL like the magazines.
-	 */
-	umem_ptc_cache = umem_cache_create("umem_ptc_cache",
-	    sizeof (umem_ptc_t), UMEM_CACHE_LINE_SIZE, NULL, NULL, NULL, NULL,
-	    umem_internal_arena, UMC_INTERNAL);
-
 	if (umem_slab_cache == NULL)
 		return (0);
 
@@ -5721,6 +5712,20 @@ umem_cache_init(void)
 	    umem_internal_arena, UMC_NOHASH | UMC_INTERNAL);
 
 	if (umem_bufctl_cache == NULL)
+		return (0);
+
+	/*
+	 * Per-thread caches get their own internal cache so no user buffer
+	 * is ever adjacent to a PTC's slot pointers (P5.12; the reasoning is
+	 * on umem_ptc_cache in umem_ptc.c).  UMC_INTERNAL like the magazines.
+	 * AFTER umem_bufctl_cache: at 24 KB this is a hashed cache and its
+	 * slabs need bufctls from that cache -- created before it, the first
+	 * umem_ptc_get() faulted in umem_slab_create on a NULL bufctl cache.
+	 */
+	umem_ptc_cache = umem_cache_create("umem_ptc_cache",
+	    sizeof (umem_ptc_t), UMEM_CACHE_LINE_SIZE, NULL, NULL, NULL, NULL,
+	    umem_internal_arena, UMC_INTERNAL);
+	if (umem_ptc_cache == NULL)
 		return (0);
 
 	/*
