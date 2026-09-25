@@ -3358,10 +3358,21 @@ retry:
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 
 	/*
-	 * RSEQ fast path: true lock-free per-CPU magazine access.
-	 * Uses assembly critical sections when we own the rseq
-	 * registration (not glibc). Falls through to locked path
-	 * when the magazine is empty or rseq is not available.
+	 * rseq path.  Gated on umem_rseq_enabled (kernel registration
+	 * succeeded, umem_rseq_init) and umem_rseq_asm_safe, which
+	 * umem_rseq.c sets when glibc owns the registration (__rseq_offset)
+	 * or on x86_64 when umem registered itself; aarch64 with umem's own
+	 * registration gets no asm.  (This comment used to say the asm ran
+	 * "when we own the rseq registration (not glibc)" -- the opposite.)
+	 *
+	 * The asm serves ZERO allocations today: nothing loads a magazine
+	 * into cache_rseq[cpu].loaded_mag.  The only writers are
+	 * umem_rseq_alloc_slowpath()/umem_rseq_free_slowpath(), which are
+	 * UNUSED (see their comments and docs/results/2026-09-09-rseq-*.md),
+	 * and the cache-destroy drain, which NULLs it.  So the fastpath finds
+	 * loaded_mag == NULL, returns NULL, and every call falls through to
+	 * the cc_lock path below.  The machinery is kept for the asm-reload
+	 * design in docs/results/2026-09-09-rseq-reload-asm-design.md.
 	 */
 #ifdef UMEM_RSEQ_AVAILABLE
 	if (likely(umem_rseq_enabled) && cp->cache_rseq != NULL) {
@@ -6023,9 +6034,6 @@ umem_init(void)
 		umem_mtbf = 0;
 
 #ifdef UMEM_NUMA_AVAILABLE
-	/*
-	 * Initialize NUMA support if available
-	 */
 	if (umem_numa_init() == 0) {
 		/* NUMA successfully initialized */
 		if (umem_numa_enabled) {
@@ -6039,11 +6047,13 @@ umem_init(void)
 
 #ifdef UMEM_RSEQ_AVAILABLE
 	/*
-	 * Try to enable rseq-based per-CPU fast path.
-	 * If the kernel supports rseq (Linux 4.18+), this gives us
-	 * true lock-free per-CPU magazine access with zero
-	 * synchronization overhead. Falls back gracefully if
-	 * rseq is not available.
+	 * Register rseq with the kernel and set umem_rseq_enabled /
+	 * umem_rseq_asm_safe, which gate the asm path in _umem_cache_alloc()
+	 * and _umem_cache_free().  That path currently serves no allocations
+	 * (see the comment at the alloc site).  (This comment used to promise
+	 * "true lock-free per-CPU magazine access with zero synchronization
+	 * overhead"; nothing feeds the per-CPU magazines, so it delivers
+	 * neither.)
 	 */
 	(void) umem_rseq_init();
 #endif

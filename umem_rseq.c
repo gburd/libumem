@@ -221,9 +221,12 @@ umem_rseq_init(void)
 	umem_rseq_enabled = 1;
 
 	/*
-	 * Set FS-relative offset for the assembly fast path.
-	 * When glibc manages rseq, use __rseq_offset directly.
-	 * Otherwise, compute offset from umem_rseq_area TLS symbol.
+	 * Set FS/TP-relative offset for the assembly fast path.
+	 * glibc-managed: __rseq_offset, any arch.  umem-managed: x86_64
+	 * only (via @gottpoff on umem_rseq_area); aarch64 with umem's own
+	 * registration leaves umem_rseq_asm_safe = 0 even though
+	 * umem_rseq_aarch64.S exists and reads umem_rseq_fs_offset via
+	 * tpidr_el0, because nothing here computes that offset.
 	 */
 	if (umem_rseq_use_glibc) {
 		umem_rseq_fs_offset = (int)__rseq_offset;
@@ -277,9 +280,9 @@ umem_rseq_register_thread(void)
 	}
 
 	/*
-	 * When glibc manages rseq, the area is already registered.
-	 * We just need to copy cpu_id into our thread-local area
-	 * so umem_rseq_get_cpu() works.
+	 * When glibc manages rseq, the area is already registered.  Point
+	 * umem_rseq_cpu_idp at glibc's cpu_id field (nothing is copied) so
+	 * umem_rseq_get_cpu() reads the kernel-maintained value.
 	 */
 	if (umem_rseq_use_glibc) {
 		struct umem_rseq *glibc_area = umem_rseq_get_area();
