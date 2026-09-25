@@ -69,6 +69,8 @@
 #define	ERR_SIZE 8192		/* must be a power of 2 */
 
 static mutex_t umem_error_lock = DEFAULTMUTEX;
+/* Log lines dropped because the ring was busy (see umem_log_enter). */
+volatile unsigned long umem_error_dropped;
 
 static char umem_error_buffer[ERR_SIZE] = "";
 static uint_t umem_error_begin = 0;
@@ -93,7 +95,23 @@ umem_log_enter(const char *error_str)
 
 	looped = 0;
 
-	(void) mutex_lock(&umem_error_lock);
+	/*
+	 * TRYLOCK, NOT LOCK.  This ring is diagnostic: it records error text
+	 * for a debugger or umemctl to read later.  It is reached from
+	 * umem_err_recoverable() on every refused free(), and under LD_PRELOAD
+	 * with umem_abort = 0 that is a steady-state path.  A signal handler
+	 * that frees a bad pointer while the interrupted thread is inside this
+	 * function used to deadlock on umem_error_lock -- glibc's
+	 * malloc_printerr writes and aborts without a lock and cannot
+	 * (production-readiness review 2026-09-24, 4.6).  Losing one log line
+	 * under exactly that race is the right trade; the line that IS lost is
+	 * counted so a reader knows the ring is incomplete.
+	 */
+	if (mutex_trylock(&umem_error_lock) != 0) {
+		(void) __atomic_add_fetch(&umem_error_dropped, 1,
+		    __ATOMIC_RELAXED);
+		return;
+	}
 
 	while ((c = *error_str++) != '\0') {
 		WRITE_AND_INC(umem_error_end, c);
