@@ -468,16 +468,26 @@ umem_rseq_free_fastpath:
 
 /*
  * int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache, int cpu_id,
- *     umem_magazine_t *new_mag, int new_rounds, umem_magazine_t **old_mag_out)
+ *     umem_magazine_t *new_mag, int new_rounds, umem_magazine_t **old_mag_out,
+ *     int *old_rounds_out)
  *
  * Phase 2 of the armed rseq reload (design:
  * docs/results/2026-09-09-rseq-reload-asm-design.md).  Publishes the swap
  * of a depot magazine into cache_rseq[cpu] inside its OWN rseq critical
  * section, atomic w.r.t. this thread's occupancy of `cpu`.  Returns w0=1
- * if committed (caller frees *old_mag_out), 0 if aborted (thread migrated;
- * caller retries; *old_mag_out untouched).
+ * if committed (caller reclassifies *old_mag_out via umem_ptc_mag_return
+ * using *old_rounds_out), 0 if aborted (thread migrated; caller retries;
+ * *old_mag_out / *old_rounds_out untouched).
  *
- * AAPCS64: x0=cache w1=cpu_id x2=new_mag w3=new_rounds x4=old_mag_out.
+ * old_rounds_out: the migration path can strand a NON-empty old magazine
+ * here, and the depot's ml_full/ml_empty lists have exact-count contracts,
+ * so the caller must know the old rounds to classify it.  Both caller
+ * pointers are written BEFORE the three-step commit, so the SINGLE
+ * unconditional last store is still the `rounds = new_rounds` store
+ * (bug-6 discipline preserved).
+ *
+ * AAPCS64: x0=cache w1=cpu_id x2=new_mag w3=new_rounds x4=old_mag_out
+ *          x5=old_rounds_out.
  */
 .globl umem_rseq_reload_alloc_commit
 .type umem_rseq_reload_alloc_commit, %function
@@ -500,12 +510,15 @@ umem_rseq_reload_alloc_commit:
 	.cfi_offset 24, -72
 	str	x25, [sp, #64]
 	.cfi_offset 25, -64
+	str	x26, [sp, #72]
+	.cfi_offset 26, -56
 
 	mov	x19, x0		/* cache */
 	mov	w20, w1		/* cpu_id */
 	mov	x21, x2		/* new_mag */
 	mov	w22, w3		/* new_rounds */
 	mov	x23, x4		/* old_mag_out */
+	mov	x26, x5		/* old_rounds_out */
 
 	add	x24, sp, #80	/* &rseq_cs */
 
@@ -531,9 +544,14 @@ umem_rseq_reload_alloc_commit:
 	cmp	w1, w20
 	b.ne	.Lrseq_reload_alloc_abort
 
-	/* Read OLD loaded_mag BEFORE any write (design section 6). */
+	/* Read OLD loaded_mag AND rounds BEFORE any write (design section 6
+	 * + old-magazine classification).  Both go to caller pointers, not
+	 * to committed cache_rseq[cpu] state, so the single last store below
+	 * is unaffected. */
 	ldr	x2, [x19, #CACHE_LOADED_MAG_OFFSET]
 	str	x2, [x23]	/* *old_mag_out = OLD loaded_mag */
+	ldr	w3, [x19, #CACHE_ROUNDS_OFFSET]
+	str	w3, [x26]	/* *old_rounds_out = OLD rounds */
 
 	/* Resolution A (section 4): rounds=0, loaded_mag=new, rounds=real. */
 	str	wzr, [x19, #CACHE_ROUNDS_OFFSET]
@@ -546,6 +564,7 @@ umem_rseq_reload_alloc_commit:
 	LOAD_RSEQ_OFFSET x1
 	add	x1, x25, x1
 	str	xzr, [x1, #8]
+	ldr	x26, [sp, #72]
 	ldr	x25, [sp, #64]
 	ldp	x23, x24, [sp, #48]
 	ldp	x21, x22, [sp, #32]
@@ -564,6 +583,7 @@ umem_rseq_reload_alloc_commit:
 	add	x1, x25, x1
 	str	xzr, [x1, #8]
 	mov	w0, #0
+	ldr	x26, [sp, #72]
 	ldr	x25, [sp, #64]
 	ldp	x23, x24, [sp, #48]
 	ldp	x21, x22, [sp, #32]
@@ -575,13 +595,17 @@ umem_rseq_reload_alloc_commit:
 
 /*
  * int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache, int cpu_id,
- *     umem_magazine_t *new_mag, umem_magazine_t **old_mag_out)
+ *     umem_magazine_t *new_mag, umem_magazine_t **old_mag_out,
+ *     int *old_rounds_out)
  *
  * Free-side phase 2: swap in a fresh EMPTY magazine (rounds always 0),
  * simpler than the alloc side (no section 4 subtlety).  Write loaded_mag
- * first, rounds=0 last.
+ * first, rounds=0 last.  old_rounds_out captures the OLD rounds before the
+ * commit so the caller can classify a migration-stranded partial magazine
+ * for the depot; written before the commit store, preserving single-last-
+ * store.
  *
- * AAPCS64: x0=cache w1=cpu_id x2=new_mag x3=old_mag_out.
+ * AAPCS64: x0=cache w1=cpu_id x2=new_mag x3=old_mag_out x4=old_rounds_out.
  */
 .globl umem_rseq_reload_free_commit
 .type umem_rseq_reload_free_commit, %function
@@ -603,11 +627,14 @@ umem_rseq_reload_free_commit:
 	.cfi_offset 24, -80
 	str	x25, [sp, #56]
 	.cfi_offset 25, -72
+	str	x23, [sp, #64]
+	.cfi_offset 23, -64
 
 	mov	x19, x0		/* cache */
 	mov	w20, w1		/* cpu_id */
 	mov	x21, x2		/* new_mag (empty) */
 	mov	x22, x3		/* old_mag_out */
+	mov	x23, x4		/* old_rounds_out */
 
 	add	x24, sp, #80	/* &rseq_cs */
 
@@ -635,6 +662,8 @@ umem_rseq_reload_free_commit:
 
 	ldr	x2, [x19, #CACHE_LOADED_MAG_OFFSET]
 	str	x2, [x22]	/* *old_mag_out = OLD loaded_mag */
+	ldr	w3, [x19, #CACHE_ROUNDS_OFFSET]
+	str	w3, [x23]	/* *old_rounds_out = OLD rounds */
 
 	str	x21, [x19, #CACHE_LOADED_MAG_OFFSET]	/* new empty mag */
 	str	wzr, [x19, #CACHE_ROUNDS_OFFSET]	/* COMMIT: last store */
@@ -645,6 +674,7 @@ umem_rseq_reload_free_commit:
 	LOAD_RSEQ_OFFSET x1
 	add	x1, x25, x1
 	str	xzr, [x1, #8]
+	ldr	x23, [sp, #64]
 	ldr	x24, [sp, #48]
 	ldr	x25, [sp, #56]
 	ldp	x21, x22, [sp, #32]
@@ -663,6 +693,7 @@ umem_rseq_reload_free_commit:
 	add	x1, x25, x1
 	str	xzr, [x1, #8]
 	mov	w0, #0
+	ldr	x23, [sp, #64]
 	ldr	x24, [sp, #48]
 	ldr	x25, [sp, #56]
 	ldp	x21, x22, [sp, #32]

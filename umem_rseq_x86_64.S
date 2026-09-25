@@ -320,7 +320,8 @@ umem_rseq_free_fastpath:
 
 /*
  * int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache, int cpu_id,
- *     umem_magazine_t *new_mag, int new_rounds, umem_magazine_t **old_mag_out)
+ *     umem_magazine_t *new_mag, int new_rounds, umem_magazine_t **old_mag_out,
+ *     int *old_rounds_out)
  *
  * Phase 2 of the armed rseq reload (design:
  * docs/results/2026-09-09-rseq-reload-asm-design.md).  Phase 1 (a depot
@@ -331,12 +332,23 @@ umem_rseq_free_fastpath:
  * closes the migration-safety gap the v2 analysis proved a C-only or
  * lock-based reload cannot (at most one writer per slot at any instant).
  *
- * Returns 1 if committed (caller frees *old_mag_out to the depot), 0 if
- * aborted (thread migrated between the caller reading cpu_id and this
- * commit; caller retries against the new cpu -- *old_mag_out untouched).
+ * Returns 1 if committed (caller reclassifies *old_mag_out via
+ * umem_ptc_mag_return using *old_rounds_out), 0 if aborted (thread migrated
+ * between the caller reading cpu_id and this commit; caller retries against
+ * the new cpu -- *old_mag_out / *old_rounds_out untouched).
+ *
+ * old_rounds_out: the migration path can strand a NON-empty old magazine
+ * here (thread migrated onto a cpu whose loaded_mag still had rounds), and
+ * the depot's ml_full/ml_empty lists have exact-count contracts, so the C
+ * caller must know the old rounds to classify it (umem_ptc_mag_return).
+ * Both *old_mag_out and *old_rounds_out are read/written BEFORE the
+ * three-step commit, so the SINGLE unconditional last store is still the
+ * `rounds = new_rounds` store below (bug-6 discipline preserved): the two
+ * caller-pointer writes are ordinary safe-to-waste pre-commit stores, not
+ * part of the committed cache_rseq[cpu] state.
  *
  * SysV AMD64: %rdi=cache %esi=cpu_id %rdx=new_mag %ecx=new_rounds
- *             %r8=old_mag_out.
+ *             %r8=old_mag_out %r9=old_rounds_out.
  */
 .globl umem_rseq_reload_alloc_commit
 .type umem_rseq_reload_alloc_commit, @function
@@ -356,11 +368,14 @@ umem_rseq_reload_alloc_commit:
 	.cfi_offset %r13, -40
 	pushq	%r14
 	.cfi_offset %r14, -48
+	pushq	%r15
+	.cfi_offset %r15, -56
 
 	movq	%rdi, %rbx		/* cache */
 	movq	%rdx, %r12		/* new_mag */
 	movl	%ecx, %r13d		/* new_rounds */
 	movq	%r8, %r14		/* old_mag_out */
+	movq	%r9, %r15		/* old_rounds_out */
 	/* %esi (cpu_id) used directly in the critical section below */
 
 	subq	$64, %rsp
@@ -387,9 +402,14 @@ umem_rseq_reload_alloc_commit:
 	cmpl	%esi, %ecx
 	jne	.Lrseq_reload_alloc_abort
 
-	/* Read OLD loaded_mag BEFORE any write (design section 6). */
+	/* Read OLD loaded_mag AND rounds BEFORE any write (design section 6
+	 * + old-magazine classification fix).  Both go to caller pointers;
+	 * neither is part of the committed cache_rseq[cpu] state, so the
+	 * single unconditional last store below is unaffected. */
 	movq	CACHE_LOADED_MAG_OFFSET(%rbx), %rax
 	movq	%rax, (%r14)		/* *old_mag_out = OLD loaded_mag */
+	movl	CACHE_ROUNDS_OFFSET(%rbx), %eax
+	movl	%eax, (%r15)		/* *old_rounds_out = OLD rounds */
 
 	/*
 	 * Resolution A (design section 4): rounds=0 (transient safe-empty),
@@ -408,7 +428,8 @@ umem_rseq_reload_alloc_commit:
 .Lrseq_reload_alloc_post_commit:
 	LOAD_FS_OFFSET %rcx
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rcx)
-	leaq	-32(%rbp), %rsp
+	leaq	-40(%rbp), %rsp
+	popq	%r15
 	popq	%r14
 	popq	%r13
 	popq	%r12
@@ -424,7 +445,8 @@ umem_rseq_reload_alloc_commit:
 	LOAD_FS_OFFSET %rax
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)
 	xorl	%eax, %eax		/* aborted; caller retries */
-	leaq	-32(%rbp), %rsp
+	leaq	-40(%rbp), %rsp
+	popq	%r15
 	popq	%r14
 	popq	%r13
 	popq	%r12
@@ -436,14 +458,21 @@ umem_rseq_reload_alloc_commit:
 
 /*
  * int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache, int cpu_id,
- *     umem_magazine_t *new_mag, umem_magazine_t **old_mag_out)
+ *     umem_magazine_t *new_mag, umem_magazine_t **old_mag_out,
+ *     int *old_rounds_out)
  *
  * Free-side phase 2: swap in a fresh EMPTY magazine (new_rounds is always
  * 0), simpler than the alloc side (no section 4 transient-zero subtlety --
  * the final rounds value IS zero regardless of the old value).  Write
  * loaded_mag first, rounds=0 last (unconditional commit store).
  *
- * SysV AMD64: %rdi=cache %esi=cpu_id %rdx=new_mag %rcx=old_mag_out.
+ * old_rounds_out: as on the alloc side, the migration path can strand a
+ * partial old magazine here; the caller needs its rounds to classify it
+ * for the depot.  Written BEFORE the commit stores, so the single last
+ * store (rounds=0) discipline is preserved.
+ *
+ * SysV AMD64: %rdi=cache %esi=cpu_id %rdx=new_mag %rcx=old_mag_out
+ *             %r8=old_rounds_out.
  */
 .globl umem_rseq_reload_free_commit
 .type umem_rseq_reload_free_commit, @function
@@ -461,10 +490,13 @@ umem_rseq_reload_free_commit:
 	.cfi_offset %r12, -32
 	pushq	%r13
 	.cfi_offset %r13, -40
+	pushq	%r14
+	.cfi_offset %r14, -48
 
 	movq	%rdi, %rbx		/* cache */
 	movq	%rdx, %r12		/* new_mag (empty) */
 	movq	%rcx, %r13		/* old_mag_out */
+	movq	%r8, %r14		/* old_rounds_out */
 	/* %esi (cpu_id) used directly below */
 
 	subq	$64, %rsp
@@ -490,9 +522,11 @@ umem_rseq_reload_free_commit:
 	cmpl	%esi, %ecx
 	jne	.Lrseq_reload_free_abort
 
-	/* Read OLD loaded_mag before overwrite. */
+	/* Read OLD loaded_mag AND rounds before overwrite (classification). */
 	movq	CACHE_LOADED_MAG_OFFSET(%rbx), %rax
 	movq	%rax, (%r13)		/* *old_mag_out = OLD loaded_mag */
+	movl	CACHE_ROUNDS_OFFSET(%rbx), %eax
+	movl	%eax, (%r14)		/* *old_rounds_out = OLD rounds */
 
 	movq	%r12, CACHE_LOADED_MAG_OFFSET(%rbx)	/* new empty mag */
 	movl	$0, CACHE_ROUNDS_OFFSET(%rbx)		/* COMMIT: last store */
@@ -502,7 +536,8 @@ umem_rseq_reload_free_commit:
 .Lrseq_reload_free_post_commit:
 	LOAD_FS_OFFSET %rcx
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rcx)
-	leaq	-24(%rbp), %rsp
+	leaq	-32(%rbp), %rsp
+	popq	%r14
 	popq	%r13
 	popq	%r12
 	popq	%rbx
@@ -517,7 +552,8 @@ umem_rseq_reload_free_commit:
 	LOAD_FS_OFFSET %rax
 	movq	$0, %fs:RSEQ_CS_OFFSET(%rax)
 	xorl	%eax, %eax
-	leaq	-24(%rbp), %rsp
+	leaq	-32(%rbp), %rsp
+	popq	%r14
 	popq	%r13
 	popq	%r12
 	popq	%rbx
