@@ -43,7 +43,7 @@ extern umem_cache_t *umem_alloc_table[];
  * Global configuration (can be tuned via UMEM_OPTIONS)
  */
 size_t umem_ptc_maxsize = 8192;      /* max cached size */
-int umem_ptc_enabled = 1;            /* enabled by default for performance */
+int umem_ptc_enabled = 1;            /* UMEM_OPTIONS=ptc=0 disables */
 
 /*
  * Thread-local storage for ptc
@@ -264,8 +264,11 @@ static int ptc_table_ready;
 int8_t umem_ptc_bin_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT] = { [0 ... (UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) - 1] = -1 };
 
 /*
- * Size classes we cache (matching umem's small size classes)
- * These correspond to the first PTC_NBINS entries in umem_alloc_sizes
+ * Size classes we cache: the umem_alloc_sizes entries up to 8192.  Bin
+ * index also selects a capacity tier (ptc_bin_capacity: PTC_BIN_MEDIUM /
+ * LARGE / XLARGE thresholds).  On LP64 the three 0 entries after 2048 are
+ * padding so 2560 lands at PTC_BIN_XLARGE, so this is NOT "the first
+ * PTC_NBINS entries of umem_alloc_sizes"; the table builder skips zeros.
  */
 static const size_t ptc_size_classes[PTC_NBINS] = {
 #ifdef _LP64
@@ -425,7 +428,20 @@ umem_ptc_init(void)
 		}
 	}
 
-	/* Publish after all tables are fully populated */
+	/*
+	 * ptc_table_ready is a plain int with no release store, and the
+	 * inlined fast paths in umem.c (_umem_alloc/_umem_free) read
+	 * umem_ptc_bin_table without consulting it.  What orders the
+	 * tables before their readers is umem_init(): this runs inside it,
+	 * and umem_init() publishes umem_ready = UMEM_READY under
+	 * umem_init_lock with cond_broadcast, so any thread that waited on
+	 * init sees the filled tables.  A thread that reads bin_table
+	 * without ever taking umem_init_lock sees either the static -1 or
+	 * the final value: entries are int8_t, written once, and -1 means
+	 * "not PTC" which sends the call to the ordinary path.  The flag
+	 * only guards umem_ptc_size_to_bin() and umem_sbo_enabled(), the
+	 * out-of-line callers.
+	 */
 	ptc_table_ready = 1;
 }
 
@@ -837,8 +853,9 @@ static __thread size_t sbo_offset
     __attribute__((tls_model("initial-exec"))) = 0;
 
 /*
- * SBO is disabled when any debug flags are active on the smallest cache,
- * or when PTC itself is disabled.
+ * SBO is disabled when umem_flags carries any of UMF_AUDIT, UMF_DEADBEEF,
+ * UMF_REDZONE (the process-wide debug flags, not any one cache's), or when
+ * PTC itself is disabled.
  */
 int
 umem_sbo_enabled(void)
@@ -846,7 +863,6 @@ umem_sbo_enabled(void)
 	if (!umem_ptc_enabled || !ptc_table_ready) {
 		return (0);
 	}
-	/* Check if debug flags are set on any small cache */
 	if (umem_flags & (UMF_AUDIT | UMF_DEADBEEF | UMF_REDZONE)) {
 		return (0);
 	}
