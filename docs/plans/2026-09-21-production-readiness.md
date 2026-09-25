@@ -733,6 +733,10 @@ imply, and that is a documentation accuracy issue independent of hardening.
 | P5.8 foreign header decode | **FIXED** | writes preceded validation; now after acceptance |
 | P5.9 unbounded frame walk | **FIXED** | SIGSEGV pre-fix both arches |
 | P5.10 free() reads caller bytes to classify bootstrap pointers, then munmaps by them | **FIXED** `3767b4c` | `test_forged_bootstrap`: pre SIGSEGV, post PASS; ratio regression 0.598 |
+| P5.11 `reap_interval=0` spins a core; honoured under AT_SECURE | **FIXED** `cbb1a2e` | `test_reap_interval_zero.sh`: 2.003 s -> 0.004 s CPU in a 2 s sleep |
+| P5.12 `umem_ptc_t` in user size-class slabs; slot pointers reachable by overrun | **FIXED** `444b062`/`ec5c10f` | `test_ptc_adjacency`: 8/8 adjacent -> 0 |
+| P5.13 PTC slot / magazine round pointers unmangled | open | needs hot-path A/B; glibc safe-links its equivalent |
+| P5.14 `mmap_guard` honoured under AT_SECURE (hardening downgrade from env) | **FIXED** `a1912e2` | option gated; default 16 MiB for setuid |
 | P5.10 minor / verified-good | **DONE** | gdb whitelist confirmed sound, left alone |
 
 Qualified at `56dbe8d` on x86_64 and aarch64, isolated builds, both configs:
@@ -816,6 +820,13 @@ that nothing failed on; `f9b3bd9`).
 matches: no path on `free()` reads memory the caller controls before ownership
 is known. Gate PASS both arches at `3767b4c`, all configs (45/42/3/0 default,
 45/45 introspect, release config included).
+
+### P5.11 -- P5.14: the 2026-09-24 audit of the v3.2.0 delta
+See `docs/reviews/2026-09-24-security-audit.md` for each finding's mechanism,
+position, glibc comparison and fix. Two of the three HIGHs (P5.11, P5.12) were
+introduced by this week's own fixes (`9bbe58b`, `b8c39e6`); the correctness
+review of those changes did not ask the four-position question. That is the
+process finding.
 
 ## Phase 6 — Hard limits
 

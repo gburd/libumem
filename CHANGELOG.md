@@ -17,6 +17,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the registry. `test/security/test_forged_bootstrap`: SIGSEGV before, PASS
   after, interposer ratio unchanged. Found by the P8.3 work and the
   production-readiness review independently.
+- **`UMEM_OPTIONS=reap_interval=0` spun a core for the life of the process,
+  and was honoured under `AT_SECURE`** (P5.11, `cbb1a2e`). The update thread's
+  deadline is `now + interval`; at 0 it is always past and the update pass ran
+  back to back. Introduced by v3.2.0 starting the thread at init. A hostile
+  environment could burn a core of a setuid target -- glibc ignores all its
+  tunables there. 0 is now refused at the parser. `test_reap_interval_zero.sh`.
+- **Per-thread cache structs shared slabs with user buffers** (P5.12,
+  `444b062`). `umem_ptc_t` -- 36 bins of slot pointers and the pool of
+  addresses the next `umem_alloc()` returns -- came from the 24 KiB user size
+  class, one object per slab, so every PTC sat exactly one object from a user
+  buffer (measured 8 of 8). A one-byte overrun reached the allocator's
+  pointers; glibc safe-links its tcache, libumem's slots are raw. Now from
+  its own `UMC_INTERNAL` cache, as the magazines always were. Slot mangling
+  itself remains open (P5.13). `test_ptc_adjacency`.
+- **`mmap_guard` is now ignored under `AT_SECURE`** (P5.14, `a1912e2`):
+  `mmap_guard=0` from the environment would have disabled the `PROT_NONE`
+  use-after-free guard on a setuid target.
 
 ### Fixed
 
