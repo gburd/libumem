@@ -77,6 +77,11 @@ extern vmem_t *vmem_heap;
 extern _Atomic uintptr_t vmem_heap_lo, vmem_heap_hi;
 /* Exact containment in a heap span (P7.4); lock-free reader.  See vmem.c. */
 extern int vmem_span_owns(uintptr_t addr, size_t len);
+/* As above, returning the containing span's [base,end) so a caller can cache
+ * it, and the seqlock generation to validate that cache across frees. */
+extern int vmem_span_find(uintptr_t addr, size_t len, uintptr_t *base_out,
+    uintptr_t *end_out);
+extern uint32_t vmem_span_gen(void);
 extern vmem_alloc_t *vmem_heap_alloc;
 extern vmem_free_t *vmem_heap_free;
 

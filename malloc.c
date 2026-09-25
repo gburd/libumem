@@ -693,6 +693,50 @@ hull_contains(uintptr_t lo, uintptr_t hi, const void *addr, size_t len)
 }
 
 /*
+ * Exact span containment with a per-thread last-span cache (P7.4).
+ *
+ * The exact check is a lock-free binary search over vmem's span table
+ * (vmem_span_find).  Consecutive frees under LD_PRELOAD overwhelmingly hit
+ * objects in the same few spans, so caching the last span a free landed in
+ * turns the common heap free back into two compares -- no search, no seqlock
+ * -- which is what the interposer's per-call budget (test_interpose_regress)
+ * requires.  A miss (a foreign or between-spans pointer, or the first free
+ * into a new span) pays the search once and refreshes the cache.
+ *
+ * The cache is validated against the span table's seqlock generation: any
+ * insert OR REMOVE bumps the generation, so a span returned to the OS cannot
+ * be accepted from a stale cached range.  initial-exec TLS, one %fs/tpidr
+ * load, the model malloc_guard.h already requires.
+ */
+static __thread uintptr_t span_cache_lo __attribute__((tls_model("initial-exec")));
+static __thread uintptr_t span_cache_hi __attribute__((tls_model("initial-exec")));
+static __thread uint32_t span_cache_gen __attribute__((tls_model("initial-exec")));
+
+static inline int
+span_owns_cached(const void *addr, size_t len)
+{
+	uintptr_t a = (uintptr_t)addr;
+	uintptr_t end = a + len;
+	uint32_t gen = vmem_span_gen();
+	uintptr_t base = 0, hi = 0;
+
+	/* Fast path: cache valid (generation unchanged, even) and hit. */
+	if (gen == span_cache_gen && a >= span_cache_lo && end <= span_cache_hi)
+		return (1);
+
+	if (!vmem_span_find(a, len, &base, &hi))
+		return (0);
+	/* Hit: cache this span for the next free (base==0 => saturated hull
+	 * fallback, which must not be cached -- it would falsely accept). */
+	if (base != 0 && !(gen & 1)) {
+		span_cache_lo = base;
+		span_cache_hi = hi;
+		span_cache_gen = gen;
+	}
+	return (1);
+}
+
+/*
  * Could [addr, addr + len) be memory umem handed out?  EXACT since P7.4: it
  * is inside one of vmem_heap's spans, not merely inside the [lo,hi) hull.
  * Conservative direction unchanged -- a false "yes" is still possible (a span
@@ -712,7 +756,7 @@ umem_may_own(const void *addr, size_t len)
 	if (!hull_contains(atomic_load(&umem_heap_lo),
 	    atomic_load(&umem_heap_hi), addr, len))
 		return (0);
-	return (vmem_span_owns((uintptr_t)addr, len));
+	return (span_owns_cached(addr, len));
 }
 
 /*
@@ -845,7 +889,7 @@ process_free_umem(void *buf_arg, int do_free, size_t *data_size_arg)
 	    atomic_load(&umem_heap_hi), (p), (n)))
 #define	MAY_OWN(p, n) \
 	((hull_contains(hlo, hhi, (p), (n)) && \
-	    vmem_span_owns((uintptr_t)(p), (n))) || umem_may_own((p), (n)))
+	    span_owns_cached((p), (n))) || umem_may_own((p), (n)))
 
 	buf = (malloc_data_t *)buf_arg;
 
@@ -1090,7 +1134,7 @@ umem_malloc_free(void *buf)
 		 * refusal (this fast path only frees or defers, never reports).
 		 */
 		if (size < overhead || !hull_contains(hlo, hhi, base, size) ||
-		    !vmem_span_owns((uintptr_t)base, size))
+		    !span_owns_cached(base, size))
 			goto slow;
 		hdr->malloc_stat = UMEM_FREE_PATTERN_32;
 		ep = errno_addr();

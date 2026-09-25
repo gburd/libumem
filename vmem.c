@@ -375,18 +375,24 @@ vmem_span_table_remove(uintptr_t base, uintptr_t end)
 }
 
 /*
- * Lock-free reader (malloc.c's umem_may_own()).  Is [addr, addr+len) inside
- * one heap span?  Seqlock retry protects against a concurrent insert/remove
- * shifting the array under the search.  Returns 1 if contained, 0 if not; a
- * saturated table returns 1 (fall back to the hull the caller already
- * matched -- a conservative yes).  Declared in vmem_base.h.
+ * Lock-free reader (malloc.c's umem_may_own()).  If [addr, addr+len) is
+ * inside one heap span, return 1 and (if base_out/end_out are non-NULL) that
+ * span's [base,end) so the caller can cache it for its next free (P7.4:
+ * consecutive frees hit the same span, so a per-thread cache of the last hit
+ * turns the common heap free back into two compares, no search).  Returns 0
+ * if not contained; a saturated table returns 1 with the hull bounds (fall
+ * back to the hull the caller already matched -- a conservative yes).
+ * Seqlock retry protects against a concurrent insert/remove shifting the
+ * array under the search.  Declared in vmem_base.h.
  */
 int
-vmem_span_owns(uintptr_t addr, size_t len)
+vmem_span_find(uintptr_t addr, size_t len, uintptr_t *base_out,
+    uintptr_t *end_out)
 {
 	uintptr_t end = addr + len;
 	uint32_t s0, s1, n, i;
 	int found;
+	uintptr_t fb = 0, fe = 0;
 
 	if (end < addr)
 		return (0);		/* wrapped: not a real object */
@@ -396,8 +402,15 @@ vmem_span_owns(uintptr_t addr, size_t len)
 		if (s0 & 1)
 			continue;	/* write in progress; re-read */
 		if (atomic_load_explicit(&vmem_span_saturated,
-		    memory_order_acquire))
+		    memory_order_acquire)) {
+			if (base_out != NULL) {
+				/* Hull fallback: cache nothing (a stale wide
+				 * span would falsely accept), just say yes. */
+				*base_out = 0;
+				*end_out = 0;
+			}
 			return (1);
+		}
 		n = atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed);
 		found = 0;
 		{			/* binary search the sorted-by-base table */
@@ -409,8 +422,9 @@ vmem_span_owns(uintptr_t addr, size_t len)
 				else if (addr >= vmem_span_tab[i].vse_end)
 					blo = i + 1;
 				else {
-					found =
-					    (end <= vmem_span_tab[i].vse_end);
+					fb = vmem_span_tab[i].vse_base;
+					fe = vmem_span_tab[i].vse_end;
+					found = (end <= fe);
 					break;
 				}
 			}
@@ -418,10 +432,34 @@ vmem_span_owns(uintptr_t addr, size_t len)
 		atomic_thread_fence(memory_order_acquire);
 		s1 = atomic_load_explicit(&vmem_span_seq,
 		    memory_order_relaxed);
-		if (s0 == s1)
+		if (s0 == s1) {
+			if (found && base_out != NULL) {
+				*base_out = fb;
+				*end_out = fe;
+			}
 			return (found);
+		}
 		/* array shifted under us; retry */
 	}
+}
+
+int
+vmem_span_owns(uintptr_t addr, size_t len)
+{
+	return (vmem_span_find(addr, len, NULL, NULL));
+}
+
+/*
+ * The seqlock generation, for a caller caching a span across frees: a change
+ * means the table was mutated (a span added or REMOVED), so a cached span may
+ * be stale and must not be trusted.  Odd is returned as-is (a write was in
+ * flight when read); the caller treats any value it did not previously cache
+ * as "invalidate".
+ */
+uint32_t
+vmem_span_gen(void)
+{
+	return (atomic_load_explicit(&vmem_span_seq, memory_order_acquire));
 }
 
 uint32_t vmem_mtbf;		/* mean time between failures [default: off] */
