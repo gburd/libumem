@@ -591,7 +591,8 @@ test_stress_stress_main_LDFLAGS = -pthread
 # docs/results/2026-09-21-make-check-flaky-inspect-e2e.log.
 if ENABLE_RSEQ
 noinst_PROGRAMS += test/stress/repro_rseq_trailing_store \
-		   test/stress/repro_naive_reload_race
+		   test/stress/repro_naive_reload_race \
+		   test/stress/repro_reload_commit_safe
 endif
 
 test_stress_repro_rseq_trailing_store_SOURCES = test/stress/repro_rseq_trailing_store.c
@@ -603,6 +604,11 @@ test_stress_repro_naive_reload_race_SOURCES = test/stress/repro_naive_reload_rac
 test_stress_repro_naive_reload_race_LDADD = libumem.la
 test_stress_repro_naive_reload_race_LDFLAGS = -pthread
 test_stress_repro_naive_reload_race_CPPFLAGS = -I$(srcdir)
+
+test_stress_repro_reload_commit_safe_SOURCES = test/stress/repro_reload_commit_safe.c
+test_stress_repro_reload_commit_safe_LDADD = libumem.la
+test_stress_repro_reload_commit_safe_LDFLAGS = -pthread
+test_stress_repro_reload_commit_safe_CPPFLAGS = -I$(srcdir)
 
 # Interposer fork participation (P1.2 cross-file follow-up).  Links only
 # libumem.la; it is meant to be run under LD_PRELOAD=libumem_malloc.so and
