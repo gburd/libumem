@@ -33,6 +33,8 @@
 
 static pthread_barrier_t ready, go;
 static size_t per_thread = 1000;
+static size_t probe_size_lo = 0;	/* P8.2c: if set, cycle [lo, hi] instead of 16-240 B */
+static size_t probe_size_hi = 0;
 static atomic_int max_cpu_seen;
 static atomic_uint_fast64_t exit_worst_ns;
 
@@ -52,11 +54,30 @@ worker(void *arg)
 	/* Populate this thread's PTC across several small size classes. */
 	for (k = 0; k < per_thread / 64 + 1; k++) {
 		for (i = 0; i < 64; i++) {
-			ptrs[i] = ALLOC(16 + (i % 8) * 32);
+			size_t sz;
+			if (probe_size_hi) {
+				/* P8.2c: sweep the tier so every class in
+				 * [lo,hi] retains a magazine's worth. */
+				size_t span = probe_size_hi - probe_size_lo;
+				sz = probe_size_lo +
+				    (span ? (i * span / 63) : 0);
+			} else {
+				sz = 16 + (i % 8) * 32;
+			}
+			ptrs[i] = ALLOC(sz);
 			if (ptrs[i]) *(volatile char *)ptrs[i] = 1;
 		}
-		for (i = 0; i < 64; i++)
-			if (ptrs[i]) FREE(ptrs[i], 16 + (i % 8) * 32);
+		for (i = 0; i < 64; i++) {
+			size_t sz;
+			if (probe_size_hi) {
+				size_t span = probe_size_hi - probe_size_lo;
+				sz = probe_size_lo +
+				    (span ? (i * span / 63) : 0);
+			} else {
+				sz = 16 + (i % 8) * 32;
+			}
+			if (ptrs[i]) FREE(ptrs[i], sz);
+		}
 	}
 	pthread_barrier_wait(&ready);	/* main samples RSS here */
 	pthread_barrier_wait(&go);
@@ -68,6 +89,13 @@ main(int argc, char **argv)
 {
 	int t = argc > 1 ? atoi(argv[1]) : 1000;
 	if (argc > 2) per_thread = strtoul(argv[2], NULL, 10);
+	/* P8.2c: probe_threads <n> <per_thread> <lo:hi>  e.g. 4096:8192 */
+	if (argc > 3) {
+		char *colon = strchr(argv[3], ':');
+		probe_size_lo = strtoul(argv[3], NULL, 10);
+		probe_size_hi = colon ? strtoul(colon + 1, NULL, 10)
+		    : probe_size_lo;
+	}
 	pthread_t *th = calloc(t, sizeof (pthread_t));
 	pthread_attr_t attr;
 	int i, spawned = 0;
