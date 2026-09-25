@@ -238,6 +238,9 @@ typedef struct umem_ptc {
 	void *pool[PTC_TOTAL_SLOTS];    /* bins' slot arrays, packed */
 } umem_ptc_t;
 
+/* The cache umem_ptc_t structs come from; umem.c creates it (P5.12). */
+extern umem_cache_t *umem_ptc_cache;
+
 /* Fork handlers for the PTC registry (umem_fork.c calls these). */
 void umem_ptc_fork_lockup(void);
 void umem_ptc_fork_release(void);

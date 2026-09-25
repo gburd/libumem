@@ -5746,6 +5746,15 @@ umem_cache_init(void)
 	    sizeof (umem_slab_t), 0, NULL, NULL, NULL, NULL,
 	    umem_internal_arena, UMC_NOHASH | UMC_INTERNAL);
 
+	/*
+	 * Per-thread caches get their own internal cache so no user buffer
+	 * is ever adjacent to a PTC's slot pointers (P5.12; the reasoning is
+	 * on umem_ptc_cache in umem_ptc.c).  UMC_INTERNAL like the magazines.
+	 */
+	umem_ptc_cache = umem_cache_create("umem_ptc_cache",
+	    sizeof (umem_ptc_t), UMEM_CACHE_LINE_SIZE, NULL, NULL, NULL, NULL,
+	    umem_internal_arena, UMC_INTERNAL);
+
 	if (umem_slab_cache == NULL)
 		return (0);
 

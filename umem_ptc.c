@@ -59,6 +59,31 @@ __thread umem_ptc_t *thread_ptc
 static pthread_key_t ptc_key;
 static int ptc_key_initialized = 0;
 
+/*
+ * The cache umem_ptc_t structs come from (P5.12).
+ *
+ * They used to come from umem_alloc(sizeof (umem_ptc_t)), i.e. from the
+ * umem_alloc_24576 size class, in the same slabs as every user allocation of
+ * 20481..24576 bytes.  A umem_ptc_t is an array of slot POINTERS: its first
+ * field is bins[0].slots (a pointer into the pool), and pool[] holds the
+ * cached objects' addresses that the next umem_alloc() hands out unchecked.
+ * A user buffer in that class overrun into the next slab object could
+ * therefore rewrite what the allocator returns next -- attacker position D
+ * (controls allocation patterns and buffer contents).  glibc's tcache has
+ * the same adjacency and mitigates it with safe-linking on the entries;
+ * libumem's slots were raw.  P5.4 mangles the freelist links inside FREED
+ * buffers for the same reason and did not reach this structure.
+ *
+ * Fix: a dedicated UMC_INTERNAL cache in umem_internal_arena, which is
+ * what the magazines (umem_magazine_N) already get.  Its slabs hold only
+ * umem_ptc_t objects, so no user buffer is ever adjacent to one.  The
+ * arena is separate address space from the user heap (its spans are
+ * imported from the heap arena, not shared with umem_default_arena).  This
+ * does not mangle the slots (a per-op XOR on the hot path; P5.13, open);
+ * it removes the adjacency that makes an overrun reach them.
+ */
+umem_cache_t *umem_ptc_cache;	/* set by umem_cache_init() */
+
 #ifdef UMEM_PTC_RESIZE_PROBE
 volatile long umem_ptc_probe_exit_stranded = 0;
 /*
@@ -303,6 +328,17 @@ umem_ptc_init(void)
 		ptc_key_initialized = 1;
 	}
 
+	/*
+	 * Own cache, own slabs, no user neighbours (P5.12).  Created by
+	 * umem_cache_init() in umem.c alongside the magazine caches, because
+	 * umem_internal_arena is private to that file; if it did not get made,
+	 * there is no PTC.
+	 */
+	if (umem_ptc_cache == NULL) {
+		umem_ptc_enabled = 0;
+		return;
+	}
+
 	/* Build size-to-bin lookup table */
 	for (i = 0; i < (int)(sizeof(size_to_bin_table)); i++) {
 		size_to_bin_table[i] = -1;
@@ -447,8 +483,7 @@ umem_ptc_get(void)
 	}
 
 	/* Allocate new ptc using umem_alloc to avoid recursion */
-	ptc = (umem_ptc_t *)umem_alloc(sizeof(umem_ptc_t),
-	    UMEM_DEFAULT);
+	ptc = (umem_ptc_t *)umem_cache_alloc(umem_ptc_cache, UMEM_DEFAULT);
 	if (ptc == NULL) {
 		return (NULL);
 	}
@@ -484,7 +519,7 @@ umem_ptc_get(void)
 		 */
 		if (pthread_setspecific(ptc_key, ptc) != 0) {
 			thread_ptc = NULL;
-			umem_free(ptc, sizeof(umem_ptc_t));
+			umem_cache_free(umem_ptc_cache, ptc);
 			return (NULL);
 		}
 	}
@@ -787,7 +822,7 @@ umem_ptc_destroy(umem_ptc_t *ptc)
 			stranded += ptc->bins[bi].count;
 		UMEM_PTC_PROBE_STRANDED(stranded);
 	}
-	umem_free(ptc, sizeof(umem_ptc_t));
+	umem_cache_free(umem_ptc_cache, ptc);
 }
 
 /* ================================================================
