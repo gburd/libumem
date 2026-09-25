@@ -16,9 +16,9 @@
  *      happens for real: a library with its own allocator, or an application
  *      bug, hands free() a pointer we never issued.
  *
- *   2. THE MAGIC IS FORGEABLE.  UMEM_MALLOC_DECODE is `stat + size`
- *      (umem_impl.h:663) and MALLOC_MAGIC is the fixed constant 0x3a10c000,
- *      so anyone who can write 8 bytes in front of an address can produce a
+ *   2. THE MAGIC IS FORGEABLE.  UMEM_MALLOC_DECODE (umem_impl.h) is
+ *      `stat + size` and MALLOC_MAGIC is the fixed constant 0x3a10c000, so
+ *      anyone who can write 8 bytes in front of an address can produce a
  *      header that passes.  There is no secret and no per-process salt.
  *
  *   3. THE ERROR PATH MUTATED STATE BEFORE VALIDATING.  Every
@@ -26,10 +26,10 @@
  *      buf->malloc_stat before the size was ever sanity-checked, and the
  *      MALLOC_OVERSIZE/MEMALIGN branches wrote one tag's stat word *before*
  *      validating the other tag.  And because the interposer sets
- *      umem_abort = 0 (malloc_interpose.c:552, "log and continue"), a forged
- *      header that passed then proceeded into _umem_free()/vmem_xfree() on an
- *      address libumem does not own.  glibc aborts on a bad free; this
- *      continued into silent corruption.
+ *      umem_abort = 0 (malloc_interpose.c, umem_interpose_init(), "log and
+ *      continue"), a forged header that passed then proceeded into
+ *      _umem_free()/vmem_xfree() on an address libumem does not own.  glibc
+ *      aborts on a bad free; this continued into silent corruption.
  *
  * THE FIX (malloc.c)
  *   process_free() now (a) refuses to read the header at all unless it lies

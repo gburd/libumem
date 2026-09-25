@@ -13,7 +13,10 @@
  *       could therefore follow a freed link or mutex_lock a freed cache.  This
  *       test runs findleaks/status/walk/whatis concurrently with create/destroy
  *       churn; pre-fix it crashes or hangs on a destroyed mutex.  Reproduced
- *       on x86_64 within seconds (see the report in docs/results/).
+ *       on x86_64 (c7i.2xlarge) within seconds:
+ *       docs/results/prefix-evidence/2026-09-22-inspect-cache-lifetime-prefix.log
+ *       (SIGSEGV in umem_findleaks' unlocked walk, pre-fix umem_inspect.c
+ *       at 4a89d91).
  *
  *   C2  no_alloc_under_lock: inspection allocated (calloc/realloc/stdio) while
  *       holding cache_lock.  Under malloc interposition that allocation
