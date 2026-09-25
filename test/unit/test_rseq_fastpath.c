@@ -90,6 +90,25 @@ extern void *umem_rseq_alloc_fastpath(umem_rseq_cache_t *cache, int cpu_id);
 extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
     int cpu_id);
 
+/*
+ * P5.13b demangle bridge: the fast path now stores mag_round[] slots
+ * XOR-mangled (stored = ptr ^ umem_link_cookie ^ (&slot >> 12), exactly
+ * UMEM_SLOT_MANGLE) and demangles on pop.  So this direct-asm test must
+ * build MANGLED magazines and demangle when it inspects a slot, just as the
+ * real depot path does -- otherwise it compares a raw pointer against a
+ * mangled word.  umem_link_cookie is linked from libumem (same DSO the
+ * fast path reads it from), initialized by umem_rseq_init() in main().
+ */
+extern uintptr_t umem_link_cookie;
+
+static inline void *
+tslot_mangle(void *slotp, void *val)
+{
+	return ((void *)((uintptr_t)val ^ umem_link_cookie ^
+	    ((uintptr_t)slotp >> 12)));
+}
+#define	tslot_demangle(slotp, val)	tslot_mangle((slotp), (val))
+
 typedef struct test_magazine {
 	void *mag_next;
 	void *mag_round[64];
@@ -125,7 +144,9 @@ test_alloc_index(int cpu)
 	uintptr_t sentinels[15];
 	for (int i = 0; i < magsize; i++) {
 		sentinels[i] = (uintptr_t)0x1000 + i * 0x10;
-		mag.mag_round[i] = (void *)sentinels[i];
+		/* Store mangled so the demangle-on-pop yields the sentinel. */
+		mag.mag_round[i] = tslot_mangle(&mag.mag_round[i],
+		    (void *)sentinels[i]);
 	}
 
 	umem_rseq_cache_t rc;
@@ -204,10 +225,13 @@ test_free_bounds(int cpu)
 			    i, magsize, rc.rounds);
 			return (-1);
 		}
-		if (mag.mag_round[i] != buf || rc.rounds != i + 1) {
+		if (tslot_demangle(&mag.mag_round[i], mag.mag_round[i]) != buf ||
+		    rc.rounds != i + 1) {
 			fprintf(stderr, "FAIL(free): push %d landed wrong "
 			    "(mag_round[%d]=%p want %p, rounds=%d want %d)\n",
-			    i, i, mag.mag_round[i], buf, rc.rounds, i + 1);
+			    i, i,
+			    tslot_demangle(&mag.mag_round[i], mag.mag_round[i]),
+			    buf, rc.rounds, i + 1);
 			return (-1);
 		}
 	}
