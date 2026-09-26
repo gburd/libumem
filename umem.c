@@ -1531,6 +1531,7 @@ unsigned long umem_dbg_rseq_no_full = 0;
 unsigned long umem_dbg_rseq_armed = 0;
 unsigned long umem_dbg_rseq_slow_called = 0;
 unsigned long umem_dbg_rseq_commit_abort = 0;
+unsigned long umem_dbg_rseq_break_cpu = 0;
 
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
@@ -3108,8 +3109,14 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 
 	/* PHASE 2: commit the swap, retrying against the current cpu. */
 	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
-		if (cpu < 0 || cpu >= umem_rseq_get_ncpus())
+		if (cpu < 0 || cpu >= umem_rseq_get_ncpus()) {
+			if (unlikely(umem_dbg_rseq_probe)) {
+				extern unsigned long umem_dbg_rseq_break_cpu;
+				__atomic_add_fetch(&umem_dbg_rseq_break_cpu, 1,
+				    __ATOMIC_RELAXED);
+			}
 			break;
+		}
 		rc = &cp->cache_rseq[cpu];
 		old_mag = NULL;
 		old_rounds = 0;
