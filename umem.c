@@ -3217,6 +3217,86 @@ umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id)
 	return (0);
 }
 #endif /* __x86_64__ || __aarch64__ */
+
+/*
+ * P8.5b-arch: serve a single buffer through the armed rseq per-CPU layer.
+ * Called from the inlined PTC magazine-refill path (_umem_alloc) so that a
+ * PTC-magazine miss pulls THROUGH the rseq layer instead of straight from
+ * the depot -- the ordering change that lets the armed reload actually fire
+ * (see docs/results/2026-09-26-p85b-arch-rseq-feeds-ptc.md).
+ *
+ * Returns a buffer on a hit (rseq fast path served it, possibly after the
+ * slowpath armed cache_rseq[cpu] from the depot), or NULL if the rseq layer
+ * could not serve (not registered/armed, migration storm, depot empty) -- in
+ * which case the caller falls through to its existing direct-depot refill,
+ * which is unchanged and always correct.  The single per-CPU owner of the
+ * magazine remains cache_rseq[cpu]; this never creates a second owner.
+ */
+static void *
+umem_rseq_ptc_alloc(umem_cache_t *cp)
+{
+#if defined(__x86_64__) || defined(__aarch64__)
+	int cpu;
+	umem_rseq_cache_t *rc;
+	void *buf;
+
+	if (!umem_rseq_enabled || !umem_rseq_asm_safe || cp->cache_rseq == NULL)
+		return (NULL);
+	if (unlikely(!umem_rseq_registered))
+		umem_rseq_register_thread();
+	if (umem_rseq_cpu_idp == NULL)
+		return (NULL);
+	cpu = (int)*umem_rseq_cpu_idp;
+	if (cpu < 0 || cpu >= umem_rseq_get_ncpus())
+		return (NULL);
+	rc = &cp->cache_rseq[cpu];
+	UMEM_RSEQ_DBG_INC(umem_dbg_rseq_enter);
+	buf = umem_rseq_alloc_fastpath(rc, cpu);
+	if (buf == NULL && umem_rseq_alloc_slowpath(cp, cpu))
+		buf = umem_rseq_alloc_fastpath(rc, cpu);
+	return (buf);
+#else
+	(void)cp;
+	return (NULL);
+#endif
+}
+
+/*
+ * P8.5b-arch: push a single buffer through the armed rseq per-CPU layer.
+ * Called from the inlined PTC magazine-flush path (_umem_free).  Returns 1
+ * if the rseq free fast path accepted the buffer (possibly after the
+ * slowpath armed an empty magazine into cache_rseq[cpu]), 0 if it could not
+ * -- caller then falls through to its existing direct-depot flush.
+ */
+static int
+umem_rseq_ptc_free(umem_cache_t *cp, void *buf)
+{
+#if defined(__x86_64__) || defined(__aarch64__)
+	int cpu;
+	umem_rseq_cache_t *rc;
+
+	if (!umem_rseq_enabled || !umem_rseq_asm_safe || cp->cache_rseq == NULL)
+		return (0);
+	if (unlikely(!umem_rseq_registered))
+		umem_rseq_register_thread();
+	if (umem_rseq_cpu_idp == NULL)
+		return (0);
+	cpu = (int)*umem_rseq_cpu_idp;
+	if (cpu < 0 || cpu >= umem_rseq_get_ncpus())
+		return (0);
+	rc = &cp->cache_rseq[cpu];
+	if (umem_rseq_free_fastpath(rc, buf, cpu) == 0)
+		return (1);
+	if (umem_rseq_free_slowpath(cp, cpu) &&
+	    umem_rseq_free_fastpath(rc, buf, cpu) == 0)
+		return (1);
+	return (0);
+#else
+	(void)cp;
+	(void)buf;
+	return (0);
+#endif
+}
 #endif /* UMEM_RSEQ_AVAILABLE */
 
 /*
@@ -4099,6 +4179,24 @@ umem_alloc_retry:
 					 */
 					if (mag->cache == NULL)
 						mag->cache = cp;
+#ifdef UMEM_RSEQ_AVAILABLE
+					/*
+					 * P8.5b-arch: pull THROUGH the rseq
+					 * per-CPU layer before touching the
+					 * depot directly.  On a hit the armed
+					 * reload serves this buffer (and keeps
+					 * cache_rseq[cpu] warm for the next PTC
+					 * miss); on any miss we fall through to
+					 * the unchanged direct-depot refill
+					 * below.  This is the ordering change
+					 * that lets the armed layer fire (docs/
+					 * results/2026-09-26-p85b-arch-rseq-
+					 * feeds-ptc.md).
+					 */
+					buf = umem_rseq_ptc_alloc(cp);
+					if (buf != NULL)
+						return (buf);
+#endif
 					{
 					umem_magazine_t *fmp;
 					fmp = umem_depot_alloc_trylock(cp,
@@ -4347,6 +4445,18 @@ _umem_free(void *buf, size_t size)
 					 * to depot, get empty magazine.
 					 * Uses trylock to avoid blocking.
 					 */
+#ifdef UMEM_RSEQ_AVAILABLE
+					/*
+					 * P8.5b-arch: push THROUGH the rseq
+					 * per-CPU layer first (symmetric with
+					 * the alloc side).  On a hit the buffer
+					 * lands in cache_rseq[cpu] and we are
+					 * done; on any miss we fall through to
+					 * the unchanged direct-depot flush.
+					 */
+					if (umem_rseq_ptc_free(cp, buf))
+						return;
+#endif
 					{
 					umem_magazine_t *emp;
 					ptc->fork_busy = 1; /* P1.3d rule 2 */
