@@ -85,4 +85,129 @@ the same `fork_busy` window as today.
 
 ## STATUS
 
-(filled in after the gates run — see below)
+**Resolved: the routed rseq layer FIRES, all gates pass, and it beats the
+85 us sustained p999 target.** Worker `@r5rseq`, Debian 13 (trixie), GCC 14.2,
+glibc 2.41 (glibc-managed rseq -> `umem_rseq_asm_safe=1` on BOTH x86_64 and
+aarch64). Branch tip at gate time: this commit's parent line on `p85b-arch`.
+
+### Does the layer fire? (counter evidence)
+
+The predecessor's two probes could not show firing:
+- `probe_rseq_armed` self-recycles each thread's own buffers, so it stays in
+  the PTC L1 bin / L2 magazine and never MISSES the PTC magazine -- the new
+  `umem_rseq_ptc_alloc/free` routing is only reached on a PTC-magazine miss,
+  so it was never exercised.
+- `probe_rseq_prodcons` had a racy MPMC ring (producers read `head`, write
+  `ring[h]`, then store `head` with no exclusive claim -> two producers share
+  a slot -> one buffer double-consumed -> double free, aborting in
+  `umem_cache_reap` at `slab_refcnt >= 1`). Reproduced identically with
+  `UMEM_RSEQ_OFF=1` (rseq bypassed), so it was a PROBE bug, not an allocator
+  bug. Fixed the ring (CAS-claim `head`, per-slot `ready` handshake).
+
+Added `test/stress/probe_rseq_batch.c`: each thread allocs a batch > magsize,
+holds it, frees it -> drains and fills the PTC per-thread magazine so BOTH
+PTC-miss routing paths fire, with no cross-thread buffer sharing (no
+double-free hazard). Same binary, `UMEM_RSEQ_OFF` A/B, `-DUMEM_RSEQ_ARM_DEBUG`,
+`UMEM_DBG_RSEQ_PROBE=1`:
+
+| metric (umem_alloc_64, 8t/8s intel-lo) | rseq ON | rseq OFF |
+|---|---|---|
+| rseq_alloc | 257,482,015 | 0 |
+| rseq_free  | 257,528,383 | 0 |
+| armed      | 760,651 | 0 |
+| cc_alloc (mutex path) | 7,505 | 37,444 |
+| dep_local (depot pulls) | 1,507,788 | 10,791,773 |
+
+The layer that was starved (`armed=0`, `rseq_alloc=0`, `no_full=100%`) now
+serves 257 M allocations lock-free and cuts depot pulls ~7x. Confirmed at
+192t on metal too: intel-hi `rseq_alloc=57.8M armed=198k`, arm-hi
+`rseq_alloc=241M armed=908k` (both with the expected handful of migration
+aborts, correctly retried: intel abort=17, arm abort=56).
+
+### Mandatory soundness gate: stress_concurrency_oracle 192t/60s mixed all
+
+Debian metal, BOTH arches, DEFAULT and `--enable-asan` (vm.max_map_count
+raised to 1966080 for asan). Zero aliasing, zero corruption, zero alloc
+failures in every configuration:
+
+| box | config | allocs_ok | result |
+|---|---|---|---|
+| intel-hi c7i.metal-48xl | default | 391,379,323 | PASS |
+| intel-hi c7i.metal-48xl | asan    | 936,218,219 | PASS |
+| arm-hi  c8g.metal-48xl  | default | 673,676,258 | PASS |
+| arm-hi  c8g.metal-48xl  | asan    | 1,465,835,954 | PASS |
+
+ASan under 192t churn (where CPU migration AND the once-per-cache magazine
+resize both happen) reported no heap overflow, no use-after-free, no aliasing.
+
+### Sustained p999 A/B (the ship criterion): intel-hi c7i.metal-48xl, 192t
+
+`sustained_load.sh umem 60 192`, prodcons 64:256, same binary, `UMEM_RSEQ_OFF`
+toggled, 3 measured windows each (1 warmup discarded):
+
+| prodcons p999 (ns) | BEFORE (rseq off) | AFTER (rseq on) |
+|---|---|---|
+| window 0 | 87,490 | 44,504 |
+| window 1 | 93,698 | 48,667 |
+| window 2 | 102,642 | 46,542 |
+| **median** | **~93.7 us** | **~46.5 us** |
+
+p99 also improved (7.2 us -> 6.1 us) and prodcons RSS at peak dropped
+(~300 MB -> ~133 MB, less depot magazine retention). The tail is roughly
+halved and lands well under the 85 us target. The `frag` workload p999 is
+unchanged (~1.7 ms, dominated by large allocations that never touch the depot
+magazine tail -- expected).
+
+### t=1 fast path A/B (not regressed): intel-lo, multi 16:256, 5 runs each
+
+| t=1 | rseq ON (median) | rseq OFF (median) |
+|---|---|---|
+| ops/sec | 5,734,864 | 5,704,456 |
+| p50/p90/p99 (ns) | 34/37/39 | 34/37/39 |
+
+Statistically identical (rseq on marginally faster, within noise). Expected:
+at t=1 the PTC L1 bin serves the common case and the rseq routing is only
+reached on a PTC-magazine miss.
+
+### Other gates (all PASS)
+
+- `make check` (intel-lo): 52 tests, 47 PASS, 5 SKIP (introspect/heap-ceiling,
+  need non-default configure), 0 FAIL. This includes the fork oracles
+  `test_fork_ptc_drain_probe` (P1.3d) and `test_ptc_thread_exit_drain_probe`
+  (P1.3a).
+- 6-bug rseq suite `test_rseq_fastpath`: PASS.
+- `repro_rseq_trailing_store`: PASS (0 leaked, 0 double-presence,
+  966k+1.9M signals delivered).
+- `repro_reload_commit_safe`: PASS (migration-safety gate holds).
+- `repro_naive_reload_race`: RACE CONFIRMED (rc=1 is this repro's intended
+  outcome -- it demonstrates why the asm reload is needed).
+- `test_ptc_slot_mangle`, `test_mag_round_mangle`, `test_freelist_mangle`
+  (P5.13/P5.13b): PASS.
+- `test_ptc_thread_exit_drain`, `test_ptc_resize_no_loss` (P1.3a/P1.3c): PASS.
+- `test_fork_mt_load` (P1.2): 300/300 forks, 2,672,193 allocs = frees.
+
+### Known bounded ceiling (not corruption)
+
+`cache_rseq[cpu].magsize` is set once at cache creation to the cache's INITIAL
+magtype `mt_magsize` and is never updated on a magazine resize. Magtypes only
+grow, so the free fastpath (bounded by `rc->magsize`) can only UNDER-fill a
+physically-larger depot magazine -- never overflow (ASan confirms: 0 overflow
+reports across 2.4 B allocations at 192t). The alloc slowpath commits
+`rc->magsize` rounds from a pulled full magazine; if that magazine is
+physically larger (only possible for a size class that STARTED at a small
+magtype and grew -- the default alloc classes 8..256 start at magsize 255, the
+max, so they are immune), the rounds above `rc->magsize` ride along untouched
+and are reclaimed intact on the next swap-out via `umem_ptc_mag_return`, which
+classifies by the returned round count. No buffer is lost or double-issued
+(oracle: 0 aliasing over 3.4 B allocations). The residual cost is at most a
+modest under-utilization of an oversized magazine for the few large size
+classes that resize -- an efficiency ceiling, not a correctness or leak
+hazard. `ponytail:` if a large-class p999 ever matters, track the current
+magtype into `rc->magsize` at resize time (single writer, the update thread).
+
+### Ship decision
+
+**Ship to master.** Every mandatory gate passes on both arches and both build
+configurations, the layer demonstrably fires (0 -> 257 M served), and the
+sustained p999 is roughly halved to ~46 us, beating the 85 us criterion, with
+no t=1 regression and no fork/exit regression.
