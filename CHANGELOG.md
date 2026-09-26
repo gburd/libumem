@@ -3,6 +3,78 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Performance -- added
+
+- **P8.5b: the rseq lock-free per-CPU fast path now serves the common
+  allocation path** (branch `p85b-arch`, off master `5744436`). v3.3.1 shipped
+  the rseq reload asm ARMED but INERT: the per-thread cache (PTC) fronts the
+  rseq layer and drains the depot's `cache_full` list before the reload ever
+  looks, so it measured `armed=0`, `rseq_alloc=0`, `no_full=100%` under every
+  workload (the starvation diagnosed in
+  `docs/results/2026-09-26-p85b-arch-rseq-feeds-ptc.md`). This change routes
+  the PTC magazine refill THROUGH the armed layer (revival option 2): on a
+  PTC-magazine miss the buffer is pulled/pushed through the rseq alloc/free
+  fast path (arming `cache_rseq[cpu]` from the depot via the already-safe,
+  migration-atomic commit asm) instead of straight from the depot. The PTC bin
+  (L1) still fronts everything, so the uncontended t=1 path is untouched.
+
+  Counter evidence (Debian 13, GCC 14.2, glibc-managed rseq so `asm_safe=1` on
+  BOTH x86_64 and aarch64), same binary with/without `UMEM_OPTIONS=norseq`:
+  the layer that served 0 now serves 257 M allocations at 8t and cuts depot
+  pulls ~7x; at 192t on metal `rseq_alloc` = 57.8 M (intel) / 241 M (arm).
+
+  Soundness gate `stress_concurrency_oracle --threads=192 --duration=60
+  --size-class=mixed --pattern=all`, Debian metal both arches, DEFAULT and
+  `--enable-asan`: 0 aliasing / 0 corruption / 0 failures across every
+  configuration (intel 391 M / 936 M allocs, arm 674 M / 1.47 B allocs).
+
+  Sustained p999 (intel `c7i.metal-48xl`, 192t, prodcons 64:256,
+  `sustained_load.sh`): the tail is roughly halved and lands well under the
+  85 us target --
+
+  | prodcons p999 | rseq off (before) | rseq on (after) |
+  |---|---|---|
+  | median of 3 windows | ~93.7 us | ~46.5 us |
+
+  p99 also improved (7.2 -> 6.1 us) and prodcons RSS at peak dropped
+  (~300 -> ~133 MB, less depot magazine retention). The t=1 fast path is not
+  regressed (identical p50/p90/p99, throughput within noise). `make check`,
+  the 6-bug rseq suite, `repro_reload_commit_safe`, the PTC/depot oracles, the
+  P5.13/P5.13b mangle tests, and the P1.2/P1.3a/P1.3d fork/exit oracles all
+  pass on both arches.
+
+- **`UMEM_OPTIONS=norseq` runtime escape hatch.** Because the fast path is
+  default-on (configure `--enable-rseq=auto`, enabled at runtime on any
+  rseq-capable Linux), `norseq` turns it off with no rebuild: `umem_rseq_init`
+  is skipped, `umem_rseq_enabled` stays 0, and every allocation falls back to
+  the always-correct `cc_lock`/depot path. Honoured under `AT_SECURE`
+  (disabling a fast path has no file/socket/exec side effect). Regression:
+  `test/stress/test_norseq.sh` -- without the option `rseq_enabled=1` and
+  `rseq_alloc > 0`; with it, `rseq_enabled=0` and `rseq_alloc == 0`.
+
+### Known limitation
+
+- `cache_rseq[cpu].magsize` is fixed at cache creation and not updated on a
+  magazine resize. Magtypes only grow, so the free fast path can only
+  UNDER-fill a physically larger depot magazine (never overflow -- confirmed
+  by ASan across 2.4 B allocations at 192t), and the alloc slowpath's excess
+  rounds ride along untouched and are reclaimed intact via
+  `umem_ptc_mag_return` (0 aliasing over 3.4 B allocations). The residual is a
+  modest under-utilization of an oversized magazine for the few large size
+  classes that resize (the default alloc classes 8..256 start at the maximum
+  magsize 255 and are immune) -- an efficiency ceiling, not a correctness or
+  leak hazard. Upgrade path: track the current magtype into `rc->magsize` at
+  resize time (single writer, the update thread).
+
+- On Debian 13 (trixie) the kernel ships `vm.max_map_count = 1048576`, above
+  the `test_heap_ceiling` / `test_heap_ceiling_512.sh` meaningfulness
+  threshold (200000), so those two skip by design on a permissive kernel;
+  they PASS once `vm.max_map_count` is lowered to the AL2023-equivalent
+  default (65530). The three `test_introspect_*` skips are the standard
+  no-`--enable-introspect` skips, identical on AL2023 and Debian.
+
 ## [3.3.1] - 2026-09-25
 
 Two hardening fixes on top of v3.3.0, both closing gaps that left libumem

@@ -171,10 +171,19 @@ reached on a PTC-magazine miss.
 
 ### Other gates (all PASS)
 
-- `make check` (intel-lo): 52 tests, 47 PASS, 5 SKIP (introspect/heap-ceiling,
-  need non-default configure), 0 FAIL. This includes the fork oracles
-  `test_fork_ptc_drain_probe` (P1.3d) and `test_ptc_thread_exit_drain_probe`
-  (P1.3a).
+- `make check` (intel-lo): 50 PASS, 3 SKIP, 0 FAIL (with
+  `vm.max_map_count=65530`, the AL2023-equivalent default). This includes the
+  fork oracles `test_fork_ptc_drain_probe` (P1.3d) and
+  `test_ptc_thread_exit_drain_probe` (P1.3a), and the new
+  `test_norseq.sh` (the runtime off switch). The 3 SKIPs are the
+  `test_introspect_*` trio (no `--enable-introspect` channel to test),
+  identical on AL2023 and Debian. On Debian's default kernel
+  (`vm.max_map_count=1048576`) two MORE skip -- `test_heap_ceiling` and
+  `test_heap_ceiling_512.sh` -- because that limit is above the test's 200000
+  meaningfulness threshold (a permissive kernel cannot distinguish the density
+  fix from a permissive kernel); they PASS once the limit is at 65530, so this
+  is a distro kernel-default artifact, not a hidden failure or a missing
+  Debian prerequisite.
 - 6-bug rseq suite `test_rseq_fastpath`: PASS.
 - `repro_rseq_trailing_store`: PASS (0 leaked, 0 double-presence,
   966k+1.9M signals delivered).
@@ -204,6 +213,19 @@ modest under-utilization of an oversized magazine for the few large size
 classes that resize -- an efficiency ceiling, not a correctness or leak
 hazard. `ponytail:` if a large-class p999 ever matters, track the current
 magtype into `rc->magsize` at resize time (single writer, the update thread).
+
+### Runtime off switch (added per merge condition)
+
+`UMEM_OPTIONS=norseq` disables the routed layer with no rebuild:
+`umem_rseq_init` is skipped, `umem_rseq_enabled` stays 0, and every allocation
+falls back to the always-correct `cc_lock`/depot path. Honoured under
+`AT_SECURE` (disabling has no file/socket/exec side effect).
+`test/stress/test_norseq.sh` proves both directions on intel-lo Debian:
+
+| | rseq_enabled | rseq_alloc (total) |
+|---|---|---|
+| default (no option) | 1 | 234,031 |
+| `UMEM_OPTIONS=norseq` | 0 | 0 |
 
 ### Ship decision
 
