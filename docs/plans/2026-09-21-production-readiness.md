@@ -3119,6 +3119,30 @@ sustained, `dep_conten` 434k -> 0). Open and characterised: the p999 tail
 owning-thread free). **P8.5 CLOSED as PARTIAL; (1) declined with reason; the
 remainder is P8.5b (owning-thread free), a post-v3.3.0 architectural item.**
 
+**P8.5b UPDATE (2026-09-25): armed the existing rseq lock-free reload,
+proven SAFE, proven INERT -- on branch `p85b-r4rseq2`, NOT master.** The
+reframe (arm the inert rseq per-CPU reload rather than redesign the depot,
+per the 2026-09-09 asm-design spec) was implemented on both arches and armed.
+A real soundness gap in the spec was found and fixed first: the commit, taken
+literally, frees a migration-stranded partial magazine to a fixed depot list,
+violating the ml_full/ml_empty contracts (this section's invariants) --
+corruption. Fixed by returning the old rounds count from the commit asm
+(inside the same critical section, single-last-store preserved) and
+classifying via the existing `umem_ptc_mag_return`. Verified: commit cpu-gate
+(`repro_reload_commit_safe`), six-bug suite, `make check` 49/3/0, 8t oracle
+0-corruption both arches (~600M / ~860M allocs). **But it never arms:**
+instrumented counters show `no_full=100%` -- `umem_depot_alloc(&cache_full)`
+returns NULL every time the reload looks, because PTC (default-on) fronts the
+rseq per-CPU layer and owns the depot traffic; the reload is downstream of an
+always-drained full-magazine stripe (`rseq_alloc/free/restart = 0` in every
+config). Arming the commit is necessary but not sufficient, exactly as the
+2026-09-09 diagnosis foresaw. No metal spent (a starved path cannot corrupt
+at 192t differently than at 8t, and it is not shipping). Revival requires
+moving the reload AHEAD of PTC or having PTC refill `cache_rseq` -- a
+redesign, which earns the metal gate then. Full record:
+`docs/results/2026-09-25-p85b-rseq-starvation.md` on branch `p85b-r4rseq2`
+(`1caa832`).
+
 **Not done.**  The t=192 metal re-measurement (the 95 % cross-stripe
 figure, sustained 3x behind) -- `c7i.metal-48xl` had no capacity and
 `c8g.metal` was used for P8.2b and terminated per the brief; the brief
