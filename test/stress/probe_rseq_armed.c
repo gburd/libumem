@@ -78,6 +78,7 @@ main(int argc, char **argv)
 
 	printf("=== contention counters after migration-churn ===\n");
 	umem_dump_contention(stdout);
+#ifdef UMEM_RSEQ_ARM_DEBUG
 	{
 		extern unsigned long umem_dbg_rseq_enter, umem_dbg_rseq_no_full,
 		    umem_dbg_rseq_armed, umem_dbg_rseq_slow_called,
@@ -87,5 +88,8 @@ main(int argc, char **argv)
 		    umem_dbg_rseq_armed, umem_dbg_rseq_commit_abort,
 		    umem_dbg_rseq_no_full, umem_dbg_rseq_break_cpu);
 	}
+#else
+	printf("(build with -DUMEM_RSEQ_ARM_DEBUG for rseq arming counters)\n");
+#endif
 	return (0);
 }
