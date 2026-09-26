@@ -1,0 +1,33 @@
+  alloc iter 6382: ret=0 slot=(0x2000,7)
+  alloc iter 6575: ret=0 slot=(0x2000,7)
+  alloc iter 7670: ret=0 slot=(0x2000,7)
+  free iter 828: ret=0 slot=(0x2000,3)
+  free iter 5033: ret=0 slot=(0x2000,0)
+  free iter 16726: ret=0 slot=(0x2000,0)
+alloc commit: torn=2061 commit_reported_abort=2824
+free  commit: torn=301 commit_reported_abort=828
+commits=39947247 aborts=52753 signals=3375265
+RESULT: FAIL (reload commit not atomic)
+rc=1
+  alloc iter 670: ret=0 slot=(0x2000,7)
+  alloc iter 4036: ret=0 slot=(0x2000,7)
+  alloc iter 4232: ret=0 slot=(0x2000,7)
+  free iter 893923: ret=0 slot=(0x2000,3)
+  free iter 1767740: ret=0 slot=(0x2000,3)
+  free iter 1901449: ret=0 slot=(0x2000,3)
+alloc commit: torn=193 commit_reported_abort=3706
+free  commit: torn=32 commit_reported_abort=3
+commits=39970338 aborts=29662 signals=3111625
+RESULT: FAIL (reload commit not atomic)
+rc=1
+  alloc iter 805: ret=0 slot=(0x1000,0)
+  alloc iter 8426: ret=0 slot=(0x2000,7)
+  alloc iter 13098: ret=0 slot=(0x2000,7)
+  free iter 1130: ret=0 slot=(0x2000,0)
+  free iter 1929: ret=0 slot=(0x2000,0)
+  free iter 6895: ret=0 slot=(0x2000,0)
+alloc commit: torn=1981 commit_reported_abort=2677
+free  commit: torn=244 commit_reported_abort=811
+commits=39944934 aborts=55066 signals=3218056
+RESULT: FAIL (reload commit not atomic)
+rc=1

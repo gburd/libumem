@@ -107,3 +107,32 @@ slowpath then retries with the same `fmp`:
 The fast paths do not have this defect: their commit store is immediately
 followed by the label. Fix: set the success value before the commit store,
 so the commit store is the last instruction in the window.
+
+## H2 + H2b PROVEN at 017520f (pre-fix), both arches
+
+`repro_reload_commit_abort 20000000 5` (x3 runs each), built by
+`verify-isolated.sh <role> 017520f prefix` on Debian 13 lo boxes
+(intel-lo@r5fix c7i.2xlarge, arm-lo@r5fix c7g.2xlarge), `--enable-rseq
+CFLAGS="-O2 -g"`. Every run FAILED (rc=1). Logs: `docs/results/r5fix/prefix-*.log`.
+
+| box | run | alloc torn | alloc commit-reported-abort | free torn | free commit-reported-abort | aborts |
+|---|---|---:|---:|---:|---:|---:|
+| intel-lo | 1 | 2061 | 2824 | 301 | 828 | 52,753 |
+| intel-lo | 2 | 1981 | 2677 | 244 | 811 | 55,066 |
+| arm-lo | 1 | 797 | 414 | 400 | 404 | 31,124 |
+| arm-lo | 2 | 825 | 410 | 416 | 409 | 24,963 |
+
+The torn states observed are exactly the ones predicted:
+- alloc `ret=0 slot=(OLD,0)`: abort after `rounds=0`. The old magazine's 3
+  rounds are gone from the slot, and the caller did not get it back. Leak.
+- alloc `ret=0 slot=(NEW,0)`: abort after `loaded_mag=new`. `NEW` is
+  published while the caller believes it is not (H2). Double ownership.
+- alloc/free `ret=0 slot=(NEW,7)` / `(NEW,0)`: the commit completed and the
+  abort hit the `mov $1` after it (H2b). Double ownership on retry.
+- free `ret=0 slot=(NEW,3)`: abort between `loaded_mag=empty` and `rounds=0`.
+  The alloc fast path pops 3 stale slots of an empty magazine, which is
+  direct double-issue.
+
+The reload commits are not atomic. That is a sufficient cause of aliasing. H1
+(stale `magsize`) still needs its own test; per the reading above it leaks and
+does not alias.
