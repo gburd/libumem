@@ -147,3 +147,6 @@ through the public API, but at too low a rate to serve as the pre/post
 regression. `repro_reload_commit_abort` (thousands of violations per run,
 deterministic) is the regression. The e2e repro is supporting evidence, run
 post-fix for many more runs than pre-fix.
+Sweep at d813f7f (threads/ring/cpu-span `4 4 1`, `16 1 1`, `8 2 4`, `16 1 7`,
+`32 8 7`; 6 x 10 s each, both arches): 0/60 per arch. The e2e pre-fix total
+is 1/190. It stays as a post-fix smoke test only.
