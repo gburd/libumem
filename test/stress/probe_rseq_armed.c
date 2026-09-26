@@ -36,15 +36,18 @@ worker(void *arg)
 	(void)pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
 
 	void *bufs[16];
+	size_t szs[16];
 	memset(bufs, 0, sizeof(bufs));
+	memset(szs, 0, sizeof(szs));
 	unsigned r = (unsigned)(id * 2654435761u) | 1u;
 	while (!atomic_load(&g_stop)) {
 		for (int i = 0; i < 16; i++) {
 			r = r * 1103515245u + 12345u;
 			size_t sz = 8 + (r % 512);
 			if (bufs[i])
-				umem_free(bufs[i], 0);
+				umem_free(bufs[i], szs[i]);
 			bufs[i] = umem_alloc(sz, UMEM_DEFAULT);
+			szs[i] = sz;
 			/* migrate hint: yield so the scheduler can move us */
 			if ((r & 0x3f) == 0)
 				sched_yield();
@@ -52,7 +55,7 @@ worker(void *arg)
 	}
 	for (int i = 0; i < 16; i++)
 		if (bufs[i])
-			umem_free(bufs[i], 16 + (i % 8));
+			umem_free(bufs[i], szs[i]);
 	(void)id;
 	return (NULL);
 }
