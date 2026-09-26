@@ -101,6 +101,11 @@ extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
  *   cookie = stored ^ sentinel ^ (&slot >> 12).
  * No library change, no dependence on symbol visibility.
  */
+typedef struct test_magazine {
+	void *mag_next;
+	void *mag_round[64];
+} test_magazine_t;
+
 static uintptr_t g_test_cookie;
 static int
 tslot_cookie_probe(int cpu)
@@ -130,11 +135,6 @@ tslot_mangle(void *slotp, void *val)
 	    ((uintptr_t)slotp >> 12)));
 }
 #define	tslot_demangle(slotp, val)	tslot_mangle((slotp), (val))
-
-typedef struct test_magazine {
-	void *mag_next;
-	void *mag_round[64];
-} test_magazine_t;
 
 static int
 pin_to_current_rseq_cpu(int *cpu_out)
