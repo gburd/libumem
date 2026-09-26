@@ -2,7 +2,7 @@
  * Safety counterpart to repro_naive_reload_race.c (design checklist #2).
  *
  * The naive repro proves a plain-C reload double-issues under contention.
- * The armed asm commit (umem_rseq_reload_alloc_commit / _free_commit) is
+ * The armed asm commit (umem_rseq_reload_detach / _attach) is
  * safe for a different reason than "run it under contention and hope": its
  * publish of cache_rseq[cpu] is a registered rseq critical section, so it
  * commits ONLY while the thread is provably still on the slot's CPU, and
@@ -13,6 +13,13 @@
  * so it cannot reproduce a "safe" race the way the naive repro reproduces
  * an unsafe one; what it CAN test deterministically is the load-bearing
  * mechanism: the commit's cpu_id gate.
+ *
+ * (Ported 2026-09-26 from the single swap commit to the detach/attach pair
+ * that replaced it.  NOTE what this test does NOT cover: it only aborts
+ * BEFORE the first store (cpu mismatch), so it passed while the swap commit
+ * was non-atomic against an abort BETWEEN its stores.  That is covered by
+ * repro_reload_commit_abort; see docs/results/2026-09-26-p85b-aliasing-
+ * mechanism-v2.md.)
  *
  * This test verifies, deterministically and single-threaded:
  *   (A) COMMIT-ON-MATCH: called with the thread's real current cpu, the
@@ -40,11 +47,10 @@
 #include <unistd.h>
 #include "umem_rseq.h"
 
-extern int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache,
-    int cpu_id, void *new_mag, int new_rounds, void **old_mag_out,
-    int *old_rounds_out);
-extern int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache,
-    int cpu_id, void *new_mag, void **old_mag_out, int *old_rounds_out);
+extern int umem_rseq_reload_detach(umem_rseq_cache_t *cache, int cpu_id,
+    void **old_mag_out, int *old_rounds_out);
+extern int umem_rseq_reload_attach(umem_rseq_cache_t *cache, int cpu_id,
+    void *new_mag, int rounds, int magsize);
 
 typedef struct test_magazine {
 	void *mag_next;
@@ -86,98 +92,69 @@ main(void)
 	test_magazine_t old_mag, new_mag;
 	umem_rseq_cache_t rc;
 
-	/* --- (A) COMMIT-ON-MATCH (alloc side) --- */
+	void *out_mag;
+	int out_rounds, r;
+	long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+	int wrong = (ncpu >= 2) ? (cpu ^ 1) : 999999;
+
+	/* --- (A) detach on match: slot -> NULL, old (mag, rounds) out --- */
 	memset(&old_mag, 0, sizeof(old_mag));
-	memset(&new_mag, 0, sizeof(new_mag));
 	memset(&rc, 0, sizeof(rc));
 	rc.magsize = MAGSIZE;
 	rc.loaded_mag = &old_mag;
 	rc.rounds = 3;			/* a partial old magazine */
-	void *out_mag = NULL;
-	int out_rounds = -1;
-	int r = umem_rseq_reload_alloc_commit(&rc, cpu, &new_mag, MAGSIZE,
-	    &out_mag, &out_rounds);
-	if (r != 1) {
-		fprintf(stderr, "FAIL(A): commit-on-match returned %d, "
-		    "want 1\n", r);
-		fail = 1;
-	}
-	if (rc.loaded_mag != &new_mag || rc.rounds != MAGSIZE) {
-		fprintf(stderr, "FAIL(A): slot not published (loaded_mag=%p "
-		    "want %p, rounds=%d want %d)\n", rc.loaded_mag,
-		    (void *)&new_mag, rc.rounds, MAGSIZE);
-		fail = 1;
-	}
-	if (out_mag != &old_mag || out_rounds != 3) {
-		fprintf(stderr, "FAIL(A): old-magazine ABI wrong (old_mag=%p "
-		    "want %p, old_rounds=%d want 3) -- depot would be "
-		    "misclassified\n", out_mag, (void *)&old_mag, out_rounds);
-		fail = 1;
-	}
-
-	/* --- (B) ABORT-ON-MISMATCH (alloc side): the migration-safety gate.
-	 * Use a cpu_id the thread is NOT on.  On a >=2-cpu box use (cpu ^ 1);
-	 * if only 1 cpu is online, use a large invalid id.  The kernel's rseq
-	 * check must abort the commit: return 0, slot untouched. --- */
-	long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
-	int wrong = (ncpu >= 2) ? (cpu ^ 1) : 999999;
-	memset(&old_mag, 0, sizeof(old_mag));
-	memset(&new_mag, 0, sizeof(new_mag));
-	memset(&rc, 0, sizeof(rc));
-	rc.magsize = MAGSIZE;
-	rc.loaded_mag = &old_mag;
-	rc.rounds = 7;
-	out_mag = (void *)0xdead;
-	out_rounds = -42;
-	r = umem_rseq_reload_alloc_commit(&rc, wrong, &new_mag, MAGSIZE,
-	    &out_mag, &out_rounds);
-	if (r != 0) {
-		fprintf(stderr, "FAIL(B): commit with WRONG cpu_id=%d "
-		    "(thread on %d) returned %d, want 0 (abort) -- the rseq "
-		    "cpu gate did not fire; migration-safety hole\n",
-		    wrong, cpu, r);
-		fail = 1;
-	}
-	if (rc.loaded_mag != &old_mag || rc.rounds != 7) {
-		fprintf(stderr, "FAIL(B): CPU-mismatched commit CLOBBERED the "
-		    "slot (loaded_mag=%p want %p, rounds=%d want 7) -- this is "
-		    "exactly the migration corruption arming must never do\n",
-		    rc.loaded_mag, (void *)&old_mag, rc.rounds);
-		fail = 1;
-	}
-
-	/* --- (A') COMMIT-ON-MATCH (free side), old_rounds ABI --- */
-	memset(&old_mag, 0, sizeof(old_mag));
-	memset(&new_mag, 0, sizeof(new_mag));
-	memset(&rc, 0, sizeof(rc));
-	rc.magsize = MAGSIZE;
-	rc.loaded_mag = &old_mag;
-	rc.rounds = MAGSIZE;		/* a full old magazine */
 	out_mag = NULL;
 	out_rounds = -1;
-	r = umem_rseq_reload_free_commit(&rc, cpu, &new_mag, &out_mag,
-	    &out_rounds);
-	if (r != 1 || rc.loaded_mag != &new_mag || rc.rounds != 0 ||
-	    out_mag != &old_mag || out_rounds != MAGSIZE) {
-		fprintf(stderr, "FAIL(A'): free commit-on-match wrong "
-		    "(r=%d loaded_mag=%p rounds=%d old_mag=%p old_rounds=%d)\n",
-		    r, rc.loaded_mag, rc.rounds, out_mag, out_rounds);
+	r = umem_rseq_reload_detach(&rc, cpu, &out_mag, &out_rounds);
+	if (r != 1 || rc.loaded_mag != NULL || out_mag != &old_mag ||
+	    out_rounds != 3) {
+		fprintf(stderr, "FAIL(A): detach on match wrong (r=%d "
+		    "loaded_mag=%p old_mag=%p old_rounds=%d)\n", r,
+		    rc.loaded_mag, out_mag, out_rounds);
 		fail = 1;
 	}
 
-	/* --- (B') ABORT-ON-MISMATCH (free side) --- */
-	memset(&old_mag, 0, sizeof(old_mag));
+	/* --- (A') attach on match: NULL -> (new, rounds, magsize) --- */
 	memset(&new_mag, 0, sizeof(new_mag));
+	r = umem_rseq_reload_attach(&rc, cpu, &new_mag, MAGSIZE, MAGSIZE);
+	if (r != 1 || rc.loaded_mag != &new_mag || rc.rounds != MAGSIZE ||
+	    rc.magsize != MAGSIZE) {
+		fprintf(stderr, "FAIL(A'): attach on match wrong (r=%d "
+		    "loaded_mag=%p rounds=%d magsize=%d)\n", r, rc.loaded_mag,
+		    rc.rounds, rc.magsize);
+		fail = 1;
+	}
+
+	/* --- (B) detach with a WRONG cpu: abort, slot untouched --- */
+	r = umem_rseq_reload_detach(&rc, wrong, &out_mag, &out_rounds);
+	if (r != 0 || rc.loaded_mag != &new_mag || rc.rounds != MAGSIZE) {
+		fprintf(stderr, "FAIL(B): detach with WRONG cpu_id=%d (thread "
+		    "on %d) r=%d loaded_mag=%p rounds=%d -- migration-safety "
+		    "hole\n", wrong, cpu, r, rc.loaded_mag, rc.rounds);
+		fail = 1;
+	}
+
+	/* --- (B') attach with a WRONG cpu: abort, slot untouched --- */
 	memset(&rc, 0, sizeof(rc));
-	rc.magsize = MAGSIZE;
+	r = umem_rseq_reload_attach(&rc, wrong, &new_mag, MAGSIZE, MAGSIZE);
+	if (r != 0 || rc.loaded_mag != NULL) {
+		fprintf(stderr, "FAIL(B'): attach with WRONG cpu published "
+		    "(r=%d loaded_mag=%p)\n", r, rc.loaded_mag);
+		fail = 1;
+	}
+
+	/* --- (C) attach on an OCCUPIED slot: refuse, write nothing --- */
+	memset(&rc, 0, sizeof(rc));
 	rc.loaded_mag = &old_mag;
-	rc.rounds = MAGSIZE;
-	r = umem_rseq_reload_free_commit(&rc, wrong, &new_mag, &out_mag,
-	    &out_rounds);
-	if (r != 0 || rc.loaded_mag != &old_mag || rc.rounds != MAGSIZE) {
-		fprintf(stderr, "FAIL(B'): free commit with WRONG cpu did not "
-		    "abort cleanly (r=%d loaded_mag=%p rounds=%d)\n",
-		    r, rc.loaded_mag, rc.rounds);
+	rc.rounds = 2;
+	rc.magsize = 4;
+	r = umem_rseq_reload_attach(&rc, cpu, &new_mag, MAGSIZE, MAGSIZE);
+	if (r != 0 || rc.loaded_mag != &old_mag || rc.rounds != 2 ||
+	    rc.magsize != 4) {
+		fprintf(stderr, "FAIL(C): attach on an occupied slot wrote it "
+		    "(r=%d loaded_mag=%p rounds=%d magsize=%d) -- two "
+		    "magazines, one slot\n", r, rc.loaded_mag, rc.rounds,
+		    rc.magsize);
 		fail = 1;
 	}
 

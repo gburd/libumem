@@ -467,241 +467,209 @@ umem_rseq_free_fastpath:
 .size umem_rseq_free_fastpath, .-umem_rseq_free_fastpath
 
 /*
- * int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache, int cpu_id,
- *     umem_magazine_t *new_mag, int new_rounds, umem_magazine_t **old_mag_out,
- *     int *old_rounds_out)
- *
- * Phase 2 of the armed rseq reload (design:
- * docs/results/2026-09-09-rseq-reload-asm-design.md).  Publishes the swap
- * of a depot magazine into cache_rseq[cpu] inside its OWN rseq critical
- * section, atomic w.r.t. this thread's occupancy of `cpu`.  Returns w0=1
- * if committed (caller reclassifies *old_mag_out via umem_ptc_mag_return
- * using *old_rounds_out), 0 if aborted (thread migrated; caller retries;
- * *old_mag_out / *old_rounds_out untouched).
- *
- * old_rounds_out: the migration path can strand a NON-empty old magazine
- * here, and the depot's ml_full/ml_empty lists have exact-count contracts,
- * so the caller must know the old rounds to classify it.  Both caller
- * pointers are written BEFORE the three-step commit, so the SINGLE
- * unconditional last store is still the `rounds = new_rounds` store
- * (bug-6 discipline preserved).
- *
- * AAPCS64: x0=cache w1=cpu_id x2=new_mag w3=new_rounds x4=old_mag_out
- *          x5=old_rounds_out.
+ * The armed reload: detach + attach.  Same design and the same rule as
+ * umem_rseq_x86_64.S (read the block comment there).  Each section makes
+ * exactly ONE slot store that another path acts on, as its last instruction
+ * before post_commit, and sets its result register before that store.
+ * loaded_mag == NULL is the intermediate state; rounds and magsize are
+ * don't-care while it is NULL.
  */
-.globl umem_rseq_reload_alloc_commit
-.type umem_rseq_reload_alloc_commit, %function
+
+/*
+ * int umem_rseq_reload_detach(umem_rseq_cache_t *cache, int cpu_id,
+ *     umem_magazine_t **old_mag_out, int *old_rounds_out)
+ *
+ * 1: out-params hold what the slot held, and the slot is now NULL.
+ * 0: aborted, the slot is unchanged, and the out-params must be ignored.
+ *
+ * AAPCS64: x0=cache w1=cpu_id x2=old_mag_out x3=old_rounds_out.
+ */
+.globl umem_rseq_reload_detach
+.type umem_rseq_reload_detach, %function
 .align 4
-umem_rseq_reload_alloc_commit:
+umem_rseq_reload_detach:
 	.cfi_startproc
-	stp	x29, x30, [sp, #-128]!
-	.cfi_adjust_cfa_offset 128
-	.cfi_offset 29, -128
-	.cfi_offset 30, -120
+	stp	x29, x30, [sp, #-96]!
+	.cfi_adjust_cfa_offset 96
+	.cfi_offset 29, -96
+	.cfi_offset 30, -88
 	mov	x29, sp
 	stp	x19, x20, [sp, #16]
-	.cfi_offset 19, -112
-	.cfi_offset 20, -104
+	.cfi_offset 19, -80
+	.cfi_offset 20, -72
 	stp	x21, x22, [sp, #32]
-	.cfi_offset 21, -96
-	.cfi_offset 22, -88
+	.cfi_offset 21, -64
+	.cfi_offset 22, -56
 	stp	x23, x24, [sp, #48]
-	.cfi_offset 23, -80
-	.cfi_offset 24, -72
-	str	x25, [sp, #64]
-	.cfi_offset 25, -64
-	str	x26, [sp, #72]
-	.cfi_offset 26, -56
+	.cfi_offset 23, -48
+	.cfi_offset 24, -40
+
+	mov	x19, x0		/* cache */
+	mov	w20, w1		/* cpu_id */
+	mov	x21, x2		/* old_mag_out */
+	mov	x22, x3		/* old_rounds_out */
+
+	add	x24, sp, #64	/* &rseq_cs, sp+64..sp+96 (same layout as the fast paths) */
+
+	stp	wzr, wzr, [x24]
+	adrp	x0, .Lrseq_detach_start
+	add	x0, x0, :lo12:.Lrseq_detach_start
+	str	x0, [x24, #8]
+	adrp	x1, .Lrseq_detach_post_commit
+	add	x1, x1, :lo12:.Lrseq_detach_post_commit
+	sub	x1, x1, x0
+	str	x1, [x24, #16]
+	adrp	x2, .Lrseq_detach_abort
+	add	x2, x2, :lo12:.Lrseq_detach_abort
+	str	x2, [x24, #24]
+
+	mrs	x23, tpidr_el0
+	LOAD_RSEQ_OFFSET x0
+	add	x0, x23, x0
+	str	x24, [x0, #8]
+
+.Lrseq_detach_start:
+	ldr	w1, [x0, #4]
+	cmp	w1, w20
+	b.ne	.Lrseq_detach_abort
+
+	ldr	x2, [x19, #CACHE_LOADED_MAG_OFFSET]
+	str	x2, [x21]	/* *old_mag_out (caller memory) */
+	ldr	w3, [x19, #CACHE_ROUNDS_OFFSET]
+	str	w3, [x22]	/* *old_rounds_out (caller memory) */
+	mov	w0, #1		/* result BEFORE the commit store */
+	str	xzr, [x19, #CACHE_LOADED_MAG_OFFSET]	/* COMMIT: only slot store */
+
+.Lrseq_detach_post_commit:
+	LOAD_RSEQ_OFFSET x1
+	add	x1, x23, x1
+	str	xzr, [x1, #8]
+	ldp	x23, x24, [sp, #48]
+	ldp	x21, x22, [sp, #32]
+	ldp	x19, x20, [sp, #16]
+	ldp	x29, x30, [sp], #96
+	.cfi_adjust_cfa_offset -96
+	ret
+	.cfi_adjust_cfa_offset 96	/* abort block runs in the full frame */
+
+	.align	5
+	.inst	RSEQ_SIG
+.Lrseq_detach_abort:
+	ldr	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
+	add	x1, x1, #1
+	str	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
+	LOAD_RSEQ_OFFSET x1
+	add	x1, x23, x1
+	str	xzr, [x1, #8]
+	mov	w0, #0
+	ldp	x23, x24, [sp, #48]
+	ldp	x21, x22, [sp, #32]
+	ldp	x19, x20, [sp, #16]
+	ldp	x29, x30, [sp], #96
+	ret
+	.cfi_endproc
+.size umem_rseq_reload_detach, .-umem_rseq_reload_detach
+
+/*
+ * int umem_rseq_reload_attach(umem_rseq_cache_t *cache, int cpu_id,
+ *     umem_magazine_t *new_mag, int rounds, int magsize)
+ *
+ * 1: the slot is (new_mag, rounds, magsize).  0: the slot was not NULL
+ * (nothing written) or the section aborted (rounds/magsize possibly written,
+ * don't-care while loaded_mag is NULL).  On 0 the caller still owns new_mag.
+ *
+ * AAPCS64: x0=cache w1=cpu_id x2=new_mag w3=rounds w4=magsize.
+ */
+.globl umem_rseq_reload_attach
+.type umem_rseq_reload_attach, %function
+.align 4
+umem_rseq_reload_attach:
+	.cfi_startproc
+	stp	x29, x30, [sp, #-96]!
+	.cfi_adjust_cfa_offset 96
+	.cfi_offset 29, -96
+	.cfi_offset 30, -88
+	mov	x29, sp
+	stp	x19, x20, [sp, #16]
+	.cfi_offset 19, -80
+	.cfi_offset 20, -72
+	stp	x21, x22, [sp, #32]
+	.cfi_offset 21, -64
+	.cfi_offset 22, -56
+	stp	x23, x24, [sp, #48]
+	.cfi_offset 23, -48
+	.cfi_offset 24, -40
 
 	mov	x19, x0		/* cache */
 	mov	w20, w1		/* cpu_id */
 	mov	x21, x2		/* new_mag */
-	mov	w22, w3		/* new_rounds */
-	mov	x23, x4		/* old_mag_out */
-	mov	x26, x5		/* old_rounds_out */
+	mov	w22, w3		/* rounds */
+	mov	w23, w4		/* magsize */
 
-	add	x24, sp, #80	/* &rseq_cs */
-
-	stp	wzr, wzr, [x24]
-	adrp	x0, .Lrseq_reload_alloc_start
-	add	x0, x0, :lo12:.Lrseq_reload_alloc_start
-	str	x0, [x24, #8]
-	adrp	x1, .Lrseq_reload_alloc_post_commit
-	add	x1, x1, :lo12:.Lrseq_reload_alloc_post_commit
-	sub	x1, x1, x0
-	str	x1, [x24, #16]
-	adrp	x2, .Lrseq_reload_alloc_abort
-	add	x2, x2, :lo12:.Lrseq_reload_alloc_abort
-	str	x2, [x24, #24]
-
-	mrs	x25, tpidr_el0
-	LOAD_RSEQ_OFFSET x0
-	add	x0, x25, x0
-	str	x24, [x0, #8]
-
-.Lrseq_reload_alloc_start:
-	ldr	w1, [x0, #4]	/* current cpu_id */
-	cmp	w1, w20
-	b.ne	.Lrseq_reload_alloc_abort
-
-	/* Read OLD loaded_mag AND rounds BEFORE any write (design section 6
-	 * + old-magazine classification).  Both go to caller pointers, not
-	 * to committed cache_rseq[cpu] state, so the single last store below
-	 * is unaffected. */
-	ldr	x2, [x19, #CACHE_LOADED_MAG_OFFSET]
-	str	x2, [x23]	/* *old_mag_out = OLD loaded_mag */
-	ldr	w3, [x19, #CACHE_ROUNDS_OFFSET]
-	str	w3, [x26]	/* *old_rounds_out = OLD rounds */
-
-	/* Resolution A (section 4): rounds=0, loaded_mag=new, rounds=real. */
-	str	wzr, [x19, #CACHE_ROUNDS_OFFSET]
-	str	x21, [x19, #CACHE_LOADED_MAG_OFFSET]
-	str	w22, [x19, #CACHE_ROUNDS_OFFSET]	/* COMMIT: last store */
-
-	mov	w0, #1
-
-.Lrseq_reload_alloc_post_commit:
-	LOAD_RSEQ_OFFSET x1
-	add	x1, x25, x1
-	str	xzr, [x1, #8]
-	ldr	x26, [sp, #72]
-	ldr	x25, [sp, #64]
-	ldp	x23, x24, [sp, #48]
-	ldp	x21, x22, [sp, #32]
-	ldp	x19, x20, [sp, #16]
-	ldp	x29, x30, [sp], #128
-	.cfi_adjust_cfa_offset -128
-	ret
-
-	.align	5
-	.inst	RSEQ_SIG
-.Lrseq_reload_alloc_abort:
-	ldr	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
-	add	x1, x1, #1
-	str	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
-	LOAD_RSEQ_OFFSET x1
-	add	x1, x25, x1
-	str	xzr, [x1, #8]
-	mov	w0, #0
-	ldr	x26, [sp, #72]
-	ldr	x25, [sp, #64]
-	ldp	x23, x24, [sp, #48]
-	ldp	x21, x22, [sp, #32]
-	ldp	x19, x20, [sp, #16]
-	ldp	x29, x30, [sp], #128
-	ret
-	.cfi_endproc
-.size umem_rseq_reload_alloc_commit, .-umem_rseq_reload_alloc_commit
-
-/*
- * int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache, int cpu_id,
- *     umem_magazine_t *new_mag, umem_magazine_t **old_mag_out,
- *     int *old_rounds_out)
- *
- * Free-side phase 2: swap in a fresh EMPTY magazine (rounds always 0),
- * simpler than the alloc side (no section 4 subtlety).  Write loaded_mag
- * first, rounds=0 last.  old_rounds_out captures the OLD rounds before the
- * commit so the caller can classify a migration-stranded partial magazine
- * for the depot; written before the commit store, preserving single-last-
- * store.
- *
- * AAPCS64: x0=cache w1=cpu_id x2=new_mag x3=old_mag_out x4=old_rounds_out.
- */
-.globl umem_rseq_reload_free_commit
-.type umem_rseq_reload_free_commit, %function
-.align 4
-umem_rseq_reload_free_commit:
-	.cfi_startproc
-	stp	x29, x30, [sp, #-128]!
-	.cfi_adjust_cfa_offset 128
-	.cfi_offset 29, -128
-	.cfi_offset 30, -120
-	mov	x29, sp
-	stp	x19, x20, [sp, #16]
-	.cfi_offset 19, -112
-	.cfi_offset 20, -104
-	stp	x21, x22, [sp, #32]
-	.cfi_offset 21, -96
-	.cfi_offset 22, -88
-	str	x24, [sp, #48]
-	.cfi_offset 24, -80
-	str	x25, [sp, #56]
-	.cfi_offset 25, -72
-	str	x23, [sp, #64]
-	.cfi_offset 23, -64
-
-	mov	x19, x0		/* cache */
-	mov	w20, w1		/* cpu_id */
-	mov	x21, x2		/* new_mag (empty) */
-	mov	x22, x3		/* old_mag_out */
-	mov	x23, x4		/* old_rounds_out */
-
-	add	x24, sp, #80	/* &rseq_cs */
+	add	x24, sp, #64	/* &rseq_cs */
 
 	stp	wzr, wzr, [x24]
-	adrp	x0, .Lrseq_reload_free_start
-	add	x0, x0, :lo12:.Lrseq_reload_free_start
+	adrp	x0, .Lrseq_attach_start
+	add	x0, x0, :lo12:.Lrseq_attach_start
 	str	x0, [x24, #8]
-	adrp	x1, .Lrseq_reload_free_post_commit
-	add	x1, x1, :lo12:.Lrseq_reload_free_post_commit
+	adrp	x1, .Lrseq_attach_post_commit
+	add	x1, x1, :lo12:.Lrseq_attach_post_commit
 	sub	x1, x1, x0
 	str	x1, [x24, #16]
-	adrp	x2, .Lrseq_reload_free_abort
-	add	x2, x2, :lo12:.Lrseq_reload_free_abort
+	adrp	x2, .Lrseq_attach_abort
+	add	x2, x2, :lo12:.Lrseq_attach_abort
 	str	x2, [x24, #24]
 
-	mrs	x25, tpidr_el0
+	mrs	x9, tpidr_el0
 	LOAD_RSEQ_OFFSET x0
-	add	x0, x25, x0
+	add	x0, x9, x0
 	str	x24, [x0, #8]
+	mov	x24, x9		/* tp, for clearing rseq_cs after */
 
-.Lrseq_reload_free_start:
+.Lrseq_attach_start:
 	ldr	w1, [x0, #4]
 	cmp	w1, w20
-	b.ne	.Lrseq_reload_free_abort
+	b.ne	.Lrseq_attach_abort
 
+	mov	w0, #0		/* 0 = slot occupied, nothing written */
 	ldr	x2, [x19, #CACHE_LOADED_MAG_OFFSET]
-	str	x2, [x22]	/* *old_mag_out = OLD loaded_mag */
-	ldr	w3, [x19, #CACHE_ROUNDS_OFFSET]
-	str	w3, [x23]	/* *old_rounds_out = OLD rounds */
+	cbnz	x2, .Lrseq_attach_post_commit
 
-	str	x21, [x19, #CACHE_LOADED_MAG_OFFSET]	/* new empty mag */
-	str	wzr, [x19, #CACHE_ROUNDS_OFFSET]	/* COMMIT: last store */
+	/* Don't-care while loaded_mag is NULL: safe to waste on abort. */
+	str	w22, [x19, #CACHE_ROUNDS_OFFSET]
+	str	w23, [x19, #CACHE_MAGSIZE_OFFSET]
+	mov	w0, #1		/* result BEFORE the commit store */
+	str	x21, [x19, #CACHE_LOADED_MAG_OFFSET]	/* COMMIT: last store */
 
-	mov	w0, #1
-
-.Lrseq_reload_free_post_commit:
+.Lrseq_attach_post_commit:
 	LOAD_RSEQ_OFFSET x1
-	add	x1, x25, x1
+	add	x1, x24, x1
 	str	xzr, [x1, #8]
-	ldr	x23, [sp, #64]
-	ldr	x24, [sp, #48]
-	ldr	x25, [sp, #56]
+	ldp	x23, x24, [sp, #48]
 	ldp	x21, x22, [sp, #32]
 	ldp	x19, x20, [sp, #16]
-	ldp	x29, x30, [sp], #128
-	.cfi_adjust_cfa_offset -128
+	ldp	x29, x30, [sp], #96
+	.cfi_adjust_cfa_offset -96
 	ret
+	.cfi_adjust_cfa_offset 96	/* abort block runs in the full frame */
 
 	.align	5
 	.inst	RSEQ_SIG
-.Lrseq_reload_free_abort:
+.Lrseq_attach_abort:
 	ldr	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
 	add	x1, x1, #1
 	str	x1, [x19, #CACHE_RESTART_COUNT_OFFSET]
 	LOAD_RSEQ_OFFSET x1
-	add	x1, x25, x1
+	add	x1, x24, x1
 	str	xzr, [x1, #8]
 	mov	w0, #0
-	ldr	x23, [sp, #64]
-	ldr	x24, [sp, #48]
-	ldr	x25, [sp, #56]
+	ldp	x23, x24, [sp, #48]
 	ldp	x21, x22, [sp, #32]
 	ldp	x19, x20, [sp, #16]
-	ldp	x29, x30, [sp], #128
+	ldp	x29, x30, [sp], #96
 	ret
 	.cfi_endproc
-.size umem_rseq_reload_free_commit, .-umem_rseq_reload_free_commit
+.size umem_rseq_reload_attach, .-umem_rseq_reload_attach
 
 #endif /* __aarch64__ && __linux__ */
 

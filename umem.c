@@ -2188,9 +2188,17 @@ umem_magazine_destroy(umem_cache_t *cp, umem_magazine_t *mp, int nrounds)
 	}
 
 done:
-	ASSERT(UMEM_MAGAZINE_VALID(cp, mp));
+	/*
+	 * Free the shell to the magtype cache it CAME FROM, not the cache's
+	 * current one.  umem_cache_magazine_purge() drains only cache_cpu[],
+	 * so an rseq slot can still hold a pre-resize shell when
+	 * umem_cache_destroy() hands it here; freeing a 2-word magsize-1
+	 * shell into the 4-word magsize-3 cache corrupts that cache.  (This
+	 * used to ASSERT(UMEM_MAGAZINE_VALID) and free to cache_magtype.)
+	 */
 	atomic_add_64(&cp->cache_mag_total, -1ULL);
-	_umem_cache_free(cp->cache_magtype->mt_cache, mp);
+	_umem_cache_free(((umem_slab_t *)P2END((uintptr_t)(mp), PAGESIZE) -
+	    1)->slab_cache, mp);
 }
 
 /*
@@ -3101,12 +3109,20 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
  * the caller re-runs the asm fastpath to actually pop/push the buffer, so
  * that the pop/push itself is also rseq-atomic (never a plain read here).
  */
-extern int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache,
-    int cpu_id, umem_magazine_t *new_mag, int new_rounds,
+/*
+ * Phase 2 is two rseq critical sections, each ending in ONE committing store
+ * (umem_rseq_x86_64.S / umem_rseq_aarch64.S, "THE RULE"):
+ *   detach: slot -> NULL; the caller now owns whatever it held.
+ *   attach: NULL -> (mag, rounds, magsize); fails if the slot is not NULL.
+ * A single "swap" section cannot be atomic (it changes loaded_mag AND
+ * rounds), and the earlier one was not: an abort could publish a magazine the
+ * caller then also gave to the depot (P8.5b aliasing, docs/results/
+ * 2026-09-26-p85b-aliasing-mechanism-v2.md).
+ */
+extern int umem_rseq_reload_detach(umem_rseq_cache_t *cache, int cpu_id,
     umem_magazine_t **old_mag_out, int *old_rounds_out);
-extern int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache,
-    int cpu_id, umem_magazine_t *new_mag, umem_magazine_t **old_mag_out,
-    int *old_rounds_out);
+extern int umem_rseq_reload_attach(umem_rseq_cache_t *cache, int cpu_id,
+    umem_magazine_t *new_mag, int rounds, int magsize);
 extern void *umem_rseq_alloc_fastpath(umem_rseq_cache_t *cache, int cpu_id);
 extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
     int cpu_id);
@@ -3114,20 +3130,67 @@ extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
 #define	UMEM_RSEQ_RELOAD_RETRIES	3
 
 /*
+ * Publish nmp, which holds `nrounds` rounds and is exclusively the caller's,
+ * into cache_rseq[cpu].  Returns 1 if published (cache_rseq[cpu] now owns
+ * it), 0 if not (the caller still owns it and must give it back).
+ *
+ * The slot's magsize becomes nmp's OWN capacity (P1.3b's rule for the other
+ * layers).  A per-cache magsize, set once at cache creation, went stale on
+ * a magazine resize: the reload then committed fewer rounds than a larger
+ * depot magazine held, and the rest were stranded on the empty list (H1, the
+ * doc above).  Because the bound is per-magazine, umem_cache_magazine_purge()
+ * need not touch cache_rseq[]: a resize makes no slot's bound wrong, an
+ * old-magtype magazine in a slot is served against its own capacity, and on
+ * swap-out umem_ptc_mag_return() drains it and frees the shell (!VALID).
+ * Draining another cpu's slot from the update thread would not be rseq-safe
+ * anyway (only a thread running on that cpu may write it).
+ */
+static int
+umem_rseq_reload(umem_cache_t *cp, int cpu, umem_magazine_t *nmp, int nrounds)
+{
+	umem_magazine_t *old;
+	int old_rounds, published, tries;
+	int cap = umem_mag_capacity(nmp);
+
+	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
+		if (cpu < 0 || cpu >= umem_rseq_get_ncpus()) {
+			UMEM_RSEQ_DBG_INC(umem_dbg_rseq_break_cpu);
+			break;
+		}
+		umem_rseq_cache_t *rc = &cp->cache_rseq[cpu];
+		if (umem_rseq_reload_detach(rc, cpu, &old, &old_rounds)) {
+			/* Attach first, so the slot is NULL for as little as possible. */
+			published = umem_rseq_reload_attach(rc, cpu, nmp,
+			    nrounds, cap);
+			/*
+			 * old is ours alone now.  A migration or a partial drain
+			 * can leave it with any count, so pass the count and let
+			 * umem_ptc_mag_return classify it against old's OWN
+			 * capacity: full list iff old_rounds == capacity,
+			 * otherwise drained onto the empty list.
+			 */
+			if (old != NULL)
+				umem_ptc_mag_return(cp, &cp->cache_full, old,
+				    old_rounds);
+			if (published)
+				return (1);
+		}
+		UMEM_RSEQ_DBG_INC(umem_dbg_rseq_commit_abort);
+		cpu = umem_rseq_get_cpu();
+	}
+	return (0);
+}
+
+/*
  * Arm the alloc-side reload.  Returns 1 if a full magazine was published
  * into cache_rseq[cpu] (caller should re-run the fastpath), 0 if the reload
  * could not be armed (depot empty, or migration storm -- caller falls
- * through to cc_lock).  Never publishes a torn view (design Resolution A).
+ * through to cc_lock).
  */
 static int
 umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 {
-	umem_rseq_cache_t *rc;
 	umem_magazine_t *fmp;
-	umem_magazine_t *old_mag;
-	int old_rounds;
-	int cpu = cpu_id;
-	int tries;
 
 	UMEM_RSEQ_DBG_INC(umem_dbg_rseq_slow_called);
 
@@ -3137,44 +3200,12 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 		UMEM_RSEQ_DBG_INC(umem_dbg_rseq_no_full);
 		return (0);
 	}
-
-	/* PHASE 2: commit the swap, retrying against the current cpu. */
-	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
-		if (cpu < 0 || cpu >= umem_rseq_get_ncpus()) {
-			UMEM_RSEQ_DBG_INC(umem_dbg_rseq_break_cpu);
-			break;
-		}
-		rc = &cp->cache_rseq[cpu];
-		old_mag = NULL;
-		old_rounds = 0;
-		if (umem_rseq_reload_alloc_commit(rc, cpu, fmp,
-		    rc->magsize, &old_mag, &old_rounds)) {
-			/*
-			 * Committed: fmp is now cache_rseq[cpu].loaded_mag
-			 * with `magsize` rounds.  The OLD magazine was returned
-			 * atomically at the swap WITH its rounds count -- a
-			 * migration can strand a NON-empty old magazine here, so
-			 * we must NOT assume it is empty.  umem_ptc_mag_return
-			 * classifies it against the depot's exact-count contracts
-			 * (drains a partial onto the empty list, handles a
-			 * magtype-mismatched shell) -- reuse it, do not pick a
-			 * list here.
-			 */
-			if (old_mag != NULL)
-				umem_ptc_mag_return(cp,
-				    old_rounds == rc->magsize ?
-				    &cp->cache_full : &cp->cache_empty,
-				    old_mag, old_rounds);
-			UMEM_RSEQ_DBG_INC(umem_dbg_rseq_armed);
-			return (1);
-		}
-		/* Aborted (migrated): retry against the new cpu, same fmp. */
-		UMEM_RSEQ_DBG_INC(umem_dbg_rseq_commit_abort);
-		cpu = umem_rseq_get_cpu();
+	/* A cache_full magazine holds exactly its own capacity. */
+	if (umem_rseq_reload(cp, cpu_id, fmp, umem_mag_capacity(fmp))) {
+		UMEM_RSEQ_DBG_INC(umem_dbg_rseq_armed);
+		return (1);
 	}
-
-	/* Could not commit: return the unpublished fmp to the depot. */
-	umem_depot_free(cp, &cp->cache_full, fmp);
+	umem_depot_free(cp, &cp->cache_full, fmp);	/* never published */
 	return (0);
 }
 
@@ -3186,45 +3217,14 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 static int
 umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id)
 {
-	umem_rseq_cache_t *rc;
 	umem_magazine_t *emp;
-	umem_magazine_t *old_mag;
-	int old_rounds;
-	int cpu = cpu_id;
-	int tries;
 
-	/* PHASE 1: pull a fresh empty magazine. */
 	emp = umem_depot_alloc(cp, &cp->cache_empty);
 	if (emp == NULL)
 		return (0);
-
-	/* PHASE 2: commit the swap (new_rounds is always 0 -- design 5.3). */
-	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
-		if (cpu < 0 || cpu >= umem_rseq_get_ncpus())
-			break;
-		rc = &cp->cache_rseq[cpu];
-		old_mag = NULL;
-		old_rounds = 0;
-		if (umem_rseq_reload_free_commit(rc, cpu, emp, &old_mag,
-		    &old_rounds)) {
-			/*
-			 * Committed: emp is now the empty loaded magazine.  The
-			 * OLD magazine was usually full, but a migration can
-			 * strand a partial one here; classify it with
-			 * umem_ptc_mag_return against the depot's exact-count
-			 * contracts rather than assuming full.
-			 */
-			if (old_mag != NULL)
-				umem_ptc_mag_return(cp,
-				    old_rounds == rc->magsize ?
-				    &cp->cache_full : &cp->cache_empty,
-				    old_mag, old_rounds);
-			return (1);
-		}
-		cpu = umem_rseq_get_cpu();
-	}
-
-	umem_depot_free(cp, &cp->cache_empty, emp);
+	if (umem_rseq_reload(cp, cpu_id, emp, 0))
+		return (1);
+	umem_depot_free(cp, &cp->cache_empty, emp);	/* never published */
 	return (0);
 }
 #endif /* __x86_64__ || __aarch64__ */
@@ -5751,13 +5751,14 @@ umem_cache_create(
 				    USYNC_THREAD, NULL);
 			}
 #ifdef UMEM_RSEQ_AVAILABLE
-			if (rseq_bytes != 0) {
-				int magsize = cp->cache_magtype->mt_magsize;
+			/*
+			 * Zeroed above: every slot starts detached
+			 * (loaded_mag NULL).  magsize is set per magazine by
+			 * umem_rseq_reload(), never per cache.
+			 */
+			if (rseq_bytes != 0)
 				cp->cache_rseq = (umem_rseq_cache_t *)
 				    (base + 2 * depot_bytes);
-				for (i = 0; i < rseq_ncpus; i++)
-					cp->cache_rseq[i].magsize = magsize;
-			}
 #endif
 		}
 	}

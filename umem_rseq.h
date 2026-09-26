@@ -99,7 +99,12 @@ typedef struct umem_rseq_cache {
 	uint64_t free_count;	/* Free counter */
 	uint64_t restart_count;	/* Number of rseq restarts */
 	uint64_t migration_count; /* CPU migrations detected */
-	int magsize;		/* Max rounds (magazine capacity) */
+	/*
+	 * Capacity of loaded_mag, written with it by umem_rseq_reload_attach.
+	 * rounds and magsize are meaningful only while loaded_mag != NULL;
+	 * both fast paths test loaded_mag first (see umem_rseq_x86_64.S).
+	 */
+	int magsize;
 	char pad[64 - (2 * sizeof(void*) + 2 * sizeof(int) +
 	    4 * sizeof(uint64_t) + sizeof(int))];
 } umem_rseq_cache_t __attribute__((aligned(64)));

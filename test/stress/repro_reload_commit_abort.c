@@ -7,18 +7,23 @@
  * the slot in a state equivalent to "not yet committed", and nothing after
  * the last store can still turn a commit into a reported abort.
  *
- * This test drives umem_rseq_reload_{alloc,free}_commit on a private slot,
- * pinned to one CPU, under a microsecond SIGALRM storm (every delivery inside
- * the window forces an abort), and checks the contract its callers rely on:
- *
- *   returned 1: slot == (new_mag, new_rounds) and the out-params == (old, r)
- *   returned 0: slot == (old, r), unchanged
+ * This test drives the reload's rseq sections on a private slot, pinned to
+ * one CPU, under a microsecond SIGALRM storm (every delivery inside a window
+ * forces an abort), and checks the contract its callers rely on: returned 1
+ * means the slot is exactly the committed state, and returned 0 means it is
+ * exactly the prior state.
  *
  * Anything else means one magazine has two owners or none:
- *   TORN            slot is neither state (e.g. (new, 0) or (new, old_r))
- *   COMMIT-REPORTED-ABORT  slot == (new, new_rounds) but 0 was returned; the
- *                   C slowpath then re-publishes or depot-frees a magazine
- *                   the slot still holds.
+ *   TORN            slot is neither state
+ *   COMMIT-REPORTED-ABORT  the slot committed but 0 was returned, so the C
+ *                   slowpath re-publishes or depot-frees a magazine the slot
+ *                   still holds.
+ *
+ * PRE-FIX (017520f) this drove the old single swap commits,
+ * umem_rseq_reload_{alloc,free}_commit, and FAILED every run on both arches
+ * with thousands of torn and commit-reported-abort states
+ * (docs/results/r5fix/prefix-*.log).  Those commits were replaced by
+ * detach/attach, and this file was ported to them.
  *
  * Exit 0 PASS, 1 FAIL, 77 SKIP (no rseq asm).
  */
@@ -32,17 +37,26 @@
 #include <sys/time.h>
 #include "umem_rseq.h"
 
-extern int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache,
-    int cpu_id, void *new_mag, int new_rounds, void **old_mag_out,
-    int *old_rounds_out);
-extern int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache,
-    int cpu_id, void *new_mag, void **old_mag_out, int *old_rounds_out);
+/*
+ * Post-fix ABI (the swap commit this file first proved non-atomic was split
+ * into these two single-store sections).  The contract is the same one:
+ *   detach 1: out == (old, r), slot loaded_mag == NULL
+ *   detach 0: slot unchanged
+ *   attach 1: slot == (new, rounds, magsize)
+ *   attach 0: slot loaded_mag unchanged (rounds/magsize don't-care iff NULL)
+ * Pre-fix result (swap commit, 017520f): docs/results/r5fix/prefix-*.log.
+ */
+extern int umem_rseq_reload_detach(umem_rseq_cache_t *cache, int cpu_id,
+    void **old_mag_out, int *old_rounds_out);
+extern int umem_rseq_reload_attach(umem_rseq_cache_t *cache, int cpu_id,
+    void *new_mag, int rounds, int magsize);
 
 #define	OLD_MAG	((void *)0x1000)
 #define	NEW_MAG	((void *)0x2000)
 #define	OLD_R	3
 #define	NEW_R	7
 #define	MAGSZ	7
+#define	OLD_MS	5
 
 static volatile long g_sig;
 static void on_alrm(int s) { (void)s; g_sig++; }
@@ -62,49 +76,76 @@ storm(long us)
 	(void) setitimer(ITIMER_REAL, &it, NULL);
 }
 
-/* side 0: alloc commit, side 1: free commit.  Returns # of violations. */
+/* side 0: detach, side 1: attach.  Returns # of violations. */
 static long
 run(int side, long iters, long *commits, long *aborts)
 {
 	umem_rseq_cache_t rc;
 	long torn = 0, cra = 0;
-	int want_r = side ? 0 : NEW_R;
 
 	for (long i = 0; i < iters; i++) {
 		void *om = (void *)-1;
-		int orr = -1, r;
+		int orr = -1, r, v = 0;
 		int cpu = umem_rseq_get_cpu();
 
 		memset(&rc, 0, sizeof (rc));
-		rc.loaded_mag = OLD_MAG;
+		rc.loaded_mag = side ? NULL : OLD_MAG;
 		rc.rounds = OLD_R;
-		rc.magsize = MAGSZ;
+		rc.magsize = OLD_MS;
 		r = side ?
-		    umem_rseq_reload_free_commit(&rc, cpu, NEW_MAG, &om, &orr) :
-		    umem_rseq_reload_alloc_commit(&rc, cpu, NEW_MAG, NEW_R,
-		    &om, &orr);
-		int is_old = rc.loaded_mag == OLD_MAG && rc.rounds == OLD_R;
-		int is_new = rc.loaded_mag == NEW_MAG && rc.rounds == want_r;
-		int v = 0;
+		    umem_rseq_reload_attach(&rc, cpu, NEW_MAG, NEW_R, MAGSZ) :
+		    umem_rseq_reload_detach(&rc, cpu, &om, &orr);
+		int is_old = side ? rc.loaded_mag == NULL :
+		    (rc.loaded_mag == OLD_MAG && rc.rounds == OLD_R &&
+		    rc.magsize == OLD_MS);
+		int is_new = side ?
+		    (rc.loaded_mag == NEW_MAG && rc.rounds == NEW_R &&
+		    rc.magsize == MAGSZ) : rc.loaded_mag == NULL;
 		if (r == 1) {
 			(*commits)++;
-			if (!is_new || om != OLD_MAG || orr != OLD_R)
+			if (!is_new || (!side && (om != OLD_MAG ||
+			    orr != OLD_R)))
 				v = 1, torn++;
 		} else {
 			(*aborts)++;
-			if (is_new)
-				v = 1, cra++;
+			if (rc.loaded_mag != (side ? NULL : OLD_MAG))
+				v = 1, cra += is_new, torn += !is_new;
 			else if (!is_old)
 				v = 1, torn++;
 		}
 		if (v && torn + cra <= 3)
-			fprintf(stderr, "  %s iter %ld: ret=%d slot=(%p,%d)\n",
-			    side ? "free" : "alloc", i, r, rc.loaded_mag,
-			    rc.rounds);
+			fprintf(stderr, "  %s iter %ld: ret=%d slot=(%p,%d,%d)\n",
+			    side ? "attach" : "detach", i, r, rc.loaded_mag,
+			    rc.rounds, rc.magsize);
 	}
-	printf("%s commit: torn=%ld commit_reported_abort=%ld\n",
-	    side ? "free " : "alloc", torn, cra);
+	printf("%s: torn=%ld commit_reported_abort=%ld\n",
+	    side ? "attach" : "detach", torn, cra);
 	return (torn + cra);
+}
+
+/* attach must refuse an occupied slot and write nothing. */
+static long
+refuse_occupied(int cpu)
+{
+	umem_rseq_cache_t rc;
+
+	memset(&rc, 0, sizeof (rc));
+	rc.loaded_mag = OLD_MAG;
+	rc.rounds = OLD_R;
+	rc.magsize = OLD_MS;
+	while (umem_rseq_reload_attach(&rc, cpu, NEW_MAG, NEW_R, MAGSZ) == 0 &&
+	    rc.loaded_mag == OLD_MAG && rc.rounds == OLD_R &&
+	    rc.magsize == OLD_MS && rc.restart_count > 0) {
+		/* aborted before the occupancy test: retry */
+		rc.restart_count = 0;
+	}
+	if (rc.loaded_mag != OLD_MAG || rc.rounds != OLD_R ||
+	    rc.magsize != OLD_MS) {
+		printf("attach on an occupied slot WROTE it: (%p,%d,%d)\n",
+		    rc.loaded_mag, rc.rounds, rc.magsize);
+		return (1);
+	}
+	return (0);
 }
 
 int
@@ -132,6 +173,7 @@ main(int argc, char **argv)
 	storm(us);
 	bad = run(0, iters, &commits, &aborts);
 	bad += run(1, iters, &commits, &aborts);
+	bad += refuse_occupied(cpu);
 	storm(0);
 
 	printf("commits=%ld aborts=%ld signals=%ld\n", commits, aborts, g_sig);
