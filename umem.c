@@ -442,6 +442,9 @@
 #ifdef UMEM_NUMA_AVAILABLE
 #include "umem_numa.h"
 #endif
+#ifdef HAVE_LIBNUMA
+#include <numa.h>		/* numa_available/max_node/node_of_cpu, used below */
+#endif
 
 /*
  * Include rseq support when available.
