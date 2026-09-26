@@ -25,6 +25,7 @@
 static atomic_int g_stop = 0;
 static void *ring[RING];
 static size_t ringsz[RING];
+static atomic_int ready[RING];
 static atomic_uint head = 0, tail = 0;
 
 static void *
@@ -35,13 +36,24 @@ producer(void *arg)
 	while (!atomic_load(&g_stop)) {
 		unsigned h = atomic_load(&head);
 		if (h - atomic_load(&tail) >= RING) { sched_yield(); continue; }
+		/*
+		 * Claim slot h atomically BEFORE writing it: multiple
+		 * producers otherwise read the same h, both store into
+		 * ring[h%RING], and one buffer is lost while another is
+		 * double-consumed -> double free (a probe bug, not an
+		 * allocator bug).  CAS the head first, own the slot, then
+		 * fill it.
+		 */
+		if (!atomic_compare_exchange_weak(&head, &h, h + 1))
+			continue;
 		r = r * 1103515245u + 12345u;
 		size_t sz = 8 + (r % 512);
 		void *b = umem_alloc(sz, UMEM_DEFAULT);
-		if (!b) continue;
+		if (!b) { sz = 0; }
 		ring[h % RING] = b;
 		ringsz[h % RING] = sz;
-		atomic_store(&head, h + 1);
+		/* publish: mark slot ready for consumers */
+		atomic_store((atomic_int *)&ready[h % RING], 1);
 	}
 	return NULL;
 }
@@ -53,10 +65,13 @@ consumer(void *arg)
 	while (!atomic_load(&g_stop) || atomic_load(&tail) != atomic_load(&head)) {
 		unsigned t = atomic_load(&tail);
 		if (t == atomic_load(&head)) { sched_yield(); continue; }
+		if (!atomic_load((atomic_int *)&ready[t % RING])) { sched_yield(); continue; }
+		/* claim slot t exclusively */
+		if (!atomic_compare_exchange_weak(&tail, &t, t + 1)) continue;
 		void *b = ring[t % RING];
 		size_t sz = ringsz[t % RING];
-		if (!atomic_compare_exchange_weak(&tail, &t, t + 1)) continue;
-		umem_free(b, sz);
+		atomic_store((atomic_int *)&ready[t % RING], 0);
+		if (b) umem_free(b, sz);
 	}
 	return NULL;
 }

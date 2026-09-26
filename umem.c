@@ -6329,6 +6329,19 @@ umem_init(void)
 	 * moves the reload ahead of PTC (or has PTC refill cache_rseq).
 	 */
 	(void) umem_rseq_init();
+#ifdef UMEM_RSEQ_ARM_DEBUG
+	/*
+	 * Temporary A/B gate (UMEM_RSEQ_ARM_DEBUG only): UMEM_RSEQ_OFF=1
+	 * forces the armed layer off at runtime so the same binary can be
+	 * compared with/without the P8.5b routing.  Diagnostic-only, never
+	 * on master.
+	 */
+	{
+		const char *off = getenv("UMEM_RSEQ_OFF");
+		if (off != NULL && off[0] == '1')
+			umem_rseq_enabled = 0;
+	}
+#endif
 #endif
 #ifdef UMEM_RSEQ_ARM_DEBUG
 	{
