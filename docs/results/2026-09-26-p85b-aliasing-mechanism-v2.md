@@ -150,3 +150,13 @@ post-fix for many more runs than pre-fix.
 Sweep at d813f7f (threads/ring/cpu-span `4 4 1`, `16 1 1`, `8 2 4`, `16 1 7`,
 `32 8 7`; 6 x 10 s each, both arches): 0/60 per arch. The e2e pre-fix total
 is 1/190. It stays as a post-fix smoke test only.
+
+## H1 PROVEN pre-fix as a LEAK (`repro_rseq_resize_leak`, 2719794)
+
+Both arches, 3/3 runs each, deterministic:
+`cache=umem_alloc_114688 magsize 1 -> 3  stranded before=16 after=12010`.
+After a forced resize, 12,010 buffers of that cache are walker-ALLOCATED at
+quiescence: held by no magazine the walker knows about, freed by nobody.
+The control (`before=16`, no resize) is not yet explained; under
+investigation before this test is trusted as a pass/fail gate.
+Logs: `docs/results/r5fix/preleak-*.log`.

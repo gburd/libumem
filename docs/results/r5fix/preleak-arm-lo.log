@@ -1,0 +1,9 @@
+cache=umem_alloc_114688 magsize 1 -> 3  stranded before=16 after=12010
+RESULT: FAIL (buffers stranded in rseq-returned magazines)
+rc=1
+cache=umem_alloc_114688 magsize 1 -> 3  stranded before=16 after=12010
+RESULT: FAIL (buffers stranded in rseq-returned magazines)
+rc=1
+cache=umem_alloc_114688 magsize 1 -> 3  stranded before=16 after=12010
+RESULT: FAIL (buffers stranded in rseq-returned magazines)
+rc=1
