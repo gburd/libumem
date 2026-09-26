@@ -605,6 +605,7 @@ if ENABLE_RSEQ
 noinst_PROGRAMS += test/stress/repro_rseq_trailing_store \
 		   test/stress/repro_naive_reload_race \
 		   test/stress/repro_reload_commit_safe \
+		   test/stress/repro_reload_commit_abort \
 		   test/stress/probe_rseq_armed \
 		   test/stress/probe_rseq_prodcons \
 		   test/stress/probe_rseq_batch \
@@ -625,6 +626,11 @@ test_stress_repro_reload_commit_safe_SOURCES = test/stress/repro_reload_commit_s
 test_stress_repro_reload_commit_safe_LDADD = libumem.la
 test_stress_repro_reload_commit_safe_LDFLAGS = -pthread
 test_stress_repro_reload_commit_safe_CPPFLAGS = -I$(srcdir)
+
+test_stress_repro_reload_commit_abort_SOURCES = test/stress/repro_reload_commit_abort.c
+test_stress_repro_reload_commit_abort_LDADD = libumem.la
+test_stress_repro_reload_commit_abort_LDFLAGS = -pthread
+test_stress_repro_reload_commit_abort_CPPFLAGS = -I$(srcdir)
 
 test_stress_probe_rseq_armed_SOURCES = test/stress/probe_rseq_armed.c
 test_stress_probe_rseq_armed_LDADD = libumem.la
