@@ -3099,6 +3099,9 @@ extern int umem_rseq_reload_alloc_commit(umem_rseq_cache_t *cache,
 extern int umem_rseq_reload_free_commit(umem_rseq_cache_t *cache,
     int cpu_id, umem_magazine_t *new_mag, umem_magazine_t **old_mag_out,
     int *old_rounds_out);
+extern void *umem_rseq_alloc_fastpath(umem_rseq_cache_t *cache, int cpu_id);
+extern int umem_rseq_free_fastpath(umem_rseq_cache_t *cache, void *buf,
+    int cpu_id);
 
 #define	UMEM_RSEQ_RELOAD_RETRIES	3
 
