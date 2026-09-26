@@ -1530,6 +1530,7 @@ unsigned long umem_dbg_rseq_enter = 0;
 unsigned long umem_dbg_rseq_no_full = 0;
 unsigned long umem_dbg_rseq_armed = 0;
 unsigned long umem_dbg_rseq_slow_called = 0;
+unsigned long umem_dbg_rseq_commit_abort = 0;
 
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
@@ -3138,6 +3139,11 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 			return (1);
 		}
 		/* Aborted (migrated): retry against the new cpu, same fmp. */
+		if (unlikely(umem_dbg_rseq_probe)) {
+			extern unsigned long umem_dbg_rseq_commit_abort;
+			__atomic_add_fetch(&umem_dbg_rseq_commit_abort, 1,
+			    __ATOMIC_RELAXED);
+		}
 		cpu = umem_rseq_get_cpu();
 	}
 

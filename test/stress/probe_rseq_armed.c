@@ -80,10 +80,12 @@ main(int argc, char **argv)
 	umem_dump_contention(stdout);
 	{
 		extern unsigned long umem_dbg_rseq_enter, umem_dbg_rseq_no_full,
-		    umem_dbg_rseq_armed, umem_dbg_rseq_slow_called;
-		printf("DBG entered=%lu slow_called=%lu armed=%lu no_full_mag=%lu\n",
+		    umem_dbg_rseq_armed, umem_dbg_rseq_slow_called,
+		    umem_dbg_rseq_commit_abort;
+		printf("DBG entered=%lu slow_called=%lu armed=%lu abort=%lu no_full_mag=%lu\n",
 		    umem_dbg_rseq_enter, umem_dbg_rseq_slow_called,
-		    umem_dbg_rseq_armed, umem_dbg_rseq_no_full);
+		    umem_dbg_rseq_armed, umem_dbg_rseq_commit_abort,
+		    umem_dbg_rseq_no_full);
 	}
 	return (0);
 }
