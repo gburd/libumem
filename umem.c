@@ -3104,8 +3104,14 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 
 	/* PHASE 1: pull a full magazine (does not touch cache_rseq[cpu]). */
 	fmp = umem_depot_alloc(cp, &cp->cache_full);
-	if (fmp == NULL)
+	if (fmp == NULL) {
+		if (unlikely(umem_dbg_rseq_probe)) {
+			extern unsigned long umem_dbg_rseq_no_full;
+			__atomic_add_fetch(&umem_dbg_rseq_no_full, 1,
+			    __ATOMIC_RELAXED);
+		}
 		return (0);
+	}
 
 	/* PHASE 2: commit the swap, retrying against the current cpu. */
 	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
