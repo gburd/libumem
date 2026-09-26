@@ -1481,6 +1481,22 @@ umem_log_event(umem_log_header_t *lp, umem_cache_t *cp,
 	umem_bufctl_audit_t *bcp;
 	UMEM_LOCAL_BUFCTL_AUDIT(&bcp);
 
+	/*
+	 * Do nothing -- and in particular do NOT call getpcstack() -- when
+	 * logging is off (the default).  UMEM_AUDIT() walks the stack before
+	 * umem_log_enter() gets to check lp/umem_logging, and getpcstack()'s
+	 * first call on a thread reaches umem_stack_bounds() ->
+	 * pthread_getattr_np(), which allocates.  On the LD_PRELOAD path that
+	 * allocation is the interposed umem_malloc(); reached from the PTC
+	 * exit-drain (umem_ptc_cleanup -> ... -> umem_slab_create ->
+	 * umem_log_event) it re-enters the allocator while this thread's PTC is
+	 * being torn down, and faults.  The guard that made this safe already
+	 * existed one layer too deep (umem_log_enter); hoisting it here also
+	 * saves a per-slab-create stack walk in the common no-logging case.
+	 */
+	if (likely(lp == NULL || umem_logging == 0))
+		return;
+
 	bzero(bcp, UMEM_BUFCTL_AUDIT_SIZE);
 	bcp->bc_addr = addr;
 	bcp->bc_slab = sp;
