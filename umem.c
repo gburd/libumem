@@ -1522,6 +1522,12 @@ umem_log_event(umem_log_header_t *lp, umem_cache_t *cp,
  */
 uintptr_t umem_link_cookie __attribute__((visibility("hidden"))) = 0;
 
+/* P8.5b arming diagnostic (temporary): env UMEM_DBG_RSEQ_PROBE=1 turns on
+ * a cheap count of how often the rseq alloc block is entered, so we can
+ * tell whether the armed path is exercised at all under a given config. */
+int umem_dbg_rseq_probe = 0;
+unsigned long umem_dbg_rseq_enter = 0;
+
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
 #include <sys/auxv.h>
@@ -3457,6 +3463,12 @@ retry:
 				umem_rseq_cache_t *rc = &cp->cache_rseq[cpu];
 #if defined(__x86_64__) || defined(__aarch64__)
 				if (umem_rseq_asm_safe) {
+					extern int umem_dbg_rseq_probe;
+					extern unsigned long umem_dbg_rseq_enter;
+					if (unlikely(umem_dbg_rseq_probe))
+						__atomic_add_fetch(
+						    &umem_dbg_rseq_enter, 1,
+						    __ATOMIC_RELAXED);
 					buf = umem_rseq_alloc_fastpath(rc, cpu);
 					if (buf == NULL &&
 					    umem_rseq_alloc_slowpath(cp, cpu)) {
@@ -6172,6 +6184,11 @@ umem_init(void)
 	 */
 	(void) umem_rseq_init();
 #endif
+	{
+		const char *dbg = getenv("UMEM_DBG_RSEQ_PROBE");
+		if (dbg != NULL && dbg[0] == '1')
+			umem_dbg_rseq_probe = 1;
+	}
 
 	/*
 	 * set up vmem
