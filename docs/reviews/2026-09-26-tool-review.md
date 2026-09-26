@@ -81,6 +81,45 @@ walked, and rseq cached-set subtraction is untested. Once P8.5b routes most
 allocations through PTC and rseq, a larger share of "held" buffers are in
 fact cached and free. `tools/DEBUGGING.md` mentions none of this.
 
+## Runtime pass, partial (agent 09db6d84, stopped mid-pass)
+
+Debian 13, `c7i.2xlarge`, `--enable-introspect` build, target
+`test/debugger/tool_target` (committed `2530852`). The agent stopped after
+umemctl's `logtail`; these are the rows it observed, recovered from its logs.
+
+| tool / command | status | evidence |
+|---|---|---|
+| C API `umem_inspect_set_event_cb` + `enable_events(1)` | **SILENT NO-OP -- T1 confirmed** | `test_event_cb`: `alloc=0 free=0 (1800 allocations made)`, rc 1 |
+| umemctl `stats` | PASS | `bufs_held 4461 bufs_total 7617 slab_create 136 ...` |
+| umemctl `monitor --once` | **WRONG -- T2 confirmed** | `bufs in-use 0` in the same second that `stats` reports `bufs_held 4461` |
+| socket path | T3 confirmed | `/tmp/umem.*.sock` absent; `/tmp/umem-1000/umem.<pid>.sock`, dir 0700, sock 0600 |
+| umemctl `caches` | PASS (header says `inuse`, the server says `held`) | 68 caches listed |
+| umemctl `cache <name>` / unknown name | PASS | full detail; `no such cache: nosuch` |
+| umemctl `whatis` held 64 / 512 / 4 KiB / 96 KiB | PASS | correct cache, buffer, slab, `state held` |
+| umemctl `whatis` held 256 KiB (oversize) | **WRONG -- T3 confirmed** | `not a umem buffer` for a live allocation |
+| umemctl `whatis` freed into PTC bin (48 B) | **WRONG -- T3 confirmed** | `state held` for a freed buffer |
+| umemctl `whatis` freed 96 KiB | **WRONG -- new, T6** | reported as a `umem_bufctl_cache` buffer (bufsize 24, buffer `addr-0x10`): mis-attributed to a different cache |
+| umemctl `whatis 0x1` | PASS | `not a umem buffer` |
+| umemctl `leaks` / `record --learn-leaks` without audit | PASS (refused as documented) | `requires UMEM_DEBUG=audit` |
+| umemctl `record --learn-leaks` without audit | **WRONG -- new, T7** | prints the refusal AND `umemctl: wrote leak set to /tmp/ls0`, exit 0 |
+| umemctl `logtail` / `record` (3 s) | inconclusive | only the `logtail start` banner in 3 s, `record` file 1 line; needs a longer run and a target that creates slabs |
+
+New findings from this pass:
+
+- **T6** `whatis` on a freed 96 KiB buffer names the wrong cache. Likely the
+  buffer's slab was released back to vmem and the address was reused by a
+  bufctl slab, so the answer is about whatever lives there now, not the
+  freed buffer. Not diagnosed.
+- **T7** `record --learn-leaks` reports success after the server refused:
+  exit 0 and "wrote leak set" with an empty or refusal-only file.
+- Debian bootstrap silently drops lldb: the apt package list names
+  `jemalloc-bin`, which does not exist on Debian 13, so the whole install falls
+  back to a list without lldb. `scripts/ec2/bootstrap.sh` bug.
+
+Not yet run: umemctl `break` (all predicates), `break leaked --set`,
+`continue`, `leaks`/`learn` under audit; every `tools/umem` command; every gdb
+and lldb helper command, including `umem break` (T1 at the debugger level).
+
 ## Next
 
 1. Runtime pass on a Debian EC2 box with `--enable-introspect`: run every
