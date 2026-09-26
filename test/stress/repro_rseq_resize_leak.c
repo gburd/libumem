@@ -15,6 +15,7 @@
  * that sits in no magazine the walker knows about.  At quiescence that must
  * be 0.  It is measured before a forced resize (control) and after it.
  *
+ * Usage: repro_rseq_resize_leak [batch=16]
  * Exit 0 PASS, 1 FAIL or INCONCLUSIVE (no resize happened), 77 SKIP.
  */
 #define _GNU_SOURCE
@@ -24,6 +25,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include "umem.h"
 #include "umem_inspect.h"
@@ -31,7 +33,9 @@
 #include "umem_rseq.h"
 
 #define	SZ	100000
-#define	BATCH	16
+#define	MAXB	256
+
+static int batch = 16;
 
 static umem_cache_t *cp;
 static size_t g_n;
@@ -56,25 +60,28 @@ outstanding(void)
 static void
 churn(int rounds)
 {
-	void *b[BATCH];
+	void *b[MAXB];
 
 	for (int r = 0; r < rounds; r++) {
-		for (int k = 0; k < BATCH; k++)
+		for (int k = 0; k < batch; k++)
 			b[k] = umem_alloc(SZ, UMEM_DEFAULT);
-		for (int k = 0; k < BATCH; k++)
+		for (int k = 0; k < batch; k++)
 			if (b[k] != NULL)
 				umem_free(b[k], SZ);
 	}
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
 	extern uint32_t umem_reap_interval;
 	extern uint_t umem_depot_contention;
 	cpu_set_t set;
 	size_t before, after;
 	int from, to = 0;
+
+	if (argc > 1 && atoi(argv[1]) > 0 && atoi(argv[1]) <= MAXB)
+		batch = atoi(argv[1]);
 
 	CPU_ZERO(&set);
 	CPU_SET(0, &set);
@@ -84,11 +91,13 @@ main(void)
 
 	umem_free(umem_alloc(SZ, UMEM_DEFAULT), SZ);	/* init */
 	cp = umem_alloc_table[(SZ - 1) >> UMEM_ALIGN_SHIFT];
-	if (!umem_rseq_enabled || !umem_rseq_asm_safe || cp == NULL ||
-	    cp->cache_rseq == NULL) {
-		printf("SKIP: rseq asm layer not armed for this cache\n");
+	if (cp == NULL) {
+		printf("SKIP: no cache for size %d\n", SZ);
 		return (77);
 	}
+	/* norseq runs too: it is the control arm (rseq layer absent). */
+	printf("rseq_enabled=%d asm_safe=%d batch=%d\n", umem_rseq_enabled,
+	    umem_rseq_asm_safe, batch);
 
 	churn(2000);
 	before = outstanding();
