@@ -9,13 +9,15 @@
  * the C slowpath believed it was not and gave it back to the depot too.
  *
  * SETUP: plain umem_alloc/umem_free of one >64 KiB size class (magsize 1, so
- * nearly every operation is a reload), NTHR workers pinned to ONE cpu so they
+ * nearly every operation is a reload), nthr workers pinned to ONE cpu so they
  * share one cache_rseq slot, and a signaller thread off that cpu that
  * pthread_kill()s them continuously, forcing aborts inside the windows.
  * Each worker keeps a ring of held buffers stamped (tid, seq) at both ends and
  * checks the stamp before freeing.  A buffer re-issued to anyone while held
  * is re-stamped and caught here, the same oracle as stress_concurrency_oracle.
  *
+ * Usage: repro_rseq_reload_alias [secs=10] [threads=4] [ring=4] [cpus=1]
+ *   cpus > 1 lets the workers migrate among that many cpus (migration aborts).
  * Exit 0 PASS, 1 FAIL (aliasing, or the layer never fired), 77 SKIP.
  */
 #define _GNU_SOURCE
@@ -34,21 +36,24 @@
 #include "umem_rseq.h"
 
 #define	SZ	100000
-#define	NTHR	4
-#define	RING	4
+#define	MAXTHR	64
+#define	MAXRING	256
 
 static atomic_int stop, bad;
 static int pin_cpu;
-static pthread_t wt[NTHR];
+static pthread_t wt[MAXTHR];
+static int nthr = 4, ring_n = 4, spread = 1;
 
 static void on_sig(int s) { (void)s; }
 
+/* Pin to cpus [cpu - n + 1, cpu]: n == 1 is one cpu, n > 1 lets it migrate. */
 static void
-pin(int cpu)
+pin(int cpu, int n)
 {
 	cpu_set_t s;
 	CPU_ZERO(&s);
-	CPU_SET(cpu, &s);
+	while (n-- > 0)
+		CPU_SET(cpu - n, &s);
 	(void) pthread_setaffinity_np(pthread_self(), sizeof (s), &s);
 }
 
@@ -56,11 +61,11 @@ static void *
 worker(void *arg)
 {
 	uint64_t tid = (uint64_t)(uintptr_t)arg, seq = 0;
-	uint64_t *ring[RING] = { 0 }, stamp[RING];
+	uint64_t *ring[MAXRING] = { 0 }, stamp[MAXRING];
 
-	pin(pin_cpu);
+	pin(pin_cpu, spread);
 	while (!atomic_load(&stop) && !atomic_load(&bad)) {
-		int k = (int)(seq % RING);
+		int k = (int)(seq % ring_n);
 		uint64_t *p = ring[k];
 		if (p != NULL) {
 			if (p[0] != stamp[k] || p[SZ / 8 - 1] != stamp[k]) {
@@ -82,7 +87,7 @@ worker(void *arg)
 		p[0] = p[SZ / 8 - 1] = stamp[k];
 		ring[k] = p;
 	}
-	for (int k = 0; k < RING; k++)
+	for (int k = 0; k < ring_n; k++)
 		if (ring[k] != NULL)
 			umem_free(ring[k], SZ);
 	return (NULL);
@@ -98,6 +103,13 @@ main(int argc, char **argv)
 	umem_cache_t *cp;
 	uint64_t served = 0, restarts = 0, kills = 0;
 
+	if (argc > 2 && atoi(argv[2]) > 0 && atoi(argv[2]) <= MAXTHR)
+		nthr = atoi(argv[2]);
+	if (argc > 3 && atoi(argv[3]) > 0 && atoi(argv[3]) <= MAXRING)
+		ring_n = atoi(argv[3]);
+	if (argc > 4 && atoi(argv[4]) > 0 && atoi(argv[4]) < ncpu)
+		spread = atoi(argv[4]);
+
 	umem_free(umem_alloc(SZ, UMEM_DEFAULT), SZ);	/* init + warm */
 	cp = umem_alloc_table[(SZ - 1) >> UMEM_ALIGN_SHIFT];
 	if (!umem_rseq_enabled || !umem_rseq_asm_safe || ncpu < 2 ||
@@ -106,21 +118,21 @@ main(int argc, char **argv)
 		return (77);
 	}
 	pin_cpu = (int)(ncpu - 1);
-	pin(0);
+	pin(0, 1);
 	memset(&sa, 0, sizeof (sa));
 	sa.sa_handler = on_sig;
 	(void) sigaction(SIGUSR1, &sa, NULL);
 
-	for (uintptr_t i = 0; i < NTHR; i++)
+	for (uintptr_t i = 0; i < nthr; i++)
 		(void) pthread_create(&wt[i], NULL, worker, (void *)(i + 1));
 	(void) clock_gettime(CLOCK_MONOTONIC, &t0);
 	do {
-		for (int i = 0; i < NTHR; i++, kills++)
+		for (int i = 0; i < nthr; i++, kills++)
 			(void) pthread_kill(wt[i], SIGUSR1);
 		(void) clock_gettime(CLOCK_MONOTONIC, &t);
 	} while (!atomic_load(&bad) && t.tv_sec - t0.tv_sec < secs);
 	atomic_store(&stop, 1);
-	for (int i = 0; i < NTHR; i++)
+	for (int i = 0; i < nthr; i++)
 		(void) pthread_join(wt[i], NULL);
 
 	for (int i = 0; i < umem_rseq_get_ncpus(); i++) {
