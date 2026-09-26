@@ -81,11 +81,11 @@ main(int argc, char **argv)
 	{
 		extern unsigned long umem_dbg_rseq_enter, umem_dbg_rseq_no_full,
 		    umem_dbg_rseq_armed, umem_dbg_rseq_slow_called,
-		    umem_dbg_rseq_commit_abort;
-		printf("DBG entered=%lu slow_called=%lu armed=%lu abort=%lu no_full_mag=%lu\n",
+		    umem_dbg_rseq_commit_abort, umem_dbg_rseq_break_cpu;
+		printf("DBG entered=%lu slow_called=%lu armed=%lu abort=%lu no_full=%lu break_cpu=%lu\n",
 		    umem_dbg_rseq_enter, umem_dbg_rseq_slow_called,
 		    umem_dbg_rseq_armed, umem_dbg_rseq_commit_abort,
-		    umem_dbg_rseq_no_full);
+		    umem_dbg_rseq_no_full, umem_dbg_rseq_break_cpu);
 	}
 	return (0);
 }
