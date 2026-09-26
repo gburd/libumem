@@ -47,7 +47,7 @@
           # Nix cannot read configure.ac at eval time without IFD, so this stays
           # a literal -- but the configurePhase below asserts they agree, so a
           # mismatch fails the build instead of shipping a wrong version again.
-          version = "3.3.0";
+          version = "3.3.1";
 
           src = lib.cleanSource ./.;
 

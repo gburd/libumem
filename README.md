@@ -5,29 +5,36 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v3.3.0): the Linux heap ceiling is gone, the
+> **Status (v3.3.1): the Linux heap ceiling is gone, the
 > maintenance thread runs, the per-CPU caches are used, the drop-in path
-> scales, and the last freelist-integrity gap that left libumem behind glibc
-> is closed — per-thread cache slots are now safe-linked with a per-process
-> cookie glibc does not have; still not a hardened allocator in the
-> sense a security-critical deployment would want.**
+> scales, and the freelist- and ownership-integrity gaps that left libumem
+> behind the size-class allocators are closed — per-thread cache bin slots AND
+> the magazine rounds behind them are safe-linked with a per-process cookie
+> glibc does not have (P5.13/P5.13b), and `free()` now confirms exact heap
+> ownership against a span table rather than a convex hull (P7.4); still not a
+> hardened allocator in the sense a security-critical deployment would want.**
 > Ten reachable correctness and lifetime defects found by the 2026-09-21
-> design review, seventeen security findings across two adversarial audits
-> (2026-09-22 and 2026-09-24, two of the latter introduced by v3.2.0's own
-> fixes), and the Phase 6 hard-limit findings are fixed — each with a
+> design review, nineteen security findings across the adversarial audits
+> (2026-09-22, 2026-09-24, and the two v3.3.1 follow-ups), and the Phase 6
+> hard-limit findings are fixed — each with a
 > regression that fails before the fix and passes after, on x86_64 and
-> aarch64. v3.3.0 also *closed the remaining open limits with a decision
+> aarch64. v3.3.0 *closed the remaining open limits with a decision
 > rather than a guess*: the 16k-thread drain is a kernel `mmap_lock` property,
 > not an allocator lock (measured, refuted); the 50k-cache fork and per-cache
 > footprint are structural and their only "fixes" are a hot-path cost for a
 > pathological workload or a provably-unsound lock skip (closed); the 2.5-8 KB
 > per-thread retention is ~280 KB, not the feared 5.4 MB (measured); the
 > sustained-load slab batch cannot meet its own p999 target (partial, the real
-> fix is deferred as an architectural item). Where a first diagnosis was wrong
+> fix is an architectural one). v3.3.1 adds the two hardening fixes above and
+> records a third — arming the inert rseq lock-free reload (P8.5b) — as
+> implemented, proven safe, and proven inert under the shipping architecture
+> (the per-thread cache fronts and starves it), left on a branch, not shipped.
+> Where a first diagnosis was wrong
 > — the heap ceiling (fixed in two halves), the 1k:4k collapse (the CPU hint,
-> not the per-thread cache), the P6.3b drain, the P5.10 bootstrap check — the
+> not the per-thread cache), the P6.3b drain, the P5.10 bootstrap check, the
+> P7.4 ~80-span estimate (it is thousands) — the
 > record says so. Performance conclusions in this file were re-measured with a
-> null control; a proportionate metal comparison at the release commit shows
+> null control; a proportionate metal comparison shows
 > umem 0.82–1.01 of the best competitor across the small/medium tiers and
 > **0.86–0.97 in the 1–4 KB tier that was 0.51–0.65 before**. Work,
 > evidence, and exit criteria:
@@ -346,22 +353,23 @@ with a regression that demonstrates the pre-fix exposure:
   allocator hands back a still-allocated buffer) while passing by default. Both
   controls are now independently demonstrated:
   [`docs/results/2026-09-23-p54-which-control-blocks.md`](docs/results/2026-09-23-p54-which-control-blocks.md).
-- **`umem_may_own()` is a convex hull**, so a forged header landing *between*
-  heap spans passes the range check and, for sizes under 128 KiB, the pointer
-  goes onto a per-thread free list unvalidated and is later returned by
-  `malloc()`. More than glibc does (nothing), less than jemalloc's exact rtree
-  or scudo's checksummed header. Closing it means either an unforgeable header
-  or an exact ownership structure cheap enough for every `free()`; both are
-  projects, not lines. Characterised in the plan (P7.4); **decided**: the exact
-  span table (jemalloc's answer, published like `vmem_heap_lo/hi`), after this
-  release.
-- **Per-thread magazine-round pointers are unmangled** (P5.13b). The
-  per-thread cache *bin slots* are now safe-linked with a per-process cookie
-  (P5.13, stronger than glibc); the magazine layer behind them still holds raw
-  pointers. The magazine lives in the internal `umem_ptc_cache` / magazine
-  slabs, not in a user size-class slab, so it is not one write away from a
-  buffer overrun the way the bins were; mangling it is a separate hot-path A/B
-  across ~25 reader sites. Deferred, characterised in the plan.
+- **`umem_may_own()` was a convex hull** — **fixed in v3.3.1 (P7.4).** A forged
+  header landing *between* two heap spans used to pass the range check and, for
+  sizes under 128 KiB, go onto a per-thread free list and later be returned by
+  `malloc()`. `free()` now confirms exact containment against a sorted span
+  table published lock-free by `vmem_span_create`; a normal heap free
+  short-circuits on the hull bounds and pays nothing new (measured within the
+  null, both arches), only a foreign pointer pays a bounded binary search. On
+  saturation of the fixed 16 Ki-entry table it falls back to the hull — a
+  conservative false-yes, never accept-all. Now matches jemalloc's exact rtree,
+  stronger than glibc (no range check). `test/security/test_forged_span_gap`.
+- **Per-thread magazine-round pointers were unmangled** — **fixed in v3.3.1
+  (P5.13b).** v3.3.0 (P5.13) safe-linked the per-thread cache *bin slots* with
+  a per-process cookie; the magazine layer behind them still held raw pointers.
+  Those `mag_round[]` entries are now encoded with the same
+  `ptr ^ cookie ^ (&round >> 12)` transform. Amortised to ~0 % on the fast path
+  (the bins absorb steady-state traffic; the magazine transform fires only on a
+  batch that spills past a bin). `test/security/test_mag_round_mangle`.
 - **`umem_abort = 0`** remains the interpose-mode default, which logs and
   continues where glibc aborts. Defensible now that a rejected pointer leaves
   state untouched. `UMEM_OPTIONS=abort` restores aborting — **this option did

@@ -3,7 +3,17 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [3.3.1] - 2026-09-25
+
+Two hardening fixes on top of v3.3.0, both closing gaps that left libumem
+behind the size-class allocators on freelist and ownership integrity, both
+with a regression that fails before the fix and passes after on x86_64 and
+aarch64, and neither changing the API or ABI (`sizeof(umem_hook_t)` still 120,
+soname `libumem.so.1`): the exact heap-ownership check on `free()` (P7.4) and
+the magazine-round pointer encoding (P5.13b). A third item, arming the inert
+rseq lock-free reload (P8.5b), was implemented and proven safe but proven
+inert under the shipping architecture (the per-thread cache fronts and starves
+the reload); it is recorded on branch `p85b-r4rseq2`, not shipped.
 
 ### Security -- fixed
 
@@ -19,21 +29,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   table the check falls back to the hull -- a conservative false-yes, never
   accept-all. `test/security/test_forged_span_gap`: forgery accepted before,
   refused after. Stronger than glibc (no range check), matches jemalloc's
-  rtree; the unmangled magazine-round pointers remain (P5.13b, below).
-
-- **Per-thread magazine round pointers XOR-encoded** (P5.13b, `49f4da6`,
-  `e4e3d45`). P5.13 encoded the per-thread bin slots; this extends the same
-  transform (`ptr ^ cookie ^ (&slot >> 12)`) to the `mag_round[]` entries in
-  the magazine layer behind them, across 26 sites in `umem.c` and 6 in
-  `umem_inspect.c` (no out-of-process reader exists to teach). Empty slots are
-  count-driven (`umem_mag_init_fast` keeps a raw zero-fill; live rounds are
-  exactly `[0,rounds)` and never NULL-tested), so there is no mangled-NULL
-  trap. Amortized ~0 % on the fast path (the P5.13 bins absorb steady-state
-  traffic; the magazine transform only fires on a batch that spills past a
-  bin), +2.9 % / +3.9 % insn (x86 / arm64) at the one spill-heavy point,
-  recorded and shipped per the hardening rule.
-  `test/security/test_mag_round_mangle`: overwritten round not returned;
-  FAILs under `-DUMEM_NO_LINK_MANGLE`.
+  rtree; the magazine-round pointers behind the bins are XOR-encoded too, in
+  this same release (P5.13b, below).
 
 - **Per-thread magazine round pointers are now pointer-mangled** (P5.13b,
   `e4e3d45`, test `49f4da6`). P5.13 mangled the per-thread cache bin slots but
