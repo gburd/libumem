@@ -1513,6 +1513,7 @@ int umem_dbg_rseq_probe = 0;
 unsigned long umem_dbg_rseq_enter = 0;
 unsigned long umem_dbg_rseq_no_full = 0;
 unsigned long umem_dbg_rseq_armed = 0;
+unsigned long umem_dbg_rseq_slow_called = 0;
 
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
@@ -3076,6 +3077,12 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 	int old_rounds;
 	int cpu = cpu_id;
 	int tries;
+
+	if (unlikely(umem_dbg_rseq_probe)) {
+		extern unsigned long umem_dbg_rseq_slow_called;
+		__atomic_add_fetch(&umem_dbg_rseq_slow_called, 1,
+		    __ATOMIC_RELAXED);
+	}
 
 	/* PHASE 1: pull a full magazine (does not touch cache_rseq[cpu]). */
 	fmp = umem_depot_alloc(cp, &cp->cache_full);
