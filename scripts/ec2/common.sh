@@ -21,7 +21,15 @@ PROJECT_TAG="libumem"
 KEY_NAME="${KEY_NAME:-libumem-bench}"
 KEY_FILE="${KEY_FILE:-$HOME/.ssh/${KEY_NAME}.pem}"
 SG_NAME="${SG_NAME:-libumem-ssh}"
-SSH_USER="ec2-user"           # Amazon Linux 2023 default user
+# OS selection: al2023 (default) or debian.  Debian uses a different login
+# user and apt instead of dnf; bootstrap.sh honours EC2_OS too.  The user asked
+# for the comparison + P8.5b work to run on the latest Debian.
+EC2_OS="${EC2_OS:-al2023}"
+case "$EC2_OS" in
+	debian) SSH_USER="admin" ;;   # Debian official AMIs log in as 'admin'
+	al2023) SSH_USER="ec2-user" ;;
+	*) echo "unknown EC2_OS: $EC2_OS (use al2023|debian)" >&2; exit 1 ;;
+esac
 SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=30 -o IdentitiesOnly=yes -o IdentityAgent=none"
 
 # Amazon Linux 2023 AMIs are resolved dynamically (see ami_for).
@@ -69,6 +77,28 @@ log() { printf '[ec2:%s] %s\n' "${ROLE:-?}" "$*" >&2; }
 
 ami_for() {
 	local arch="$1" pat
+	if [ "$EC2_OS" = "debian" ]; then
+		# Debian official AMIs, owner 136693071363.  Try the newest stable
+		# major first (13 trixie), then 12 bookworm.  Values globs support
+		# only * and ? (no [0-9] ranges), so enumerate majors explicitly.
+		local amiarch v img
+		case "$arch" in
+			x86_64) amiarch=amd64 ;;
+			arm64)  amiarch=arm64 ;;
+			*) echo "unknown arch: $arch" >&2; return 1 ;;
+		esac
+		for v in 14 13 12; do
+			img=$(aws ec2 describe-images --owners 136693071363 \
+				--filters "Name=name,Values=debian-${v}-${amiarch}-*" \
+					'Name=state,Values=available' \
+				--query 'reverse(sort_by(Images,&CreationDate))[:1].ImageId' \
+				--output text 2>/dev/null)
+			if [ -n "$img" ] && [ "$img" != "None" ]; then
+				echo "$img"; return
+			fi
+		done
+		echo "no debian AMI found for $arch" >&2; return 1
+	fi
 	case "$arch" in
 		x86_64) pat='al2023-ami-2023.*-x86_64' ;;
 		arm64)  pat='al2023-ami-2023.*-arm64' ;;
