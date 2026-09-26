@@ -13,9 +13,27 @@ soname `libumem.so.1`): the exact heap-ownership check on `free()` (P7.4) and
 the magazine-round pointer encoding (P5.13b). A third item, arming the inert
 rseq lock-free reload (P8.5b), was implemented and proven safe but proven
 inert under the shipping architecture (the per-thread cache fronts and starves
-the reload); it is recorded on branch `p85b-r4rseq2`, not shipped.
+the reload); it is recorded on branch `p85b-r4rseq2`, not shipped. The release
+gate also surfaced a pre-existing crash in the `LD_PRELOAD` path at thread
+exit, fixed here.
 
 ### Security -- fixed
+
+- **`free()` under `LD_PRELOAD` could crash at thread exit** (pre-existing in
+  v3.3.0 and earlier; found by the v3.3.1 release gate, `10fd60a`).
+  `umem_log_event` (the slab-create log) called `UMEM_AUDIT` -> `getpcstack`
+  unconditionally -- the `lp == NULL || umem_logging == 0` guard sat one layer
+  deeper in `umem_log_enter`, after the stack walk had already run. With
+  logging off (the default) every `umem_slab_create` still walked the stack,
+  and `getpcstack`'s first per-thread call reaches the allocating
+  `pthread_getattr_np`. On the interposer path that allocation is the
+  interposed `umem_malloc`; reached from the per-thread-cache exit drain
+  (`umem_ptc_cleanup` at thread teardown -> batch free -> `umem_slab_create`)
+  it re-entered the allocator mid-teardown and segfaulted, ~3-5 % of a
+  16-thread calloc-churn run. The guard is now hoisted into `umem_log_event`,
+  which also removes a per-slab-create stack walk from the default path.
+  Verified: `test/stress/interpose_regress` calloc-race arm crashed ~1/30 at
+  the v3.3.0 tag, 0/50 after, both arches.
 
 - **Exact heap-ownership check on `free()`** (P7.4, `b978a0f`, `f253f6d`,
   `a0fd6ba`). `umem_may_own()` used a `[lo,hi)` convex hull, so a forged object
