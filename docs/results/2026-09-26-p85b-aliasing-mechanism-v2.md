@@ -86,3 +86,24 @@ magsize are don't-care":
 The C slowpath runs detach, then attach, then returns the old magazine via
 `umem_ptc_mag_return` (exact rounds, own capacity). Per-magazine `magsize`
 also removes H1.
+
+## H2b (found reading the asm): the success return value sits inside the window
+
+In all four reload commits (x86_64 and aarch64, alloc and free), the
+instruction that sets the return value (`movl $1, %eax` / `mov w0, #1`) comes
+AFTER the committing store and BEFORE the `post_commit` label, so it is inside
+the rseq-checked range. If an abort lands after the commit store retires, the
+slot IS published but the abort handler returns 0 ("nothing written"). The C
+slowpath then retries with the same `fmp`:
+
+- same cpu: the commit reads `old = fmp` (its own publish, `cap` rounds) and
+  hands it to `umem_ptc_mag_return(cache_full, fmp, cap)`. `fmp` is now in
+  the slot AND on `cache_full`. The PTC L2 refill takes it with
+  `rounds = cap` while the rseq fast path pops the same slots. That is aliasing.
+- other cpu: `fmp` is published into two cpus' slots. That is aliasing.
+- retries exhausted: `umem_depot_free(cache_full, fmp)` while the slot holds
+  it. That is aliasing.
+
+The fast paths do not have this defect: their commit store is immediately
+followed by the label. Fix: set the success value before the commit store,
+so the commit store is the last instruction in the window.
