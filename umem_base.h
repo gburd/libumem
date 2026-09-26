@@ -112,6 +112,15 @@ extern uint32_t umem_reclaim_delay;
 extern uint32_t umem_flags;
 
 /*
+ * P8.5b: UMEM_OPTIONS=norseq sets this to keep the restartable-sequence
+ * per-CPU fast path off (umem_rseq_init() then leaves umem_rseq_enabled = 0
+ * and every allocation falls back to the cc_lock/depot path).  It is a
+ * uint_t because it is wired as an ITEM_FLAG target in envvar.c.  Disabling
+ * is the safe direction, so the option is honoured even under AT_SECURE.
+ */
+extern uint_t umem_rseq_disabled;
+
+/*
  * umem.c: Internal aliases (to avoid PLTs)
  */
 extern void *_umem_alloc(size_t size, int umflags);

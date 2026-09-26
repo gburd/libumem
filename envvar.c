@@ -189,6 +189,15 @@ static umem_env_item_t umem_options_items[] = {
 		"no caches will be multithreaded, and no caching will occur.",
 		&umem_flags,	UMF_NOMAGAZINE
 	},
+	{ "norseq",		"Evolving",	ITEM_FLAG,
+		"disable the restartable-sequence per-CPU fast path (P8.5b); "
+		    "allocations fall back to the cc_lock/depot path.",
+		&umem_rseq_disabled,	1
+		/* Pure off switch: honoured under AT_SECURE (disabling a
+		 * fast path has no file/socket/exec side effect and turning
+		 * it OFF is the safe direction), so item_secure_unsafe stays
+		 * 0.  Read by umem_rseq_init() in umem.c. */
+	},
 	{ "reap_interval",	"Private",	ITEM_SPECIAL,
 		"Minimum time between reaps and updates, in seconds "
 		    "(>= 1; 0 is rejected).",

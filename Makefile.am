@@ -595,7 +595,8 @@ noinst_PROGRAMS += test/stress/repro_rseq_trailing_store \
 		   test/stress/repro_reload_commit_safe \
 		   test/stress/probe_rseq_armed \
 		   test/stress/probe_rseq_prodcons \
-		   test/stress/probe_rseq_batch
+		   test/stress/probe_rseq_batch \
+		   test/stress/probe_norseq
 endif
 
 test_stress_repro_rseq_trailing_store_SOURCES = test/stress/repro_rseq_trailing_store.c
@@ -627,6 +628,10 @@ test_stress_probe_rseq_batch_SOURCES = test/stress/probe_rseq_batch.c
 test_stress_probe_rseq_batch_LDADD = libumem.la
 test_stress_probe_rseq_batch_LDFLAGS = -pthread
 test_stress_probe_rseq_batch_CPPFLAGS = -I$(srcdir)
+
+test_stress_probe_norseq_SOURCES = test/stress/probe_norseq.c
+test_stress_probe_norseq_LDADD = libumem.la
+test_stress_probe_norseq_CPPFLAGS = -I$(srcdir)
 
 # Interposer fork participation (P1.2 cross-file follow-up).  Links only
 # libumem.la; it is meant to be run under LD_PRELOAD=libumem_malloc.so and
@@ -863,6 +868,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_inspect_contracts \
 	test/stress/interpose_regress.sh \
 	test/stress/oracle_control.sh \
+	test/stress/test_norseq.sh \
 	test/unit/test_lifecycle_churn \
 	test/unit/test_freelist_mangle \
 	test/bench/test_bench_accounting \
@@ -1191,6 +1197,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh \
 	test/stress/oracle_control.sh \
+	test/stress/test_norseq.sh \
 	test/bench/check_budget.sh \
 	test/stress/interpose_regress.sh \
 	test/security/test_no_path_exec.sh \

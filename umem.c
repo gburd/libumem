@@ -633,6 +633,14 @@ uint32_t umem_reclaim_enabled = 1;  /* background page reclamation via madvise *
 uint32_t umem_reclaim_delay = 30;   /* seconds before reclaiming dirty slabs */
 
 uint_t umem_flags = 0;
+/*
+ * P8.5b runtime escape hatch for the rseq per-CPU fast path.  Set by
+ * UMEM_OPTIONS=norseq (envvar.c); read by umem_rseq_init() below, which
+ * then leaves umem_rseq_enabled = 0 so the routed layer falls back to the
+ * cc_lock/depot path with no rebuild.  Disabling is the safe direction, so
+ * the option is allowed under AT_SECURE.
+ */
+uint_t umem_rseq_disabled = 0;
 
 mutex_t                 umem_init_lock = DEFAULTMUTEX;          /* locks initialization */
 cond_t                  umem_init_cv = DEFAULTCV;               /* initialization CV */
@@ -6318,30 +6326,18 @@ umem_init(void)
 #ifdef UMEM_RSEQ_AVAILABLE
 	/*
 	 * Register rseq with the kernel and set umem_rseq_enabled /
-	 * umem_rseq_asm_safe, which gate the asm path in _umem_cache_alloc()
-	 * and _umem_cache_free().  The asm reload is ARMED (P8.5b) but, under
-	 * the default PTC-fronted architecture, is STARVED: the rseq layer
-	 * sits behind the per-thread cache, so the depot's cache_full list is
-	 * empty whenever the reload looks and it never publishes a magazine
-	 * (measured no_full=100%, rseq counters 0).  See
-	 * docs/results/2026-09-25-p85b-rseq-starvation.md.  The machinery is
-	 * correct and proven safe; it delivers no benefit until a redesign
-	 * moves the reload ahead of PTC (or has PTC refill cache_rseq).
+	 * umem_rseq_asm_safe, which gate the asm per-CPU fast path.  P8.5b
+	 * routes the PTC magazine refill THROUGH this layer (umem.c
+	 * umem_rseq_ptc_alloc/free), so on a PTC-magazine miss the armed
+	 * lock-free reload serves the buffer and the common path skips the
+	 * cc_lock and the depot scan (docs/results/2026-09-26-p85b-arch-rseq-
+	 * feeds-ptc.md: 0 -> 257M allocs served, sustained p999 93.7 -> 46.5
+	 * us at 192t).  UMEM_OPTIONS=norseq (umem_rseq_disabled, parsed above)
+	 * keeps it off with no rebuild, falling back to the always-correct
+	 * cc_lock/depot path.
 	 */
-	(void) umem_rseq_init();
-#ifdef UMEM_RSEQ_ARM_DEBUG
-	/*
-	 * Temporary A/B gate (UMEM_RSEQ_ARM_DEBUG only): UMEM_RSEQ_OFF=1
-	 * forces the armed layer off at runtime so the same binary can be
-	 * compared with/without the P8.5b routing.  Diagnostic-only, never
-	 * on master.
-	 */
-	{
-		const char *off = getenv("UMEM_RSEQ_OFF");
-		if (off != NULL && off[0] == '1')
-			umem_rseq_enabled = 0;
-	}
-#endif
+	if (!umem_rseq_disabled)
+		(void) umem_rseq_init();
 #endif
 #ifdef UMEM_RSEQ_ARM_DEBUG
 	{
