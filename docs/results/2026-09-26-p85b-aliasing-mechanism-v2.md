@@ -136,3 +136,14 @@ The torn states observed are exactly the ones predicted:
 The reload commits are not atomic. That is a sufficient cause of aliasing. H1
 (stale `magsize`) still needs its own test; per the reading above it leaks and
 does not alias.
+
+## End-to-end repro (`repro_rseq_reload_alias`, d01f0a4, pre-fix): weak
+
+Four threads pinned to one cpu, a SIGUSR1 storm, `umem_alloc(100000)`, and a
+stamp oracle. Pre-fix: **1 failure in 70 runs** (arm-lo run 1 of 5 at 20 s:
+`ALIAS: tid=4 ... found 0x3000004a8c766`, a buffer re-issued to tid 3 while
+tid 4 held it. Then 0/30 at 15 s on both arches). That is real aliasing
+through the public API, but at too low a rate to serve as the pre/post
+regression. `repro_reload_commit_abort` (thousands of violations per run,
+deterministic) is the regression. The e2e repro is supporting evidence, run
+post-fix for many more runs than pre-fix.
