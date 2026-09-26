@@ -1,0 +1,33 @@
+20
+RESULT: PASS -- commit publishes on cpu match (with correct old-magazine rounds ABI) and ABORTS leaving the slot untouched on cpu mismatch (migration-safety gate holds).
+rc=0
+detach: torn=0 commit_reported_abort=0
+attach: torn=0 commit_reported_abort=0
+commits=39979174 aborts=20826 signals=128104
+RESULT: PASS
+rc=0
+detach: torn=0 commit_reported_abort=0
+attach: torn=0 commit_reported_abort=0
+commits=39979421 aborts=20579 signals=128761
+RESULT: PASS
+rc=0
+detach: torn=0 commit_reported_abort=0
+attach: torn=0 commit_reported_abort=0
+commits=39979942 aborts=20058 signals=130454
+RESULT: PASS
+rc=0
+rseq_enabled=1 asm_safe=1 batch=8
+cache=umem_alloc_114688 magsize 1 -> 3  stranded before=8 after=8
+RESULT: PASS
+rseq_enabled=1 asm_safe=1 batch=16
+cache=umem_alloc_114688 magsize 1 -> 3  stranded before=16 after=16
+RESULT: PASS
+rseq_enabled=1 asm_safe=1 batch=32
+cache=umem_alloc_114688 magsize 1 -> 3  stranded before=32 after=32
+RESULT: PASS
+cache=umem_alloc_114688 magsize=1 rseq_alloc=208546175 rseq_restarts=281884 signals=6542400
+RESULT: PASS
+cache=umem_alloc_114688 magsize=1 rseq_alloc=208400241 rseq_restarts=283309 signals=6644856
+RESULT: PASS
+cache=umem_alloc_114688 magsize=1 rseq_alloc=212841121 rseq_restarts=279470 signals=6608700
+RESULT: PASS

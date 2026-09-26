@@ -177,3 +177,20 @@ is the rseq layer's. The `before == batch` constant appears in every arm,
 including norseq. It is unrelated to rseq, does not grow, and is **not
 explained**. The gate is therefore "flat across the resize"
 (`after <= before`), not "zero".
+
+## FIX 4b30bff: detach/attach, per-magazine magsize. First results (lo, both arches)
+
+Same tests, `verify-isolated.sh <role> 4b30bff fix1`, Debian lo. Logs:
+`docs/results/r5fix/fix1-*.log`. The library build has no new warnings.
+
+| test | pre-fix | post-fix intel-lo | post-fix arm-lo |
+|---|---|---|---|
+| `repro_reload_commit_abort` (3 x 20M/side) | FAIL every run (up to 2,824 violations) | PASS 3/3, 0 torn, 0 CRA, ~52k aborts/run | PASS 3/3, 0 torn, 0 CRA, ~20k aborts/run |
+| `repro_reload_commit_safe` (ported, + attach-on-occupied) | PASS (blind to the defect) | PASS | PASS |
+| `repro_rseq_resize_leak` batch 8/16/32 | 8->4006, 16->12010, 32->36014 | flat 8/16/32 | flat 8/16/32 |
+| `repro_rseq_reload_alias` 3 x 10 s | 1/190 FAIL | PASS 3/3 | PASS 3/3 |
+
+`repro_reload_commit_abort` was ported to the new entry points. The pre-fix
+run drove the old swap commits, since the fix removed them, and the contract
+checked (returned 1 means exactly the committed state, returned 0 means
+exactly the prior state) is the same.
