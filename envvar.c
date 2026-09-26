@@ -239,7 +239,7 @@ static umem_env_item_t umem_options_items[] = {
 		    "MADV_DONTNEED'd, which returns the pages equally but does "
 		    "not split the mapping into a new VMA.  Default 16M; 0 = "
 		    "never guard.",
-		NULL, 0, NULL,	&vmem_mmap_guard_min,
+		NULL, 0, NULL,	&vmem_mmap_guard_min, NULL,
 		/* SECURE-UNSAFE (P5.14).  The comment this replaces said "not
 		 * secure-unsafe in either direction ... neither is a file,
 		 * socket, exec or disclosure side effect".  That was the wrong
