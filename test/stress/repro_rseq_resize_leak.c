@@ -12,8 +12,8 @@
  * SETUP: one thread pinned to one cpu (one rseq slot), one >64 KiB class
  * (magsize 1, can grow), alloc/free churn in batches, then everything freed.
  * umem_walk_allocated() then reports as ALLOCATED any buffer of this cache
- * that sits in no magazine the walker knows about.  At quiescence that must
- * be 0.  It is measured before a forced resize (control) and after it.
+ * that sits in no magazine the walker knows about.  It is measured before a
+ * forced resize and after it, and must not grow.
  *
  * Usage: repro_rseq_resize_leak [batch=16]
  * Exit 0 PASS, 1 FAIL or INCONCLUSIVE (no resize happened), 77 SKIP.
@@ -128,7 +128,16 @@ main(int argc, char **argv)
 		printf("RESULT: INCONCLUSIVE (no resize)\n");
 		return (1);
 	}
-	if (before != 0 || after != 0) {
+	/*
+	 * Gate is FLAT across the resize, not zero: at 2719794..5b0d145 the
+	 * walker reports exactly `batch` buffers of this cache at quiescence in
+	 * EVERY arm, rseq on and UMEM_OPTIONS=norseq alike, before and after
+	 * (docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md).  That constant
+	 * does not depend on the rseq layer and does not grow; its source is not
+	 * yet identified.  The rseq defect showed as after = 4006/12010/36014 at
+	 * batch 8/16/32 against norseq's flat 16 -> 16.
+	 */
+	if (after > before) {
 		printf("RESULT: FAIL (buffers stranded in rseq-returned "
 		    "magazines)\n");
 		return (1);

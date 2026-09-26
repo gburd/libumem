@@ -160,3 +160,20 @@ quiescence: held by no magazine the walker knows about, freed by nobody.
 The control (`before=16`, no resize) is not yet explained; under
 investigation before this test is trusted as a pass/fail gate.
 Logs: `docs/results/r5fix/preleak-*.log`.
+
+### H1 control arms (5b0d145, intel-lo)
+
+| arm | batch | before resize | after resize |
+|---|---:|---:|---:|
+| rseq on | 1 | 1 | 1 |
+| rseq on | 8 | 8 | 4,006 |
+| rseq on | 16 | 16 | 12,010 |
+| rseq on | 32 | 32 | 36,014 |
+| `norseq` | 1 | 1 | 1 |
+| `norseq` | 16 | 16 | 16 |
+
+`norseq` is flat across the resize and rseq-on grows with batch, so the leak
+is the rseq layer's. The `before == batch` constant appears in every arm,
+including norseq. It is unrelated to rseq, does not grow, and is **not
+explained**. The gate is therefore "flat across the resize"
+(`after <= before`), not "zero".
