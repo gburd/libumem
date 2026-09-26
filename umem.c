@@ -1511,6 +1511,8 @@ uintptr_t umem_link_cookie __attribute__((visibility("hidden"))) = 0;
  * tell whether the armed path is exercised at all under a given config. */
 int umem_dbg_rseq_probe = 0;
 unsigned long umem_dbg_rseq_enter = 0;
+unsigned long umem_dbg_rseq_no_full = 0;
+unsigned long umem_dbg_rseq_armed = 0;
 
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
@@ -3105,6 +3107,11 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 				    old_rounds == rc->magsize ?
 				    &cp->cache_full : &cp->cache_empty,
 				    old_mag, old_rounds);
+			if (unlikely(umem_dbg_rseq_probe)) {
+				extern unsigned long umem_dbg_rseq_armed;
+				__atomic_add_fetch(&umem_dbg_rseq_armed, 1,
+				    __ATOMIC_RELAXED);
+			}
 			return (1);
 		}
 		/* Aborted (migrated): retry against the new cpu, same fmp. */

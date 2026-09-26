@@ -79,8 +79,11 @@ main(int argc, char **argv)
 	printf("=== contention counters after migration-churn ===\n");
 	umem_dump_contention(stdout);
 	{
-		extern unsigned long umem_dbg_rseq_enter;
-		printf("DBG rseq_block_entered=%lu\n", umem_dbg_rseq_enter);
+		extern unsigned long umem_dbg_rseq_enter, umem_dbg_rseq_no_full,
+		    umem_dbg_rseq_armed;
+		printf("DBG entered=%lu armed=%lu no_full_mag=%lu\n",
+		    umem_dbg_rseq_enter, umem_dbg_rseq_armed,
+		    umem_dbg_rseq_no_full);
 	}
 	return (0);
 }
