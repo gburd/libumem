@@ -1525,6 +1525,16 @@ uintptr_t umem_link_cookie __attribute__((visibility("hidden"))) = 0;
 /* P8.5b arming diagnostic (temporary): env UMEM_DBG_RSEQ_PROBE=1 turns on
  * a cheap count of how often the rseq alloc block is entered, so we can
  * tell whether the armed path is exercised at all under a given config. */
+/*
+ * P8.5b arming diagnostics.  OFF by default and compiled OUT unless built
+ * with -DUMEM_RSEQ_ARM_DEBUG.  These counters proved the reload is starved
+ * under the PTC-fronted architecture (no_full=100%, armed=0 -- see
+ * docs/results/2026-09-25-p85b-rseq-starvation.md).  Kept, gated, as the
+ * measurement harness for any future revival that moves the reload ahead of
+ * PTC; they must never be live on master.  When enabled, set
+ * UMEM_DBG_RSEQ_PROBE=1 at runtime to turn counting on.
+ */
+#ifdef UMEM_RSEQ_ARM_DEBUG
 int umem_dbg_rseq_probe = 0;
 unsigned long umem_dbg_rseq_enter = 0;
 unsigned long umem_dbg_rseq_no_full = 0;
@@ -1532,6 +1542,15 @@ unsigned long umem_dbg_rseq_armed = 0;
 unsigned long umem_dbg_rseq_slow_called = 0;
 unsigned long umem_dbg_rseq_commit_abort = 0;
 unsigned long umem_dbg_rseq_break_cpu = 0;
+extern int umem_dbg_rseq_probe;
+#define	UMEM_RSEQ_DBG_INC(ctr)	do {					\
+	extern unsigned long ctr;					\
+	if (unlikely(umem_dbg_rseq_probe))				\
+		__atomic_add_fetch(&(ctr), 1, __ATOMIC_RELAXED);	\
+} while (0)
+#else
+#define	UMEM_RSEQ_DBG_INC(ctr)	((void)0)
+#endif
 
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
@@ -3096,31 +3115,19 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 	int cpu = cpu_id;
 	int tries;
 
-	if (unlikely(umem_dbg_rseq_probe)) {
-		extern unsigned long umem_dbg_rseq_slow_called;
-		__atomic_add_fetch(&umem_dbg_rseq_slow_called, 1,
-		    __ATOMIC_RELAXED);
-	}
+	UMEM_RSEQ_DBG_INC(umem_dbg_rseq_slow_called);
 
 	/* PHASE 1: pull a full magazine (does not touch cache_rseq[cpu]). */
 	fmp = umem_depot_alloc(cp, &cp->cache_full);
 	if (fmp == NULL) {
-		if (unlikely(umem_dbg_rseq_probe)) {
-			extern unsigned long umem_dbg_rseq_no_full;
-			__atomic_add_fetch(&umem_dbg_rseq_no_full, 1,
-			    __ATOMIC_RELAXED);
-		}
+		UMEM_RSEQ_DBG_INC(umem_dbg_rseq_no_full);
 		return (0);
 	}
 
 	/* PHASE 2: commit the swap, retrying against the current cpu. */
 	for (tries = 0; tries < UMEM_RSEQ_RELOAD_RETRIES; tries++) {
 		if (cpu < 0 || cpu >= umem_rseq_get_ncpus()) {
-			if (unlikely(umem_dbg_rseq_probe)) {
-				extern unsigned long umem_dbg_rseq_break_cpu;
-				__atomic_add_fetch(&umem_dbg_rseq_break_cpu, 1,
-				    __ATOMIC_RELAXED);
-			}
+			UMEM_RSEQ_DBG_INC(umem_dbg_rseq_break_cpu);
 			break;
 		}
 		rc = &cp->cache_rseq[cpu];
@@ -3144,19 +3151,11 @@ umem_rseq_alloc_slowpath(umem_cache_t *cp, int cpu_id)
 				    old_rounds == rc->magsize ?
 				    &cp->cache_full : &cp->cache_empty,
 				    old_mag, old_rounds);
-			if (unlikely(umem_dbg_rseq_probe)) {
-				extern unsigned long umem_dbg_rseq_armed;
-				__atomic_add_fetch(&umem_dbg_rseq_armed, 1,
-				    __ATOMIC_RELAXED);
-			}
+			UMEM_RSEQ_DBG_INC(umem_dbg_rseq_armed);
 			return (1);
 		}
 		/* Aborted (migrated): retry against the new cpu, same fmp. */
-		if (unlikely(umem_dbg_rseq_probe)) {
-			extern unsigned long umem_dbg_rseq_commit_abort;
-			__atomic_add_fetch(&umem_dbg_rseq_commit_abort, 1,
-			    __ATOMIC_RELAXED);
-		}
+		UMEM_RSEQ_DBG_INC(umem_dbg_rseq_commit_abort);
 		cpu = umem_rseq_get_cpu();
 	}
 
@@ -3496,12 +3495,7 @@ retry:
 				umem_rseq_cache_t *rc = &cp->cache_rseq[cpu];
 #if defined(__x86_64__) || defined(__aarch64__)
 				if (umem_rseq_asm_safe) {
-					extern int umem_dbg_rseq_probe;
-					extern unsigned long umem_dbg_rseq_enter;
-					if (unlikely(umem_dbg_rseq_probe))
-						__atomic_add_fetch(
-						    &umem_dbg_rseq_enter, 1,
-						    __ATOMIC_RELAXED);
+					UMEM_RSEQ_DBG_INC(umem_dbg_rseq_enter);
 					buf = umem_rseq_alloc_fastpath(rc, cpu);
 					if (buf == NULL &&
 					    umem_rseq_alloc_slowpath(cp, cpu)) {
@@ -6209,19 +6203,24 @@ umem_init(void)
 	/*
 	 * Register rseq with the kernel and set umem_rseq_enabled /
 	 * umem_rseq_asm_safe, which gate the asm path in _umem_cache_alloc()
-	 * and _umem_cache_free().  That path currently serves no allocations
-	 * (see the comment at the alloc site).  (This comment used to promise
-	 * "true lock-free per-CPU magazine access with zero synchronization
-	 * overhead"; nothing feeds the per-CPU magazines, so it delivers
-	 * neither.)
+	 * and _umem_cache_free().  The asm reload is ARMED (P8.5b) but, under
+	 * the default PTC-fronted architecture, is STARVED: the rseq layer
+	 * sits behind the per-thread cache, so the depot's cache_full list is
+	 * empty whenever the reload looks and it never publishes a magazine
+	 * (measured no_full=100%, rseq counters 0).  See
+	 * docs/results/2026-09-25-p85b-rseq-starvation.md.  The machinery is
+	 * correct and proven safe; it delivers no benefit until a redesign
+	 * moves the reload ahead of PTC (or has PTC refill cache_rseq).
 	 */
 	(void) umem_rseq_init();
 #endif
+#ifdef UMEM_RSEQ_ARM_DEBUG
 	{
 		const char *dbg = getenv("UMEM_DBG_RSEQ_PROBE");
 		if (dbg != NULL && dbg[0] == '1')
 			umem_dbg_rseq_probe = 1;
 	}
+#endif
 
 	/*
 	 * set up vmem
