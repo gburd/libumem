@@ -381,6 +381,18 @@ test_integration_test_introspect_fork_LDADD = libumem.la
 test_integration_test_introspect_fork_LDFLAGS = -pthread
 test_integration_test_introspect_fork_CPPFLAGS = -I$(srcdir)
 
+# Tool runtime pass (docs/reviews/2026-09-26-tool-review.md): a multi-thread
+# live target that holds and frees a known set across size classes, including
+# > 64 KiB and oversize, driven by the test/debugger/test_tool_*.sh regressions.
+noinst_PROGRAMS += test/debugger/tool_target test/debugger/test_event_cb
+test_debugger_tool_target_SOURCES = test/debugger/tool_target.c
+test_debugger_tool_target_LDADD = libumem.la
+test_debugger_tool_target_LDFLAGS = -pthread
+test_debugger_tool_target_CPPFLAGS = -I$(srcdir)
+test_debugger_test_event_cb_SOURCES = test/debugger/test_event_cb.c
+test_debugger_test_event_cb_LDADD = libumem.la
+test_debugger_test_event_cb_CPPFLAGS = -I$(srcdir)
+
 # umemctl: live-process inspection CLI. Pure AF_UNIX socket client, no
 # libumem linkage; connects to a process running introspect=1.
 tools_umemctl_SOURCES = tools/umemctl.c
