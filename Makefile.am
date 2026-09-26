@@ -607,6 +607,7 @@ noinst_PROGRAMS += test/stress/repro_rseq_trailing_store \
 		   test/stress/repro_reload_commit_safe \
 		   test/stress/repro_reload_commit_abort \
 		   test/stress/repro_rseq_reload_alias \
+		   test/stress/repro_rseq_resize_leak \
 		   test/stress/probe_rseq_armed \
 		   test/stress/probe_rseq_prodcons \
 		   test/stress/probe_rseq_batch \
@@ -637,6 +638,11 @@ test_stress_repro_rseq_reload_alias_SOURCES = test/stress/repro_rseq_reload_alia
 test_stress_repro_rseq_reload_alias_LDADD = libumem.la
 test_stress_repro_rseq_reload_alias_LDFLAGS = -pthread
 test_stress_repro_rseq_reload_alias_CPPFLAGS = -I$(srcdir)
+
+test_stress_repro_rseq_resize_leak_SOURCES = test/stress/repro_rseq_resize_leak.c
+test_stress_repro_rseq_resize_leak_LDADD = libumem.la
+test_stress_repro_rseq_resize_leak_LDFLAGS = -pthread
+test_stress_repro_rseq_resize_leak_CPPFLAGS = -I$(srcdir)
 
 test_stress_probe_rseq_armed_SOURCES = test/stress/probe_rseq_armed.c
 test_stress_probe_rseq_armed_LDADD = libumem.la
