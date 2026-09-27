@@ -1,0 +1,66 @@
+ref=ead7f36
+sha=ead7f36973906426a46ab0b55364accb498b1c5b
+role=arm-lo@r6arm
+job=probe1
+isolated=yes
+6.12.107+deb13-cloud-arm64 aarch64
+8
+4096
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+jemalloc=/lib/aarch64-linux-gnu/libjemalloc.so.2
+== 1. usable stack on a default thread (mode none) ==
+no-tunable rc=0 mode=none stack_kib=0 usable=8378256 depth=1024 result=ok
+tunable=8M rc=0 mode=none stack_kib=0 usable=2448 depth=0 result=ok
+tunable=64K rc=0 mode=none stack_kib=0 usable=8313232 depth=1024 result=ok
+== 2. first-call peak stack depth (default 8 MiB thread, painted) ==
+depth umem rc=0 mode=umem stack_kib=0 usable=8378256 depth=66880 result=ok
+depth dlopen rc=0 mode=dlopen stack_kib=0 usable=8378256 depth=3088 result=ok
+depth ncpus rc=0 mode=ncpus stack_kib=0 usable=8378256 depth=66608 result=ok
+depth glibc-malloc rc=0 mode=malloc stack_kib=0 usable=8378256 depth=1024 result=ok
+depth jemalloc-malloc rc=0 mode=malloc stack_kib=0 usable=8375536 depth=3200 result=ok
+depth umem_malloc.so rc=0 mode=malloc stack_kib=0 usable=8378256 depth=1088 result=ok
+depth umem norseq rc=0 mode=umem stack_kib=0 usable=8378256 depth=66880 result=ok
+== 3. first allocation on a small explicit stack ==
+umem   16K rc=3 setstacksize(16 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+glibc  16K rc=3 setstacksize(16 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+jemal  16K rc=3 setstacksize(16 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem_malloc.so 16K rc=3 setstacksize(16 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem   20K rc=3 setstacksize(20 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+glibc  20K rc=3 setstacksize(20 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+jemal  20K rc=3 setstacksize(20 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem_malloc.so 20K rc=3 setstacksize(20 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem   24K rc=3 setstacksize(24 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+glibc  24K rc=3 setstacksize(24 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+jemal  24K rc=3 setstacksize(24 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem_malloc.so 24K rc=3 setstacksize(24 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem   32K rc=3 setstacksize(32 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+glibc  32K rc=3 setstacksize(32 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+jemal  32K rc=3 setstacksize(32 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem_malloc.so 32K rc=3 setstacksize(32 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem   40K rc=3 setstacksize(40 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+glibc  40K rc=3 setstacksize(40 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+jemal  40K rc=3 setstacksize(40 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem_malloc.so 40K rc=3 setstacksize(40 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem   48K rc=3 setstacksize(48 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+glibc  48K rc=3 setstacksize(48 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+jemal  48K rc=3 setstacksize(48 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem_malloc.so 48K rc=3 setstacksize(48 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem   64K rc=3 setstacksize(64 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+glibc  64K rc=3 setstacksize(64 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+jemal  64K rc=3 setstacksize(64 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem_malloc.so 64K rc=3 setstacksize(64 KiB) rc=22 (PTHREAD_STACK_MIN=131072)
+umem   128K rc=0 mode=umem stack_kib=128 usable=120720 depth=n/a:0 result=ok
+glibc  128K rc=0 mode=malloc stack_kib=128 usable=120720 depth=n/a:0 result=ok
+jemal  128K rc=0 mode=malloc stack_kib=128 usable=118000 depth=n/a:0 result=ok
+umem_malloc.so 128K rc=0 mode=malloc stack_kib=128 usable=120720 depth=n/a:0 result=ok
+umem   256K rc=0 mode=umem stack_kib=256 usable=251792 depth=n/a:0 result=ok
+glibc  256K rc=0 mode=malloc stack_kib=256 usable=251792 depth=n/a:0 result=ok
+jemal  256K rc=0 mode=malloc stack_kib=256 usable=249072 depth=n/a:0 result=ok
+umem_malloc.so 256K rc=0 mode=malloc stack_kib=256 usable=251792 depth=n/a:0 result=ok
+== 4. bench_main prodcons 16t under the tunable ==
+./scripts/ec2/r6arm_stack_probe.sh: line 51: 23084 Segmentation fault      env GLIBC_TUNABLES="$tv" $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+bench a=umem tunable=glibc.rtld.optional_static_tls=8388608 rc=139 0 err-lines
+bench a=umem tunable=glibc.rtld.optional_static_tls=65536 rc=0 0 err-lines
+bench a=jemalloc tunable=glibc.rtld.optional_static_tls=8388608 rc=0 0 err-lines
+bench a=jemalloc tunable=glibc.rtld.optional_static_tls=65536 rc=0 0 err-lines

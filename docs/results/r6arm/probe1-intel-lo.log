@@ -1,0 +1,72 @@
+ref=ead7f36
+sha=ead7f36973906426a46ab0b55364accb498b1c5b
+role=intel-lo@r6arm
+job=probe1
+isolated=yes
+6.12.107+deb13-cloud-amd64 x86_64
+8
+4096
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+jemalloc=/lib/x86_64-linux-gnu/libjemalloc.so.2
+== 1. usable stack on a default thread (mode none) ==
+no-tunable rc=0 mode=none stack_kib=0 usable=8379920 depth=3416 result=ok
+tunable=8M rc=0 mode=none stack_kib=0 usable=8208 depth=3416 result=ok
+tunable=64K rc=0 mode=none stack_kib=0 usable=8314896 depth=3416 result=ok
+== 2. first-call peak stack depth (default 8 MiB thread, painted) ==
+depth umem rc=0 mode=umem stack_kib=0 usable=8379920 depth=69144 result=ok
+depth dlopen rc=0 mode=dlopen stack_kib=0 usable=8379920 depth=3416 result=ok
+depth ncpus rc=0 mode=ncpus stack_kib=0 usable=8379920 depth=68952 result=ok
+depth glibc-malloc rc=0 mode=malloc stack_kib=0 usable=8379920 depth=3416 result=ok
+depth jemalloc-malloc rc=0 mode=malloc stack_kib=0 usable=8377232 depth=3416 result=ok
+depth umem_malloc.so rc=0 mode=malloc stack_kib=0 usable=8379920 depth=3416 result=ok
+depth umem norseq rc=0 mode=umem stack_kib=0 usable=8379920 depth=69144 result=ok
+== 3. first allocation on a small explicit stack ==
+./scripts/ec2/r6arm_stack_probe.sh: line 26: 23161 Segmentation fault      env "$@" > out.txt 2>&1
+umem   16K rc=139 
+glibc  16K rc=0 mode=malloc stack_kib=16 usable=7696 depth=n/a:0 result=ok
+jemal  16K rc=0 mode=malloc stack_kib=16 usable=5008 depth=n/a:0 result=ok
+umem_malloc.so 16K rc=0 mode=malloc stack_kib=16 usable=7696 depth=n/a:0 result=ok
+./scripts/ec2/r6arm_stack_probe.sh: line 26: 23174 Segmentation fault      env "$@" > out.txt 2>&1
+umem   20K rc=139 
+glibc  20K rc=0 mode=malloc stack_kib=20 usable=11792 depth=n/a:0 result=ok
+jemal  20K rc=0 mode=malloc stack_kib=20 usable=9104 depth=n/a:0 result=ok
+umem_malloc.so 20K rc=0 mode=malloc stack_kib=20 usable=11792 depth=n/a:0 result=ok
+./scripts/ec2/r6arm_stack_probe.sh: line 26: 23187 Segmentation fault      env "$@" > out.txt 2>&1
+umem   24K rc=139 
+glibc  24K rc=0 mode=malloc stack_kib=24 usable=15888 depth=n/a:0 result=ok
+jemal  24K rc=0 mode=malloc stack_kib=24 usable=13200 depth=n/a:0 result=ok
+umem_malloc.so 24K rc=0 mode=malloc stack_kib=24 usable=15888 depth=n/a:0 result=ok
+./scripts/ec2/r6arm_stack_probe.sh: line 26: 23200 Segmentation fault      env "$@" > out.txt 2>&1
+umem   32K rc=139 
+glibc  32K rc=0 mode=malloc stack_kib=32 usable=24080 depth=n/a:0 result=ok
+jemal  32K rc=0 mode=malloc stack_kib=32 usable=21392 depth=n/a:0 result=ok
+umem_malloc.so 32K rc=0 mode=malloc stack_kib=32 usable=24080 depth=n/a:0 result=ok
+./scripts/ec2/r6arm_stack_probe.sh: line 26: 23213 Segmentation fault      env "$@" > out.txt 2>&1
+umem   40K rc=139 
+glibc  40K rc=0 mode=malloc stack_kib=40 usable=32272 depth=n/a:0 result=ok
+jemal  40K rc=0 mode=malloc stack_kib=40 usable=29584 depth=n/a:0 result=ok
+umem_malloc.so 40K rc=0 mode=malloc stack_kib=40 usable=32272 depth=n/a:0 result=ok
+./scripts/ec2/r6arm_stack_probe.sh: line 26: 23226 Segmentation fault      env "$@" > out.txt 2>&1
+umem   48K rc=139 
+glibc  48K rc=0 mode=malloc stack_kib=48 usable=40464 depth=n/a:0 result=ok
+jemal  48K rc=0 mode=malloc stack_kib=48 usable=37776 depth=n/a:0 result=ok
+umem_malloc.so 48K rc=0 mode=malloc stack_kib=48 usable=40464 depth=n/a:0 result=ok
+./scripts/ec2/r6arm_stack_probe.sh: line 26: 23239 Segmentation fault      env "$@" > out.txt 2>&1
+umem   64K rc=139 
+glibc  64K rc=0 mode=malloc stack_kib=64 usable=56848 depth=n/a:0 result=ok
+jemal  64K rc=0 mode=malloc stack_kib=64 usable=54160 depth=n/a:0 result=ok
+umem_malloc.so 64K rc=0 mode=malloc stack_kib=64 usable=56848 depth=n/a:0 result=ok
+umem   128K rc=0 mode=umem stack_kib=128 usable=122384 depth=n/a:0 result=ok
+glibc  128K rc=0 mode=malloc stack_kib=128 usable=122384 depth=n/a:0 result=ok
+jemal  128K rc=0 mode=malloc stack_kib=128 usable=119696 depth=n/a:0 result=ok
+umem_malloc.so 128K rc=0 mode=malloc stack_kib=128 usable=122384 depth=n/a:0 result=ok
+umem   256K rc=0 mode=umem stack_kib=256 usable=253456 depth=n/a:0 result=ok
+glibc  256K rc=0 mode=malloc stack_kib=256 usable=253456 depth=n/a:0 result=ok
+jemal  256K rc=0 mode=malloc stack_kib=256 usable=250768 depth=n/a:0 result=ok
+umem_malloc.so 256K rc=0 mode=malloc stack_kib=256 usable=253456 depth=n/a:0 result=ok
+== 4. bench_main prodcons 16t under the tunable ==
+bench a=umem tunable=glibc.rtld.optional_static_tls=8388608 rc=0 0 err-lines
+bench a=umem tunable=glibc.rtld.optional_static_tls=65536 rc=0 0 err-lines
+bench a=jemalloc tunable=glibc.rtld.optional_static_tls=8388608 rc=0 0 err-lines
+bench a=jemalloc tunable=glibc.rtld.optional_static_tls=65536 rc=0 0 err-lines
