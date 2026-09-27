@@ -1,0 +1,32 @@
+[/home/admin/sm560] 5.6.0: cap=64 used=48; pop_first=SM_IDX_MAX errno=No space left on device
+[/home/admin/sm570] 5.7.0: cap=4096 used=48; pop_first=3 errno=0
+[/home/admin/sm570n2.7nE5/sm570] 5.7.0: cap=64 used=48; pop_first=SM_IDX_MAX errno=No space left on device
+=== v5.7.0 + D3 fix -O2
+PASS R3 amplify: sm_equals(big,big)         finished in 0.3 ms
+PASS R3 amplify: sm_is_subset(big,big)      finished in 0.5 ms
+PASS R3 amplify: sm_overlap(big,{2^31+5})   finished in 0.2 ms
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+PASS R8 fuzz/split: 0 failures in 13500 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=8
+=== v5.7.0 + D3 fix asan+ubsan
+PASS R3 amplify: sm_equals(big,big)         finished in 1.4 ms
+PASS R3 amplify: sm_is_subset(big,big)      finished in 1.1 ms
+PASS R3 amplify: sm_overlap(big,{2^31+5})   finished in 1.1 ms
+PASS R8 fuzz/mutate+validate: 0 failures in 12000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 1500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 4500 checks
+PASS R8 fuzz/serialize: 0 failures in 3000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 7500 checks
+PASS R8 fuzz/split: 0 failures in 4500 checks
+PASS R8 fuzz/offset: 0 failures in 1500 checks
+FAILS=8
+=== upstream suite on patched copy, asan+ubsan
+Ok:                 18  
+Expected Fail:      0   
+Fail:               0   
+Timeout:            0   

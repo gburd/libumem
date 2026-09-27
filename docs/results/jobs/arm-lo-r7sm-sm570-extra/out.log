@@ -1,0 +1,63 @@
+aarch64
+=== v550 asan+ubsan, R3 limit 1s, fuzz seeds 1000.. (200 trials)
+      1   R8 first split failure (trial seed 0xa6eaf652ba3f2e1d step 79): sm_split@2255 lower: unexpected member 4109
+      1 /home/admin/sm550/sm.c:5684:12: runtime error: signed integer overflow: 4096 + 9223372036854775807 cannot be represented in type 'long int'
+      1 FAIL R8 fuzz/split: 288 failures in 8424 checks
+      1 FAILS=8
+      1 INFO R10 sm_hash {5,70}=75bc1f49ff043026 [2000,2100)=f61b2a5d1cd7fcd5 [0,4096)=34815615f489cb25
+      1 INFO R11 misaligned: sm_wrap(buf+4) {5,70}: |m|=2 contains(70)=1 size=40, sm_open -> |v|=2
+      1 PASS R8 fuzz/equals/hash/compare: 0 failures in 9000 checks
+      1 PASS R8 fuzz/mutate+validate: 0 failures in 24000 checks
+      1 PASS R8 fuzz/offset: 0 failures in 3000 checks
+      1 PASS R8 fuzz/rank/select/prev: 0 failures in 3000 checks
+      1 PASS R8 fuzz/serialize: 0 failures in 6000 checks
+      1 PASS R8 fuzz/set-algebra: 0 failures in 15000 checks
+=== v560 asan+ubsan, R3 limit 1s, fuzz seeds 1000.. (200 trials)
+      1   R8 first set-algebra failure (trial seed 0xd515b791b32806ef step 39): sm_difference: sm_validate()==false (813 members)
+      1   R8 first split failure (trial seed 0xa6eaf652ba3f2e1d step 79): sm_split@2255 lower: unexpected member 4109
+      1 /home/admin/sm560/sm.c:5954:12: runtime error: signed integer overflow: 4096 + 9223372036854775807 cannot be represented in type 'long int'
+      1 FAIL R8 fuzz/set-algebra: 1 failures in 15000 checks
+      1 FAIL R8 fuzz/split: 314 failures in 8432 checks
+      1 FAILS=10
+      1 INFO R10 sm_hash {5,70}=d7c7c82a5fd01ec7 [2000,2100)=545d696894c49004 [0,4096)=32f8671443c236b5
+      1 INFO R11 misaligned: sm_wrap(buf+4) {5,70}: |m|=2 contains(70)=1 size=40, sm_open -> |v|=2
+      1 PASS R8 fuzz/equals/hash/compare: 0 failures in 9000 checks
+      1 PASS R8 fuzz/mutate+validate: 0 failures in 24000 checks
+      1 PASS R8 fuzz/offset: 0 failures in 3000 checks
+      1 PASS R8 fuzz/rank/select/prev: 0 failures in 3000 checks
+      1 PASS R8 fuzz/serialize: 0 failures in 6000 checks
+=== v570 asan+ubsan, R3 limit 1s, fuzz seeds 1000.. (200 trials)
+      1   R8 first set-algebra failure (trial seed 0xd515b791b32806ef step 39): sm_difference: sm_validate()==false (813 members)
+      1 /home/admin/sm570/sm.c:2394:32: runtime error: load of misaligned address 0xffff87a01a44 for type 'uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:2406:18: runtime error: load of misaligned address 0xffff87a01a3c for type 'const uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:2446:8: runtime error: load of misaligned address 0xffff87a01a3c for type 'const uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:2448:18: runtime error: load of misaligned address 0xffff87a01a3c for type 'const uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:4212:18: runtime error: load of misaligned address 0xffff87a01a3c for type 'const uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:4274:8: runtime error: load of misaligned address 0xffff87a01a3c for type 'const uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:5320:13: runtime error: store to misaligned address 0xffff87a01a3c for type 'uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:5326:23: runtime error: load of misaligned address 0xffff87a01a3c for type 'uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:5326:27: runtime error: store to misaligned address 0xffff87a01a3c for type 'uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:8695:42: runtime error: load of misaligned address 0xffff87a01a44 for type 'uint64_t', which requires 8 byte alignment
+      1 FAIL R8 fuzz/set-algebra: 1 failures in 15000 checks
+      1 FAILS=8
+      1 INFO R10 sm_hash {5,70}=d7c7c82a5fd01ec7 [2000,2100)=5f78a413fd761504 [0,4096)=32f8671443c236b5
+      1 INFO R11 misaligned: sm_wrap(buf+4) {5,70}: |m|=2 contains(70)=1 size=24, sm_open -> |v|=2
+      1 PASS R8 fuzz/equals/hash/compare: 0 failures in 9000 checks
+      1 PASS R8 fuzz/mutate+validate: 0 failures in 24000 checks
+      1 PASS R8 fuzz/offset: 0 failures in 3000 checks
+      1 PASS R8 fuzz/rank/select/prev: 0 failures in 3000 checks
+      1 PASS R8 fuzz/serialize: 0 failures in 6000 checks
+      1 PASS R8 fuzz/split: 0 failures in 9000 checks
+=== v560 -DSPARSEMAP_DIAGNOSTIC locator (stderr shown)
+locator on {5}: contains(5)=1 rank(0,100)=1
+/home/admin/sm570/sm.c: In function ‘__sm_promote’:
+/home/admin/sm570/sm.c:4367:9: warning: ‘memcpy’ writing between 136 and 34359738360 bytes into a region of size 128 overflows the destination [-Wstringop-overflow=]
+ 4367 |         memcpy(words, __sm_small_words(map), n * sizeof(uint64_t));
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/admin/sm570/sm.c:4361:18: note: destination object ‘words’ of size 128
+ 4361 |         uint64_t words[SM_SMALL_MAX_WORDS];
+      |                  ^~~~~
+=== v570 -DSPARSEMAP_DIAGNOSTIC locator (stderr shown)
+/home/admin/sm570/sm.c:11110:sm_locator_contains(): assertion failed! false
+/home/admin/sm570/sm.c:11157:sm_locator_rank(): assertion failed! false
+locator on {5}: contains(5)=1 rank(0,100)=1

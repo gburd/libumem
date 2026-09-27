@@ -1,0 +1,208 @@
+aarch64
+gcc (Debian 14.2.0-19) 14.2.0
+1c87ec52322216403ffa4cbc416d094cabe2daef04b54137e3bc5d38f8876906  /home/admin/sm550/sm.c
+eac7a444fedf6bb8bf274a63035694cd6ea006b183b3de8382923020a1f7246a  /home/admin/sm560/sm.c
+b3a65f1c36f536743d4b52181e07fc161c91ea856caa43224e64f9208ec32e81  /home/admin/sm570/sm.c
+1ce9dca5b2e97bc5f1062a4150fb846c5ff06b4f57404ab449cdb5bb9a05551a  /home/admin/sm570/sm.h
+04aa587d25d72c99d511368c21f1b0f5f0b2a56bd79919cf1f0f617ea57357c2  sparsemap-repro.c
+=== v550 -O2
+sparsemap 5.5.0
+PASS R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=1 other{1}=0 other{8193}=1 |map|=1 |other|=1
+PASS R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+FAIL R3 amplify: sm_equals(big,big)         TIMEOUT(killed by alarm) after 10000.3 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.3 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   finished in 9494.6 ms
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=WRONG sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+PASS R5 small_alloc {5,70,71} (size 40 B): allocations per call rank=0 select=0; with malloc failing: rank=3(3) select=70(70) span=5(5) scan=3(3)
+INFO R5 cost, 264 random bits below 1024, size=152 B: sm_rank 96 ns, sm_select 140 ns, sm_union 323 ns, sm_contains 51 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+FAIL R6b rle_len1 remove(0): |before|=1 sm_cardinality=2048 walk=0 valid=1
+FAIL R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> NULL first=0 (want 9223372036854780807)
+PASS R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ok  size=32 B
+PASS R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ok  size=40 B
+  R8 first split failure (trial seed 0x9e3779b97f4a7c15 step 7): sm_split@2317 lower: sm_validate()==false (1489 members)
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+FAIL R8 fuzz/split: 395 failures in 12710 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=8
+rc=8
+=== v550 asan+ubsan (R3 limit 30s, 100 fuzz trials)
+sparsemap 5.5.0
+PASS R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=1 other{1}=0 other{8193}=1 |map|=1 |other|=1
+PASS R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+FAIL R3 amplify: sm_equals(big,big)         TIMEOUT(killed by alarm) after 30001.3 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 30001.2 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 30001.2 ms
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=WRONG sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+PASS R5 small_alloc {5,70,71} (size 40 B): allocations per call rank=0 select=0; with malloc failing: rank=3(3) select=70(70) span=5(5) scan=3(3)
+INFO R5 cost, 264 random bits below 1024, size=152 B: sm_rank 342 ns, sm_select 391 ns, sm_union 3129 ns, sm_contains 147 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+FAIL R6b rle_len1 remove(0): |before|=1 sm_cardinality=2048 walk=0 valid=1
+/home/admin/sm550/sm.c:5684:12: runtime error: signed integer overflow: 4096 + 9223372036854775807 cannot be represented in type 'long int'
+    #0 0xaaaaab60f704 in sm_offset /home/admin/sm550/sm.c:5684
+    #1 0xaaaaab5f5f68 in r7_offset_big /home/admin/probe/sparsemap-repro.c:489
+    #2 0xaaaaab5f5f68 in main /home/admin/probe/sparsemap-repro.c:990
+    #3 0xffff80262258 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:58
+    #4 0xffff80262338 in __libc_start_main_impl ../csu/libc-start.c:360
+    #5 0xaaaaab5f06ec in _start (/home/admin/probe/p550san+0x406ec) (BuildId: f8687e9ce0c2d793c465319f199acb0fede9a20d)
+
+FAIL R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> NULL first=0 (want 9223372036854780807)
+PASS R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ok  size=32 B
+PASS R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ok  size=40 B
+  R8 first split failure (trial seed 0x9e3779b97f4a7c15 step 7): sm_split@2317 lower: sm_validate()==false (1489 members)
+PASS R8 fuzz/mutate+validate: 0 failures in 12000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 1500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 4500 checks
+PASS R8 fuzz/serialize: 0 failures in 3000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 7500 checks
+FAIL R8 fuzz/split: 147 failures in 4206 checks
+PASS R8 fuzz/offset: 0 failures in 1500 checks
+FAILS=8
+rc=8
+=== v560 -O2
+sparsemap 5.6.0
+FAIL R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=0 other{1}=1 other{8193}=1 |map|=0 |other|=2
+FAIL R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=0 hash_equal=0
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R3 amplify: sm_equals(big,big)         finished in 0.3 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.3 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   finished in 9480.6 ms
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=NULL sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+PASS R5 small_alloc {5,70,71} (size 40 B): allocations per call rank=0 select=0; with malloc failing: rank=3(3) select=70(70) span=5(5) scan=3(3)
+INFO R5 cost, 264 random bits below 1024, size=152 B: sm_rank 97 ns, sm_select 139 ns, sm_union 328 ns, sm_contains 50 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+FAIL R6b rle_len1 remove(0): |before|=1 sm_cardinality=2048 walk=0 valid=1
+FAIL R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> NULL first=0 (want 9223372036854780807)
+PASS R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ok  size=32 B
+PASS R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ok  size=40 B
+  R8 first split failure (trial seed 0x9e3779b97f4a7c15 step 7): sm_split@2317 lower: sm_validate()==false (1489 members)
+  R8 first equals/hash/compare failure (trial seed 0x1bbcdcbfa53e0a80 step 23): rebuild: vs rebuilt(desc): equals=0/0 hash_eq=0 compare=0 subset_compare=0 (|m|=2975)
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+FAIL R8 fuzz/equals/hash/compare: 1 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+FAIL R8 fuzz/split: 430 failures in 12718 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=10
+rc=10
+=== v560 asan+ubsan (R3 limit 30s, 100 fuzz trials)
+sparsemap 5.6.0
+FAIL R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=0 other{1}=1 other{8193}=1 |map|=0 |other|=2
+FAIL R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=0 hash_equal=0
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R3 amplify: sm_equals(big,big)         finished in 1.3 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 30001.1 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 30001.1 ms
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=NULL sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+PASS R5 small_alloc {5,70,71} (size 40 B): allocations per call rank=0 select=0; with malloc failing: rank=3(3) select=70(70) span=5(5) scan=3(3)
+INFO R5 cost, 264 random bits below 1024, size=152 B: sm_rank 342 ns, sm_select 388 ns, sm_union 3223 ns, sm_contains 147 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+FAIL R6b rle_len1 remove(0): |before|=1 sm_cardinality=2048 walk=0 valid=1
+/home/admin/sm560/sm.c:5954:12: runtime error: signed integer overflow: 4096 + 9223372036854775807 cannot be represented in type 'long int'
+    #0 0xaaaad7f95644 in sm_offset /home/admin/sm560/sm.c:5954
+    #1 0xaaaad7f7a3a8 in r7_offset_big /home/admin/probe/sparsemap-repro.c:489
+    #2 0xaaaad7f7a3a8 in main /home/admin/probe/sparsemap-repro.c:990
+    #3 0xffff83a82258 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:58
+    #4 0xffff83a82338 in __libc_start_main_impl ../csu/libc-start.c:360
+    #5 0xaaaad7f74b2c in _start (/home/admin/probe/p560san+0x44b2c) (BuildId: 6fc348f6a467504eaa186ba1e3dc37f6bed82f4e)
+
+FAIL R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> NULL first=0 (want 9223372036854780807)
+PASS R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ok  size=32 B
+PASS R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ok  size=40 B
+  R8 first split failure (trial seed 0x9e3779b97f4a7c15 step 7): sm_split@2317 lower: sm_validate()==false (1489 members)
+PASS R8 fuzz/mutate+validate: 0 failures in 12000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 1500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 4500 checks
+PASS R8 fuzz/serialize: 0 failures in 3000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 7500 checks
+FAIL R8 fuzz/split: 157 failures in 4208 checks
+PASS R8 fuzz/offset: 0 failures in 1500 checks
+FAILS=9
+rc=9
+=== v570 -O2
+sparsemap 5.7.0
+PASS R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=1 other{1}=0 other{8193}=1 |map|=1 |other|=1
+PASS R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R3 amplify: sm_equals(big,big)         finished in 0.3 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.2 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 10000.3 ms
+INFO R4 sm_serialize({5,70}) = 40 bytes: 73 6d 31 30 02 01 01 00 02 00 00 00 00 00 00 00 02 00 00 00 00 00 00 80 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+FAIL R4a wire/write: body header word = 0x8000000000000002 (small-set flag set); a 5.6.x reader needs a chunk count here
+PASS R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize={5,70} sm_open_copy={5,70} sm_open(|m|=2)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+FAIL R5 small_alloc {5,70,71} (size 24 B): allocations per call rank=1 select=1; with malloc failing: rank=0(3) select=18446744073709551615(70) span=18446744073709551615(5) scan=0(3)
+INFO R5 cost, 264 random bits below 1024, size=136 B: sm_rank 21013 ns, sm_select 21080 ns, sm_union 40762 ns, sm_contains 2 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+PASS R6b rle_len1 remove(0): |before|=1 sm_cardinality=0 walk=0 valid=1
+PASS R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> map first=9223372036854780807 (want 9223372036854780807)
+FAIL R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ENOSPC  size=8 B
+FAIL R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ENOSPC  size=16 B
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+PASS R8 fuzz/split: 0 failures in 13500 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=7
+rc=7
+=== v570 asan+ubsan (R3 limit 30s, 100 fuzz trials)
+sparsemap 5.7.0
+PASS R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=1 other{1}=0 other{8193}=1 |map|=1 |other|=1
+PASS R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R3 amplify: sm_equals(big,big)         finished in 1.3 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 30001.2 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 30001.3 ms
+INFO R4 sm_serialize({5,70}) = 40 bytes: 73 6d 31 30 02 01 01 00 02 00 00 00 00 00 00 00 02 00 00 00 00 00 00 80 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+FAIL R4a wire/write: body header word = 0x8000000000000002 (small-set flag set); a 5.6.x reader needs a chunk count here
+PASS R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize={5,70} sm_open_copy={5,70} sm_open(|m|=2)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+FAIL R5 small_alloc {5,70,71} (size 24 B): allocations per call rank=1 select=1; with malloc failing: rank=0(3) select=18446744073709551615(70) span=18446744073709551615(5) scan=0(3)
+INFO R5 cost, 264 random bits below 1024, size=136 B: sm_rank 73573 ns, sm_select 73743 ns, sm_union 147212 ns, sm_contains 18 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+PASS R6b rle_len1 remove(0): |before|=1 sm_cardinality=0 walk=0 valid=1
+PASS R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> map first=9223372036854780807 (want 9223372036854780807)
+FAIL R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ENOSPC  size=8 B
+FAIL R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ENOSPC  size=16 B
+PASS R8 fuzz/mutate+validate: 0 failures in 12000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 1500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 4500 checks
+PASS R8 fuzz/serialize: 0 failures in 3000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 7500 checks
+PASS R8 fuzz/split: 0 failures in 4500 checks
+PASS R8 fuzz/offset: 0 failures in 1500 checks
+FAILS=7
+rc=7

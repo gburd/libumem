@@ -1,0 +1,157 @@
+aarch64
+== plain
+[62/63] Linking static target tests/libsparsemap_test_support.a
+[63/63] Linking target tests/test_main
+ninja: Entering directory `/home/admin/sm570/b-plain'
+ninja: no work to do.
+ 1/18 test_rle_standalone       OK               0.00s
+ 2/18 test_heisenbug            OK               0.00s
+ 3/18 test_empty_map            OK               0.00s
+ 4/18 test_coverage             OK               4.23s
+ 5/18 test_portability          OK               0.00s
+ 6/18 test_large_index          OK               0.00s
+ 7/18 test_validate             OK               0.00s
+ 8/18 test_amplify              OK               0.02s
+ 9/18 test_split_safety         OK               0.01s
+10/18 test_null                 OK               0.00s
+11/18 test_smallset             OK               0.02s
+12/18 test_offset_overflow      OK               0.00s
+13/18 test_smallset_api         OK               0.02s
+14/18 test_smallset_transitions OK               0.81s
+15/18 test_rle_transitions      OK               0.01s
+16/18 test_equals_hash          OK               0.01s
+17/18 main                      OK              15.13s
+18/18 prefix                    OK               0.00s
+
+Ok:                 18  
+Expected Fail:      0   
+Fail:               0   
+Unexpected Pass:    0   
+Skipped:            0   
+Timeout:            0   
+
+Full log written to /home/admin/sm570/b-plain/meson-logs/testlog.txt
+== asan+ubsan
+[62/63] Linking static target tests/libsparsemap_test_support.a
+[63/63] Linking target tests/test_main
+ninja: Entering directory `/home/admin/sm570/b-san'
+ninja: no work to do.
+ 1/18 test_rle_standalone       OK               0.01s
+ 2/18 test_heisenbug            OK               0.01s
+ 3/18 test_empty_map            OK               0.01s
+ 4/18 test_coverage             OK               9.80s
+ 5/18 test_portability          OK               0.01s
+ 6/18 test_large_index          OK               0.01s
+ 7/18 test_validate             OK               0.01s
+ 8/18 test_amplify              OK               0.07s
+ 9/18 test_split_safety         OK               0.02s
+10/18 test_null                 OK               0.01s
+11/18 test_smallset             OK               0.07s
+12/18 test_offset_overflow      OK               0.01s
+13/18 test_smallset_api         OK               0.08s
+14/18 test_smallset_transitions OK               1.38s
+15/18 test_rle_transitions      OK               0.03s
+16/18 test_equals_hash          OK               0.02s
+17/18 main                      OK              29.52s
+18/18 prefix                    OK               0.01s
+
+Ok:                 18  
+Expected Fail:      0   
+Fail:               0   
+Unexpected Pass:    0   
+Skipped:            0   
+Timeout:            0   
+
+Full log written to /home/admin/sm570/b-san/meson-logs/testlog.txt
+== release -O3 -DNDEBUG
+[62/63] Linking static target tests/libsparsemap_test_support.a
+[63/63] Linking target tests/test_main
+ninja: Entering directory `/home/admin/sm570/b-rel'
+ninja: no work to do.
+ 1/18 test_rle_standalone       OK               0.00s
+ 2/18 test_heisenbug            OK               0.00s
+ 3/18 test_empty_map            OK               0.00s
+ 4/18 test_coverage             OK               3.14s
+ 5/18 test_portability          OK               0.00s
+ 6/18 test_large_index          OK               0.00s
+ 7/18 test_validate             OK               0.00s
+ 8/18 test_amplify              OK               0.02s
+ 9/18 test_split_safety         OK               0.01s
+10/18 test_null                 OK               0.00s
+11/18 test_smallset             OK               0.02s
+12/18 test_offset_overflow      OK               0.00s
+13/18 test_smallset_api         OK               0.02s
+14/18 test_smallset_transitions OK               0.53s
+15/18 test_rle_transitions      OK               0.01s
+16/18 test_equals_hash          OK               0.01s
+17/18 main                      OK              11.95s
+18/18 prefix                    OK               0.00s
+
+Ok:                 18  
+Expected Fail:      0   
+Fail:               0   
+Unexpected Pass:    0   
+Skipped:            0   
+Timeout:            0   
+
+Full log written to /home/admin/sm570/b-rel/meson-logs/testlog.txt
+ubsan runtime errors in testlog: 0
+asan errors in testlog: 0
+aarch64
+mv: cannot stat 'sm.su': No such file or directory
+== v550 largest frames
+v550 /home/admin/sm550/sm.c:5457:1:sm_offset	1712	static
+v550 /home/admin/sm550/sm.c:7717:1:sm_union	1664	static
+v550 /home/admin/sm550/sm.c:7404:1:sm_difference	1648	static
+v550 /home/admin/sm550/sm.c:7112:1:sm_intersection	1600	static
+v550 /home/admin/sm550/sm.c:7323:1:__sm_emit_chunk_bits	736	static
+v550 /home/admin/sm550/sm.c:1797:1:__sm_chunk_scan	640	static
+v550 /home/admin/sm550/sm.c:8131:1:sm_split	464	static
+v550 /home/admin/sm550/sm.c:5391:1:__sm_emit_rle.isra	432	static
+v550 /home/admin/sm550/sm.c:4148:1:__sm_map_set	368	static
+v550 /home/admin/sm550/sm.c:3901:1:__sm_map_unset	352	static
+v550 /home/admin/sm550/sm.c:5321:1:__sm_emit_flush	288	static
+v550 /home/admin/sm550/sm.c:8705:1:sm_locator_build	192	static
+v550 /home/admin/sm550/sm.c:6368:1:sm_add_many_grow	144	static
+v550 /home/admin/sm550/sm.c:8823:1:__sm_locator_rank_upto	128	static
+== v550 frames >= 4096 B: 0
+v550    text	   data	    bss	    dec	    hex	filename
+v550   55172	      0	     24	  55196	   d79c	sm550.o
+mv: cannot stat 'sm.su': No such file or directory
+== v560 largest frames
+v560 /home/admin/sm560/sm.c:6869:1:sm_xor	33504	static
+v560 /home/admin/sm560/sm.c:6601:1:__sm_run_pair_counts.constprop	33056	static
+v560 /home/admin/sm560/sm.c:7190:1:sm_subset_compare	33040	static
+v560 /home/admin/sm560/sm.c:7146:1:sm_compare	33040	static
+v560 /home/admin/sm560/sm.c:7117:1:sm_equals	33008	static
+v560 /home/admin/sm560/sm.c:6972:1:sm_extract_range	16992	static
+v560 /home/admin/sm560/sm.c:7088:1:sm_hash	16544	static
+v560 /home/admin/sm560/sm.c:5727:1:sm_offset	1712	static
+v560 /home/admin/sm560/sm.c:8275:1:sm_union	1664	static
+v560 /home/admin/sm560/sm.c:7962:1:sm_difference	1648	static
+v560 /home/admin/sm560/sm.c:7670:1:sm_intersection	1600	static
+v560 /home/admin/sm560/sm.c:7881:1:__sm_emit_chunk_bits	736	static
+v560 /home/admin/sm560/sm.c:1805:1:__sm_chunk_scan	640	static
+v560 /home/admin/sm560/sm.c:8689:1:sm_split	448	static
+== v560 frames >= 4096 B: 7
+v560    text	   data	    bss	    dec	    hex	filename
+v560   60252	      0	     24	  60276	   eb74	sm560.o
+mv: cannot stat 'sm.su': No such file or directory
+== v570 largest frames
+v570 /home/admin/sm570/sm.c:8111:1:sm_xor	33536	static
+v570 /home/admin/sm570/sm.c:7830:1:__sm_run_pair_counts.constprop	33104	static
+v570 /home/admin/sm570/sm.c:8451:1:sm_subset_compare	33088	static
+v570 /home/admin/sm570/sm.c:8401:1:sm_compare	33088	static
+v570 /home/admin/sm570/sm.c:8371:1:sm_equals	33056	static
+v570 /home/admin/sm570/sm.c:8220:1:sm_extract_range	17008	static
+v570 /home/admin/sm570/sm.c:8341:1:sm_hash	16560	static
+v570 /home/admin/sm570/sm.c:6700:1:sm_offset	1696	static
+v570 /home/admin/sm570/sm.c:9665:1:sm_union	1664	static
+v570 /home/admin/sm570/sm.c:9320:1:sm_difference	1648	static
+v570 /home/admin/sm570/sm.c:8997:1:sm_intersection	1600	static
+v570 /home/admin/sm570/sm.c:9234:1:__sm_emit_chunk_bits	736	static
+v570 /home/admin/sm570/sm.c:1840:1:__sm_chunk_scan	640	static
+v570 /home/admin/sm570/sm.c:4428:1:__sm_try_demote	576	static
+== v570 frames >= 4096 B: 7
+v570    text	   data	    bss	    dec	    hex	filename
+v570   67136	      0	     24	  67160	  10658	sm570.o

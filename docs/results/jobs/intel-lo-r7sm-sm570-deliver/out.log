@@ -1,0 +1,158 @@
+x86_64
+739bad9d5fcd1370dc6ead017280231cc2bea31bfa903025b4ffb031e46ba14a  sparsemap-repro.c
+1c87ec52322216403ffa4cbc416d094cabe2daef04b54137e3bc5d38f8876906  /home/admin/sm550/sm.c
+eac7a444fedf6bb8bf274a63035694cd6ea006b183b3de8382923020a1f7246a  /home/admin/sm560/sm.c
+b3a65f1c36f536743d4b52181e07fc161c91ea856caa43224e64f9208ec32e81  /home/admin/sm570/sm.c
+=== v550 ./repro
+sparsemap 5.5.0
+PASS R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=1 other{1}=0 other{8193}=1 |map|=1 |other|=1
+PASS R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+FAIL R3 amplify: sm_equals(big,big)         TIMEOUT(killed by alarm) after 10000.5 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.6 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   finished in 8831.5 ms
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=WRONG sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+PASS R5 small_alloc {5,70,71} (size 40 B): allocations per call rank=0 select=0; with malloc failing: rank=3(3) select=70(70) span=5(5) scan=3(3)
+INFO R5 cost, 264 random bits below 1024, size=152 B: sm_rank 113 ns, sm_select 115 ns, sm_union 270 ns, sm_contains 54 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+FAIL R6b rle_len1 remove(0): |before|=1 sm_cardinality=2048 walk=0 valid=1
+FAIL R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> NULL first=0 (want 9223372036854780807)
+PASS R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ok  size=32 B
+PASS R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ok  size=40 B
+INFO R10 sm_hash {5,70}=75bc1f49ff043026 [2000,2100)=f61b2a5d1cd7fcd5 [0,4096)=34815615f489cb25
+INFO R11 misaligned: sm_wrap(buf+4) {5,70}: |m|=2 contains(70)=1 size=40, sm_open -> |v|=2
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+PASS R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |394|; sm_open(bytes of d) |394|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+PASS R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |394|; sm_open(bytes of d) |394|
+PASS R12 siblings: results failing sm_validate: union=0 intersection=0 difference=0 xor=0 (of 6 each)
+  R8 first split failure (trial seed 0x9e3779b97f4a7c15 step 7): sm_split@2317 lower: sm_validate()==false (1489 members)
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+FAIL R8 fuzz/split: 395 failures in 12710 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=8
+rc=8
+=== v550 ./repro 1 200 1000 (R8 only)
+  R8 first split failure (trial seed 0xa6eaf652ba3f2e1d step 79): sm_split@2255 lower: unexpected member 4109
+PASS R8 fuzz/mutate+validate: 0 failures in 24000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 3000 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 9000 checks
+PASS R8 fuzz/serialize: 0 failures in 6000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 15000 checks
+FAIL R8 fuzz/split: 288 failures in 8424 checks
+PASS R8 fuzz/offset: 0 failures in 3000 checks
+FAILS=8
+=== v560 ./repro
+sparsemap 5.6.0
+FAIL R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=0 other{1}=1 other{8193}=1 |map|=0 |other|=2
+FAIL R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=0 hash_equal=0
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R3 amplify: sm_equals(big,big)         finished in 0.5 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.5 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   finished in 9338.3 ms
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=NULL sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+PASS R5 small_alloc {5,70,71} (size 40 B): allocations per call rank=0 select=0; with malloc failing: rank=3(3) select=70(70) span=5(5) scan=3(3)
+INFO R5 cost, 264 random bits below 1024, size=152 B: sm_rank 113 ns, sm_select 110 ns, sm_union 264 ns, sm_contains 54 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+FAIL R6b rle_len1 remove(0): |before|=1 sm_cardinality=2048 walk=0 valid=1
+FAIL R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> NULL first=0 (want 9223372036854780807)
+PASS R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ok  size=32 B
+PASS R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ok  size=40 B
+INFO R10 sm_hash {5,70}=d7c7c82a5fd01ec7 [2000,2100)=545d696894c49004 [0,4096)=32f8671443c236b5
+INFO R11 misaligned: sm_wrap(buf+4) {5,70}: |m|=2 contains(70)=1 size=40, sm_open -> |v|=2
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+  R12 first invalid difference: [2048,5092) op [2048,4698)
+FAIL R12 siblings: results failing sm_validate: union=0 intersection=0 difference=2 xor=0 (of 6 each)
+  R8 first split failure (trial seed 0x9e3779b97f4a7c15 step 7): sm_split@2317 lower: sm_validate()==false (1489 members)
+  R8 first equals/hash/compare failure (trial seed 0x1bbcdcbfa53e0a80 step 23): rebuild: vs rebuilt(desc): equals=0/0 hash_eq=0 compare=0 subset_compare=0 (|m|=2975)
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+FAIL R8 fuzz/equals/hash/compare: 1 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+FAIL R8 fuzz/split: 430 failures in 12718 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=13
+rc=13
+=== v560 ./repro 1 200 1000 (R8 only)
+  R8 first split failure (trial seed 0xa6eaf652ba3f2e1d step 79): sm_split@2255 lower: unexpected member 4109
+  R8 first set-algebra failure (trial seed 0xd515b791b32806ef step 39): sm_difference: sm_validate()==false (813 members)
+PASS R8 fuzz/mutate+validate: 0 failures in 24000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 3000 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 9000 checks
+PASS R8 fuzz/serialize: 0 failures in 6000 checks
+FAIL R8 fuzz/set-algebra: 1 failures in 15000 checks
+FAIL R8 fuzz/split: 314 failures in 8432 checks
+PASS R8 fuzz/offset: 0 failures in 3000 checks
+FAILS=13
+=== v570 ./repro
+sparsemap 5.7.0
+PASS R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=1 other{1}=0 other{8193}=1 |map|=1 |other|=1
+PASS R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R3 amplify: sm_equals(big,big)         finished in 0.4 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.5 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 10000.6 ms
+INFO R4 sm_serialize({5,70}) = 40 bytes: 73 6d 31 30 02 01 01 00 02 00 00 00 00 00 00 00 02 00 00 00 00 00 00 80 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+FAIL R4a wire/write: body header word = 0x8000000000000002 (small-set flag set); a 5.6.x reader needs a chunk count here
+PASS R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize={5,70} sm_open_copy={5,70} sm_open(|m|=2)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+FAIL R5 small_alloc {5,70,71} (size 24 B): allocations per call rank=1 select=1; with malloc failing: rank=0(3) select=18446744073709551615(70) span=18446744073709551615(5) scan=0(3)
+INFO R5 cost, 264 random bits below 1024, size=136 B: sm_rank 19754 ns, sm_select 19780 ns, sm_union 38147 ns, sm_contains 3 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+PASS R6b rle_len1 remove(0): |before|=1 sm_cardinality=0 walk=0 valid=1
+PASS R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> map first=9223372036854780807 (want 9223372036854780807)
+FAIL R9 fixed_buf/{1000}: sm_wrap(96 B) sm_add -> ENOSPC  size=8 B
+FAIL R9 fixed_buf/{0,1000}: sm_wrap(128 B) sm_add -> ok,ENOSPC  size=16 B
+INFO R10 sm_hash {5,70}=d7c7c82a5fd01ec7 [2000,2100)=5f78a413fd761504 [0,4096)=32f8671443c236b5
+INFO R11 misaligned: sm_wrap(buf+4) {5,70}: |m|=2 contains(70)=1 size=24, sm_open -> |v|=2
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+  R12 first invalid difference: [2048,5092) op [2048,4698)
+FAIL R12 siblings: results failing sm_validate: union=0 intersection=0 difference=2 xor=0 (of 6 each)
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+PASS R8 fuzz/split: 0 failures in 13500 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=10
+rc=10
+=== v570 ./repro 1 200 1000 (R8 only)
+  R8 first set-algebra failure (trial seed 0xd515b791b32806ef step 39): sm_difference: sm_validate()==false (813 members)
+PASS R8 fuzz/mutate+validate: 0 failures in 24000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 3000 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 9000 checks
+PASS R8 fuzz/serialize: 0 failures in 6000 checks
+FAIL R8 fuzz/set-algebra: 1 failures in 15000 checks
+PASS R8 fuzz/split: 0 failures in 9000 checks
+PASS R8 fuzz/offset: 0 failures in 3000 checks
+FAILS=11

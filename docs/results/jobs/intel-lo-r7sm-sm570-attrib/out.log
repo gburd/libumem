@@ -1,0 +1,37 @@
+[/home/admin/sm560] 5.6.0: after adds cap=64 used=48; sm_remove(900) rc=SM_IDX_MAX errno=No space left on device |m|=3
+[/home/admin/sm570] 5.7.0: after adds cap=4096 used=48; sm_remove(900) rc=900 errno=0 |m|=2
+[/home/admin/sm570n2.7nE5/sm570] 5.7.0: after adds cap=64 used=48; sm_remove(900) rc=SM_IDX_MAX errno=No space left on device |m|=3
+=== upstream suite asan+ubsan on /home/admin/sm570n2.7nE5/sm570
+5368c5368
+< 			return (SM_IDX_MAX); /* ENOSPC: caller may grow */
+---
+> 			goto chunk_form; /* flat form does not fit; chunk form may */
+5384c5384,5385
+< 	if (small) {
+---
+> chunk_form:
+> 	if (__sm_is_small(map)) {
+FAIL ../tests/test_smallset_api.c:439: sm_pop_first(m) == 3
+FAIL ../tests/test_smallset_api.c:440: sm_pop_last(m) == 500
+FAIL ../tests/test_smallset_api.c:441: sm_pop_first(m) == 40
+FAIL ../tests/test_smallset_api.c:442: sm_pop_last(m) == 64
+FAIL ../tests/test_smallset_api.c:443: sm_pop_first(m) == 63
+FAIL ../tests/test_smallset_api.c:445: sm_is_empty(m)
+FAIL ../tests/test_smallset_api.c:675: sm_remove(viachunk, 900) == 900
+FAIL ../tests/test_smallset_api.c:676: sm_equals(small, viachunk)
+FAIL ../tests/test_smallset_api.c:677: sm_compare(small, viachunk) == 0
+FAIL ../tests/test_smallset_api.c:678: sm_hash(small) == sm_hash(viachunk)
+Ok:                 17  
+Expected Fail:      0   
+Fail:               1   
+Timeout:            0   
+=== upstream suite asan+ubsan on /home/admin/sm570n4.K2yf/sm570
+8731c8731,8732
+< 		    __sm_chunk_rle_get_length(&chunk) > capacity) {
+---
+> 		    (__sm_chunk_rle_get_length(&chunk) == 0 ||
+> 		        __sm_chunk_rle_get_length(&chunk) > capacity)) {
+Ok:                 18  
+Expected Fail:      0   
+Fail:               0   
+Timeout:            0   

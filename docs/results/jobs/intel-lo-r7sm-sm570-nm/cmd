@@ -1,0 +1,1 @@
+cd ~/su && for v in 550 560 570; do nm --defined-only sm$v.o | awk "\$2==\"T\"{print \$3}" | sort > t$v.txt; echo "v$v global T symbols: $(wc -l < t$v.txt)"; done; echo "--- 560 -> 570 diff"; diff t560.txt t570.txt; echo "--- 550 -> 560 diff"; diff t550.txt t560.txt; grep -n "SM_WIRE_VERSION " ~/sm560/sm.c ~/sm570/sm.c | head -2

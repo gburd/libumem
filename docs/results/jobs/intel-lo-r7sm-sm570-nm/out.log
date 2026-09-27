@@ -1,0 +1,7 @@
+v550 global T symbols: 86
+v560 global T symbols: 86
+v570 global T symbols: 86
+--- 560 -> 570 diff
+--- 550 -> 560 diff
+/home/admin/sm560/sm.c:7539:#define SM_WIRE_VERSION    2u
+/home/admin/sm570/sm.c:8855:#define SM_WIRE_VERSION    2u

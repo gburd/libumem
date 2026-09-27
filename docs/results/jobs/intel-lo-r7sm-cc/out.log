@@ -1,0 +1,29 @@
+-rwxrwxr-x 1 admin admin 453456 Sep 27 19:28 p550
+-rwxrwxr-x 1 admin admin 480280 Sep 27 19:28 p560
+-rwxrwxr-x 1 admin admin 500360 Sep 27 19:28 p570
+sparsemap 5.7.0
+PASS R1 split_gap: {1,8193} split@5000 rc=5000 map{1}=1 other{1}=0 other{8193}=1 |map|=1 |other|=1
+PASS R2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS R3 amplify: sm_equals(big,big)         finished in 0.4 ms
+FAIL R3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 2000.6 ms
+FAIL R3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 2000.6 ms
+INFO R4 sm_serialize({5,70}) = 40 bytes: 73 6d 31 30 02 01 01 00 02 00 00 00 00 00 00 00 02 00 00 00 00 00 00 80 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+FAIL R4a wire/write: body header word = 0x8000000000000002 (small-set flag set); a 5.6.x reader needs a chunk count here
+PASS R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize={5,70} sm_open_copy={5,70} sm_open(|m|=2)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+PASS R5 small_alloc {5,70,600}: allocations per call rank=0 select=0; with malloc failing: rank=3(3) select=70(70) span=5(5) scan=3(3)
+INFO R5 cost, 264 random bits below 1024, size=136 B: sm_rank 19681 ns, sm_select 19574 ns, sm_contains 2 ns per call
+FAIL R6a rle_len0 {start 0, cap 2048, len 0}: accepted, valid=1 sm_cardinality=2048 sm_rank(0,2047)=2048 next_member walk=0 sm_contains(0)=0 sm_is_empty=0 sm_equals(empty)=0
+PASS R6b rle_len1 remove(0): |before|=1 sm_cardinality=0 walk=0 valid=1
+PASS R7 offset_big: sm_offset({5000}, SSIZE_MAX) -> map first=9223372036854780807 (want 9223372036854780807)
+PASS R8 fuzz/mutate+validate: 0 failures in 2400 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 300 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 900 checks
+PASS R8 fuzz/serialize: 0 failures in 600 checks
+PASS R8 fuzz/set-algebra: 0 failures in 1500 checks
+PASS R8 fuzz/split: 0 failures in 900 checks
+PASS R8 fuzz/offset: 0 failures in 300 checks
+FAILS=4

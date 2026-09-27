@@ -1,0 +1,1 @@
+bash ~/probe/upstream.sh; bash ~/probe/stack.sh

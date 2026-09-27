@@ -1,0 +1,1 @@
+cd ~/probe && for v in 550 560 570; do gcc -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -I$HOME/sm$v -o p$v sparsemap-repro.c $HOME/sm$v/sm.c 2>&1 | grep -v "sm.c" | head -20 || true; ls -la p$v; done; ./p570 2 20

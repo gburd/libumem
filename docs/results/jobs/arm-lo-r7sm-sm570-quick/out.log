@@ -1,0 +1,72 @@
+aarch64
+739bad9d5fcd1370dc6ead017280231cc2bea31bfa903025b4ffb031e46ba14a  sparsemap-repro.c
+=== v550 -O2
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=WRONG sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+PASS R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |394|; sm_open(bytes of d) |394|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+PASS R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |394|; sm_open(bytes of d) |394|
+PASS R12 siblings: results failing sm_validate: union=0 intersection=0 difference=0 xor=0 (of 6 each)
+FAILS=7
+=== v550 asan+ubsan
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+PASS R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |394|; sm_open(bytes of d) |394|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+PASS R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |394|; sm_open(bytes of d) |394|
+PASS R12 siblings: results failing sm_validate: union=0 intersection=0 difference=0 xor=0 (of 6 each)
+FAILS=7
+=== v560 -O2
+INFO R4 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+PASS R4a wire/write: body header word = 0x0000000000000001 (v2 chunk count); a 5.6.x reader needs a chunk count here
+FAIL R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize=NULL sm_open_copy=NULL sm_open(|m|=0)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+  R12 first invalid difference: [2048,5092) op [2048,4698)
+FAIL R12 siblings: results failing sm_validate: union=0 intersection=0 difference=2 xor=0 (of 6 each)
+FAILS=11
+=== v560 asan+ubsan
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+  R12 first invalid difference: [2048,5092) op [2048,4698)
+FAIL R12 siblings: results failing sm_validate: union=0 intersection=0 difference=2 xor=0 (of 6 each)
+FAILS=11
+=== v570 -O2
+INFO R4 sm_serialize({5,70}) = 40 bytes: 73 6d 31 30 02 01 01 00 02 00 00 00 00 00 00 00 02 00 00 00 00 00 00 80 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+FAIL R4a wire/write: body header word = 0x8000000000000002 (small-set flag set); a 5.6.x reader needs a chunk count here
+PASS R4b wire/read-5.7.0-bytes {5,70}: sm_deserialize={5,70} sm_open_copy={5,70} sm_open(|m|=2)
+PASS R4c wire/read-5.6-bytes {5,70}: decoded=1 equals(built)=1 hash_equal=1
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+  R12 first invalid difference: [2048,5092) op [2048,4698)
+FAIL R12 siblings: results failing sm_validate: union=0 intersection=0 difference=2 xor=0 (of 6 each)
+FAILS=10
+=== v570 asan+ubsan
+INFO R12 [2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+INFO R12 [2048,5092)-[3000,3100): sm_difference bytes: 0200000000000000 0008000000000000 ffffff2ffeffffff ffffffffffffff00 000000f0ffffffff 0010000000000000 e4030000f2010040
+PASS R12 diff_align/[2048,5092)-[3000,3100) -> |d|=2944 (want 2944) min=2048 max=5091 sm_validate=1; sm_deserialize(sm_serialize(d))=map |2944|; sm_open(bytes of d) |2944|
+INFO R12 bytes:[2048,5092)-[2048,4698): sm_difference bytes: 0100000000000000 5a12000000000000 8a010000c5000040
+FAIL R12 diff_align/bytes:[2048,5092)-[2048,4698) -> |d|=394 (want 394) min=4698 max=5091 sm_validate=0; sm_deserialize(sm_serialize(d))=NULL |0|; sm_open(bytes of d) |0|
+  R12 first invalid difference: [2048,5092) op [2048,4698)
+FAIL R12 siblings: results failing sm_validate: union=0 intersection=0 difference=2 xor=0 (of 6 each)
+FAILS=10

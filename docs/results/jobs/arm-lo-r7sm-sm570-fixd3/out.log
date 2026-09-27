@@ -1,0 +1,81 @@
+--- /home/admin/sm570/sm.c	2026-09-27 14:27:22.000000000 +0000
++++ sm.c	2026-09-27 20:42:51.457110177 +0000
+@@ -7465,23 +7465,11 @@
+ bool
+ sm_is_subset(const sm_t *a, const sm_t *b)
+ {
+-	uint64_t ia, ib;
+ 	if (a == NULL || sm_is_empty(a))
+ 		return (true);
+ 	if (b == NULL || sm_is_empty(b))
+ 		return (false);
+-
+-	ia = sm_next_member(a, SM_IDX_MAX, NULL);
+-	ib = sm_next_member(b, SM_IDX_MAX, NULL);
+-	while (ia != SM_IDX_MAX) {
+-		while (ib != SM_IDX_MAX && ib < ia) {
+-			ib = sm_next_member(b, ib, NULL);
+-		}
+-		if (ib != ia)
+-			return (false);
+-		ia = sm_next_member(a, ia, NULL);
+-	}
+-	return (true);
++	return (!sm_nonempty_difference(a, b));
+ }
+ 
+ bool
+@@ -7493,23 +7481,11 @@
+ bool
+ sm_overlap(const sm_t *a, const sm_t *b)
+ {
+-	uint64_t ia, ib;
+ 	if (a == NULL || b == NULL)
+ 		return (false);
+ 	if (sm_is_empty(a) || sm_is_empty(b))
+ 		return (false);
+-
+-	ia = sm_next_member(a, SM_IDX_MAX, NULL);
+-	ib = sm_next_member(b, SM_IDX_MAX, NULL);
+-	while (ia != SM_IDX_MAX && ib != SM_IDX_MAX) {
+-		if (ia == ib)
+-			return (true);
+-		if (ia < ib)
+-			ia = sm_next_member(a, ia, NULL);
+-		else
+-			ib = sm_next_member(b, ib, NULL);
+-	}
+-	return (false);
++	return (sm_intersection_cardinality(a, b) != 0);
+ }
+ 
+ sm_membership_t
+=== v5.7.0 + D3 fix -O2
+PASS R3 amplify: sm_equals(big,big)         finished in 0.2 ms
+PASS R3 amplify: sm_is_subset(big,big)      finished in 0.2 ms
+PASS R3 amplify: sm_overlap(big,{2^31+5})   finished in 0.2 ms
+PASS R8 fuzz/mutate+validate: 0 failures in 36000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 4500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 13500 checks
+PASS R8 fuzz/serialize: 0 failures in 9000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 22500 checks
+PASS R8 fuzz/split: 0 failures in 13500 checks
+PASS R8 fuzz/offset: 0 failures in 4500 checks
+FAILS=8
+=== v5.7.0 + D3 fix asan+ubsan
+PASS R3 amplify: sm_equals(big,big)         finished in 1.2 ms
+PASS R3 amplify: sm_is_subset(big,big)      finished in 1.0 ms
+PASS R3 amplify: sm_overlap(big,{2^31+5})   finished in 1.1 ms
+PASS R8 fuzz/mutate+validate: 0 failures in 12000 checks
+PASS R8 fuzz/rank/select/prev: 0 failures in 1500 checks
+PASS R8 fuzz/equals/hash/compare: 0 failures in 4500 checks
+PASS R8 fuzz/serialize: 0 failures in 3000 checks
+PASS R8 fuzz/set-algebra: 0 failures in 7500 checks
+PASS R8 fuzz/split: 0 failures in 4500 checks
+PASS R8 fuzz/offset: 0 failures in 1500 checks
+FAILS=8
+=== upstream suite on patched copy, asan+ubsan
+Ok:                 18  
+Expected Fail:      0   
+Fail:               0   
+Timeout:            0   

@@ -1,0 +1,86 @@
+x86_64
+--- v550 s1_amplify
+sm_equals(a,a)    = 1  17.490 s
+sm_overlap(a,s)   = 0  8.879 s
+exit=124
+--- v550 s2_stack
+sm_equals({1},{1}) on a 24 KiB stack = 1
+exit=0
+--- v550 s3_wire
+5.5.0 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+sm_deserialize(5.7.0 bytes of {5,70}) = NULL
+exit=0
+--- v550 s4_enospc
+sm_wrap(96 B): sm_add(1000) = 1000, size 32 B
+sm_create(64) + sm_add_grow {5,64,900}: capacity 64 B, size 48 B
+exit=0
+--- v550 s5_alloc
+allocator calls made by one sm_rank: 0
+malloc failing: sm_rank(0,1023)=3 (expect 3) sm_select(1)=70 (expect 70)
+exit=0
+--- v550 s6_rle0
+sm_validate=1 sm_cardinality=2048 sm_is_empty=0 sm_next_member=none
+exit=0
+--- v550 s7_diff
+|d|=394 sm_validate(d)=1 sm_deserialize(sm_serialize(d))=ok
+exit=0
+--- v550 s8_align (-fsanitize=undefined)
+      1 contains(5)=1
+--- v560 s1_amplify
+sm_equals(a,a)    = 1  0.000 s
+sm_overlap(a,s)   = 0  9.365 s
+sm_is_subset(a,a) = 1  19.658 s
+exit=0
+--- v560 s2_stack
+/home/admin/probe/snip/run.sh: line 7:  9033 Segmentation fault      timeout 30 "./$f.$v" 2>&1
+exit=139
+--- v560 s3_wire
+5.6.0 sm_serialize({5,70}) = 56 bytes: 73 6d 31 30 02 01 00 00 02 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+sm_deserialize(5.7.0 bytes of {5,70}) = NULL
+exit=0
+--- v560 s4_enospc
+sm_wrap(96 B): sm_add(1000) = 1000, size 32 B
+sm_create(64) + sm_add_grow {5,64,900}: capacity 64 B, size 48 B
+exit=0
+--- v560 s5_alloc
+allocator calls made by one sm_rank: 0
+malloc failing: sm_rank(0,1023)=3 (expect 3) sm_select(1)=70 (expect 70)
+exit=0
+--- v560 s6_rle0
+sm_validate=1 sm_cardinality=2048 sm_is_empty=0 sm_next_member=none
+exit=0
+--- v560 s7_diff
+|d|=394 sm_validate(d)=0 sm_deserialize(sm_serialize(d))=NULL
+exit=0
+--- v560 s8_align (-fsanitize=undefined)
+      1 contains(5)=1
+--- v570 s1_amplify
+sm_equals(a,a)    = 1  0.000 s
+sm_overlap(a,s)   = 0  9.965 s
+exit=124
+--- v570 s2_stack
+/home/admin/probe/snip/run.sh: line 7:  9109 Segmentation fault      timeout 30 "./$f.$v" 2>&1
+exit=139
+--- v570 s3_wire
+5.7.0 sm_serialize({5,70}) = 40 bytes: 73 6d 31 30 02 01 01 00 02 00 00 00 00 00 00 00 02 00 00 00 00 00 00 80 20 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00
+sm_deserialize(5.7.0 bytes of {5,70}) = {5,70}
+exit=0
+--- v570 s4_enospc
+sm_wrap(96 B): sm_add(1000) = SM_IDX_MAX (ENOSPC), size 8 B
+sm_create(64) + sm_add_grow {5,64,900}: capacity 4096 B, size 48 B
+exit=0
+--- v570 s5_alloc
+allocator calls made by one sm_rank: 1
+malloc failing: sm_rank(0,1023)=0 (expect 3) sm_select(1)=18446744073709551615 (expect 70)
+exit=0
+--- v570 s6_rle0
+sm_validate=1 sm_cardinality=2048 sm_is_empty=0 sm_next_member=none
+exit=0
+--- v570 s7_diff
+|d|=394 sm_validate(d)=0 sm_deserialize(sm_serialize(d))=NULL
+exit=0
+--- v570 s8_align (-fsanitize=undefined)
+      1 /home/admin/sm570/sm.c:2394:32: runtime error: load of misaligned address ADDR for type 'uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:2446:8: runtime error: load of misaligned address ADDR for type 'const uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:2448:18: runtime error: load of misaligned address ADDR for type 'const uint64_t', which requires 8 byte alignment
+      1 /home/admin/sm570/sm.c:4212:18: runtime error: load of misaligned address ADDR for type 'const uint64_t', which requires 8 byte alignment
