@@ -336,6 +336,86 @@ test_frag_live_bytes(void)
 }
 
 /*
+ * Frag live total from per-worker slots.  The harness no longer keeps one
+ * shared live-bytes atomic (it was 96.5 % of frag's time at t=192); each
+ * worker publishes its own `held` into a cache-line slot and the sampler sums
+ * the slots.  This pins the sum to the truth: a counting allocator records the
+ * true live bytes (requested sizes still allocated) and their peak.  With ONE
+ * worker the sampler reads after each grow batch, which is where the true
+ * peak is, so the reported peak must equal it to within one buffer (the
+ * pool-full path allocates and immediately frees one buffer past the peak,
+ * which the allocator sees and the live total rightly does not).
+ */
+static atomic_size_t cnt_live, cnt_peak;
+static void *cnt_alloc(size_t n)
+{
+	size_t *h = malloc(n + 16);
+	if (h == NULL)
+		return (NULL);
+	h[0] = n;
+	size_t now = atomic_fetch_add(&cnt_live, n) + n;
+	size_t pk = atomic_load(&cnt_peak);
+	while (now > pk && !atomic_compare_exchange_weak(&cnt_peak, &pk, now))
+		;
+	return ((char *)h + 16);
+}
+static void cnt_free(void *p)
+{
+	if (p == NULL)
+		return;
+	size_t *h = (size_t *)((char *)p - 16);
+	atomic_fetch_sub(&cnt_live, h[0]);
+	free(h);
+}
+
+static void
+test_frag_live_slots(void)
+{
+	const size_t max_sz = 4096;
+	printf("frag live total = sum of per-worker slots\n");
+	allocator_ops_t cnt = mock;
+	cnt.alloc = cnt_alloc;
+	cnt.free = cnt_free;
+	atomic_store(&cnt_live, 0);
+	atomic_store(&cnt_peak, 0);
+	workload_config_t cfg = {
+		.name = "fragmentation", .fn = workload_fragmentation,
+		.thread_count = 1,
+		.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD * 2,
+		.min_size = 16, .max_size = max_sz,
+	};
+	bench_stats_t st;
+	bench_run(&cnt, &cfg, &st);
+	size_t truth = atomic_load(&cnt_peak);
+	printf("   t=1 live_at_peak=%zu true_peak=%zu end_live=%zu\n",
+	    st.live_bytes_at_peak, truth, atomic_load(&cnt_live));
+	CHECK(st.live_bytes_at_peak <= truth &&
+	    st.live_bytes_at_peak + max_sz >= truth,
+	    "t=1 sampled live peak %zu != true live peak %zu (+/- one buffer)",
+	    st.live_bytes_at_peak, truth);
+	CHECK(atomic_load(&cnt_live) == 0,
+	    "%zu bytes still allocated after the run", atomic_load(&cnt_live));
+
+	/* Several workers: every slot must be summed.  Each worker's held
+	 * oscillates between ~P/2 and P (free half, refill to cap), so the true
+	 * peak is >= 2P and any full sum is >= 2P, while a sampler that read one
+	 * slot reports <= P <= truth/2.  Upper bound: threads x pool_cap x max
+	 * (the torn sum may exceed the instantaneous truth, never that). */
+	atomic_store(&cnt_peak, 0);
+	cfg.thread_count = 4;
+	cfg.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD * 8;
+	bench_run(&cnt, &cfg, &st);
+	truth = atomic_load(&cnt_peak);
+	printf("   t=4 live_at_peak=%zu true_peak=%zu\n",
+	    st.live_bytes_at_peak, truth);
+	CHECK(st.live_bytes_at_peak > truth / 2 &&
+	    st.live_bytes_at_peak <= (size_t)4 *
+	    (BENCH_MIN_OPS_PER_THREAD * 8 / 4 / 4) * max_sz,
+	    "t=4 sampled live peak %zu is not the sum of the workers' slots "
+	    "(true peak %zu)", st.live_bytes_at_peak, truth);
+}
+
+/*
  * P2.2: workloads with no live set must report NO ratio.  Reporting
  * RSS/cumulative-traffic produced a number that fell towards zero the longer
  * the run, which was then compared against other allocators' numbers.
@@ -479,6 +559,7 @@ main(void)
 	test_ops_budget_is_total();
 	test_work_floor();
 	test_frag_live_bytes();
+	test_frag_live_slots();
 	test_no_bogus_fragmentation();
 	test_interval_mode();
 	test_interval_straggler();

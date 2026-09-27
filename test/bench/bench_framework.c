@@ -679,9 +679,38 @@ static int iv_poll(iv_worker_t *w, td_histogram_t **hist, uint64_t *ops,
 struct frag_series;
 static void frag_summarise(const struct frag_series *series,
                            struct bench_stats *stats);
+/*
+ * Frag live bytes, one slot per worker, one cache line per slot.
+ *
+ * Ownership: slot i is written ONLY by frag worker i (a relaxed store of its
+ * private `held` after every alloc/free that changes it) and read by the
+ * samplers (frag_sample, iv_sample), which sum all slots with one relaxed load
+ * each.  There is no read-modify-write on any shared line in the per-op path.
+ * The previous design did atomic_fetch_add/sub on ONE process-wide counter per
+ * alloc and per free: at t=192 on c8g.metal-48xl, perf put 96.5 % of frag's
+ * time in that one atomic (__aarch64_ldadd8_acq_rel) and < 1 % in the
+ * allocator under test.
+ *
+ * The sum is not a snapshot: the slots are read one after another while
+ * workers keep running, so it can be torn across workers by up to one batch
+ * each.  That is acceptable for its only use, an RSS/live ratio sampled on a
+ * timer or after a batch, which is already a noisy series summarised by its
+ * peak and median (see struct frag_series); it is never torn WITHIN a worker.
+ */
+typedef struct {
+    _Alignas(64) atomic_size_t v;
+} frag_live_slot_t;
+
+static size_t frag_live_sum(const frag_live_slot_t *s, int n) {
+    size_t sum = 0;
+    for (int i = 0; i < n; i++)
+        sum += atomic_load_explicit(&s[i].v, memory_order_relaxed);
+    return sum;
+}
+
 static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
                      iv_slot_t *slots, const unsigned char *started,
-                     int nworkers, atomic_size_t *live,
+                     int nworkers, frag_live_slot_t *live,
                      struct frag_series *series);
 
 /*
@@ -1101,8 +1130,11 @@ typedef struct {
     size_t bytes_allocated;           /* cumulative traffic, this thread */
     uint64_t operations;
     uint64_t failures;                /* allocations that returned NULL */
-    /* Shared, process-wide live-byte accounting + the sample series. */
-    atomic_size_t *live_bytes;
+    /* This worker's live-byte slot (written only here), all nlive slots
+     * (read by frag_sample), and the shared sample series. */
+    frag_live_slot_t *live;
+    frag_live_slot_t *live_all;
+    int nlive;
     pthread_mutex_t *peak_lock;
     struct frag_series *series;
     pthread_barrier_t *start_barrier;
@@ -1138,13 +1170,10 @@ struct frag_series {
  * possible under the lock so the pair describes one instant.
  */
 static void frag_sample(frag_context_t *ctx) {
-    size_t live = atomic_load(ctx->live_bytes);
-    if (live == 0) return;
-
     pthread_mutex_lock(ctx->peak_lock);
-    /* Re-read live inside the lock, with RSS, so the two cannot straddle
-     * another thread's batch. */
-    live = atomic_load(ctx->live_bytes);
+    /* Sum the slots inside the lock, next to the RSS read (the sum itself may
+     * be torn across workers; see frag_live_slot_t). */
+    size_t live = frag_live_sum(ctx->live_all, ctx->nlive);
     size_t rss = bench_get_vmrss_bytes();
     struct frag_series *sr = ctx->series;
     if (live > 0) {
@@ -1241,7 +1270,8 @@ static void *frag_worker(void *arg) {
                 pool_count++;
                 /* Live only when actually retained. */
                 held += sz;
-                atomic_fetch_add(ctx->live_bytes, sz);
+                atomic_store_explicit(&ctx->live->v, held,
+                                      memory_order_relaxed);
             } else {
                 /* Pool full: this buffer is freed immediately, so it is NOT
                  * live and must NOT enter the live-byte total.  Doing so was
@@ -1269,7 +1299,8 @@ static void *frag_worker(void *arg) {
                 ctx->operations++;
 
                 held -= pool_sz[i];
-                atomic_fetch_sub(ctx->live_bytes, pool_sz[i]);
+                atomic_store_explicit(&ctx->live->v, held,
+                                      memory_order_relaxed);
                 pool[i] = pool[pool_count - 1];
                 pool_sz[i] = pool_sz[pool_count - 1];
                 pool_count--;
@@ -1284,8 +1315,8 @@ stop:
     for (size_t i = 0; i < pool_count; i++) {
         ops->free(pool[i]);
         held -= pool_sz[i];
-        atomic_fetch_sub(ctx->live_bytes, pool_sz[i]);
     }
+    atomic_store_explicit(&ctx->live->v, held, memory_order_relaxed);
     free(pool);
     free(pool_sz);
     return NULL;
@@ -1313,12 +1344,21 @@ void workload_fragmentation(allocator_ops_t *ops,
     if (pool_cap < 1024) pool_cap = 1024;
     if (pool_cap > (size_t)4 << 20) pool_cap = (size_t)4 << 20;
 
-    atomic_size_t live_bytes;
-    atomic_init(&live_bytes, (size_t)0);
+    /* One cache line per worker (see frag_live_slot_t); zeroed, so a worker
+     * that never starts contributes 0. */
+    frag_live_slot_t *live = aligned_alloc(_Alignof(frag_live_slot_t),
+                                           (size_t)nthreads * sizeof(*live));
+    if (!live) {
+        fprintf(stderr, "bench: frag live slots allocation failed\n");
+        return;
+    }
+    for (int i = 0; i < nthreads; i++)
+        atomic_init(&live[i].v, (size_t)0);
     pthread_mutex_t peak_lock = PTHREAD_MUTEX_INITIALIZER;
     struct frag_series *series = calloc(1, sizeof(*series));
     if (!series) {
         fprintf(stderr, "bench: frag sample series allocation failed\n");
+        free(live);
         return;
     }
 
@@ -1326,7 +1366,7 @@ void workload_fragmentation(allocator_ops_t *ops,
     pthread_t *threads = calloc((size_t)nthreads, sizeof(*threads));
     if (!ctxs || !threads) {
         fprintf(stderr, "bench: frag driver allocation failed\n");
-        free(ctxs); free(threads);
+        free(ctxs); free(threads); free(series); free(live);
         return;
     }
 
@@ -1351,7 +1391,9 @@ void workload_fragmentation(allocator_ops_t *ops,
         }
         ctxs[i].ops_target = per_thread;
         ctxs[i].pool_cap = pool_cap;
-        ctxs[i].live_bytes = &live_bytes;
+        ctxs[i].live = &live[i];
+        ctxs[i].live_all = live;
+        ctxs[i].nlive = nthreads;
         ctxs[i].peak_lock = &peak_lock;
         ctxs[i].series = series;
         ctxs[i].start_barrier = &start_barrier;
@@ -1385,7 +1427,7 @@ void workload_fragmentation(allocator_ops_t *ops,
         unsigned char *st = calloc((size_t)nthreads, 1);
         if (!st) abort();
         memset(st, 1, (size_t)started);
-        iv_drive(&iv_clk, cfg, iv_slots, st, nthreads, &live_bytes, series);
+        iv_drive(&iv_clk, cfg, iv_slots, st, nthreads, live, series);
         free(st);
         for (int i = 0; i < iv_clk.n; i++)
             cfg->interval_out[i].allocator_name = ops->name;
@@ -1467,6 +1509,7 @@ void workload_fragmentation(allocator_ops_t *ops,
      */
     frag_summarise(series, stats);
     free(series);
+    free(live);
 
     for (int i = 0; i < nthreads; i++)
         if (ctxs[i].hist != NULL) td_free(ctxs[i].hist);
@@ -1550,11 +1593,12 @@ static void frag_summarise(const struct frag_series *series,
  * from that interval alone.
  */
 /* One (RSS, live) sample on the driver's tick, into the open interval. */
-static void iv_sample(size_t *rss_max, atomic_size_t *live,
-                      struct frag_series *series) {
+static void iv_sample(size_t *rss_max, const frag_live_slot_t *live,
+                      int nlive, struct frag_series *series) {
     size_t rss = bench_get_vmrss_bytes();
     if (rss > *rss_max) *rss_max = rss;
-    size_t lv = series ? atomic_load(live) : 0;
+    /* One relaxed load per worker; torn across workers (frag_live_slot_t). */
+    size_t lv = series ? frag_live_sum(live, nlive) : 0;
     if (lv == 0) return;
     if (series->n < FRAG_MAX_SAMPLES) {
         series->live[series->n] = lv;
@@ -1595,7 +1639,7 @@ static void iv_finish(const workload_config_t *cfg, int k,
 
 static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
                      iv_slot_t *slots, const unsigned char *started,
-                     int nworkers, atomic_size_t *live,
+                     int nworkers, frag_live_slot_t *live,
                      struct frag_series *series) {
     const uint64_t period = (uint64_t)(cfg->interval_sec * 1e9);
     const uint64_t tick = 100000000ull;
@@ -1675,7 +1719,7 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
                                (long)(d % 1000000000ull) };
         nanosleep(&ts, NULL);
         if (cur < n)
-            iv_sample(&rss_max, live, series);
+            iv_sample(&rss_max, live, nworkers, series);
     }
     td_free(comb);
 }
