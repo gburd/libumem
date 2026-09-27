@@ -47,8 +47,10 @@ umem --pid 12345 whatis 0x7f4f4a032000
 umem --pid 12345 walk allocated -n 50
 umem --pid 12345 snapshot /tmp/state.ums
 
-# Core dump
-umem --core core.12345 --exe ./myapp findleaks
+# Core dumps are not supported: --core is refused (exit 2). Every command
+# calls into the live target, which a core cannot do. Take a snapshot from
+# the live process instead and read it offline:
+#   umem --pid 12345 snapshot /tmp/state.ums
 
 # Offline (no live process needed)
 umem --dump /tmp/state.ums findleaks
@@ -242,21 +244,31 @@ size_t n = umem_walk_allocated(my_cb, NULL);
    `-O2` binary built without `-fno-omit-frame-pointer` and stripped of
    debug info may produce truncated stacks.
 
-2. **Buffers in PTC (per-thread cache) appear allocated** because the
-   PTC keeps them outside the magazine layer.  However, `UMEM_DEBUG=audit`
-   automatically disables PTC for affected size classes, so under audit
-   mode this is not an issue in practice.
+2. **`findleaks` counts are an upper bound, not exact.**  Buffers freed
+   into a depot, per-CPU or rseq magazine are subtracted (reported as
+   CACHED).  Buffers freed into a per-thread cache (PTC) bin or PTC
+   magazine are not: those are thread-local, so they count as outstanding,
+   and `findleaks` says so in its output (`ptc_unaccounted`).  PTC serves
+   most small allocations by default, so without audit a large share of the
+   "outstanding" buffers may be freed and cached.  `UMEM_DEBUG=audit`
+   disables PTC for the audited classes, which removes this gap there.  The
+   rseq subtraction has no dedicated test.
 
-3. **`umem_findleaks` filters allocator-internal caches by default.**
+3. **Oversize allocations are not walked.**  Allocations larger than the
+   largest cache (128 KiB) go straight to vmem, so `findleaks`, `walk` and
+   `whatis` in umem(1)/gdb/lldb do not see them (`whatis`: "not in any umem
+   cache").  `umemctl whatis` does look them up in the vmem arena.
+
+4. **`umem_findleaks` filters allocator-internal caches by default.**
    Use `umem_walk_allocated()` directly (without the wrapper) to see
    them.  Internal caches almost never contain user leaks; they're
    slab metadata, magazine shells, and bufctl records.
 
-4. **The transaction log is a fixed-size ring buffer.**  Records older
+5. **The transaction log is a fixed-size ring buffer.**  Records older
    than the log can hold are lost.  Increase `UMEM_LOGGING=transaction=N`
    if you need more history.
 
-5. **`gdb` requires `set auto-load safe-path /` (or specific allowlists)**
+6. **`gdb` requires `set auto-load safe-path /` (or specific allowlists)**
    to load the Python extension.  `umem` sets this internally.
 
 ## Files
@@ -277,7 +289,7 @@ size_t n = umem_walk_allocated(my_cb, NULL);
 | Solaris mdb | Linux/FreeBSD equivalent |
 |---|---|
 | `mdb -p PID` | `umem --pid PID <cmd>` or attach with gdb |
-| `mdb core` | `umem --core core --exe bin <cmd>` |
+| `mdb core` | none: `--core` is refused; use `umem --dump <snapshot>` taken live |
 | `::findleaks` | `umem findleaks` |
 | `::umem_log` / `::umem_logs -v` | `umem log` |
 | `::umastat` | `umem status` |

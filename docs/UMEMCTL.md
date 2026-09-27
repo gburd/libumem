@@ -31,8 +31,18 @@ UMEM_OPTIONS=introspect=1 LD_LIBRARY_PATH=.libs ./myapp &
 umemctl $! stats
 ```
 
-The socket is `/tmp/umem.<pid>.sock`, or `$UMEM_INTROSPECT_SOCK` if set (the
-same variable must be visible to both the target and `umemctl`).
+The socket is `$XDG_RUNTIME_DIR/umem.<pid>.sock` when `XDG_RUNTIME_DIR` is a
+real directory owned by the target's euid with mode 0700; otherwise
+`/tmp/umem-<euid>/umem.<pid>.sock`, in a private 0700 directory the target
+creates. `$UMEM_INTROSPECT_SOCK` overrides both (the same value must be
+visible to the target and to `umemctl`). Only a peer with the target's euid
+is served.
+
+The server handles **one client at a time**: a connection is served to
+completion before the next is accepted. While a `logtail`, `record` or
+`monitor` is connected, every other command, including `continue`, waits
+for it to disconnect. Stop the stream before you `continue` a parked
+target.
 
 ## Commands
 
@@ -53,21 +63,28 @@ umemctl <pid> monitor [--once]         # full-screen ANSI TUI
 
 ### stats
 
-Process-wide roll-up: `pid`, `caches`, `bufs_inuse`, `bufs_total`,
-`slab_create`, `slab_destroy`, `depot_contention`, `rss_kb`.
+Process-wide roll-up: `pid`, `caches`, `bufs_held`, `bufs_total`,
+`slab_create`, `slab_destroy`, `depot_contention`, `rss_kb`. `bufs_held`
+counts buffers not on a slab freelist, so it includes buffers the
+application freed that are still cached in a magazine or per-thread cache.
 
 ### caches / cache
 
-`caches` prints `name  bufsize  inuse  total  flags` (one row per cache, walked
+`caches` prints `name  bufsize  held  total  flags` (one row per cache, walked
 off the live circular `cache_next` list). `cache <name>` adds per-cache detail:
 `align`, `chunksize`, `slabsize`, `slab_alloc`/`slab_free`, `buftotal`, and the
 per-cache `depot_contention` counter.
 
 ### whatis
 
-`whatis <addr>` maps an arbitrary address to its owning cache → slab → buffer
-using the real slab arithmetic, so you can identify any live pointer without a
-debugger attached.
+`whatis <addr>` maps an address to its owning cache → slab → buffer, with
+`state held`, `cached` (freed into a depot, per-CPU or rseq magazine) or
+`free` (on the slab freelist). An address outside every cache is looked up in
+the oversize and memalign vmem arenas and reported as `arena`, `buffer`,
+`size`, `state held`. Limit: a buffer freed into a per-thread cache (PTC) bin
+reads `held`, because those bins are thread-local and cannot be read safely
+from the server thread. Under `UMEM_DEBUG=audit` PTC is off for the audited
+classes, so this does not arise there.
 
 ### leaks
 
@@ -79,13 +96,16 @@ exist; each entry carries the size and allocating call-site PC.
 
 `logtail` streams log-like events as they happen — transaction-log entries plus
 slab create/destroy deltas — the `tail -f` for the allocator. It runs until you
-Ctrl-C or the target exits.
+Ctrl-C or the target exits. It prints only changes: a target in steady state
+(served from magazines) prints nothing after the banner. It holds the
+server's one connection (see above).
 
 ### monitor
 
 `monitor` is a dependency-free (plain-ANSI, no ncurses) full-screen dashboard
-refreshing at ~2 Hz: caches, bufs in-use/total, slab create/destroy, depot
-contention, magazine reloads, RSS, and the top caches by in-use count.
+refreshing at ~2 Hz: caches, bufs held/total, slab create/destroy, depot
+contention, RSS, and the first 12 caches with held buffers (server order, not
+sorted).
 `--once` renders a single frame and exits (used in tests / scripts).
 
 ### record
