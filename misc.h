@@ -164,6 +164,12 @@ extern void *getfp(void);
 extern int getpcstack(uintptr_t *pcstack, int pcstack_limit,
     int check_sighandler);
 
+/*
+ * Mark the loaded object containing addr as libumem-internal: getpcstack()
+ * drops leading pcs inside it.  Call from a constructor only (see getpcstack.c).
+ */
+extern void umem_pcstack_internal(const void *addr);
+
 #ifdef	__cplusplus
 }
 #endif

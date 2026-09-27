@@ -47,6 +47,108 @@
 #include <stdint.h>
 
 /*
+ * LIBUMEM'S OWN FRAMES ARE NOT RECORDED (T9).
+ *
+ * A walk started in getpcstack() first passes through the allocator itself:
+ * umem_cache_alloc_debug, _umem_cache_alloc, _umem_alloc, the malloc
+ * interposer, ...  How many depends on the path, so no fixed skip count is
+ * right.  Instead every LEADING pc inside libumem's executable segments is
+ * dropped, so bc_stack[0] is the first frame outside the library.
+ *
+ * The ranges are the PF_X PT_LOAD segments of the object containing a given
+ * address, found once with dl_iterate_phdr(), which does not allocate.  They
+ * are registered from load-time constructors -- never lazily from the walk,
+ * which runs under cache locks and would then order the loader lock inside
+ * them.  Written once before use; a reader racing a late dlopen sees 0/0 and
+ * simply skips nothing.
+ *
+ * Only a separately loaded object is registered.  ponytail: a static link puts
+ * libumem in the main program's text, where this cannot tell library from
+ * caller, so nothing is skipped there; a linker-script section range would
+ * lift that if static audit stacks ever matter.
+ */
+#if defined(__linux__)
+#include <link.h>
+#define	UMEM_NINTERNAL	4
+static struct { uintptr_t lo, hi; } umem_internal[UMEM_NINTERNAL];
+
+static int
+umem_internal_cb(struct dl_phdr_info *info, size_t sz, void *arg)
+{
+	uintptr_t want = (uintptr_t)arg;
+	int i, n = 0, found = 0;
+	uintptr_t lo[UMEM_NINTERNAL], hi[UMEM_NINTERNAL];
+
+	(void) sz;
+	for (i = 0; i < info->dlpi_phnum && n < UMEM_NINTERNAL; i++) {
+		const ElfW(Phdr) *ph = &info->dlpi_phdr[i];
+		if (ph->p_type != PT_LOAD || !(ph->p_flags & PF_X))
+			continue;
+		lo[n] = info->dlpi_addr + ph->p_vaddr;
+		hi[n] = lo[n] + ph->p_memsz;
+		if (want >= lo[n] && want < hi[n])
+			found = 1;
+		n++;
+	}
+	if (!found)
+		return (0);
+	/* the main program (or a static link): caller code lives here too */
+	if (info->dlpi_name == NULL || info->dlpi_name[0] == '\0')
+		return (1);
+	for (i = 0; i < n; i++) {
+		int s;
+		for (s = 0; s < UMEM_NINTERNAL; s++) {
+			if (umem_internal[s].hi == 0 ||
+			    umem_internal[s].lo == lo[i]) {
+				umem_internal[s].lo = lo[i];
+				umem_internal[s].hi = hi[i];
+				break;
+			}
+		}
+	}
+	return (1);
+}
+
+/* Register the object containing addr as internal.  Constructor-time only. */
+void
+umem_pcstack_internal(const void *addr)
+{
+	(void) dl_iterate_phdr(umem_internal_cb, (void *)(uintptr_t)addr);
+}
+
+static int
+umem_pc_internal(uintptr_t pc)
+{
+	int s;
+
+	for (s = 0; s < UMEM_NINTERNAL && umem_internal[s].hi != 0; s++)
+		if (pc >= umem_internal[s].lo && pc < umem_internal[s].hi)
+			return (1);
+	return (0);
+}
+
+static void umem_pcstack_self_init(void) __attribute__((constructor));
+static void
+umem_pcstack_self_init(void)
+{
+	umem_pcstack_internal((const void *)(uintptr_t)&umem_pc_internal);
+}
+#else
+void
+umem_pcstack_internal(const void *addr)
+{
+	(void) addr;
+}
+
+static int
+umem_pc_internal(uintptr_t pc)
+{
+	(void) pc;
+	return (0);
+}
+#endif
+
+/*
  * REAL STACK BOUNDS FOR THE FRAME-POINTER WALK (P5.9).
  *
  * The Linux frame walks below dereference fp[0]/fp[1].  Alignment, a
@@ -193,7 +295,9 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 			break;
 
 		nextfp = (uintptr_t *)(fp[0]);	/* saved frame pointer */
-		pcstack[depth++] = fp[1];	/* return address */
+		/* return address; leading libumem frames are dropped */
+		if (depth > 0 || !umem_pc_internal(fp[1]))
+			pcstack[depth++] = fp[1];
 
 		/* stack grows down: a valid caller frame is at a higher address */
 		if (nextfp <= fp)
@@ -257,8 +361,10 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 		/* nextfp = *fp (previous frame pointer at [fp + 0]) */
 		nextfp = (uintptr_t *)(*fp);
 
-		/* return_address = *(fp + 1) (at [fp + 8]) */
-		if (depth < pcstack_limit) {
+		/* return_address = *(fp + 1) (at [fp + 8]); leading libumem
+		 * frames are dropped */
+		if (depth < pcstack_limit &&
+		    (depth > 0 || !umem_pc_internal(*(fp + 1)))) {
 			pcstack[depth] = *(fp + 1);
 			depth++;
 		}
@@ -356,9 +462,13 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_signal)
 
 		if (got <= 2)
 			return (0);
-		int skip = 2;
+		/* skip getpcstack and its caller as before, then any further
+		 * leading libumem pcs */
+		int i = 2;
 		int out = 0;
-		for (int i = skip; i < got && out < pcstack_limit; i++)
+		while (i < got && umem_pc_internal((uintptr_t)raw[i]))
+			i++;
+		for (; i < got && out < pcstack_limit; i++)
 			pcstack[out++] = (uintptr_t)raw[i];
 		return (out);
 	}

@@ -542,6 +542,20 @@ resolve_libc_functions(void)
 }
 
 /*
+ * The interposer is its own object, and its malloc()/free() frames sit
+ * between the caller and libumem.so on every audited stack: register its text
+ * with getpcstack()'s internal-frame skip too (T9).
+ */
+__attribute__((constructor))
+static void
+umem_interpose_pcstack_init(void)
+{
+	extern void umem_pcstack_internal(const void *addr);
+
+	umem_pcstack_internal((const void *)(uintptr_t)&umem_interpose_pcstack_init);
+}
+
+/*
  * Constructor: Resolve libc functions before any malloc calls
  * This is called automatically when the library is loaded via LD_PRELOAD.
  *
