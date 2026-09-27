@@ -106,6 +106,22 @@ op(void)
 	}
 }
 
+/*
+ * PROBE_LEAVE=<bytes>: run op() with only about <bytes> of stack left, by
+ * calling it from under a VLA that uses up the rest.  Models "first
+ * allocation made deep in a call chain", and gives arm64 (whose minimum
+ * thread stack is 128 KiB) the same budget a 16 KiB x86 thread has.
+ */
+static __attribute__((noinline)) void
+op_under(size_t burn)
+{
+	volatile unsigned char pad[burn];
+
+	pad[0] = pad[burn - 1] = 0;
+	op();
+	__asm__ __volatile__("" : : "r"(pad) : "memory");
+}
+
 static void *
 thr(void *arg)
 {
@@ -128,7 +144,11 @@ thr(void *arg)
 	lo = (unsigned char *)addr + 4096;
 	if (measure && sp - 1024 > lo)
 		paint(lo, sp - 1024);
-	op();
+	if (getenv("PROBE_LEAVE") != NULL &&
+	    usable > strtoul(getenv("PROBE_LEAVE"), NULL, 0) + 512)
+		op_under(usable - strtoul(getenv("PROBE_LEAVE"), NULL, 0) - 512);
+	else
+		op();
 	if (measure && sp - 1024 > lo) {
 		for (p = lo; p < sp && *p == 0xA5; p++)
 			;
@@ -185,6 +205,11 @@ main(int argc, char **argv)
 	    result != NULL || strcmp(mode, "none") == 0 ? "ok" : "NULL");
 	if (strcmp(mode, "ncpus") == 0)
 		printf(" ncpus=%ld", (long)(intptr_t)result);
+	{
+		uint32_t *mx = dlsym(RTLD_DEFAULT, "umem_max_ncpus");
+		if (mx != NULL && strcmp(mode, "umem") == 0)
+			printf(" umem_max_ncpus=%u", *mx);
+	}
 	printf("\n");
 	/*
 	 * PROBE_WHERE=<bytes>: name the mapping that holds thr_sp - bytes, to
