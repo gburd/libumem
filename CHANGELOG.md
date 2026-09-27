@@ -54,9 +54,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `test/stress/test_norseq.sh` -- without the option `rseq_enabled=1` and
   `rseq_alloc > 0`; with it, `rseq_enabled=0` and `rseq_alloc == 0`.
 
+### Fixed
+
+- **P8.5b rseq reload aliased buffers (two owners) and leaked after a
+  magazine resize.** Both defects were introduced by the P8.5b entry above and
+  were present on master from `24bffbd` through `e622f65`. Measured at 8t/10s
+  mixed/all: 5/200 oracle runs (2.5 %) caught a buffer handed to two owners,
+  all in 64-120 KB classes. `UMEM_OPTIONS=norseq` and pre-P8.5b: 0/100 each.
+  - *Aliasing.* The reload commit (`umem_rseq_reload_{alloc,free}_commit`,
+    x86_64 and aarch64) made two or three slot stores and set its success
+    value after the committing one. An rseq abort does not roll back retired
+    stores, so an abort could leave a magazine published in `cache_rseq[cpu]`
+    while the C slowpath believed it unpublished and gave it back to the
+    depot. Replaced by two sections, `umem_rseq_reload_detach` (slot -> NULL)
+    and `umem_rseq_reload_attach` (NULL -> magazine). Each makes ONE slot
+    store as its last instruction and sets its result before it.
+    Regression: `test/stress/repro_reload_commit_abort` (pinned thread, SIGALRM
+    storm) FAILED every run pre-fix on both arches, with thousands of torn
+    states, and passes 0/200 post-fix on both.
+  - *Leak.* `cache_rseq[cpu].magsize` was set once per cache and never
+    refreshed, so after a resize the reload counted fewer rounds than the
+    depot magazine held, and the rest were stranded. The bound is now the
+    attached magazine's own capacity. Regression:
+    `test/stress/repro_rseq_resize_leak`, forced 1 -> 3 resize of
+    `umem_alloc_114688`: pre-fix 16 -> 12,010 stranded buffers, post-fix flat.
+  - `umem_magazine_destroy()` now frees a shell to its own source magtype
+    cache. At cache destroy an rseq slot can hold a pre-resize shell.
+  - Why the P8.5b gates passed: `repro_reload_commit_safe` aborted only
+    before the first store, and ASan cannot see two valid owners. See
+    `docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md`. The
+    asm design spec's "Resolution A" is corrected in place.
+
 ### Known limitation
 
-- `cache_rseq[cpu].magsize` is fixed at cache creation and not updated on a
+- ~~`cache_rseq[cpu].magsize` is fixed at cache creation and not updated on a
   magazine resize. Magtypes only grow, so the free fast path can only
   UNDER-fill a physically larger depot magazine (never overflow -- confirmed
   by ASan across 2.4 B allocations at 192t), and the alloc slowpath's excess
@@ -66,7 +97,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   classes that resize (the default alloc classes 8..256 start at the maximum
   magsize 255 and are immune) -- an efficiency ceiling, not a correctness or
   leak hazard. Upgrade path: track the current magtype into `rc->magsize` at
-  resize time (single writer, the update thread).
+  resize time (single writer, the update thread).~~
+  **RETRACTED:** this was a leak (12,010 stranded buffers after one resize),
+  not an efficiency ceiling, and it sat next to a separate aliasing defect. Both
+  are fixed; see "Fixed" above.
 
 - On Debian 13 (trixie) the kernel ships `vm.max_map_count = 1048576`, above
   the `test_heap_ceiling` / `test_heap_ceiling_512.sh` meaningfulness
