@@ -252,3 +252,14 @@ runs per arm, a pair that already disagrees by more than 10 % at one thread
 per vCPU leaves no room to read a 2x-oversubscribed run. On lo, that
 oversubscription produced 18-37 % gaps (A4). If the criterion fails,
 intel-hi is terminated after t=192, and the reason is recorded here.
+
+**t=384 decision: NO-GO (08:30 UTC, after intel-hi t=192 prodcons, before any
+frag result).** On intel-hi at t=192, libc's two prodcons runs differ by
+**16.8 %** in Mops/s (1.067 vs 0.919 median), which fails the criterion above
+(every allocator's gap at most 10 %). On arm-hi, umem's and libc's prodcons
+gaps are 12.6 % and 13.1 %. If two identical 15-minute runs at one thread per
+vCPU disagree that much, a 2x-oversubscribed run could not separate the
+allocators, and on lo, oversubscription made the gaps larger (18-37 %, A4).
+intel-hi's job was launched with t=384 enabled, so it is killed as soon as its
+t=192 summary is written, and the box is terminated. The brief's minimum is
+therefore what gets delivered: t=192 on both arches, no t=384.
