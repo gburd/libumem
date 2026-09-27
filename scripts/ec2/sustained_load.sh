@@ -270,22 +270,26 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
 declare -A TARGET_N
 calibrate() {
     local a; a="$(alloc_base "$1")"; local w="$2" min="$3" max="$4"
-    local calib_n=2000000 t0 t1 sec n
+    # The calibration run must do the work it is timed on.  It used to time a
+    # nominal 2,000,000 ops while bench_main silently raised any per-thread
+    # share below BENCH_MIN_OPS_PER_THREAD (100,000) to that floor -- at 192
+    # threads it really ran 19,200,000 (frag) -- and then scaled from the
+    # nominal 2 M, so every 192-thread window came out ~10x SHORTER than
+    # DURATION (r5fix "180 s" frag windows ran ~18 s).  So: start at the
+    # floor, and scale from bench_main's own elapsed_sec (the timed region,
+    # no process start/exit) rather than from wall time.
+    local floor=$(( THREADS * 100000 ))
+    local calib_n=$(( floor > 2000000 ? floor : 2000000 )) sec n row
     local pre; pre="$(preload_of "$a" || true)"
-    t0=$(date +%s.%N)
-    LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" \
-        -n "$calib_n" -s "$min:$max" -c >/dev/null 2>>"$LOG" || true
-    t1=$(date +%s.%N)
-    sec=$(awk "BEGIN{print $t1-$t0}")
+    row=$(LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" \
+        -n "$calib_n" -s "$min:$max" -c 2>>"$LOG" | grep "^$a," | tail -1 || true)
+    sec=$(printf '%s\n' "$row" | awk -F, '{print $6+0}')
     if awk "BEGIN{exit !($sec>0.01)}"; then
         n=$(awk "BEGIN{n=int($calib_n*$DURATION/$sec); if(n<$calib_n) n=$calib_n; print n}")
     else
         n=$((calib_n * 20))
+        echo "  calibrate $a $w: no usable timing (row='$row'); using $n" | tee -a "$LOG"
     fi
-    # Never below bench_framework.h's per-thread floor, or bench_main raises
-    # it internally and flags every window ops_floor_raised.  prodcons splits
-    # the budget over t/2 producers, so its floor is half.
-    local floor=$(( THREADS * 100000 ))
     (( n < floor )) && n=$floor
     CALIB_N="$n"
     echo "  calibrate $a $w: would need total_n=$n (~${DURATION}s/window, from ${sec}s @ $calib_n; floor $floor)"
