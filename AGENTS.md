@@ -176,6 +176,12 @@ This is ONE working tree with several agents editing it at once. Therefore:
   breaking the build. On a contended file use `git add -p`, or stage an explicit
   blob, and check `git diff --cached` before committing. If you discover you
   swept someone else's work, commit a correction on top — do not reset or amend.
+- **The index is shared too: plain `git commit` commits everything anyone has
+  staged.** `git add <your path>` followed by `git commit` swept four files
+  another agent had already staged into an unrelated commit (`286cd75`). Always
+  commit with explicit paths (`git commit <paths>`, which implies `--only`), and
+  run `git diff --cached --stat` immediately before committing: anything listed
+  that you did not stage is someone else's.
 - **Never `git reset`** (soft or hard), and never `git checkout -- .`. Another
   agent's commit can be HEAD at any moment; a `git reset --soft HEAD~1`
   removed someone else's commit from the branch (recovered from reflog). To
