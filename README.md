@@ -27,9 +27,8 @@ FreeBSD, and macOS.
 > sustained-load slab batch cannot meet its own p999 target (partial, the real
 > fix is an architectural one). v3.3.1 added the two hardening fixes above.
 > v3.3.2 arms the rseq lock-free per-CPU layer that v3.3.1 had left inert
-> (P8.5b): it is on by default, and sustained 192-thread prodcons p999 drops
-> from 41.7 to 29.7 us (x86_64) and from 16.9 to 5.0 us (aarch64) against
-> `norseq`, with RSS roughly halved. Its first version aliased buffers under
+> (P8.5b): it is on by default, and at 192 threads it lowers prodcons p999 and
+> roughly halves RSS against `norseq` in short (17-43 s) windows. Its first version aliased buffers under
 > an rseq abort; that was found by a 100-run oracle rate test, not by the
 > gates it had passed, and is fixed with a regression that failed on every
 > pre-fix run. v3.3.2 also records that several advertised debugging-tool
@@ -283,10 +282,10 @@ Where libumem **does not win**:
   and 83 us for glibc: not the tens-of-microseconds tier. Under `frag`
   churn the p999 is 22 us at 8 threads and **6-10 ms at 192**, against
   0.3 us-0.7 ms for every other allocator (P8.5). Those 192-thread numbers
-  predate v3.3.2, which arms the rseq per-CPU layer (below) and re-measured
-  sustained prodcons p999 at 29.7 us (x86_64) and 5.0 us (aarch64) with it on,
-  against 41.7 / 16.9 us with `norseq`. The full cross-allocator comparison
-  has not yet been re-run at v3.3.2.
+  predate v3.3.2, which arms the rseq per-CPU layer (below). Every
+  "sustained" window before `38ec141` was shorter than labelled (2-43 s, not
+  20 or 180 s), so the 192-thread p999 figures in this paragraph describe
+  short windows. The 15-minute comparison against glibc and jemalloc is below.
 - **Sandboxed / security-hardened allocations.**  mimalloc-secure
   and `scudo` add explicit hardening (segregated metadata, randomized
   freelists, double-free detection by design).  libumem's defenses
@@ -298,7 +297,10 @@ allocations, because nothing loaded a magazine into it. v3.3.2 routes the
 per-thread cache's magazine refill through it, so a per-thread-cache miss is
 served lock-free from a per-CPU magazine instead of from the mutex-protected
 depot. Measured on Debian metal, same binary, rseq on vs
-`UMEM_OPTIONS=norseq`, 192 threads:
+`UMEM_OPTIONS=norseq`, 192 threads. **These windows were labelled 180 s but ran
+17-43 s** (a calibration bug in the harness, fixed in `38ec141`), under a glibc
+TLS setting that left each thread only a few KB of stack. Read the direction,
+not the absolute values:
 
 | | x86_64 on / off | aarch64 on / off |
 |---|---|---|

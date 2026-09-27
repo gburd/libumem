@@ -130,6 +130,15 @@ per free, `process_free`'s header decode plus `umem_may_own` twice, and
 `__errno_location`; nothing here contradicts that. P8.3 stands as written.
 
 ## 4. `frag` and sustained: the 8-19x sustained deficit is now 3x, and the
+
+> **CORRECTION (2026-09-27, see `docs/results/2026-09-27-heavy-load-comparison.md`
+> "Correction note"):** the sustained windows in this section were labelled
+> 20 s but ran 7.7 s (umem frag median, x86_64), 2.5 s (libc frag, x86_64),
+> 3.4 s and 1.7 s (aarch64). `sustained_load.sh` calibrated from 2 M ops while
+> `bench_main` ran the 100k/thread floor (fixed `38ec141`). The runs also used
+> the 8 MiB `optional_static_tls` tunable, which leaves ~2.4-8 KB of usable
+> stack on every non-main thread (fixed `3780624`). The measurements are real
+> but describe short windows under a starved-stack environment.
 ## remaining mechanism is one function
 
 Sustained `frag` 16:64 at t=192, median window (after warm-up), Mops/s and

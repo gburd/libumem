@@ -178,6 +178,14 @@ ABI change: `sizeof(umem_hook_t)` is still 120 and the soname is
     and arm p99 is higher (1.7 vs 1.0 us). norseq itself is under the old
     85 us target, so rseq's p999 contribution is about 12 us, not the
     unattributed ~47 us claimed above.
+    **CORRECTION (2026-09-27):** these sustained windows were labelled 180 s
+    but ran 32-43 s (prodcons) and 17-24 s (frag); `sustained_load.sh`
+    calibrated from the wrong op count (fixed `38ec141`). They also ran under
+    the 8 MiB `optional_static_tls` tunable that left ~2.4-8 KB of usable
+    thread stack (fixed `3780624`). The rseq-on vs norseq direction is from the
+    same binary under the same conditions, but the absolute values are not
+    15-minute steady state. See the 192-core comparison below for numbers from
+    15-minute runs with the first 5 minutes discarded.
   - Known, pre-existing, not fixed here: on arm-hi, `sustained_load.sh`'s
     default `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608` makes
     `bench_main` SEGV. The stack overflows in ld.so under `umem_init ->

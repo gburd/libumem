@@ -261,6 +261,15 @@ configurations, the layer demonstrably fires (0 -> 257 M served), and the
 ~~sustained p999 is roughly halved to ~46 us, beating the 85 us criterion,~~ (UNATTRIBUTED, see the correction under the p999 table) with
 no t=1 regression and no fork/exit regression.
 
+
+> **CORRECTION (2026-09-27):** the P8.5b-fix sustained tables in this section
+> (intel-hi 29.7 vs 41.7 us, arm-hi 5.0 vs 16.9 us p999) came from windows
+> labelled 180 s that ran 32-43 s (prodcons) and 17-24 s (frag), under the
+> 8 MiB `optional_static_tls` tunable that starved thread stacks. The arm-hi
+> run also used `GLIBC_TUNABLES=glibc.malloc.check=0` to avoid that tunable's
+> crash. The same-binary rseq-on vs norseq direction stands; the absolute
+> values are not steady state. Details:
+> `docs/results/2026-09-27-heavy-load-comparison.md` "Correction note".
 ## P8.5b-fix (2026-09-26, @r5fix): the aliasing, its cause, the fix, the evidence
 
 Full record: `docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md`.
