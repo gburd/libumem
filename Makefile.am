@@ -916,7 +916,8 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_ptc_mag_primed \
 	test/integration/test_depot_empty_scan \
 	test/integration/test_cache_footprint \
-	test/integration/test_oversize_vma.sh
+	test/integration/test_oversize_vma.sh \
+	test/integration/test_first_alloc_small_stack.sh
 
 # Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
 # P5.9).  Each demonstrates the exposure it closes and fails against v3.0.0 --
@@ -1127,6 +1128,15 @@ noinst_PROGRAMS += test/integration/test_oversize_vma
 test_integration_test_oversize_vma_SOURCES = test/integration/test_oversize_vma.c
 test_integration_test_oversize_vma_LDADD = libumem.la
 test_integration_test_oversize_vma_CPPFLAGS = -I$(srcdir)
+
+# First allocation (umem_init) on a small-stack thread must not crash; the
+# .sh runs it via the API and under LD_PRELOAD.
+noinst_PROGRAMS += test/integration/test_first_alloc_small_stack
+test_integration_test_first_alloc_small_stack_SOURCES = test/integration/test_first_alloc_small_stack.c
+test_integration_test_first_alloc_small_stack_LDADD = libumem.la
+test_integration_test_first_alloc_small_stack_LDFLAGS = -pthread
+test_integration_test_first_alloc_small_stack_CPPFLAGS = -I$(srcdir)
+
 test_integration_test_heap_ceiling_SOURCES = \
 	test/integration/test_heap_ceiling.c
 test_integration_test_heap_ceiling_LDADD = libumem.la
@@ -1224,6 +1234,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/integration/test_reclaim_returns.sh \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_oversize_vma.sh \
+	test/integration/test_first_alloc_small_stack.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh \

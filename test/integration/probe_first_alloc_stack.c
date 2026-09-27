@@ -37,6 +37,7 @@ static const char *mode;
 static size_t usable, depth;
 static void *result;
 static unsigned char *thr_sp, *thr_lo;
+static size_t thr_guard;
 
 /*
  * PROBE_NEIGHBOUR=1 (build with -DPROBE_NB, which adds 64 KiB of static TLS to
@@ -134,6 +135,7 @@ thr(void *arg)
 
 	(void) pthread_getattr_np(pthread_self(), &a);
 	(void) pthread_attr_getstack(&a, &addr, &size);
+	(void) pthread_attr_getguardsize(&a, &thr_guard);
 	(void) pthread_attr_destroy(&a);
 	usable = (size_t)(sp - (unsigned char *)addr);
 	thr_sp = sp;
@@ -200,8 +202,8 @@ main(int argc, char **argv)
 	} else {
 		(void) pthread_join(t, NULL);
 	}
-	printf("mode=%s stack_kib=%zu usable=%zu depth=%s%zu result=%s",
-	    mode, kib, usable, measure ? "" : "n/a:", depth,
+	printf("mode=%s stack_kib=%zu guard=%zu usable=%zu depth=%s%zu result=%s",
+	    mode, kib, thr_guard, usable, measure ? "" : "n/a:", depth,
 	    result != NULL || strcmp(mode, "none") == 0 ? "ok" : "NULL");
 	if (strcmp(mode, "ncpus") == 0)
 		printf(" ncpus=%ld", (long)(intptr_t)result);
