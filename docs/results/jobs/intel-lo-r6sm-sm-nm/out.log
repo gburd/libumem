@@ -1,0 +1,20 @@
+REGEN_OK
+so=/home/admin/libumem-iso-sm-nm-ec1c98d3cc9d/.libs/libumem.so.1.0.0
+b14cb192f2567bee5edb4d9a3d713ba14ffc2609e8525f1d6f81e6f3b70cad14  /home/admin/libumem-iso-sm-nm-ec1c98d3cc9d/.libs/libumem.so.1.0.0
+== dynamic exports
+368
+umem_sm_: 85
+umem_sparsemap: 1
+bare sm_/sparsemap/__sm: 0
+umem_sm_add umem_sm_add_grow umem_sm_add_grow_cursor umem_sm_add_many umem_sm_add_many_grow umem_sm_add_range umem_sm_and umem_sm_andnot umem_sm_assign umem_sm_capacity_remaining umem_sm_cardinality umem_sm_clear umem_sm_compare umem_sm_contains umem_sm_contains_cached umem_sm_contains_many umem_sm_copy umem_sm_create umem_sm_create_from_array umem_sm_create_from_range umem_sm_create_singleton umem_sm_deserialize umem_sm_difference umem_sm_difference_cardinality umem_sm_difference_inplace umem_sm_equals umem_sm_extract_range umem_sm_fill_factor umem_sm_flip_range umem_sm_free umem_sm_get_capacity umem_sm_get_data umem_sm_get_size umem_sm_hash umem_sm_init umem_sm_intersection umem_sm_intersection_cardinality umem_sm_intersection_inplace umem_sm_is_empty umem_sm_is_subset umem_sm_is_superset umem_sm_jaccard_index umem_sm_locator_build umem_sm_locator_contains umem_sm_locator_free umem_sm_locator_rank umem_sm_locator_select umem_sm_maximum umem_sm_membership umem_sm_minimum umem_sm_next_member umem_sm_nonempty_difference umem_sm_offset umem_sm_open umem_sm_open_copy umem_sm_or umem_sm_overlap umem_sm_owned_copy umem_sm_pop_first umem_sm_pop_last umem_sm_prev_member umem_sm_rank umem_sm_remove umem_sm_remove_range umem_sm_scan umem_sm_select umem_sm_serialize umem_sm_serialized_size umem_sm_set_allocator umem_sm_set_data_size umem_sm_shrink_to_fit umem_sm_singleton_member umem_sm_span umem_sm_split umem_sm_statistics umem_sm_subset_compare umem_sm_to_array umem_sm_union umem_sm_union_cardinality umem_sm_union_inplace umem_sm_validate umem_sm_wrap umem_sm_xor umem_sm_xor_cardinality umem_sm_xor_inplace umem_sparsemap 
+== sm.c object size
+   text	   data	    bss	    dec	    hex	filename
+  58168	      0	     24	  58192	   e350	.libs/libumem_ptcprobe_la-sm.o
+  58168	      0	     24	  58192	   e350	.libs/sm.o
+== static archive
+-rw-rw-r-- 1 admin admin 2581526 Sep 27 02:41 .libs/libumem.a
+85
+== in-tree consumers: undefined umem_sm_ refs in every built ELF
+consumers=0
+== test/common.c compiled?
+1

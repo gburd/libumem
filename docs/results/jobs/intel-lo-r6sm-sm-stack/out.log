@@ -1,0 +1,24 @@
+v550 /home/admin/sm550/sm.c:5457:1:sm_offset	1776	static
+v550 /home/admin/sm550/sm.c:7717:1:sm_union	1664	static
+v550 /home/admin/sm550/sm.c:7404:1:sm_difference	1632	static
+v550 /home/admin/sm550/sm.c:7112:1:sm_intersection	1632	static
+v550 /home/admin/sm550/sm.c:7323:1:__sm_emit_chunk_bits	736	static
+v550 /home/admin/sm550/sm.c:1797:1:__sm_chunk_scan	640	static
+v550 /home/admin/sm550/sm.c:8131:1:sm_split	480	static
+v550 /home/admin/sm550/sm.c:5391:1:__sm_emit_rle.isra	432	static
+v550 /home/admin/sm550/sm.c:4148:1:__sm_map_set	384	dynamic,bounded
+v550 /home/admin/sm550/sm.c:3901:1:__sm_map_unset	368	dynamic,bounded
+v550    text	   data	    bss	    dec	    hex	filename
+v550   59160	      0	     24	  59184	   e730	sm550.o
+v560 /home/admin/sm560/sm.c:6869:1:sm_xor	33520	static
+v560 /home/admin/sm560/sm.c:6601:1:__sm_run_pair_counts.constprop	33056	static
+v560 /home/admin/sm560/sm.c:7190:1:sm_subset_compare	33040	static
+v560 /home/admin/sm560/sm.c:7146:1:sm_compare	33040	static
+v560 /home/admin/sm560/sm.c:7117:1:sm_equals	33008	static
+v560 /home/admin/sm560/sm.c:6972:1:sm_extract_range	17008	static
+v560 /home/admin/sm560/sm.c:7088:1:sm_hash	16512	static
+v560 /home/admin/sm560/sm.c:5727:1:sm_offset	1776	static
+v560 /home/admin/sm560/sm.c:8275:1:sm_union	1664	static
+v560 /home/admin/sm560/sm.c:7962:1:sm_difference	1632	static
+v560    text	   data	    bss	    dec	    hex	filename
+v560   65023	      0	     24	  65047	   fe17	sm560.o

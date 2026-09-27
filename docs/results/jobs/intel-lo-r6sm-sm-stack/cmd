@@ -1,0 +1,1 @@
+cd /tmp && for v in 550 560; do d=$HOME/sm$v; gcc -std=c11 -D_GNU_SOURCE -O2 -fstack-usage -c -I$d $d/sm.c -o sm$v.o && sort -t"	" -k2 -n -r sm$v.su | head -n 10 | sed "s/^/v$v /"; size sm$v.o | sed "s/^/v$v /"; done

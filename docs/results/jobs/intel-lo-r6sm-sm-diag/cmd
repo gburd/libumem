@@ -1,0 +1,15 @@
+cd ~/probe && mkdir -p diag && cp ~/sm560/sm.c ~/sm560/sm.h diag/ && python3 - <<EOF
+import re
+s=open("diag/sm.c").read()
+old="""		if (start > idx) {
+			src = prev;
+			i--;
+			break;
+		}"""
+assert s.count(old)==1, s.count(old)
+s=s.replace(old,"""		if (start > idx) {
+			break;
+		}""")
+open("diag/sm.c","w").write(s)
+EOF
+diff ~/sm560/sm.c diag/sm.c; gcc -std=c11 -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Idiag -o pdiag sm_560_probe.c diag/sm.c && echo "=== v5.6.0 + diag (drop src=prev;i--) asan" && ASAN_OPTIONS=detect_leaks=0 ./pdiag 2 | grep -E "P1|FAILS"; echo "=== diag vs upstream split_safety test"; gcc -std=c11 -D_GNU_SOURCE -O1 -g -fsanitize=address,undefined -Idiag -o tss ~/sm560/tests/test_split_safety.c diag/sm.c && ./tss && echo test_split_safety-diag-OK; echo "=== stack usage (-O2, gcc -fstack-usage), largest frames"; for v in 550 560; do d=$HOME/sm$v; (cd /tmp && gcc -std=c11 -D_GNU_SOURCE -O2 -fstack-usage -c -I$d $d/sm.c -o sm$v.o && sort -t"	" -k2 -n -r sm.su | head -n 12 | sed "s/^/v$v /"); done

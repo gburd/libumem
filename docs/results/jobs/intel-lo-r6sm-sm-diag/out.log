@@ -1,0 +1,12 @@
+8751,8752d8750
+< 			src = prev;
+< 			i--;
+=== v5.6.0 + diag (drop src=prev;i--) asan
+PASS P1 split_gap: {1,8193} split@5000 rc=5000  map{1}=1 other{1}=0 other{8193}=1  |map|=1 |other|=1
+FAILS=3
+=== diag vs upstream split_safety test
+test_split_safety: S3 sm_split memory safety OK
+test_split_safety-diag-OK
+=== stack usage (-O2, gcc -fstack-usage), largest frames
+sort: cannot read: sm.su: No such file or directory
+sort: cannot read: sm.su: No such file or directory

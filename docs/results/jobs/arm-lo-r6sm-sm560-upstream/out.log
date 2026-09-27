@@ -1,0 +1,81 @@
+== plain
+[49/51] Compiling C object tests/libsparsemap_test_support.a.p/roaring.c.o
+[50/51] Linking static target tests/libsparsemap_test_support.a
+[51/51] Linking target tests/test_main
+ninja: Entering directory `/home/admin/sm560/b-plain'
+ninja: no work to do.
+ 1/12 test_rle_standalone OK               0.00s
+ 2/12 test_heisenbug      OK               0.00s
+ 3/12 test_empty_map      OK               0.00s
+ 4/12 test_coverage       OK               4.22s
+ 5/12 test_portability    OK               0.00s
+ 6/12 test_large_index    OK               0.00s
+ 7/12 test_validate       OK               0.00s
+ 8/12 test_amplify        OK               0.03s
+ 9/12 test_split_safety   OK               0.01s
+10/12 test_null           OK               0.00s
+11/12 main                OK              17.24s
+12/12 prefix              OK               0.00s
+
+Ok:                 12  
+Expected Fail:      0   
+Fail:               0   
+Unexpected Pass:    0   
+Skipped:            0   
+Timeout:            0   
+
+Full log written to /home/admin/sm560/b-plain/meson-logs/testlog.txt
+== asan+ubsan
+[49/51] Compiling C object tests/libsparsemap_test_support.a.p/roaring.c.o
+[50/51] Linking static target tests/libsparsemap_test_support.a
+[51/51] Linking target tests/test_main
+ninja: Entering directory `/home/admin/sm560/b-san'
+ninja: no work to do.
+ 1/12 test_rle_standalone OK               0.01s
+ 2/12 test_heisenbug      OK               0.01s
+ 3/12 test_empty_map      OK               0.01s
+ 4/12 test_coverage       OK               8.88s
+ 5/12 test_portability    OK               0.01s
+ 6/12 test_large_index    OK               0.01s
+ 7/12 test_validate       OK               0.01s
+ 8/12 test_amplify        OK               0.09s
+ 9/12 test_split_safety   OK               0.02s
+10/12 test_null           OK               0.01s
+11/12 main                OK              22.05s
+12/12 prefix              OK               0.01s
+
+Ok:                 12  
+Expected Fail:      0   
+Fail:               0   
+Unexpected Pass:    0   
+Skipped:            0   
+Timeout:            0   
+
+Full log written to /home/admin/sm560/b-san/meson-logs/testlog.txt
+== release -O3 -DNDEBUG
+[49/51] Compiling C object tests/libsparsemap_test_support.a.p/roaring.c.o
+[50/51] Linking static target tests/libsparsemap_test_support.a
+[51/51] Linking target tests/test_main
+ninja: Entering directory `/home/admin/sm560/b-rel'
+ninja: no work to do.
+ 1/12 test_rle_standalone OK               0.00s
+ 2/12 test_heisenbug      OK               0.00s
+ 3/12 test_empty_map      OK               0.00s
+ 4/12 test_coverage       OK               3.07s
+ 5/12 test_portability    OK               0.00s
+ 6/12 test_large_index    OK               0.00s
+ 7/12 test_validate       OK               0.00s
+ 8/12 test_amplify        OK               0.02s
+ 9/12 test_split_safety   OK               0.00s
+10/12 test_null           OK               0.00s
+11/12 main                OK              12.62s
+12/12 prefix              OK               0.00s
+
+Ok:                 12  
+Expected Fail:      0   
+Fail:               0   
+Unexpected Pass:    0   
+Skipped:            0   
+Timeout:            0   
+
+Full log written to /home/admin/sm560/b-rel/meson-logs/testlog.txt

@@ -1,0 +1,15 @@
+elf_or_archive_scanned=128
+   text	   data	    bss	    dec	    hex	filename
+ 633658	 156720	12991572	13781950	 d24bbe	.libs/libumem.so.1.0.0
+malloc.so defines umem_sm_: 0
+ 0x0000000000000001 (NEEDED)             Shared library: [libumem.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+348:am__libumem_la_SOURCES_DIST = init_lib.c atomic.h sm.c sm.h \
+372:am_libumem_la_OBJECTS = init_lib.lo sm.lo umem_agent_support.lo \
+397:am__libumem_ptcprobe_la_SOURCES_DIST = init_lib.c atomic.h sm.c sm.h \
+422:	libumem_ptcprobe_la-sm.lo \
+2299:			sm.c \
+common_obj_exists=1
+In file included from test/common.c:21:
+test/common.h:2:10: fatal error: sparsemap.h: No such file or directory
+    2 | #include <sparsemap.h>

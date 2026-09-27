@@ -1,0 +1,47 @@
+=== v550 -O2
+sparsemap 5.5.0
+PASS P1 split_gap: {1,8193} split@5000 rc=5000  map{1}=1 other{1}=0 other{8193}=1  |map|=1 |other|=1
+PASS P2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+FAIL P3 amplify: sm_equals(big,big)         TIMEOUT(killed by alarm) after 10000.2 ms
+FAIL P3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.2 ms
+FAIL P3 amplify: sm_overlap(big,{2^31+5})   finished in 9481.2 ms
+FAILS=3
+=== v550 asan+ubsan (P3 limit 30s)
+sparsemap 5.5.0
+PASS P1 split_gap: {1,8193} split@5000 rc=5000  map{1}=1 other{1}=0 other{8193}=1  |map|=1 |other|=1
+PASS P2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+FAIL P3 amplify: sm_equals(big,big)         TIMEOUT(killed by alarm) after 30000.8 ms
+FAIL P3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 30000.8 ms
+FAIL P3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 30000.8 ms
+FAILS=3
+=== v560 -O2
+sparsemap 5.6.0
+FAIL P1 split_gap: {1,8193} split@5000 rc=5000  map{1}=0 other{1}=1 other{8193}=1  |map|=0 |other|=2
+FAIL P2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=0 hash_equal=0
+PASS P2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P3 amplify: sm_equals(big,big)         finished in 0.2 ms
+FAIL P3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 10000.2 ms
+FAIL P3 amplify: sm_overlap(big,{2^31+5})   finished in 9490.7 ms
+FAILS=4
+=== v560 asan+ubsan (P3 limit 30s)
+sparsemap 5.6.0
+FAIL P1 split_gap: {1,8193} split@5000 rc=5000  map{1}=0 other{1}=1 other{8193}=1  |map|=0 |other|=2
+FAIL P2 equals_enc/rle_vs_2sparse: |a|=4096 |b|=4096 valid=1/1 ref_equals=1 sm_equals=0 hash_equal=0
+PASS P2 equals_enc/remove_readd: |a|=8192 |b|=8192 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/xor_vs_add: |a|=4900 |b|=4900 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P2 equals_enc/asc_vs_desc: |a|=6000 |b|=6000 valid=1/1 ref_equals=1 sm_equals=1 hash_equal=1
+PASS P3 amplify: sm_equals(big,big)         finished in 0.7 ms
+FAIL P3 amplify: sm_is_subset(big,big)      TIMEOUT(killed by alarm) after 30000.8 ms
+FAIL P3 amplify: sm_overlap(big,{2^31+5})   TIMEOUT(killed by alarm) after 30000.8 ms
+FAILS=4
+1c87ec52322216403ffa4cbc416d094cabe2daef04b54137e3bc5d38f8876906  /home/admin/sm550/sm.c
+eac7a444fedf6bb8bf274a63035694cd6ea006b183b3de8382923020a1f7246a  /home/admin/sm560/sm.c
+2d3e276c74dea74f18243b15efd2cf0ec632ed83e8e33b39e8477e090e83cb25  /home/admin/sm560/sm.h
