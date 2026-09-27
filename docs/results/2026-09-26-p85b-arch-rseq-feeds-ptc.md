@@ -290,7 +290,7 @@ be rseq-safe).
 | `repro_reload_commit_abort` (x86_64, aarch64) | FAIL every run, up to 2,824 violations/run | 0/200 runs fail, both arches |
 | `repro_rseq_resize_leak` batch 16 (forced 1 -> 3 resize) | 16 -> 12,010 stranded | 16 -> 16 (flat, = norseq) |
 | `repro_rseq_reload_alias` (e2e, public API) | 1/190 | 0 fails (lo gate, both arches) |
-| `oracle_rate.sh` 100 x 8t/10s mixed/all, rseq on | 5/200 | see below |
+| `oracle_rate.sh` 100 x 8t/10s mixed/all, rseq on | 5/200 (intel-lo) | 0/100 intel-lo, 0/100 arm-lo |
 | lo gate: make check, 6-bug suite, trailing_store, commit_safe, oracle x4 | - | ALL PASS both arches (4634100) |
 | 192t/60s oracle default, intel-hi / arm-hi | (PASS; blind) | PASS 370 M / 700 M allocs |
 | 192t/60s oracle ASan, intel-hi / arm-hi | (PASS; blind) | PASS 973 M / 1.53 B allocs |

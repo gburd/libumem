@@ -91,7 +91,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     asm design spec's "Resolution A" is corrected in place.
   - Gates after the fix: lo, both arches: `make check` 50/3/0, the 6-bug rseq
     suite, `repro_rseq_trailing_store`, `repro_reload_commit_safe`, oracle x4:
-    all PASS. 192t/60s mixed/all oracle on Debian metal, default and ASan,
+    all PASS; `oracle_rate.sh` 100 x 8t/10s rseq on: 0/100 intel-lo, 0/100
+    arm-lo (was 5/200). 192t/60s mixed/all oracle on Debian metal, default and ASan,
     intel-hi and arm-hi: all PASS.
   - Sustained p999, re-measured correctly (same binary, rseq on vs
     `UMEM_OPTIONS=norseq`, 192t prodcons 64:256, median of 3 windows):
