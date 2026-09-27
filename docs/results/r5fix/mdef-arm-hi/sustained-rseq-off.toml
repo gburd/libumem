@@ -1,0 +1,36 @@
+# sustained high-thread-count punishing-load results
+# PER-WINDOW rows: one row per measured window per allocator, with
+# that window's own latency percentiles and its own RSS/live-bytes
+# pair.  Windows for the named allocators INTERLEAVE (A,B,A,B,...)
+# so drift over the run does not masquerade as a difference between
+# allocators.  Not comparable to sustained.toml files written before
+# 2026-09-22: those aggregate a whole run and their frag column is a
+# different (and wrong) quantity.  See P2.1/P2.2 in
+# docs/plans/2026-09-21-production-readiness.md.
+captured = "2026-09-27T00:18:54Z"
+instance_type = "c8g.metal-48xl"
+arch = "aarch64"
+vcpu = 192
+threads = 192
+governor = "unknown"
+duration_target_sec_per_window = 180
+windows_per_allocator = 3
+warmup_windows_discarded = 1
+frag_sizes = "64:256"
+prodcons_sizes = "64:256"
+allocators = ["umem"]
+order = "interleaved"
+git_sha = "66fd33b369f47f1b1bf12eaf52dbd5674db69c0b"
+git_sha_source = "ISOLATED_PROVENANCE"
+configure_flags = " --enable-rseq 'CFLAGS=-O2 -g'"
+uname = "Linux ip-172-31-42-210 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64 GNU/Linux"
+gcc = "gcc (Debian 14.2.0-19) 14.2.0"
+libc = "ldd (Debian GLIBC 2.41-12+deb13u4) 2.41"
+bench_bin = "test/bench/.libs/bench_main"
+bench_bin_digest = "7ae98e31a40ffc7c3516e4f6ca411bf14e46066d34afe83e881019d7c5659eee"
+libumem_so = ".libs/libumem.so.1.0.0"
+libumem_so_digest = "1593bb8367c51bf7f510055772e3dc1f5645be1bfbc64efab85be4d972d2ea62"
+
+[allocator_identity."umem"]
+path = ".libs/libumem.so.1.0.0"
+digest = "1593bb8367c51bf7f510055772e3dc1f5645be1bfbc64efab85be4d972d2ea62"

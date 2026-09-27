@@ -335,3 +335,18 @@ comes from something else. The source that was measured cannot be recovered.
 The number is therefore **unattributed**. The re-measure below uses
 `UMEM_OPTIONS=norseq` (the shipped switch, verified by `test_norseq.sh`) on
 the same binary, from an isolated committed ref.
+
+## Finding: arm-hi sustained_load.sh SEGVs in umem_init -> dlopen (not the rseq path; attribution pending)
+
+The metal default gate at 66fd33b on arm-hi (c8g.metal-48xl, Debian 13): the
+192t/60s oracle PASSED (700,035,306 allocs, 0 failures), but every
+`sustained_load.sh` bench window crashed with rc=139, rseq on AND `norseq`.
+Reproduced by hand:
+`GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608 bench_main -a umem -w prodcons -t 192 -n 19200000 -s 64:256 -r 1 -W 0 -A -c`
+gives SEGV. The backtrace (`docs/results/r5fix/mdef-arm-hi/crash-bt.txt`)
+shows a thread-stack overflow in ld.so: `producer_thread -> _umem_alloc ->
+umem_alloc_retry -> umem_init -> umem_setup_envvars (envvar.c:997) ->
+dlopen -> ... stp x29,x30,[sp,#16]` right after `sub sp,sp,#0x440`.
+`sustained_load.sh` exports that tunable itself (line ~59). The rseq reload
+is not on the stack. Untested so far: whether it happens pre-fix (e622f65),
+and whether it is the tunable or `-n`. Next: a control run.
