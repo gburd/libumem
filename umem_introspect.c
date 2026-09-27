@@ -139,7 +139,7 @@ static uint64_t brk_seq;		/* BRK_SEQ target */
 static uint64_t brk_seq_counter;	/* alloc counter for BRK_SEQ */
 static struct leaksig *brk_leakset;
 static size_t brk_leakset_n;
-static uint64_t brk_generation;		/* bumped by every "continue" (B3) */
+static uint64_t brk_generation;		/* bumped by "continue" and re-arm (B3) */
 static int brk_stopped;			/* threads currently stopped */
 
 /* The server thread never stops on its own predicate (B4). */
@@ -618,6 +618,13 @@ cmd_break(FILE *out, char *arg)
 	} else {
 		break_disarm_locked();
 	}
+	/*
+	 * Re-arming retires the old predicate, so release every thread
+	 * parked on it (T12), exactly as "continue" does: bump the generation
+	 * and broadcast in the same brk_lock hold that installs the new one.
+	 */
+	brk_generation++;
+	(void) pthread_cond_broadcast(&brk_cv);
 
 	brk_size = size;
 	brk_seq = seq;
