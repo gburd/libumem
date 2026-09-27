@@ -40,6 +40,21 @@ c7i.2xlarge, `--enable-introspect`).
   the `findleaks` accounting gaps (PTC bins, oversize, untested rseq
   subtraction); the deleted "magazine reloads" counter is gone.
 
+### Performance -- measured, not changed
+
+- **Linux 1b87ea06a34b ("refill prefilled sheaves from the barn") does not
+  apply.** Probe counters (`-DUMEM_BARN_PROBE`, compiled out by default)
+  measured how often a partial magazine is drained object by object and how
+  much of that reaches the slab layer. Ran on prodcons and frag (bench_main,
+  `-D`, `sustained_load.sh` continuous) at t=8 on c7i.2xlarge and t=192 on
+  c8g.metal-48xl, Debian 13. Result: 0 of 1.54 M drained objects reached
+  `umem_slab_free`; partial drains ran at 1.3-101 objects per million
+  allocations; no slab, depot or mutex symbol cleared 0.3 % of a perf
+  profile. Two things rule out SLUB's failure mode: the depot never refuses
+  a magazine (SLUB's barn does), and every live refill swaps whole
+  magazines. The partial-magazine refill was not built.
+  `docs/results/2026-09-27-sheaves-barn-review.md`.
+
 ## [3.3.2] - 2026-09-27
 
 Arms the rseq lock-free per-CPU layer (P8.5b), on by default, and fixes the
