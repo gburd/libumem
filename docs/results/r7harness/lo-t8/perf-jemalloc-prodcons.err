@@ -1,0 +1,3 @@
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.753 MB /home/admin/libumem-jobs/prooflo/res/perf-jemalloc-prodcons.data (79865 samples) ]
+rc=0

@@ -1,0 +1,9 @@
+    49.81%  bench_main          
+    23.63%  libumem.so.1.0.0    
+    16.56%  [vdso]              
+     5.81%  libc.so.6           
+     2.96%  libm.so.6           
+     0.99%  [kernel.kallsyms]   
+     0.23%  ld-linux-x86-64.so.2
+     0.00%  [ena]               
+     0.00%  [unknown]           

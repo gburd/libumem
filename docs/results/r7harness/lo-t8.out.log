@@ -1,0 +1,47 @@
+REGEN_OK
+BUILD_OK
+test_bench_accounting rc=0
+test_bench_accounting rc=0
+== umem prodcons: rc=0 umem,producer-consumer/interval=1,276380887
+    21.59%  [.] __vdso_clock_gettime                   -      -            
+    16.81%  [.] td_qsort                               -      -            
+    15.13%  [.] umem_free_wrapper                      -      -            
+    12.40%  [.] producer_thread                        -      -            
+     4.70%  [.] __ieee754_log_fma                      -      -            
+     3.85%  [.] ring_pop                               -      -            
+== umem frag: rc=0 umem,fragmentation/interval=1,157628528
+    18.87%  [.] umem_free_wrapper                          -      -            
+    16.56%  [.] __vdso_clock_gettime                       -      -            
+    10.72%  [.] td_qsort                                   -      -            
+    10.23%  [.] umem_rseq_alloc_fastpath                   -      -            
+     7.89%  [.] _umem_alloc                                -      -            
+     6.32%  [.] umem_alloc_wrapper                         -      -            
+== libc prodcons: rc=0 libc,producer-consumer/interval=1,275795323
+    20.82%  [.] __vdso_clock_gettime                   -      -            
+    18.56%  [.] td_qsort                               -      -            
+     5.23%  [.] _int_malloc                            -      -            
+     4.75%  [.] __ieee754_log_fma                      -      -            
+     4.16%  [.] malloc                                 -      -            
+     3.66%  [.] _int_free_chunk                        -      -            
+== libc frag: rc=0 libc,fragmentation/interval=1,127327024
+    13.90%  [.] malloc                                     -      -            
+    13.73%  [.] cfree@GLIBC_2.2.5                          -      -            
+    10.12%  [.] __vdso_clock_gettime                       -      -            
+    10.10%  [.] _int_malloc                                -      -            
+     8.94%  [.] unlink_chunk.isra.0                        -      -            
+     8.62%  [.] td_qsort                                   -      -            
+== jemalloc prodcons: rc=0 jemalloc,producer-consumer/interval=1,329999058
+    24.42%  [.] __vdso_clock_gettime                   -      -            
+    22.18%  [.] td_qsort                               -      -            
+     9.49%  [.] producer_thread                        -      -            
+     5.62%  [.] __ieee754_log_fma                      -      -            
+     4.82%  [.] pthread_mutex_trylock@@GLIBC_2.34      -      -            
+     4.10%  [.] td_compress                            -      -            
+== jemalloc frag: rc=0 jemalloc,fragmentation/interval=1,182712229
+    17.91%  [.] __vdso_clock_gettime                   -      -            
+    13.09%  [.] __memset_avx512_unaligned_erms         -      -            
+    12.43%  [.] td_qsort                               -      -            
+     6.72%  [.] frag_worker                            -      -            
+     6.40%  [.] free                                   -      -            
+     5.37%  [.] malloc                                 -      -            
+PROOF_DONE

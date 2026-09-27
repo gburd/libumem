@@ -1,0 +1,16 @@
+    37.61%  [.] umem_free_wrapper                    -      -            
+    31.47%  [.] __kernel_clock_gettime               -      -            
+    11.42%  [.] td_qsort                             -      -            
+     3.26%  [.] umem_alloc_wrapper                   -      -            
+     2.99%  [.] td_compress                          -      -            
+     2.42%  [.] td_add                               -      -            
+     2.15%  [.] frag_worker                          -      -            
+     1.67%  [.] _umem_free                           -      -            
+     1.06%  [.] umem_rseq_alloc_fastpath             -      -            
+     0.84%  [.] _umem_alloc                          -      -            
+     0.68%  [.] log@@GLIBC_2.29                      -      -            
+     0.62%  [.] umem_rseq_free_fastpath              -      -            
+     0.58%  [.] clock_gettime@@GLIBC_2.17            -      -            
+     0.49%  [.] umem_depot_alloc                     -      -            
+     0.35%  [.] iv_poll                              -      -            
+     0.34%  [.] __aarch64_swp4_rel                   -      -            

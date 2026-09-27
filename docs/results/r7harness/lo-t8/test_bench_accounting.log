@@ -1,0 +1,44 @@
+=== bench harness accounting regressions (P2.1, P2.2) ===
+P2.1 operation_count is a total across threads (n=800000)
+   t=1 total_ops=800000  t=2 800000  t=4 800000
+P2.1 minimum per-thread work floor
+   requested 1000 total over 8 threads -> total_ops=800000 floor_raised=1
+P2.2 fragmentation live-byte accounting
+   threads=2 live_at_peak=205719258 ceiling=409600000 cumulative=821816606
+   alloc_failures=0
+   rss_at_live_peak/vmhwm = 0.9988 (kernel RSS counters are batched per-thread; exact ordering is not guaranteed)
+   samples=14 live_median=204538572 vmhwm=211730432 frag_median=1.0392
+   frag=1.0280 peak_rss=211480576 -> rss/live=1.0280
+frag live total = sum of per-worker slots
+   t=1 live_at_peak=103135216 true_peak=103135216 end_live=0
+   t=4 live_at_peak=361291196 true_peak=361528951
+prodcons: independent rings, frees cross-thread
+   threads=8 frees=400000 same-thread=0 max consumers per producer=1
+frag runs sizes above 4096
+   asked 16:8192 -> largest request 8192
+interval-mode frag live set follows the -L budget
+   -L 16 at 8192 B, t=2 -> sampled live peak 13737984 (budget 16777216)
+worker contexts are cache-line aligned
+   thread_context_t size=128 align=64
+   pc_context_t     size=128 align=64
+   frag_context_t   size=192 align=64
+P2.2 workloads with no live set report no ratio
+   single-thread      has_fragmentation=0 frag=0.0000
+   multi-thread       has_fragmentation=0 frag=0.0000
+   producer-consumer  has_fragmentation=0 frag=0.0000
+interval mode: 3 x 0.3 s, one process
+   producer-consumer  interval 0: 0.300 s ops=1565012 p50=243 rss=3706880 samples=0
+   producer-consumer  interval 1: 0.300 s ops=1611444 p50=233 rss=3706880 samples=0
+   producer-consumer  interval 2: 0.300 s ops=1603046 p50=237 rss=3706880 samples=0
+   fragmentation      interval 0: 0.300 s ops=4402153 p50=46 rss=846184448 samples=3
+   fragmentation      interval 1: 0.300 s ops=4855638 p50=49 rss=1288638464 samples=3
+   fragmentation      interval 2: 0.300 s ops=4300959 p50=53 rss=1309954048 samples=3
+interval mode: one 0.7 s operation in 0.3 s intervals
+   interval 0: 0.300 s ops=2831566 rss=607449088 samples=3
+   interval 1: 0.300 s ops=3205998 rss=994054144 samples=3
+   interval 2: 0.300 s ops=3757110 rss=1110482944 samples=3
+   interval 3: 0.300 s ops=3385812 rss=1304682496 samples=3
+   interval 4: 0.300 s ops=3198063 rss=1304682496 samples=3
+
+Result: PASS (0 failures)
+test_bench_accounting rc=0

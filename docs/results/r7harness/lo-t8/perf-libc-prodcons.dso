@@ -1,0 +1,7 @@
+    32.55%  bench_main          
+    21.08%  libc.so.6           
+    20.82%  [vdso]              
+    20.74%  [kernel.kallsyms]   
+     4.82%  libm.so.6           
+     0.00%  [ena]               
+     0.00%  ld-linux-x86-64.so.2

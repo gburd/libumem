@@ -1,0 +1,3 @@
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 36.211 MB /home/admin/libumem-jobs/proofhi/res/perf-umem-frag.data (340014 samples) ]
+rc=0

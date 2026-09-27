@@ -1,0 +1,3 @@
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.821 MB /home/admin/libumem-jobs/prooflo/res/perf-libc-frag.data (79925 samples) ]
+rc=0

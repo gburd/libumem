@@ -1,0 +1,5 @@
+    59.23%  libc.so.6        
+    20.31%  bench_main       
+    19.74%  [vdso]           
+     0.66%  libm.so.6        
+     0.06%  [kernel.kallsyms]

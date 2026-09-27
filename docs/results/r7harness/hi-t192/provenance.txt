@@ -1,0 +1,10 @@
+sha=2e88c219ef72ffa12e90905ddc27346ad8db9dbc
+Linux ip-172-31-42-73 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64 GNU/Linux
+192
+
+Debian GNU/Linux 13 (trixie)
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+ii  libjemalloc2:arm64 5.3.0-3      arm64        general-purpose scalable concurrent malloc(3) implementation
+e288f31c0c083671ab2b666555165d68252c62d4b123c731c3d0a2fdc182a872  .libs/libumem.so
+899db2e257d64740f77932e0eebf4fa5de2b63c36cce63818dfba8068834c3db  test/bench/.libs/bench_main

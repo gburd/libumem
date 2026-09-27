@@ -1,0 +1,3 @@
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 31.467 MB /home/admin/libumem-jobs/proofhi/res/perf-jemalloc-frag.data (289486 samples) ]
+rc=0

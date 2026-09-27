@@ -1,0 +1,7 @@
+    61.89%  bench_main           
+    20.64%  [vdso]               
+     9.54%  [kernel.kallsyms]    
+     4.38%  libumem.so.1.0.0     
+     2.85%  libc.so.6            
+     0.60%  libm.so.6            
+     0.09%  ld-linux-aarch64.so.1

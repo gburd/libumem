@@ -1,0 +1,10 @@
+sha=2e88c219ef72ffa12e90905ddc27346ad8db9dbc
+Linux ip-172-31-20-235 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64 GNU/Linux
+8
+
+Debian GNU/Linux 13 (trixie)
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+ii  libjemalloc2:amd64 5.3.0-3      amd64        general-purpose scalable concurrent malloc(3) implementation
+db5a76d88c36ec0987fdf525ab7ca1debdb88fdb198794e41d87dc0500e1143c  .libs/libumem.so
+4df469136d66b1865a35ddf290dce599c3fb99f174c2dcd3d48cec2ded47fa6f  test/bench/.libs/bench_main

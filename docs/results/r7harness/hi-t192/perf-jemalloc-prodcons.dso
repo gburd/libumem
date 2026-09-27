@@ -1,0 +1,6 @@
+    37.24%  bench_main       
+    23.33%  [vdso]           
+    18.69%  libc.so.6        
+    13.84%  [kernel.kallsyms]
+     6.06%  libjemalloc.so.2 
+     0.83%  libm.so.6        

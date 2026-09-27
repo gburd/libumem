@@ -1,0 +1,15 @@
+    46.27%  [.] __kernel_clock_gettime               -      -            
+    29.53%  [.] td_qsort                             -      -            
+     5.28%  [.] td_compress                          -      -            
+     4.63%  [.] td_add                               -      -            
+     4.00%  [.] frag_worker                          -      -            
+     1.29%  [.] log@@GLIBC_2.29                      -      -            
+     1.06%  [.] clock_gettime@@GLIBC_2.17            -      -            
+     0.98%  [.] 0x00000000000244c0                   -      -            
+     0.58%  [.] iv_poll                              -      -            
+     0.51%  [.] rand_r                               -      -            
+     0.44%  [.] clock_gettime@plt                    -      -            
+     0.43%  [.] free                                 -      -            
+     0.38%  [.] 0x0000000000024350                   -      -            
+     0.37%  [.] __memset_sve_zva64                   -      -            
+     0.37%  [.] malloc                               -      -            

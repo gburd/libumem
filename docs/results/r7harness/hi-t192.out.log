@@ -1,0 +1,47 @@
+REGEN_OK
+BUILD_OK
+test_bench_accounting rc=0
+test_bench_accounting rc=0
+== umem prodcons: rc=0 umem,producer-consumer/interval=1,5363018488
+    21.71%  [.] producer_thread                      -      -            
+    20.64%  [.] __kernel_clock_gettime               -      -            
+    15.76%  [.] umem_free_wrapper                    -      -            
+    10.67%  [.] td_qsort                             -      -            
+     5.30%  [k] __schedule                           -      -            
+     3.64%  [.] ring_pop                             -      -            
+== umem frag: rc=0 umem,fragmentation/interval=1,6079329473
+    37.61%  [.] umem_free_wrapper                    -      -            
+    31.47%  [.] __kernel_clock_gettime               -      -            
+    11.42%  [.] td_qsort                             -      -            
+     3.26%  [.] umem_alloc_wrapper                   -      -            
+     2.99%  [.] td_compress                          -      -            
+     2.42%  [.] td_add                               -      -            
+== libc prodcons: rc=0 libc,producer-consumer/interval=1,5622699828
+    34.01%  [.] __kernel_clock_gettime          -      -            
+    19.43%  [.] td_qsort                        -      -            
+     5.75%  [.] __aarch64_swp4_rel              -      -            
+     5.09%  [.] td_compress                     -      -            
+     4.49%  [.] __aarch64_cas4_acq              -      -            
+     3.83%  [.] td_add                          -      -            
+== libc frag: rc=0 libc,fragmentation/interval=1,4135750865
+    19.74%  [.] __kernel_clock_gettime            -      -            
+    18.53%  [.] cfree@GLIBC_2.17                  -      -            
+    12.36%  [.] td_qsort                          -      -            
+     9.86%  [.] _int_malloc                       -      -            
+     8.43%  [.] unlink_chunk.isra.0               -      -            
+     5.62%  [.] _int_free_merge_chunk             -      -            
+== jemalloc prodcons: rc=0 jemalloc,producer-consumer/interval=1,6359913109
+    23.33%  [.] __kernel_clock_gettime                 -      -            
+    15.21%  [.] td_qsort                               -      -            
+    11.33%  [.] producer_thread                        -      -            
+    11.20%  [.] __aarch64_cas4_acq                     -      -            
+     7.66%  [k] __schedule                             -      -            
+     3.24%  [.] td_compress                            -      -            
+== jemalloc frag: rc=0 jemalloc,fragmentation/interval=1,10246914988
+    46.27%  [.] __kernel_clock_gettime               -      -            
+    29.53%  [.] td_qsort                             -      -            
+     5.28%  [.] td_compress                          -      -            
+     4.63%  [.] td_add                               -      -            
+     4.00%  [.] frag_worker                          -      -            
+     1.29%  [.] log@@GLIBC_2.29                      -      -            
+PROOF_DONE

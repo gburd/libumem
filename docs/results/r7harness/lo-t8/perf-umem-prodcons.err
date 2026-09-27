@@ -1,0 +1,3 @@
+[ perf record: Woken up 18 times to write data ]
+[ perf record: Captured and wrote 5.853 MB /home/admin/libumem-jobs/prooflo/res/perf-umem-prodcons.data (79891 samples) ]
+rc=0
