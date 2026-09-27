@@ -30,10 +30,20 @@ gracefully when these are off:
 | `transaction=1m` | counts only | full | no | no |
 | both | full | full | yes | yes |
 
-Stack capture relies on `getpcstack()`.  On Linux this uses
-`backtrace(3)`, which works with frame pointers OR DWARF unwind info;
-distro-shipped binaries normally have one or the other.  ARM64 walks
-frame pointers directly.
+Stack capture relies on `getpcstack()`.  On Linux x86_64 and aarch64 it
+walks the frame-pointer chain directly; it does NOT use DWARF unwind info.
+`backtrace(3)` is only the fallback on other architectures, and returns no
+frames under `libumem_malloc.so`.  Leading frames inside libumem itself are
+dropped, so the first recorded pc is the allocating caller.
+
+- **x86_64:** deep audit stacks need libumem configured with
+  `--enable-frame-pointers` (off by default: it costs 2-9 % on the
+  alloc/free fast path).  Without it gcc `-O2` omits frame pointers, the walk
+  stops at depth 1, and `findleaks`/`umemctl leaks` print
+  `note: stack depth 1: libumem built without --enable-frame-pointers`.
+  The ASAN/UBSAN/TSAN configs turn it on.  Frames above your own code also
+  need your program built with `-fno-omit-frame-pointer`.
+- **aarch64:** gcc keeps frame records at `-O2`; full stacks work by default.
 
 ## Quick start with `umem`
 
@@ -240,9 +250,10 @@ size_t n = umem_walk_allocated(my_cb, NULL);
 
 ## Known caveats
 
-1. **Stack traces require frame pointers OR DWARF unwind info.**  A
-   `-O2` binary built without `-fno-omit-frame-pointer` and stripped of
-   debug info may produce truncated stacks.
+1. **Stack traces require frame pointers; DWARF unwind info is not used.**
+   On x86_64 a default libumem build records ONE frame per audit stack;
+   configure with `--enable-frame-pointers`.  A caller built without
+   `-fno-omit-frame-pointer` still ends the walk at that caller's frame.
 
 2. **`findleaks` counts are an upper bound, not exact.**  Buffers freed
    into a depot, per-CPU or rseq magazine are subtracted (reported as

@@ -170,6 +170,18 @@ extern int getpcstack(uintptr_t *pcstack, int pcstack_limit,
  */
 extern void umem_pcstack_internal(const void *addr);
 
+/*
+ * The x86_64 getpcstack() walks frame pointers only.  Without
+ * --enable-frame-pointers, gcc -O2 leaves data in %rbp and the walk stops at
+ * the first frame (T9).  Reports that show audit stacks print this note once
+ * instead of presenting a one-frame stack as if it were the caller.
+ */
+#if (defined(__x86_64__) || defined(__amd64)) && \
+    !defined(UMEM_HAVE_FRAME_POINTERS)
+#define	UMEM_AUDIT_STACK_NOTE	\
+	"note: stack depth 1: libumem built without --enable-frame-pointers\n"
+#endif
+
 #ifdef	__cplusplus
 }
 #endif

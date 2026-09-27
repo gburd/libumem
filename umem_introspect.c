@@ -593,6 +593,9 @@ cmd_leaks(FILE *out)
 		fprintf(out, "leaks: requires UMEM_DEBUG=audit\n.\n");
 		return;
 	}
+#ifdef UMEM_AUDIT_STACK_NOTE
+	fputs(UMEM_AUDIT_STACK_NOTE, out);
+#endif
 	walk_leaks(leaks_printer, out);
 	fprintf(out, ".\n");
 }

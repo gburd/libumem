@@ -251,45 +251,40 @@ cache flag on
 to opt specific hot caches out of debug instrumentation.
 .SH TROUBLESHOOTING
 .SS Short or empty stack traces
-Recorded stacks are normally only about
-.B two frames
-deep in a default build, and that is a property of how
-.B libumem itself
-is compiled, not of your application.
+.BR getpcstack (3)
+walks the frame-pointer chain on Linux x86_64 and aarch64; it does not use
+DWARF unwind info, with or without
+.BR libdw .
+Leading frames inside libumem itself are dropped, so the first recorded
+frame is the allocating caller.
 .PP
-The library is built
+.B x86_64:
+deep audit stacks need libumem configured with
+.BR --enable-frame-pointers .
+It is off by default because it costs 2\(en9% on the allocation fast path.
+Without it gcc
 .B -O2
-without
-.BR -fno-omit-frame-pointer ,
-so the allocator's own frames carry no frame pointer.
-.BR getpcstack (3)
-begins its walk inside
-.BR umem_alloc (3)
-and terminates as soon as it reaches one of those frames — measured depth is
-2 through
-.BR umem_alloc (3)
-versus 7 when
-.BR getpcstack (3)
-is called directly from a caller that keeps frame pointers.  Rebuilding your
-application with
-.B -fno-omit-frame-pointer
-therefore does
-.B not
-fix this on its own.
+omits frame pointers, every audit stack is one frame deep, and
+.B findleaks
+and
+.B umemctl leaks
+print
+.IR "stack depth 1: libumem built without --enable-frame-pointers" .
+.BR --enable-asan ,
+.B --enable-ubsan
+and
+.B --enable-tsan
+imply the option.
 .PP
-To get deeper audit stacks, build libumem with frame pointers —
-.B --enable-asan
-does so as a side effect, or add
-.B -fno-omit-frame-pointer
-to
-.B CFLAGS
-when configuring.  DWARF-based capture via
-.BR libdw ,
-when available, is not subject to this limitation.
+.B aarch64:
+gcc keeps frame records at
+.BR -O2 ,
+so full audit stacks work in a default build.
 .PP
-This means the per-buffer audit feature is materially weaker in a default build
-than its description above implies; it identifies the allocating call site
-shallowly rather than giving a full traceback.
+On either architecture, frames above a caller built without
+.B -fno-omit-frame-pointer
+may be lost at that caller.
+
 .SS findleaks reports more buffers than expected
 Check the
 .I cached_skipped

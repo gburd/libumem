@@ -1272,6 +1272,10 @@ umem_findleaks(FILE *out, umem_inspect_format_t fmt, unsigned max_classes)
 		    st.nclasses == 1 ? "" : "es");
 		findleaks_emit_cache_note(out, fmt, cached_skipped,
 		    unaccounted);
+#ifdef UMEM_AUDIT_STACK_NOTE
+		if (umem_flags & UMF_AUDIT)
+			(void) fputs(UMEM_AUDIT_STACK_NOTE, out);
+#endif
 		if (truncated)
 			(void) fputs(
 			    "warning: the allocation set grew faster than it "
