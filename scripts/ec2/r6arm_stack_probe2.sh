@@ -11,7 +11,7 @@ set -u
 make -j"$(nproc)" >make.log 2>&1 || { echo "SKIP: build"; tail -30 make.log; exit 77; }
 cat ISOLATED_PROVENANCE; uname -rm; grep -E "HAVE_LIBDW|HAVE_LIBNUMA|HAVE_BACKTRACE" config.h
 L="$PWD/.libs"; export LD_LIBRARY_PATH="$L"
-gcc -O2 -g -o probe test/integration/probe_first_alloc_stack.c -I. -L"$L" -lumem -ldl -pthread \
+gcc -O2 -g -DPROBE_NB -o probe test/integration/probe_first_alloc_stack.c -I. -L"$L" -lumem -ldl -pthread \
 	|| { echo "SKIP: probe build"; exit 77; }
 run() { local lab="$1"; shift; env "$@" >out.txt 2>&1; echo "$lab rc=$? $(tr '\n' '|' <out.txt)"; }
 echo "== per-step depth, default thread =="

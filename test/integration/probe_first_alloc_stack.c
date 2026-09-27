@@ -39,13 +39,18 @@ static void *result;
 static unsigned char *thr_sp, *thr_lo;
 
 /*
- * PROBE_NEIGHBOUR=1: create a second, default-attr thread AFTER the probe
+ * PROBE_NEIGHBOUR=1 (build with -DPROBE_NB, which adds 64 KiB of static TLS to
+ * EVERY thread and so shifts every "usable" figure by 64 KiB): create a second, default-attr thread AFTER the probe
  * thread (so its mapping lies directly below the probe thread's guard page),
  * fill a TLS array and a stack array with a canary, run the probe op, then
  * have the neighbour count how many canary bytes changed.  Shows whether an
  * over-deep frame in the probe thread wrote into another thread's memory.
  */
+#ifdef PROBE_NB
 #define	NB_N	(64 * 1024)
+#else
+#define	NB_N	1	/* keep the default build's static TLS unperturbed */
+#endif
 static __thread unsigned char nb_tls[NB_N];
 static pthread_barrier_t nb_go, nb_done;
 static long nb_tls_bad = -1, nb_stk_bad = -1;
