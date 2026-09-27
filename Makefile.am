@@ -966,7 +966,6 @@ TESTS += test/debugger/test_tool_T1_event_cb.sh \
 
 XFAIL_TESTS = test/debugger/test_tool_T1_event_cb.sh # T1
 XFAIL_TESTS += test/debugger/test_tool_T3_whatis_oversize.sh # T3
-XFAIL_TESTS += test/debugger/test_tool_T6_whatis_colour.sh # T6
 
 # P5.8: forges a malloc header and asserts free() refuses it without mutating
 # anything.  Links BOTH libraries: the forgery must travel the interposer's

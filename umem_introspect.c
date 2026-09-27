@@ -192,7 +192,15 @@ find_cache_by_name(const char *name)
 	return (NULL);
 }
 
-/* Find the slab owning addr in cp; returns slab or NULL, sets *base. */
+/*
+ * Find the slab owning addr in cp; returns slab or NULL, sets *base.
+ *
+ * The range is the slab's chunks, [slab_base, slab_base + chunks *
+ * chunksize), NOT slab_base + cache_slabsize: slab_base includes the colour
+ * offset, so that wider range runs `colour` bytes into the next page and
+ * claimed the first bytes of whatever follows a coloured slab (T6).
+ * Caller holds cp->cache_lock.
+ */
 static umem_slab_t *
 slab_of(umem_cache_t *cp, uintptr_t addr, uintptr_t *base_out)
 {
@@ -200,7 +208,8 @@ slab_of(umem_cache_t *cp, uintptr_t addr, uintptr_t *base_out)
 	for (sp = cp->cache_nullslab.slab_next; sp != &cp->cache_nullslab;
 	    sp = sp->slab_next) {
 		uintptr_t base = (uintptr_t)sp->slab_base;
-		if (addr - base < cp->cache_slabsize) {
+		if (addr - base <
+		    (uintptr_t)sp->slab_chunks * cp->cache_chunksize) {
 			*base_out = base;
 			return (sp);
 		}

@@ -1646,8 +1646,10 @@ whatis_visit(umem_cache_t *cp, void *arg)
 		char *base = sp->slab_base;
 		if ((const char *)ctx->target < base)
 			continue;
+		/* Chunks only: slab_base includes the colour, so
+		 * base + cache_slabsize overruns into the next page (T6). */
 		if ((const char *)ctx->target >=
-		    base + cp->cache_slabsize)
+		    base + (size_t)sp->slab_chunks * cp->cache_chunksize)
 			continue;
 
 		/*
