@@ -963,7 +963,6 @@ TESTS += test/debugger/test_tool_T1_event_cb.sh \
 	test/debugger/test_tool_T14_lldb_status.sh
 
 XFAIL_TESTS = test/debugger/test_tool_T1_event_cb.sh # T1
-XFAIL_TESTS += test/debugger/test_tool_T2_monitor.sh # T2
 XFAIL_TESTS += test/debugger/test_tool_T7_learn_noaudit.sh # T7
 XFAIL_TESTS += test/debugger/test_tool_T10_walk_log.sh # T10
 XFAIL_TESTS += test/debugger/test_tool_T12_rearm.sh # T12

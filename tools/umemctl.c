@@ -215,7 +215,7 @@ fetch_stats(FILE *sock, struct stats *s)
 			continue;
 		if (!strcmp(key, "pid")) s->pid = (long)v;
 		else if (!strcmp(key, "caches")) s->caches = (long)v;
-		else if (!strcmp(key, "bufs_inuse")) s->inuse = v;
+		else if (!strcmp(key, "bufs_held")) s->inuse = v;
 		else if (!strcmp(key, "bufs_total")) s->total = v;
 		else if (!strcmp(key, "slab_create")) s->slab_create = v;
 		else if (!strcmp(key, "slab_destroy")) s->slab_destroy = v;
@@ -224,14 +224,14 @@ fetch_stats(FILE *sock, struct stats *s)
 	}
 }
 
-/* Print the top-N caches by in-use count (a fresh "caches" query each tick). */
+/* Print the top-N caches by held count (a fresh "caches" query each tick). */
 static void
 print_top_caches(FILE *sock, int n)
 {
 	char line[256];
 	fprintf(sock, "caches\n");
 	fflush(sock);
-	printf("\n  %-28s %10s %10s %10s\n", "cache", "bufsize", "inuse",
+	printf("\n  %-28s %10s %10s %10s\n", "cache", "bufsize", "held",
 	    "total");
 	printf("  ------------------------------------------------------"
 	    "----------\n");
@@ -277,7 +277,7 @@ monitor(long pid, int once)
 		    ctime(&now));
 		printf("=====================================================\n");
 		printf("  caches            %ld\n", s.caches);
-		printf("  bufs in-use       %llu\n", s.inuse);
+		printf("  bufs held         %llu\n", s.inuse);
 		printf("  bufs total        %llu\n", s.total);
 		printf("  slabs created     %llu\n", s.slab_create);
 		printf("  slabs destroyed   %llu\n", s.slab_destroy);

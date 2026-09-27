@@ -29,9 +29,9 @@ held=$(awk '$1 == "bufs_held" { print $2 }' <<<"$stats")
 
 mon=$("$CTL" "$TPID" monitor --once 2>&1)
 echo "$mon"
-inuse=$(awk '/bufs in-use/ { print $NF }' <<<"$mon")
+inuse=$(awk '/bufs (in-use|held)/ { print $NF }' <<<"$mon")
 [[ ${inuse:-} =~ ^[0-9]+$ ]] ||
-	{ echo "ERROR: no 'bufs in-use' line in monitor --once"; exit 99; }
+	{ echo "ERROR: no 'bufs held' line in monitor --once"; exit 99; }
 
 if (( inuse == 0 )); then
 	echo "T2 REPRODUCES: monitor bufs in-use 0, stats bufs_held $held"
