@@ -716,8 +716,18 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
 /*
  * Lock-free MPMC ring buffer for producer-consumer workload.
  * Uses CAS on head/tail for safe multi-producer/multi-consumer access.
+ *
+ * Topology: one ring per consumer, not one ring for everybody.  Producer i
+ * and consumer j use ring (i % nrings) and (j % nrings), nrings = the number
+ * of consumers (<= producers), so each ring has exactly one consumer and one
+ * producer (two for the odd extra producer at odd thread counts).  Every free
+ * is still cross-thread, but no ring line is shared by more than three
+ * threads.  The previous single ring shared by all threads measured its own
+ * head/tail CAS: at t=192 on c8g.metal-48xl perf put 79.6 % of prodcons's time
+ * in __aarch64_cas8_relax (ring_pop, producer_thread), the allocator < 1 %.
+ * RING_CAPACITY is per ring; the old single ring had 8192 for all threads.
  */
-#define RING_CAPACITY 8192
+#define RING_CAPACITY 1024
 
 typedef struct {
     _Alignas(64) atomic_uint_fast64_t seq;
@@ -796,7 +806,7 @@ typedef struct {
     allocator_ops_t *ops;
     workload_config_t *config;
     uint64_t ops_target;      /* this producer's share of the TOTAL budget */
-    ring_buffer_t *ring;
+    ring_buffer_t *ring;      /* this thread's ring (see the topology note) */
     td_histogram_t *latency_hist;
     size_t bytes_allocated;
     uint64_t operations;
@@ -897,7 +907,9 @@ void workload_producer_consumer(allocator_ops_t *ops,
     if (n_consumers < 1) n_consumers = 1;
     int total = n_producers + n_consumers;
 
-    ring_buffer_t *ring = calloc(1, sizeof(ring_buffer_t));
+    int nrings = n_consumers;    /* one per consumer; see the topology note */
+    ring_buffer_t *ring = aligned_alloc(_Alignof(ring_buffer_t),
+                                        (size_t)nrings * sizeof(*ring));
     pthread_t *threads = calloc(total, sizeof(pthread_t));
     pc_context_t *contexts = calloc(total, sizeof(pc_context_t));
     pthread_barrier_t barrier;
@@ -907,7 +919,8 @@ void workload_producer_consumer(allocator_ops_t *ops,
         return;
     }
 
-    ring_init(ring);
+    for (int r = 0; r < nrings; r++)
+        ring_init(&ring[r]);
     pthread_barrier_init(&barrier, NULL, total + 1);
 
     /* cfg->operation_count is the TOTAL allocation budget; split it across
@@ -924,7 +937,9 @@ void workload_producer_consumer(allocator_ops_t *ops,
         contexts[i].ops = ops;
         contexts[i].config = cfg;
         contexts[i].ops_target = ops_per_producer;
-        contexts[i].ring = ring;
+        /* Producers are 0..n_producers-1, consumers follow. */
+        contexts[i].ring = &ring[(i < n_producers ? i : i - n_producers)
+                                 % nrings];
         contexts[i].start_barrier = &barrier;
         contexts[i].bytes_allocated = 0;
         contexts[i].operations = 0;
@@ -967,9 +982,11 @@ void workload_producer_consumer(allocator_ops_t *ops,
     for (int i = n_producers; i < total; i++) {
         if (pthread_create(&threads[i], NULL, consumer_thread,
                            &contexts[i]) != 0) {
-            fprintf(stderr, "bench: pthread_create failed at consumer %d\n",
-                    i - n_producers);
-            break;
+            /* A ring without its consumer never drains, and its producers
+             * would spin on it forever: measure nothing instead. */
+            fprintf(stderr, "bench: pthread_create failed at consumer %d; "
+                    "its ring would never drain\n", i - n_producers);
+            abort();
         }
         if (pc_started) pc_started[i] = 1;
         started_c++;
@@ -990,7 +1007,8 @@ void workload_producer_consumer(allocator_ops_t *ops,
     for (int i = 0; i < started_p; i++) {
         pthread_join(threads[i], NULL);
     }
-    atomic_store(&ring->done, 1);
+    for (int r = 0; r < nrings; r++)
+        atomic_store(&ring[r].done, 1);
 
     /* Wait for consumers */
     for (int i = n_producers; i < n_producers + started_c; i++) {

@@ -416,6 +416,88 @@ test_frag_live_slots(void)
 }
 
 /*
+ * prodcons ring topology.  One MPMC ring shared by every thread measured the
+ * ring (79.6 % of prodcons's time in its CAS at t=192).  Now each consumer
+ * owns a ring fed by its own producer(s), so frees stay cross-thread but a
+ * producer's buffers are freed by exactly ONE consumer.  A tagging allocator
+ * records, per buffer, which thread allocated it; the free side counts
+ * (producer, consumer) pairs.  Pre-fix, 4 consumers popping one ring spread
+ * every producer's buffers across several consumers.
+ */
+#define PC_MAXT 16
+static atomic_int pc_next_tid;
+static _Thread_local int pc_tid = -1;
+static atomic_ulong pc_pair[PC_MAXT][PC_MAXT];
+static int pc_self(void)
+{
+	if (pc_tid < 0)
+		pc_tid = atomic_fetch_add(&pc_next_tid, 1);
+	return (pc_tid);
+}
+static void *tag_alloc(size_t n)
+{
+	int *h = malloc(n + 16);
+	if (h == NULL)
+		return (NULL);
+	h[0] = pc_self();
+	return ((char *)h + 16);
+}
+static void tag_free(void *p)
+{
+	if (p == NULL)
+		return;
+	int *h = (int *)((char *)p - 16);
+	int a = h[0], f = pc_self();
+	if (a < PC_MAXT && f < PC_MAXT)
+		atomic_fetch_add(&pc_pair[a][f], 1);
+	free(h);
+}
+
+static void
+test_prodcons_rings(void)
+{
+	printf("prodcons: independent rings, frees cross-thread\n");
+	allocator_ops_t tag = mock;
+	tag.alloc = tag_alloc;
+	tag.free = tag_free;
+	memset(pc_pair, 0, sizeof(pc_pair));
+	atomic_store(&pc_next_tid, 0);
+	workload_config_t cfg = {
+		.name = "producer-consumer", .fn = workload_producer_consumer,
+		.thread_count = 8,
+		.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD * 4,
+		.min_size = 16, .max_size = 64,
+	};
+	bench_stats_t st;
+	bench_run(&tag, &cfg, &st);
+	int nt = atomic_load(&pc_next_tid);
+	unsigned long same = 0, total = 0;
+	int worst = 0;
+	for (int a = 0; a < nt && a < PC_MAXT; a++) {
+		int consumers = 0;
+		for (int f = 0; f < nt && f < PC_MAXT; f++) {
+			unsigned long c = atomic_load(&pc_pair[a][f]);
+			total += c;
+			if (c && a == f)
+				same += c;
+			if (c)
+				consumers++;
+		}
+		if (consumers > worst)
+			worst = consumers;
+	}
+	printf("   threads=%d frees=%lu same-thread=%lu max consumers per "
+	    "producer=%d\n", nt, total, same, worst);
+	CHECK(total == st.total_operations / 2,
+	    "%lu frees for %llu ops: buffers lost or double-counted", total,
+	    (unsigned long long)st.total_operations);
+	CHECK(same == 0, "%lu frees on the allocating thread: prodcons must "
+	    "free cross-thread", same);
+	CHECK(worst == 1, "a producer's buffers reached %d consumers: the "
+	    "ring is shared, not per consumer", worst);
+}
+
+/*
  * P2.2: workloads with no live set must report NO ratio.  Reporting
  * RSS/cumulative-traffic produced a number that fell towards zero the longer
  * the run, which was then compared against other allocators' numbers.
@@ -560,6 +642,7 @@ main(void)
 	test_work_floor();
 	test_frag_live_bytes();
 	test_frag_live_slots();
+	test_prodcons_rings();
 	test_no_bogus_fragmentation();
 	test_interval_mode();
 	test_interval_straggler();

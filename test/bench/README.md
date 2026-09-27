@@ -215,6 +215,17 @@ Multiple threads concurrently allocating and freeing memory. Tests scalability a
 
 Separate threads for allocation (producers) and deallocation (consumers). Tests cross-thread memory management.
 
+**Topology: one ring per consumer.** `-t N` gives `ceil(N/2)` producers and
+`floor(N/2)` consumers (at least one). Consumer `j` owns ring `j`; producer `i`
+pushes to ring `i % consumers`, so each ring has one consumer and one producer
+(two for the extra producer at odd `N`). Every free is still on a different
+thread from its allocation, but no ring line is shared by more than three
+threads. Before 2026-09-27 all threads shared ONE MPMC ring: at t=192 on
+c8g.metal-48xl perf put 79.6 % of the run in that ring's CAS and under 1 % in
+the allocator, so prodcons throughput/latency at high `-t` from before then
+measured the ring, not the allocator (see
+`docs/results/2026-09-27-harness-contention-fix.md`).
+
 **Use case**: Server applications with separate I/O and processing threads
 
 ### Fragmentation (`frag`)
