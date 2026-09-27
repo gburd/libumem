@@ -1870,6 +1870,15 @@ umem_walk_dump(FILE *out, const char *kind, umem_inspect_format_t fmt,
 	} else if (strcmp(kind, "freed") == 0) {
 		(void) umem_walk_freed(walk_dump_cb, &ctx);
 	} else if (strcmp(kind, "log") == 0) {
+		/* An empty walk must say why, as umem_log_dump() does (T10). */
+		if (umem_transaction_log == NULL) {
+			(void) fputs(fmt == UMEM_FMT_JSON ?
+			    "],\"error\":\"transaction log disabled; "
+			    "set UMEM_LOGGING=transaction=1m\"}\n" :
+			    "transaction log disabled "
+			    "(UMEM_LOGGING=transaction=1m to enable)\n", out);
+			return (0);
+		}
 		(void) umem_walk_log(walk_dump_cb, &ctx);
 	} else {
 		if (fmt == UMEM_FMT_JSON)
