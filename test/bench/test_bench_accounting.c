@@ -482,6 +482,29 @@ test_frag_live_budget(void)
 }
 
 /*
+ * Per-worker contexts must not share cache lines.  multi's thread_context_t
+ * was 80 B, 8-aligned, in one calloc'd array, so neighbouring workers' per-op
+ * counters (operations, bytes_*) shared a line.  bench_ctx_layout() (a test
+ * hook) reports each context type's size and alignment; the arrays come from
+ * bench_ctx_alloc(), which is aligned_alloc(64).
+ */
+static void
+test_ctx_alignment(void)
+{
+	size_t sz[3], al[3];
+	bench_ctx_layout(sz, al);
+	printf("worker contexts are cache-line aligned\n");
+	const char *nm[3] = { "thread_context_t", "pc_context_t",
+	    "frag_context_t" };
+	for (int i = 0; i < 3; i++) {
+		printf("   %-16s size=%zu align=%zu\n", nm[i], sz[i], al[i]);
+		CHECK(al[i] >= 64 && sz[i] % 64 == 0,
+		    "%s is %zu B aligned to %zu: neighbouring workers share a "
+		    "cache line", nm[i], sz[i], al[i]);
+	}
+}
+
+/*
  * prodcons ring topology.  One MPMC ring shared by every thread measured the
  * ring (79.6 % of prodcons's time in its CAS at t=192).  Now each consumer
  * owns a ring fed by its own producer(s), so frees stay cross-thread but a
@@ -711,6 +734,7 @@ main(void)
 	test_prodcons_rings();
 	test_frag_large_sizes();
 	test_frag_live_budget();
+	test_ctx_alignment();
 	test_no_bogus_fragmentation();
 	test_interval_mode();
 	test_interval_straggler();

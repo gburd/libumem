@@ -184,6 +184,10 @@ typedef struct workload_config {
 
 #define BENCH_FRAG_LIVE_MIB_DEFAULT 1024
 
+/* Test hook: size and alignment of the multi, prodcons and frag per-worker
+ * context types (each must be one or more whole cache lines). */
+void bench_ctx_layout(size_t sz[3], size_t al[3]);
+
 /* Per-thread share of the total budget, never below the work floor.
  * Returns the per-thread count and, if raised is non-NULL, whether the floor
  * had to be applied (so the caller can report an honest total). */

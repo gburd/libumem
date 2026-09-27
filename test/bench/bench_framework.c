@@ -249,9 +249,22 @@ void bench_print_csv_row(const bench_stats_t *stats) {
            (unsigned long long)stats->alloc_failures);
 }
 
-/* Thread context for multithreaded benchmarks */
+/*
+ * Thread context for multithreaded benchmarks.  Each worker writes its own
+ * context's counters on every operation, so contexts are cache-line aligned
+ * (and so padded to a multiple of 64): unaligned, the 80-byte contexts in one
+ * calloc'd array shared lines between neighbouring workers.  The same applies
+ * to pc_context_t and frag_context_t.  Arrays of them come from
+ * bench_ctx_alloc(), because plain calloc only guarantees 16-byte alignment.
+ */
+static void *bench_ctx_alloc(size_t n, size_t sz) {
+    void *p = aligned_alloc(64, n * sz);   /* sz is a multiple of 64 */
+    if (p) memset(p, 0, n * sz);
+    return p;
+}
+
 typedef struct thread_context {
-    int thread_id;
+    _Alignas(64) int thread_id;
     allocator_ops_t *ops;
     workload_config_t *config;
     uint64_t ops_target;      /* this thread's share of the TOTAL budget */
@@ -462,7 +475,7 @@ void workload_multi_thread(allocator_ops_t *ops, bench_stats_t *stats, void *con
     stats->thread_count = nthreads;
 
     pthread_t *threads = calloc(nthreads, sizeof(pthread_t));
-    thread_context_t *contexts = calloc(nthreads, sizeof(thread_context_t));
+    thread_context_t *contexts = bench_ctx_alloc(nthreads, sizeof(thread_context_t));
     pthread_barrier_t start_barrier;
 
     if (!threads || !contexts) {
@@ -802,7 +815,7 @@ static int ring_pop(ring_buffer_t *rb, void **ptr, size_t *sz) {
 }
 
 typedef struct {
-    int thread_id;
+    _Alignas(64) int thread_id;   /* see thread_context_t */
     allocator_ops_t *ops;
     workload_config_t *config;
     uint64_t ops_target;      /* this producer's share of the TOTAL budget */
@@ -911,7 +924,7 @@ void workload_producer_consumer(allocator_ops_t *ops,
     ring_buffer_t *ring = aligned_alloc(_Alignof(ring_buffer_t),
                                         (size_t)nrings * sizeof(*ring));
     pthread_t *threads = calloc(total, sizeof(pthread_t));
-    pc_context_t *contexts = calloc(total, sizeof(pc_context_t));
+    pc_context_t *contexts = bench_ctx_alloc(total, sizeof(pc_context_t));
     pthread_barrier_t barrier;
 
     if (!ring || !threads || !contexts) {
@@ -1139,7 +1152,7 @@ cleanup:
 struct frag_series;
 
 typedef struct {
-    int thread_id;
+    _Alignas(64) int thread_id;   /* see thread_context_t */
     allocator_ops_t *ops;
     workload_config_t *cfg;
     uint64_t ops_target;              /* per-thread share of the budget */
@@ -1395,7 +1408,7 @@ void workload_fragmentation(allocator_ops_t *ops,
         return;
     }
 
-    frag_context_t *ctxs = calloc((size_t)nthreads, sizeof(*ctxs));
+    frag_context_t *ctxs = bench_ctx_alloc((size_t)nthreads, sizeof(*ctxs));
     pthread_t *threads = calloc((size_t)nthreads, sizeof(*threads));
     if (!ctxs || !threads) {
         fprintf(stderr, "bench: frag driver allocation failed\n");
@@ -1755,6 +1768,14 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
             iv_sample(&rss_max, live, nworkers, series);
     }
     td_free(comb);
+}
+
+/* Test hook: sizes and alignments of the three per-worker context types
+ * (multi, prodcons, frag), for test_bench_accounting's layout check. */
+void bench_ctx_layout(size_t sz[3], size_t al[3]) {
+    sz[0] = sizeof(thread_context_t); al[0] = _Alignof(thread_context_t);
+    sz[1] = sizeof(pc_context_t);     al[1] = _Alignof(pc_context_t);
+    sz[2] = sizeof(frag_context_t);   al[2] = _Alignof(frag_context_t);
 }
 
 /* Run a benchmark once (no warm-up discard, no repeats). */
