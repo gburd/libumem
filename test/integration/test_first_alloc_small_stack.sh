@@ -4,6 +4,10 @@
 #   1. umem_alloc() API, no preload                      -- the regression
 #   2. malloc(), no preload (glibc)                      -- control
 #   3. malloc() under LD_PRELOAD=libumem_malloc.so       -- the interposer
+#   4. umem_alloc() API with an unrecognized UMEM_OPTIONS item: umem_init
+#      then reaches log_message() (misc.c), whose 4 KiB stack buffer alone
+#      still SEGVs a 16 KiB x86 thread once init_lib.c's 64 KiB one is gone
+#      (docs/results/2026-09-27-arm-dlopen-stack-crash.md section 9)
 # Each case prints where umem_init ran.  Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -25,6 +29,8 @@ run() {
 ARGS=(api);    run "umem_alloc API"            X_=1
 ARGS=(malloc); run "glibc malloc (control)"    X_=1
 ARGS=(malloc); run "libumem_malloc.so preload" LD_PRELOAD="$PRELOAD"
+ARGS=(api);    run "umem_alloc API, bad UMEM_OPTIONS item" \
+	UMEM_OPTIONS=first_alloc_small_stack_bogus_item
 [[ $rc -eq 0 ]] && echo "PASS: first allocation on a small stack" \
 	|| echo "FAIL: first allocation on a small stack"
 exit $rc
