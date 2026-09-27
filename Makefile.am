@@ -946,6 +946,22 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_introspect_sock_path.sh \
 	test/security/test_introspect_peer_uid
 
+# Tool-review regressions (docs/reviews/2026-09-26-tool-review.md,
+# "Regressions (XFAIL)").  Exit 0 fixed, 1 finding reproduces, 77 SKIP,
+# 99 ERROR (positive control failed).  Every XFAIL_TESTS entry is an OPEN
+# finding: when one is fixed its test XPASSes, which fails `make check` until
+# the entry is removed here.  XFAIL_TESTS must be empty before a release
+# claims the tools work.  T2/T7 SKIP without --enable-introspect.  One entry
+# per line: a trailing comment on a backslash-continued line would swallow
+# the rest of the list (see the NOTE above the Phase 1 block).
+TESTS += test/debugger/test_tool_T1_event_cb.sh \
+	test/debugger/test_tool_T2_monitor.sh \
+	test/debugger/test_tool_T7_learn_noaudit.sh
+
+XFAIL_TESTS = test/debugger/test_tool_T1_event_cb.sh # T1
+XFAIL_TESTS += test/debugger/test_tool_T2_monitor.sh # T2
+XFAIL_TESTS += test/debugger/test_tool_T7_learn_noaudit.sh # T7
+
 # P5.8: forges a malloc header and asserts free() refuses it without mutating
 # anything.  Links BOTH libraries: the forgery must travel the interposer's
 # free() -> interpose_owner_of() -> process_free() path, which is the one an
@@ -1246,7 +1262,11 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/security/test_secure_env_gate.sh \
 	test/security/test_writer_nofollow.sh \
 	test/security/test_stack_bounds.sh \
-	test/security/test_introspect_sock_path.sh
+	test/security/test_introspect_sock_path.sh \
+	test/debugger/tool_common.sh \
+	test/debugger/test_tool_T1_event_cb.sh \
+	test/debugger/test_tool_T2_monitor.sh \
+	test/debugger/test_tool_T7_learn_noaudit.sh
 
 # Generated API documentation goes to doxygen-out/, NOT docs/.
 # docs/ is durable, version-controlled project documentation (plans, results,
