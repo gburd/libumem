@@ -466,3 +466,22 @@ arm-hi t=1 / t=192 A/B (`p85b_fix_t_ab.sh`, 3b82b59, same binary, alternating,
 
 Not slower at either thread count: t=1 equal (+0.1 %), t=192 +3.1 % ops/s.
 arm-hi terminated right after (i-0725675538d2b99cd).
+
+## oracle_rate.sh 100 x 8t/10s mixed/all, rseq ON, fix at 4634100: 0/200
+
+| box | pre-fix (9fdc9d0, measured earlier) | post-fix (4634100) |
+|---|---:|---:|
+| intel-lo c7i.2xlarge | 5 / 200 (two 100-run arms) | **0 / 100** |
+| arm-lo c7g.2xlarge | not measured | **0 / 100** |
+
+Logs: `docs/results/r5fix/rate-{intel,arm}-lo.log`. If the post-fix rate
+were still 2.5 %, the chance of 0/100 on intel-lo alone is 0.975^100 = 8 %.
+Across 0/200 pooled (the arm arm is a different arch, so this is weaker
+evidence) it is 0.6 %. The deterministic regression is
+`repro_reload_commit_abort` (every run failed pre-fix, 0/200 post-fix on each
+arch). The rate test is corroboration, not the proof.
+
+All four `@r5fix` instances are terminated (i-020fbb27420d58818,
+i-0e1b5a1359c9edfcb, i-0ef9c16cf90ea208d, i-0725675538d2b99cd). One other
+Project=libumem instance, `intel-lo@r5tools` (i-0f24390ffd9e643c9), belongs
+to another agent and was not touched.

@@ -1,0 +1,114 @@
+ref=4634100
+sha=46341007c55c695566d85af11ecf5dd90eaaf83f
+role=intel-lo@r5fix
+job=rate
+isolated=yes
+UMEM_OPTIONS=<unset> runs=100 threads=8 dur=10
+6.12.107+deb13-cloud-amd64
+8
+gcc (Debian 14.2.0-19) 14.2.0
+#define HAVE_LINUX_RSEQ_H 1
+57027383762971be8f0d2e904d146f9dbb59d767ffe98bd2402922193a8225e8  test/stress/.libs/stress_concurrency_oracle
+e410094944857ea66dc4b4d46d7bbeb85ea5115c41e3b846fd4368f12c540052  .libs/libumem.so.1.0.0
+	libumem.so.1 => /home/admin/libumem-iso-rate-46341007c55c/.libs/libumem.so.1 (0x00007fa8cf200000)
+run1 PASS
+run2 PASS
+run3 PASS
+run4 PASS
+run5 PASS
+run6 PASS
+run7 PASS
+run8 PASS
+run9 PASS
+run10 PASS
+run11 PASS
+run12 PASS
+run13 PASS
+run14 PASS
+run15 PASS
+run16 PASS
+run17 PASS
+run18 PASS
+run19 PASS
+run20 PASS
+run21 PASS
+run22 PASS
+run23 PASS
+run24 PASS
+run25 PASS
+run26 PASS
+run27 PASS
+run28 PASS
+run29 PASS
+run30 PASS
+run31 PASS
+run32 PASS
+run33 PASS
+run34 PASS
+run35 PASS
+run36 PASS
+run37 PASS
+run38 PASS
+run39 PASS
+run40 PASS
+run41 PASS
+run42 PASS
+run43 PASS
+run44 PASS
+run45 PASS
+run46 PASS
+run47 PASS
+run48 PASS
+run49 PASS
+run50 PASS
+run51 PASS
+run52 PASS
+run53 PASS
+run54 PASS
+run55 PASS
+run56 PASS
+run57 PASS
+run58 PASS
+run59 PASS
+run60 PASS
+run61 PASS
+run62 PASS
+run63 PASS
+run64 PASS
+run65 PASS
+run66 PASS
+run67 PASS
+run68 PASS
+run69 PASS
+run70 PASS
+run71 PASS
+run72 PASS
+run73 PASS
+run74 PASS
+run75 PASS
+run76 PASS
+run77 PASS
+run78 PASS
+run79 PASS
+run80 PASS
+run81 PASS
+run82 PASS
+run83 PASS
+run84 PASS
+run85 PASS
+run86 PASS
+run87 PASS
+run88 PASS
+run89 PASS
+run90 PASS
+run91 PASS
+run92 PASS
+run93 PASS
+run94 PASS
+run95 PASS
+run96 PASS
+run97 PASS
+run98 PASS
+run99 PASS
+run100 PASS
+FAILS=0/100 UMEM_OPTIONS=<unset>
