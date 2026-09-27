@@ -455,3 +455,14 @@ Read plainly: on arm, rseq ON cuts prodcons p999 by about 3.4x
 prodcons throughput is 7 % lower (1.70 vs 1.82 Mops/s). The ops budgets
 differ by 17 %, so the throughput comparison is not matched work. frag is
 equal or better with rseq on. Both arms are far under 85 us.
+
+arm-hi t=1 / t=192 A/B (`p85b_fix_t_ab.sh`, 3b82b59, same binary, alternating,
+5 runs each, medians; `docs/results/r5fix/mtab-arm-hi.log`):
+
+| | ops/s ON | ops/s norseq | p50/p90/p99/p999 ON (ns) | norseq (ns) |
+|---|---:|---:|---|---|
+| t=1 | 7,101,202 | 7,094,144 | 35 / 36 / 37 / 37 | 35 / 36 / 37 / 38 |
+| t=192 | 400,030,202 | 388,106,689 | 35 / 36 / 37 / 39 | 35 / 36 / 37 / 50 |
+
+Not slower at either thread count: t=1 equal (+0.1 %), t=192 +3.1 % ops/s.
+arm-hi terminated right after (i-0725675538d2b99cd).
