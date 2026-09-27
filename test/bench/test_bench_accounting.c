@@ -69,6 +69,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
+#include <unistd.h>
 
 static int failures;
 
@@ -419,6 +421,57 @@ test_interval_mode(void)
 	}
 }
 
+/*
+ * Interval mode with a straggler: one operation that blocks for longer than an
+ * interval (seen at 384 threads on 8 vCPUs, where one umem frag operation took
+ * 12.7 s).  The clock must keep time regardless: every interval lasts its
+ * period and carries its own RSS samples.  The stalled interval's row may be
+ * late, but it must not stretch its own interval or starve the next one.
+ */
+static atomic_int stall_armed;
+static void *stall_alloc(size_t n)
+{
+	int one = 1;
+	if (atomic_compare_exchange_strong(&stall_armed, &one, 0))
+		usleep(700000);	/* > 2 intervals of 0.3 s */
+	return malloc(n);
+}
+
+static void
+test_interval_straggler(void)
+{
+	printf("interval mode: one 0.7 s operation in 0.3 s intervals\n");
+	allocator_ops_t stall = mock;
+	stall.alloc = stall_alloc;
+	bench_stats_t iv[5];
+	memset(iv, 0, sizeof(iv));
+	workload_config_t cfg = {
+		.name = "fragmentation", .fn = workload_fragmentation,
+		.thread_count = 4,
+		.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD * 4,
+		.min_size = 64, .max_size = 256,
+		.intervals = 5, .interval_sec = 0.3, .interval_out = iv
+	};
+	bench_stats_t st;
+	/* The first allocation after arming stalls; with 4 workers that lands in
+	 * interval 0 and holds its worker's publish across intervals 0-2. */
+	atomic_store(&stall_armed, 1);
+	bench_run(&stall, &cfg, &st);
+	for (int k = 0; k < 5; k++) {
+		printf("   interval %d: %.3f s ops=%llu rss=%zu samples=%zu\n", k,
+		    iv[k].elapsed_seconds,
+		    (unsigned long long)iv[k].total_operations,
+		    iv[k].max_rss_bytes, iv[k].frag_samples);
+		CHECK(iv[k].elapsed_seconds > 0.29 &&
+		    iv[k].elapsed_seconds < 0.4,
+		    "interval %d lasted %.3f s, asked 0.3 (a straggler must "
+		    "not stretch the clock)", k, iv[k].elapsed_seconds);
+		CHECK(iv[k].max_rss_bytes > 0,
+		    "interval %d has no RSS sample (the driver stopped "
+		    "sampling while waiting)", k);
+	}
+}
+
 int
 main(void)
 {
@@ -428,6 +481,7 @@ main(void)
 	test_frag_live_bytes();
 	test_no_bogus_fragmentation();
 	test_interval_mode();
+	test_interval_straggler();
 
 	printf("\nResult: %s (%d failure%s)\n", failures ? "FAIL" : "PASS",
 	    failures, failures == 1 ? "" : "s");
