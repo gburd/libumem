@@ -52,6 +52,21 @@ WINDOWS="${SUSTAINED_WINDOWS:-6}"
 # failures, 2026-09-22), not fragmentation.  The comparison run sets 64:256.
 IFS=: read -r FRAG_MIN FRAG_MAX <<< "${SUSTAINED_FRAG_SIZES:-16:4096}"
 WARMUPS="${SUSTAINED_WARMUPS:-1}"
+# MODE=windows (default): every window is its own bench_main process with a
+# calibrated, matched op budget, interleaved A,B,A,B.  Its warm-up windows are
+# separate processes too, so they warm the OS but never the allocator that a
+# measured window uses.
+# MODE=continuous: ONE bench_main process per (allocator, workload), running
+# WARMUPS+WINDOWS consecutive DURATION-second intervals (bench_main -D) and
+# printing only the intervals after the first WARMUPS -- "run 15 minutes,
+# ignore the first 5" in the same process.  Runs are time-bounded, so there is
+# no calibration; order is whole runs, workload-major, allocators in the
+# order given (put a null alias last to bracket the others).
+MODE="${SUSTAINED_MODE:-windows}"
+# continuous mode: frag's per-thread live pool, in objects (bench_main sizes it
+# as -n / threads / 4, and never below 25,000 because of the per-thread work
+# floor).  The live set is a stated input, not a function of box speed.
+FRAG_POOL="${SUSTAINED_FRAG_POOL:-25000}"
 BENCH_BIN="${BENCH_BIN:-test/bench/.libs/bench_main}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_ROOT"
@@ -209,10 +224,31 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
     echo "threads = $THREADS"
     echo "governor = \"$GOV\""
     echo "glibc_tunables = \"$GLIBC_TUNABLES\""
+    echo "umem_options = \"${UMEM_OPTIONS:-}\""
+    echo "config_h_rseq = \"$(grep -E '^#define HAVE_LINUX_RSEQ_H' config.h 2>/dev/null || echo 'not defined')\""
+    echo "os_release = \"$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-unknown}") ($(cat /etc/debian_version 2>/dev/null || echo -))\""
+    echo "kernel = \"$(uname -r)\""
+    echo "thp = \"$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo unknown)\""
+    echo "numa_balancing = \"$(cat /proc/sys/kernel/numa_balancing 2>/dev/null || echo unknown)\""
+    echo "vm_max_map_count = \"$(cat /proc/sys/vm/max_map_count 2>/dev/null || echo unknown)\""
+    echo "ulimit_s_kb = \"$(ulimit -s)\""
+    echo "numa_nodes = $(ls -d /sys/devices/system/node/node[0-9]* 2>/dev/null | wc -l)"
+    (numactl -H 2>/dev/null || echo "numactl unavailable") | sed 's/^/# numactl: /'
     echo "thread_stack_usable_bytes = $STACK_USABLE"
     echo "duration_target_sec_per_window = $DURATION"
     echo "windows_per_allocator = $WINDOWS"
     echo "warmup_windows_discarded = $WARMUPS"
+    echo "mode = \"$MODE\""
+    if [[ $MODE == continuous ]]; then
+        echo "# continuous: one process per (allocator, workload); each [[window]]"
+        echo "# is one DURATION-second interval of it; intervals 0..WARMUPS-1 ran"
+        echo "# and were not printed.  Every column is per-interval, including"
+        echo "# vmhwm_bytes (= that interval's max VmRSS sampled every 100 ms, not"
+        echo "# the process VmHWM, which would include the dropped warm-up)."
+        echo "interval_sec = $DURATION"
+        echo "intervals_per_run = $(( WARMUPS + WINDOWS ))"
+        echo "frag_pool_objects_per_thread = $FRAG_POOL"
+    fi
     echo "frag_sizes = \"$FRAG_MIN:$FRAG_MAX\""
     echo "prodcons_sizes = \"64:256\""
     echo "allocators = [$(printf '"%s",' "${ALLOCS[@]}" | sed 's/,$//')]"
@@ -245,7 +281,17 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
             echo "path = \"(process libc)\""
             echo "version = \"$({ ldd --version 2>&1 || true; } | head -1 | tr -d '"')\""
         else
-            echo "path = \"dlopen-resolved (see allocators.c)\""
+            # dlopen'd by allocators.c by soname first, which resolves through
+            # the same ld.so cache ldconfig -p prints.
+            p="$(preload_for "$b" || true)"
+            if [[ -n ${p:-} ]]; then
+                echo "path = \"$p (dlopen, via ld.so cache)\""
+                echo "realpath = \"$(readlink -f "$p" 2>/dev/null || echo "$p")\""
+                echo "digest = \"$(digest "$p")\""
+                echo "package = \"$(dpkg-query -W -f '${Package} ${Version} ${Architecture}' "$(dpkg-query -S "$(readlink -f "$p")" 2>/dev/null | head -1 | cut -d: -f1)" 2>/dev/null || echo unknown)\""
+            else
+                echo "path = \"dlopen-resolved (see allocators.c)\""
+            fi
         fi
     done
 } > "$OUT"
@@ -314,6 +360,13 @@ emit_windows() {
     local row
     row=$(printf '%s\n' "$out" | grep "^$a," | tail -1 | sed "s/^$a,/$label_a,/")
     [[ -z "$row" ]] && { echo "  (no row: $label_a $w)" | tee -a "$LOG"; return; }
+    record_row "$row" "$label" "$min:$max" "$WINDOW_INDEX"
+}
+
+# One bench_main CSV row -> one [[window]] in $OUT.  $4 = window index;
+# $5 (continuous mode) = the interval of the process it came from.
+record_row() {
+    local row="$1" label="$2" size="$3" widx="$4" interval="${5:-}"
     IFS=',' read -ra f <<< "$row"
     # Field order from bench_print_csv_header (0-based):
     #  0 allocator 1 workload 2 threads 3 total_ops 4 ops_per_thread
@@ -327,9 +380,10 @@ emit_windows() {
         echo "[[window]]"
         echo "allocator = \"${f[0]}\""
         echo "workload = \"$label\""
-        echo "window = $WINDOW_INDEX"
+        echo "window = $widx"
+        [[ -n $interval ]] && echo "interval = $interval"
         echo "threads = ${f[2]}"
-        echo "size = \"$min:$max\""
+        echo "size = \"$size\""
         echo "total_ops = ${f[3]}"
         echo "ops_per_thread = ${f[4]}"
         echo "elapsed_sec = ${f[5]}"
@@ -357,10 +411,58 @@ emit_windows() {
         echo "alloc_failures = ${f[28]:-0}"
     } >> "$OUT"
     printf '  %-12s %-18s w=%-2s ops=%-9s mops=%8.3f p99=%9s p999=%10s rss@peak=%s%s\n' \
-        "$label_a" "$label" "$WINDOW_INDEX" "${f[3]}" \
+        "${f[0]}" "$label" "$widx" "${f[3]}" \
         "$(awk "BEGIN{print ${f[6]}/1e6}")" "${f[10]}" "${f[11]}" "${f[14]}" \
         "$([[ "${f[28]:-0}" != "0" ]] && echo "  ALLOC_FAILURES=${f[28]}" || echo "")"
 }
+
+# continuous mode: one process, WARMUPS+WINDOWS intervals, first WARMUPS
+# unprinted.  Its raw CSV is kept next to $OUT.  A crash keeps (and labels)
+# the intervals printed before it -- bench_main flushes each as it completes.
+run_continuous() {
+    local label_a="$1" a; a="$(alloc_base "$1")"; local w="$2" min="$3" max="$4" label="$5"
+    local pre; pre="$(preload_of "$a" || true)"
+    local csv="${OUT%.toml}.${label_a//@/-}.$w.csv" rc t0 t1
+    local n=$(( THREADS * 4 * FRAG_POOL ))
+    t0=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    echo "  run $label_a $w: $((WARMUPS + WINDOWS)) x ${DURATION}s in one process, first $WARMUPS discarded (start $t0)"
+    set +e
+    LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$n" \
+        -s "$min:$max" -D "$DURATION:$(( WARMUPS + WINDOWS ))" -W "$WARMUPS" -c \
+        > "$csv" 2>>"$LOG"
+    rc=$?
+    set -e
+    t1=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    { echo ""; echo "[[run]]"; echo "allocator = \"$label_a\""; echo "workload = \"$label\""
+      echo "started = \"$t0\""; echo "ended = \"$t1\""; echo "rc = $rc"
+      echo "csv = \"$(basename "$csv")\""; } >> "$OUT"
+    [[ $rc -ne 0 ]] && echo "  CRASH: $label_a $w rc=$rc (intervals printed before it are kept)" | tee -a "$LOG"
+    local row k got=0
+    while IFS= read -r row; do
+        k=$(printf '%s' "$row" | cut -d, -f2 | sed -n 's|.*/interval=||p')
+        record_row "$(printf '%s' "$row" | sed "s/^$a,/$label_a,/")" "$label" \
+            "$min:$max" "$(( k - WARMUPS ))" "$k"
+        got=$((got + 1))
+    done < <(grep "^$a," "$csv" || true)
+    (( got == WINDOWS )) || echo "  SHORT: $label_a $w recorded $got of $WINDOWS intervals" | tee -a "$LOG"
+}
+
+if [[ $MODE == continuous ]]; then
+    echo "sustained load (continuous): allocators=${ALLOCS[*]} threads=$THREADS"
+    echo "  per run: $((WARMUPS + WINDOWS)) x ${DURATION}s, first $WARMUPS discarded; frag pool $FRAG_POOL/thread"
+    echo "  sha=$GIT_SHA ($SHA_SRC) -> $OUT"
+    for w in prodcons frag; do
+        case "$w" in
+            prodcons) mn=64; mx=256 ;;
+            frag)     mn=$FRAG_MIN; mx=$FRAG_MAX ;;
+        esac
+        for a in "${ALLOCS[@]}"; do
+            run_continuous "$a" "$w" "$mn" "$mx" "$w-sustained"
+        done
+    done
+    echo "done: ${ALLOCS[*]} -> $OUT"
+    exit 0
+fi
 
 echo "sustained load: allocators=${ALLOCS[*]} threads=$THREADS"
 echo "  windows=$WINDOWS x ~${DURATION}s each, interleaved; warmups=$WARMUPS"

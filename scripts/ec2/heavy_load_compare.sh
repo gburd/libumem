@@ -1,57 +1,83 @@
 #!/usr/bin/env bash
 # scripts/ec2/heavy_load_compare.sh - the specific comparison the user asked
 # for: libumem vs glibc vs jemalloc under heavy load on a 192-core NUMA metal
-# box, hundreds of active threads, 15 minutes per allocator with the first 5
-# minutes discarded.
+# box, hundreds of active threads, "run it for 15 minutes each, ignore the
+# first 5 minutes".
 #
 # Runs ON the instance (Debian metal), inside an isolated build tree.  Emits
-# a TOML result under docs/results/.  Uses sustained_load.sh's proven
-# window/warmup/alternating machinery:
-#   * 60s windows.  5 warmup windows discarded (= first 5 min), 10 measured
-#     windows kept (= next 10 min).  15 min wall per allocator, first 5 dropped,
-#     exactly as asked -- and 10 measured windows give a real p999 distribution
-#     rather than one coarse 10-min bucket.
-#   * A,B,C,A,B,C,... interleave across umem/libc/jemalloc so thermal/neighbour
-#     drift hits all three equally.
-#   * Matched per-window operation budget per workload (calibrate once).
+# a TOML result under docs/results/, via sustained_load.sh in CONTINUOUS
+# mode:
+#   * ONE bench_main process per (allocator, workload), running 15 x 60 s
+#     intervals (bench_main -D 60:15).  The first 5 intervals (= the first 5
+#     minutes of THAT process) are dropped; the next 10 are printed, one row
+#     each.  Separate short processes would warm the OS but never the
+#     allocator instance being measured.
+#   * Whole 15-minute runs in the order given, workload-major:
+#     prodcons: umem, libc, jemalloc, umem@null; then frag in the same order.
+#     umem@null is a second, identical umem run placed LAST, so it brackets
+#     the others in time: umem vs umem@null is this run's own noise and drift.
+#   * No op budgets: every run is time-bounded, so throughput is ops done in
+#     the same 10 measured minutes.
+#   * frag sizes 64:256 by default (16:4096 at 192 threads holds ~10 GB live,
+#     which measures umem's heap ceiling rather than fragmentation; see
+#     sustained_load.sh).  frag live pool: SUSTAINED_FRAG_POOL objects/thread.
 #
 # Usage (on the instance, in the build tree):
 #   THREADS=192 ./scripts/ec2/heavy_load_compare.sh
-#   THREADS=384 WORKLOAD=prodcons ./scripts/ec2/heavy_load_compare.sh
+#   THREADS=384 SUSTAINED_OUT=heavy-384.toml ./scripts/ec2/heavy_load_compare.sh
 set -euo pipefail
 
 THREADS="${THREADS:-$(nproc)}"
-ALLOCS="${ALLOCS:-umem,libc,jemalloc}"
+ALLOCS="${ALLOCS:-umem,libc,jemalloc,umem@null}"
 
-# 15 min per allocator PER WORKLOAD, first 5 discarded, at 60s window
-# granularity.  sustained_load.sh drives both prodcons (cross-thread
-# alloc/free -- the NUMA all-to-all contention shape) and frag (fragmentation
-# growth under a churning live set); both are what "heavy load" means here, so
-# both are measured.
+export SUSTAINED_MODE=continuous
 export SUSTAINED_SEC="${SUSTAINED_SEC:-60}"
-export SUSTAINED_WARMUPS="${SUSTAINED_WARMUPS:-5}"    # 5 x 60s = 5 min discarded
+export SUSTAINED_WARMUPS="${SUSTAINED_WARMUPS:-5}"    # 5 x 60s = first 5 min dropped
 export SUSTAINED_WINDOWS="${SUSTAINED_WINDOWS:-10}"   # 10 x 60s = 10 min measured
-export SUSTAINED_OUT="${SUSTAINED_OUT:-heavy-load-compare.toml}"
+export SUSTAINED_FRAG_SIZES="${SUSTAINED_FRAG_SIZES:-64:256}"
+# 100,000 live-pool objects per thread: at 64:256 (+16 B umem header) that is
+# ~3 GB live at t=192 and ~6 GB at t=384 when pools are full -- heavy, and
+# far below these boxes' 384 GB.
+export SUSTAINED_FRAG_POOL="${SUSTAINED_FRAG_POOL:-100000}"
+export SUSTAINED_OUT="${SUSTAINED_OUT:-heavy-load-compare-t${THREADS}.toml}"
 
+nallocs=$(echo "$ALLOCS" | tr ',' '\n' | grep -c .)
+per_run=$(( (SUSTAINED_WARMUPS + SUSTAINED_WINDOWS) * SUSTAINED_SEC ))
 echo "=== heavy-load comparison ==="
 echo "allocators   : $ALLOCS"
-echo "workloads    : prodcons + frag (both, per sustained_load.sh)"
+echo "workloads    : prodcons 64:256, frag $SUSTAINED_FRAG_SIZES"
 echo "threads      : $THREADS  (box has $(nproc) online)"
-echo "per alloc/wl : $SUSTAINED_WARMUPS warmup + $SUSTAINED_WINDOWS measured x ${SUSTAINED_SEC}s"
-echo "             = $(( (SUSTAINED_WARMUPS + SUSTAINED_WINDOWS) * SUSTAINED_SEC / 60 )) min, first $(( SUSTAINED_WARMUPS * SUSTAINED_SEC / 60 )) min discarded"
+echo "per run      : $SUSTAINED_WARMUPS + $SUSTAINED_WINDOWS intervals x ${SUSTAINED_SEC}s in ONE process"
+echo "             = $(( per_run / 60 )) min, first $(( SUSTAINED_WARMUPS * SUSTAINED_SEC / 60 )) min dropped"
+echo "total        : $(( 2 * nallocs )) runs = ~$(( 2 * nallocs * per_run / 60 )) min"
 echo "numa         :"
-numactl -H 2>/dev/null | sed 's/^/  /' | head -6 || echo "  (numactl unavailable)"
+numactl -H 2>/dev/null | sed 's/^/  /' || echo "  (numactl unavailable)"
 
-# jemalloc must be resolvable or the run is a lie about a two-way comparison.
+# jemalloc must be resolvable or the run is a lie about a three-way comparison.
 if echo "$ALLOCS" | tr ',' '\n' | grep -qx jemalloc; then
 	jem=$(ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libjemalloc\.so[^ ]*' | head -1 || true)
 	if [ -z "$jem" ]; then
-		echo "FATAL: jemalloc requested but libjemalloc.so not found (apt install libjemalloc-dev)" >&2
+		echo "FATAL: jemalloc requested but libjemalloc.so not found (apt install libjemalloc2)" >&2
 		exit 1
 	fi
 	echo "jemalloc     : $jem"
 fi
 
-# sustained_load.sh drives both prodcons and frag; the window/warmup/thread
-# knobs above are exported into its environment.
+# Every arm must actually load and run under the exported environment before
+# 2 x 15 minutes per arm are spent: an allocator that bench_main cannot load
+# prints no row and would silently drop out of the comparison.
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}$PWD/.libs"
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=65536}"
+for a in $(echo "$ALLOCS" | tr ',' ' '); do
+	b="${a%%@*}"
+	for w in prodcons frag; do
+		if ! test/bench/.libs/bench_main -a "$b" -w "$w" -t "$THREADS" -n $((THREADS * 100000)) \
+			-s 64:256 -c 2>/dev/null | grep -q "^$b,"; then
+			echo "FATAL: preflight: $b $w at t=$THREADS produced no row (not loadable or crashed)" >&2
+			exit 1
+		fi
+	done
+done
+echo "preflight    : every arm loads and runs prodcons + frag at t=$THREADS"
+
 exec ./scripts/ec2/sustained_load.sh "$ALLOCS" "$SUSTAINED_SEC" "$THREADS"
