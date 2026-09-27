@@ -197,9 +197,10 @@ libumem_malloc_la_LIBADD = libumem.la
 # is the second line of defense, not the only one.
 AM_CFLAGS = -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc \
 	-fno-builtin-free $(SIMD_CFLAGS) -D_UMEM_INTERNAL
-# Namespace the vendored sparsemap (sm.c/sm.h, upstream v5.4.0) so its public
+# Namespace the vendored sparsemap (sm.c/sm.h, upstream v5.5.0) so its public
 # symbols become umem_sm_* and cannot collide with an application that also
 # links its own copy of sparsemap.  Only sm.c/sm.h consult this macro.
+# v5.6.0 is deliberately not taken: docs/reviews/2026-09-27-sparsemap-5.6.0-review.md.
 AM_CPPFLAGS = -DSPARSEMAP_PREFIX=umem_
 AM_LDFLAGS =
 
