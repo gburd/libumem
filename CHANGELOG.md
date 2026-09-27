@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **x86_64 audit stacks were one frame deep, inside libumem; `learn` recorded the
+  cache bufsize (T9).** Leading libumem frames are now dropped by text range
+  (`427d63c`), and `learn` records the request size from the buftag (`3210ab9`).
+  Deep x86_64 stacks need the new opt-in `--enable-frame-pointers` (`17a65e7`).
+  Default-on it cost, on c7i.2xlarge (bench_pairs, 9 pairs, null within ±0.9 %),
+  t=1 throughput -5.9 % (512 B N=1), -9.3 % (N=128), -4.7 % (16:64 N=1);
+  t=8 -2.9 % (512 B N=1); +1.7..+2.3 % insn/pair (null ±0.15 %).  aarch64: every
+  point inside the null (it already keeps frame records).  Without the option,
+  x86_64 findleaks/leaks print "stack depth 1: libumem built without
+  --enable-frame-pointers".  test_tool_T9_leak_stack PASSes on aarch64 and on
+  x86_64 with the option, and SKIPs on x86_64 without it.
+
 - **`UMEM_SLAB_MEMBER` accepted addresses past a slab's last buffer** (`080ef6f`,
   test `0a60891`). It bounded a slab by `slab_base + cache_slabsize`, but
   `slab_base` already includes the colour offset, so the range ran past the
