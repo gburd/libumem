@@ -1,0 +1,18 @@
+ref=66fd33b
+sha=66fd33b369f47f1b1bf12eaf52dbd5674db69c0b
+role=arm-hi@r5fix
+job=masan
+isolated=yes
+6.12.107+deb13-cloud-arm64
+192
+gcc (Debian 14.2.0-19) 14.2.0
+=== libumem concurrency oracle ===
+threads=192  duration(s)=60  size-class=mixed  pattern=all
+  multi        2970583003 ops    1485315979 allocs_ok           0 fails     49.5 Mops/s  ok
+  prodcons       21005996 ops      10503015 allocs_ok           0 fails      0.3 Mops/s  ok
+  churn          63617667 ops      31833355 allocs_ok           0 fails      1.0 Mops/s  ok
+
+allocs_ok=1527652349 alloc_failures=0
+Result: PASS (no aliasing or corruption; 1527652349 successful allocations, 0 failures)
+GATE oracle_192t_60s_asan PASS rc=0
+METAL_GATE mode=asan rc=0
