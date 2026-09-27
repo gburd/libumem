@@ -1,0 +1,21 @@
+umem: rseq assembly fast path enabled (glibc=1, fs_offset=-4480, ncpus=8)
+test pid: 23505
+[1/8] live findleaks --text
+[2/8] live findleaks --json (parse + assert counts)
+  OK: 12 buffers, 8832 bytes, 1 cached, 2 classes
+[3/8] live status --json
+  OK: 67 caches reported
+[4/8] live log dump
+  OK: 50 records, 50 with stack traces
+[5/8] live walk allocated
+  OK: 1658 buffers walked
+[6/8] live whatis
+  OK: whatis(0x7f8eb79fc000) -> umem_alloc_4096 ALLOCATED
+[7/8] snapshot binary round-trip
+  OK: offline matches live
+[8/8] snapshot status + log readable offline
+  OK: 67 caches
+
+ALL 8 TESTS PASSED
+./test/debugger/test_inspect_e2e.sh: line 33: 23505 Killed                  UMEM_DEBUG=audit UMEM_LOGGING=transaction=1m LD_LIBRARY_PATH="$ROOT/.libs" "$ROOT/test/test_inspect_live" "$PIDFILE" > /dev/null
+PASS test/debugger/test_inspect_e2e.sh (exit status: 0)

@@ -1,0 +1,5 @@
+ref=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+sha=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+role=arm-lo@r7verify
+job=r7v
+isolated=yes

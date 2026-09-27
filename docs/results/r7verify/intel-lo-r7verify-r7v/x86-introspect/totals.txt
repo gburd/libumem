@@ -1,0 +1,7 @@
+# TOTAL: 67
+# PASS:  61
+# SKIP:  3
+# XFAIL: 3
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0

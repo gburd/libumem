@@ -1,0 +1,1 @@
+cd ~/libumem-iso-r7v-fbedab9b1380 && { bash ~/r7v_run.sh r7v arm-default= arm-introspect=--enable-introspect ; }

@@ -1,0 +1,2 @@
+SKIP: x86_64 libumem built without --enable-frame-pointers
+SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)

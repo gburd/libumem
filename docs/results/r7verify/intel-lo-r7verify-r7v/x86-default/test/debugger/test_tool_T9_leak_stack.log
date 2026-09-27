@@ -1,0 +1,2 @@
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)

@@ -1,0 +1,7 @@
+leak records 435: first pc in exe 435, in libumem 0
+     64 depth=3
+    267 depth=4
+    104 depth=5
+learned: 438 sigs, size=200: 259
+T9 FIXED
+PASS test/debugger/test_tool_T9_leak_stack.sh (exit status: 0)

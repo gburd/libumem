@@ -1,0 +1,1 @@
+cd ~/libumem-iso-r7v-fbedab9b1380 && { bash ~/r7v_run.sh r7v x86-default= x86-introspect=--enable-introspect "x86-introspect-fp=--enable-introspect --enable-frame-pointers" ; }

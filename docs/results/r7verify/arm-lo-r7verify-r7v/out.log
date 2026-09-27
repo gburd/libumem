@@ -1,0 +1,33 @@
+ref=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+sha=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+role=arm-lo@r7verify
+job=r7v
+isolated=yes
+Linux ip-172-31-39-120 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64 GNU/Linux
+8
+gcc (Debian 14.2.0-19) 14.2.0
+=== arm-default: ./configure 
+REGEN_OK
+arm-default make_check_rc=0
+# TOTAL: 67
+# PASS:  53
+# SKIP:  12
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+arm-default test_inspect_e2e: :test-result: PASS | PASS test/debugger/test_inspect_e2e.sh (exit status: 0)
+arm-default test_tool_T9_leak_stack: :test-result: SKIP | SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)
+=== arm-introspect: ./configure --enable-introspect
+REGEN_OK
+arm-introspect make_check_rc=0
+# TOTAL: 67
+# PASS:  62
+# SKIP:  2
+# XFAIL: 3
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+arm-introspect test_inspect_e2e: :test-result: PASS | PASS test/debugger/test_inspect_e2e.sh (exit status: 0)
+arm-introspect test_tool_T9_leak_stack: :test-result: PASS | PASS test/debugger/test_tool_T9_leak_stack.sh (exit status: 0)
+=== r7v_run done

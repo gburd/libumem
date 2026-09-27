@@ -1,0 +1,47 @@
+ref=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+sha=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+role=intel-lo@r7verify
+job=r7v
+isolated=yes
+== isolated run 1
+rc=0
+RESULT: PASS (free() scales; no global serialization on the hot path)
+t=8 9 pairs: null API/API median 1.000 min 0.994; preload/API median 0.576 min 0.568; bar 0.48
+RESULT: PASS (preload/API 0.576 >= 0.48, null min 0.994)
+PASS test/stress/interpose_regress.sh (exit status: 0)
+== isolated run 2
+rc=0
+RESULT: PASS (free() scales; no global serialization on the hot path)
+t=8 9 pairs: null API/API median 0.999 min 0.953; preload/API median 0.554 min 0.531; bar 0.48
+RESULT: PASS (preload/API 0.554 >= 0.48, null min 0.953)
+PASS test/stress/interpose_regress.sh (exit status: 0)
+== isolated run 3
+rc=0
+RESULT: PASS (free() scales; no global serialization on the hot path)
+t=8 9 pairs: null API/API median 1.009 min 0.982; preload/API median 0.567 min 0.551; bar 0.48
+RESULT: PASS (preload/API 0.567 >= 0.48, null min 0.982)
+PASS test/stress/interpose_regress.sh (exit status: 0)
+== full make check -j8 run 1
+rc=0
+# TOTAL: 67
+# PASS:  53
+# SKIP:  12
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+t=8 9 pairs: null API/API median 0.918 min 0.627; preload/API median 0.563 min 0.394; bar 0.48
+RESULT: PASS (preload/API 0.563 >= 0.48, null min 0.627)
+PASS test/stress/interpose_regress.sh (exit status: 0)
+== full make check -j8 run 2
+rc=0
+# TOTAL: 67
+# PASS:  53
+# SKIP:  12
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+t=8 9 pairs: null API/API median 1.315 min 0.735; preload/API median 0.629 min 0.438; bar 0.48
+RESULT: PASS (preload/API 0.629 >= 0.48, null min 0.735)
+PASS test/stress/interpose_regress.sh (exit status: 0)

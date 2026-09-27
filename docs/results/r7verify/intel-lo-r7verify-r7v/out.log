@@ -1,0 +1,46 @@
+ref=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+sha=fbedab9b1380d1d65f211dba5c3db16c94b9562a
+role=intel-lo@r7verify
+job=r7v
+isolated=yes
+Linux ip-172-31-20-10 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64 GNU/Linux
+8
+gcc (Debian 14.2.0-19) 14.2.0
+=== x86-default: ./configure 
+REGEN_OK
+x86-default make_check_rc=2
+# TOTAL: 67
+# PASS:  52
+# SKIP:  12
+# XFAIL: 2
+# FAIL:  1
+# XPASS: 0
+# ERROR: 0
+x86-default NONPASS ./test/stress/interpose_regress.trs
+x86-default test_inspect_e2e: :test-result: PASS | PASS test/debugger/test_inspect_e2e.sh (exit status: 0)
+x86-default test_tool_T9_leak_stack: :test-result: SKIP | SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)
+=== x86-introspect: ./configure --enable-introspect
+REGEN_OK
+x86-introspect make_check_rc=0
+# TOTAL: 67
+# PASS:  61
+# SKIP:  3
+# XFAIL: 3
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+x86-introspect test_inspect_e2e: :test-result: PASS | PASS test/debugger/test_inspect_e2e.sh (exit status: 0)
+x86-introspect test_tool_T9_leak_stack: :test-result: SKIP | SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)
+=== x86-introspect-fp: ./configure --enable-introspect --enable-frame-pointers
+REGEN_OK
+x86-introspect-fp make_check_rc=0
+# TOTAL: 67
+# PASS:  62
+# SKIP:  2
+# XFAIL: 3
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+x86-introspect-fp test_inspect_e2e: :test-result: PASS | PASS test/debugger/test_inspect_e2e.sh (exit status: 0)
+x86-introspect-fp test_tool_T9_leak_stack: :test-result: PASS | PASS test/debugger/test_tool_T9_leak_stack.sh (exit status: 0)
+=== r7v_run done
