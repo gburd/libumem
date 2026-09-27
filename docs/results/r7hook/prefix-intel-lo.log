@@ -1,0 +1,35 @@
+REGEN_OK
+=== T1_event_cb
+event callback hits: alloc=0 free=0 (1800 allocations made)
+FAIL: T1 umem_inspect_set_event_cb() callback never ran for alloc/free with events enabled
+T1 REPRODUCES: 1800 allocations, alloc callbacks=0 free=0
+EXIT T1_event_cb=1
+=== T1_gdb_break
+--- gdb control
+Breakpoint 1 at 0x7f2ba0a823c0: file umem.c, line 4267.
+Thread 2 "tool_target" hit Breakpoint 1, _umem_alloc (size=size@entry=24, umflag=umflag@entry=0) at umem.c:4267
+#0  _umem_alloc (size=size@entry=24, umflag=umflag@entry=0) at umem.c:4267
+#1  0x000055b594238923 in churn (arg=<optimized out>) at test/debugger/tool_target.c:123
+#2  0x00007f2ba089e8bb in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:448
+--- gdb alloc
+Breakpoint 1 at 0x7f2ba0a89f50: file umem_inspect.c, line 87.
+Thread 1 "tool_target" received signal SIGUSR2, User defined signal 2.
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007f2ba089b388 in __internal_syscall_cancel (a1=a1@entry=0, a2=a2@entry=0, a3=a3@entry=140731935015600, a4=a4@entry=140731935015600, a5=a5@entry=0, a6=a6@entry=0, nr=230) at ./nptl/cancellation.c:49
+#2  0x00007f2ba08e7cfa in __GI___clock_nanosleep (clock_id=<optimized out>, clock_id@entry=0, flags=flags@entry=0, req=req@entry=0x7ffeb4fec2b0, rem=rem@entry=0x7ffeb4fec2b0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:48
+--- gdb free
+Breakpoint 1 at 0x7f2ba0a89f60: file umem_inspect.c, line 95.
+Thread 1 "tool_target" received signal SIGUSR2, User defined signal 2.
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007f2ba089b388 in __internal_syscall_cancel (a1=a1@entry=0, a2=a2@entry=0, a3=a3@entry=140731935015600, a4=a4@entry=140731935015600, a5=a5@entry=0, a6=a6@entry=0, nr=230) at ./nptl/cancellation.c:49
+#2  0x00007f2ba08e7cfa in __GI___clock_nanosleep (clock_id=<optimized out>, clock_id@entry=0, flags=flags@entry=0, req=req@entry=0x7ffeb4fec2b0, rem=rem@entry=0x7ffeb4fec2b0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:48
+T1 REPRODUCES: umem break alloc never stopped
+T1 REPRODUCES: umem break free never stopped
+EXIT T1_gdb_break=1
+=== T8_break_ptc
+break size=1500: parked
+break size=777: NOT parked in 5 s
+break cache=tt_user: NOT parked in 5 s
+break size=200000: NOT parked in 5 s
+T8 REPRODUCES
+EXIT T8_break_ptc=1
