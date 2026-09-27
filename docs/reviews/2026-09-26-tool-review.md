@@ -402,3 +402,39 @@ Still open from this set:
   `slab_base + cache_slabsize` bound and is used on the umem.c free path. Not
   changed (allocator code, out of scope). Not probed.
 - T1, T8, T9: @r7lib's.
+
+## Status: T1 / T8 / T9 library fixes (agent @r7lib, stopped at the tool-call budget)
+
+- **Committed `06a87cd`:** three new regressions, all in `XFAIL_TESTS`:
+  `test_tool_T1_gdb_break.sh` (gdb `umem break alloc|free` must stop, control
+  `break _umem_alloc`), `test_tool_T8_break_ptc.sh` (`break size=777`,
+  `cache=tt_user`, `size=200000` must park, control `size=1500`, seen via
+  the `BREAK:` line under `UMEM_DEBUG=allverbose`), and
+  `test_tool_T9_leak_stack.sh` (a leak record's first pc must be in the
+  target executable, and `learn` must emit `sig size=200`).
+  **Not yet shown to fail pre-fix.** `verify-isolated.sh intel-lo@r7lib
+  06a87cd prefix` was started (Debian, `--enable-introspect`), but
+  `job.sh status|tail|fetch` returned nothing and I did not find out why.
+  No result exists. Until a pre-fix run shows rc 1, treat all three as
+  unverified: each could be vacuous, or could exit 99.
+- **Fix drafted, NOT BUILT, not on master:** `origin refs/heads/r7lib-wip`
+  = `40428b9`. One flag, `umem_hooks` (umem_base.h: bit EVENTS set by
+  `umem_inspect_enable_events`, bit BREAK set by the umemctl arm), tested
+  with `UMEM_HOOKS_ON()` at the public entry points `_umem_alloc` (now a
+  wrapper over an always-inline body, so PTC and oversize returns are
+  covered), `_umem_zalloc`, `_umem_alloc_align`, `_umem_free`,
+  `_umem_free_align`, `_umem_cache_alloc/free` and both batch calls.
+  `UMC_INTERNAL|UMC_QCACHE` caches are excluded, so a `umem_alloc` reports
+  once. malloc reports through `umem_alloc` with the header base (marked
+  `ponytail:`). The old `break_check` call in `_umem_alloc` is removed.
+  Still owed: build on both arches, the pre/post test runs, the
+  `hotpath_ab.sh` A/B (the wrapper changes the `_umem_alloc` layout, so a
+  cost outside the null is a real possibility), and the gates.
+- **T9 is incomplete in the draft.** Only the size half is there: `learn`
+  decodes the request size from the buftag, and that works only with
+  `UMF_BUFTAG`. `UMEM_DEBUG=audit` alone sets no buftag, so the size is
+  still `cache_bufsize` there. The stack-depth diagnosis
+  (`-fno-omit-frame-pointer` vs. the walk starting inside libumem) has
+  **not been done**.
+- EC2: intel-lo@r7lib and arm-lo@r7lib were terminated at stop. See the
+  commit that adds this section.
