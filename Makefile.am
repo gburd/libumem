@@ -956,11 +956,19 @@ TESTS += test/security/test_no_path_exec.sh \
 # the rest of the list (see the NOTE above the Phase 1 block).
 TESTS += test/debugger/test_tool_T1_event_cb.sh \
 	test/debugger/test_tool_T2_monitor.sh \
-	test/debugger/test_tool_T7_learn_noaudit.sh
+	test/debugger/test_tool_T7_learn_noaudit.sh \
+	test/debugger/test_tool_T10_walk_log.sh \
+	test/debugger/test_tool_T12_rearm.sh \
+	test/debugger/test_tool_T13_gdb_error_code.sh \
+	test/debugger/test_tool_T14_lldb_status.sh
 
 XFAIL_TESTS = test/debugger/test_tool_T1_event_cb.sh # T1
 XFAIL_TESTS += test/debugger/test_tool_T2_monitor.sh # T2
 XFAIL_TESTS += test/debugger/test_tool_T7_learn_noaudit.sh # T7
+XFAIL_TESTS += test/debugger/test_tool_T10_walk_log.sh # T10
+XFAIL_TESTS += test/debugger/test_tool_T12_rearm.sh # T12
+XFAIL_TESTS += test/debugger/test_tool_T13_gdb_error_code.sh # T13
+XFAIL_TESTS += test/debugger/test_tool_T14_lldb_status.sh # T14
 
 # P5.8: forges a malloc header and asserts free() refuses it without mutating
 # anything.  Links BOTH libraries: the forgery must travel the interposer's
@@ -1266,7 +1274,11 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/tool_common.sh \
 	test/debugger/test_tool_T1_event_cb.sh \
 	test/debugger/test_tool_T2_monitor.sh \
-	test/debugger/test_tool_T7_learn_noaudit.sh
+	test/debugger/test_tool_T7_learn_noaudit.sh \
+	test/debugger/test_tool_T10_walk_log.sh \
+	test/debugger/test_tool_T12_rearm.sh \
+	test/debugger/test_tool_T13_gdb_error_code.sh \
+	test/debugger/test_tool_T14_lldb_status.sh
 
 # Generated API documentation goes to doxygen-out/, NOT docs/.
 # docs/ is durable, version-controlled project documentation (plans, results,

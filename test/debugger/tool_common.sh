@@ -69,3 +69,11 @@ start_target() {
 		{ echo "ERROR: target pid '${TPID}' from $info not alive"; exit 99; }
 	export TPID
 }
+
+# gdb/lldb attach needs ptrace; Yama scope > 0 blocks a non-root attach.
+skip_unless_ptrace() {
+	local s
+	s=$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo 0)
+	[[ $s == 0 || $(id -u) == 0 ]] ||
+		{ echo "SKIP: kernel.yama.ptrace_scope=$s, cannot attach"; exit 77; }
+}
