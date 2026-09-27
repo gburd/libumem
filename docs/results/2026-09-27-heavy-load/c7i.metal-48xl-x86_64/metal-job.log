@@ -157,3 +157,90 @@ sustained load (continuous): allocators=umem libc jemalloc jemalloc@2 libc@2 ume
   jemalloc     frag-sustained     w=8  ops=909765143 mops=  15.163 p99=    12809 p999=     24973 rss@peak=3786326016
   jemalloc     frag-sustained     w=9  ops=909711361 mops=  15.162 p99=    12611 p999=     25093 rss@peak=3785867264
   run libc frag: 15 x 60s in one process, first 5 discarded (start 2026-09-27T09:28:08Z)
+  libc         frag-sustained     w=0  ops=896212896 mops=  14.936 p99=    17486 p999=     30967 rss@peak=3889983488
+  libc         frag-sustained     w=1  ops=896002901 mops=  14.932 p99=    17388 p999=     30882 rss@peak=3890909184
+  libc         frag-sustained     w=2  ops=895759627 mops=  14.928 p99=    17578 p999=     31105 rss@peak=3892039680
+  libc         frag-sustained     w=3  ops=895770945 mops=  14.929 p99=    17379 p999=     30897 rss@peak=3892936704
+  libc         frag-sustained     w=4  ops=896301879 mops=  14.938 p99=    17586 p999=     30939 rss@peak=3893628928
+  libc         frag-sustained     w=5  ops=895687645 mops=  14.928 p99=    17319 p999=     30994 rss@peak=3894226944
+  libc         frag-sustained     w=6  ops=895491489 mops=  14.924 p99=    17494 p999=     31026 rss@peak=3895152640
+  libc         frag-sustained     w=7  ops=895351917 mops=  14.922 p99=    17612 p999=     30823 rss@peak=3895648256
+  libc         frag-sustained     w=8  ops=895317560 mops=  14.922 p99=    17537 p999=     31094 rss@peak=3896283136
+  libc         frag-sustained     w=9  ops=894931929 mops=  14.914 p99=    17553 p999=     31262 rss@peak=3897135104
+  run umem frag: 15 x 60s in one process, first 5 discarded (start 2026-09-27T09:43:09Z)
+  umem         frag-sustained     w=0  ops=995092988 mops=  16.585 p99=    11768 p999=     24502 rss@peak=4326498304
+  umem         frag-sustained     w=1  ops=995912964 mops=  16.598 p99=    11762 p999=     24429 rss@peak=4326760448
+  umem         frag-sustained     w=2  ops=994508505 mops=  16.575 p99=    11880 p999=     24573 rss@peak=4326801408
+  umem         frag-sustained     w=3  ops=995830852 mops=  16.597 p99=    11824 p999=     24525 rss@peak=4326830080
+  umem         frag-sustained     w=4  ops=994098902 mops=  16.568 p99=    11826 p999=     24552 rss@peak=4326907904
+  umem         frag-sustained     w=5  ops=995601978 mops=  16.593 p99=    11793 p999=     24327 rss@peak=4326985728
+  umem         frag-sustained     w=6  ops=994973806 mops=  16.583 p99=    11745 p999=     24365 rss@peak=4327022592
+  umem         frag-sustained     w=7  ops=994006060 mops=  16.567 p99=    11781 p999=     24498 rss@peak=4327067648
+  umem         frag-sustained     w=8  ops=994530179 mops=  16.575 p99=    11889 p999=     24447 rss@peak=4327133184
+  umem         frag-sustained     w=9  ops=994850489 mops=  16.581 p99=    11925 p999=     24386 rss@peak=4327141376
+done: umem libc jemalloc jemalloc@2 libc@2 umem@2 -> docs/results/2026-09-27-c7i.metal-48xl-x86_64/heavy-t192.toml
+## docs/results/2026-09-27-c7i.metal-48xl-x86_64/heavy-t192.toml
+c7i.metal-48xl x86_64 threads=192 sha=e7b7ea7b49cd mode=continuous numa=numactl --interleave=all tunables=glibc.rtld.optional_static_tls=65536 stack=8319103
+
+Per run (each row = one 15-min process, stats over its 10 kept intervals):
+
+| workload | run | Mops/s med (min-max) | p50 | p99 med (min-max) | p999 med (min-max) | peak RSS MB |
+|---|---|---|---:|---|---|---:|
+| frag-sustained | jemalloc | 15.161 (15.155-15.163) | 27 | 12778 (12611-12875) | 25111 (24973-25268) | 3612 |
+| frag-sustained | jemalloc@2 | 13.948 (13.945-13.958) | 27 | 13736 (13557-13839) | 27678 (27505-27928) | 3612 |
+| frag-sustained | libc | 14.928 (14.914-14.938) | 442 | 17516 (17319-17612) | 30980 (30823-31262) | 3717 |
+| frag-sustained | libc@2 | 16.437 (16.433-16.448) | 470 | 16203 (15988-16290) | 29253 (29110-29391) | 3717 |
+| frag-sustained | umem | 16.582 (16.567-16.598) | 210 | 11808 (11745-11925) | 24472 (24327-24573) | 4127 |
+| frag-sustained | umem@2 | 15.890 (15.872-15.909) | 208 | 12581 (12440-12630) | 25630 (25338-25881) | 4126 |
+| prodcons-sustained | jemalloc | 2.001 (1.968-2.013) | 282 | 13438 (12766-15158) | 27042 (25988-28679) | 64 |
+| prodcons-sustained | jemalloc@2 | 1.888 (1.861-2.168) | 260 | 16064 (14394-17306) | 30934 (29653-34682) | 65 |
+| prodcons-sustained | libc | 1.090 (1.066-1.373) | 880 | 18808 (17530-35356) | 46444 (41706-97757) | 49 |
+| prodcons-sustained | libc@2 | 0.921 (0.918-1.202) | 890 | 19052 (18617-36896) | 42380 (41780-102109) | 50 |
+| prodcons-sustained | umem | 2.018 (1.910-2.023) | 172 | 4196 (3827-4596) | 19124 (18774-20240) | 167 |
+| prodcons-sustained | umem@2 | 2.051 (2.045-2.061) | 152 | 3175 (3016-3414) | 14738 (14490-15155) | 165 |
+
+Per allocator (mean of its two runs; gap = |run1 - run2| / mean):
+
+| workload | allocator | Mops/s (gap) | p50 ns (gap) | p99 ns (gap) | p999 ns (gap) | peak RSS MB (gap) |
+|---|---|---:|---:|---:|---:|---:|
+| frag-sustained | jemalloc | 14.555 (8.3 %) | 27 (0.0 %) | 13257 (7.2 %) | 26395 (9.7 %) | 3612 (0.0 %) |
+| frag-sustained | libc | 15.682 (9.6 %) | 456 (5.9 %) | 16859 (7.8 %) | 30117 (5.7 %) | 3717 (0.0 %) |
+| frag-sustained | umem | 16.236 (4.3 %) | 209 (0.5 %) | 12195 (6.3 %) | 25052 (4.6 %) | 4127 (0.0 %) |
+| prodcons-sustained | jemalloc | 1.944 (5.8 %) | 271 (7.9 %) | 14751 (17.8 %) | 28988 (13.4 %) | 64 (2.3 %) |
+| prodcons-sustained | libc | 1.006 (16.8 %) | 885 (1.1 %) | 18930 (1.3 %) | 44412 (9.2 %) | 49 (1.2 %) |
+| prodcons-sustained | umem | 2.034 (1.6 %) | 162 (12.3 %) | 3686 (27.7 %) | 16932 (25.9 %) | 166 (1.3 %) |
+
+Pairwise (ratio A/B of the means; 'noise' = the larger of A's and B's own gap):
+
+| workload | A vs B | Mops/s | p50 ns | p99 ns | p999 ns | peak RSS MB |
+|---|---|---|---|---|---|---|
+| frag-sustained | umem vs libc | 1.04x, inside noise (noise 9.6 %) | 0.46x, umem better (noise 5.9 %) | 0.72x, umem better (noise 7.8 %) | 0.83x, umem better (noise 5.7 %) | 1.11x, libc better (noise 0.0 %) |
+| frag-sustained | umem vs jemalloc | 1.12x, umem better (noise 8.3 %) | 7.74x, jemalloc better (noise 0.5 %) | 0.92x, umem better (noise 7.2 %) | 0.95x, inside noise (noise 9.7 %) | 1.14x, jemalloc better (noise 0.0 %) |
+| frag-sustained | jemalloc vs libc | 0.93x, inside noise (noise 9.6 %) | 0.06x, jemalloc better (noise 5.9 %) | 0.79x, jemalloc better (noise 7.8 %) | 0.88x, jemalloc better (noise 9.7 %) | 0.97x, jemalloc better (noise 0.0 %) |
+| prodcons-sustained | umem vs libc | 2.02x, umem better (noise 16.8 %) | 0.18x, umem better (noise 12.3 %) | 0.19x, umem better (noise 27.7 %) | 0.38x, umem better (noise 25.9 %) | 3.37x, libc better (noise 1.3 %) |
+| prodcons-sustained | umem vs jemalloc | 1.05x, inside noise (noise 5.8 %) | 0.60x, umem better (noise 12.3 %) | 0.25x, umem better (noise 27.7 %) | 0.58x, umem better (noise 25.9 %) | 2.58x, jemalloc better (noise 2.3 %) |
+| prodcons-sustained | jemalloc vs libc | 1.93x, jemalloc better (noise 16.8 %) | 0.31x, jemalloc better (noise 7.9 %) | 0.78x, jemalloc better (noise 17.8 %) | 0.65x, jemalloc better (noise 13.4 %) | 1.31x, libc better (noise 2.3 %) |
+
+RESULT: PASS (0 invariant failures)
+SUM192 rc=0
+=== heavy-load comparison ===
+allocators   : umem,libc,jemalloc,jemalloc@2,libc@2,umem@2
+workloads    : prodcons 64:256, frag 64:256
+threads      : 384  (box has 192 online)
+numa policy  : numactl --interleave=all (every arm)
+per run      : 5 + 10 intervals x 60s in ONE process
+             = 15 min, first 5 min dropped
+total        : 12 runs = ~180 min
+numa         :
+  available: 2 nodes (0-1)
+  node 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143
+  node 0 size: 193254 MB
+  node 0 free: 189656 MB
+  node 1 cpus: 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191
+  node 1 size: 193466 MB
+  node 1 free: 189183 MB
+  node distances:
+  node     0    1 
+     0:   10   21 
+     1:   21   10 
+jemalloc     : /lib/x86_64-linux-gnu/libjemalloc.so.2
