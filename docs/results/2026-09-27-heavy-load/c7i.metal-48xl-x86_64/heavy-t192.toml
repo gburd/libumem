@@ -1,0 +1,383 @@
+# sustained high-thread-count punishing-load results
+# PER-WINDOW rows: one row per measured window per allocator, with
+# that window's own latency percentiles and its own RSS/live-bytes
+# pair.  Windows for the named allocators INTERLEAVE (A,B,A,B,...)
+# so drift over the run does not masquerade as a difference between
+# allocators.  Not comparable to sustained.toml files written before
+# 2026-09-22: those aggregate a whole run and their frag column is a
+# different (and wrong) quantity.  See P2.1/P2.2 in
+# docs/plans/2026-09-21-production-readiness.md.
+captured = "2026-09-27T06:58:01Z"
+instance_type = "c7i.metal-48xl"
+arch = "x86_64"
+vcpu = 192
+threads = 192
+governor = "powersave"
+glibc_tunables = "glibc.rtld.optional_static_tls=65536"
+umem_options = ""
+config_h_rseq = "#define HAVE_LINUX_RSEQ_H 1"
+os_release = "Debian GNU/Linux 13 (trixie) (13.7)"
+kernel = "6.12.107+deb13-cloud-amd64"
+thp = "always madvise [never]"
+numa_balancing = "0"
+vm_max_map_count = "1966080"
+ulimit_s_kb = "8192"
+numa_nodes = 2
+# numactl: available: 2 nodes (0-1)
+# numactl: node 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143
+# numactl: node 0 size: 193254 MB
+# numactl: node 0 free: 190673 MB
+# numactl: node 1 cpus: 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191
+# numactl: node 1 size: 193466 MB
+# numactl: node 1 free: 190405 MB
+# numactl: node distances:
+# numactl: node     0    1 
+# numactl:    0:   10   21 
+# numactl:    1:   21   10 
+thread_stack_usable_bytes = 8319103
+duration_target_sec_per_window = 60
+windows_per_allocator = 10
+warmup_windows_discarded = 5
+mode = "continuous"
+# continuous: one process per (allocator, workload); each [[window]]
+# is one DURATION-second interval of it; intervals 0..WARMUPS-1 ran
+# and were not printed.  Every column is per-interval, including
+# vmhwm_bytes (= that interval's max VmRSS sampled every 100 ms, not
+# the process VmHWM, which would include the dropped warm-up).
+interval_sec = 60
+intervals_per_run = 15
+frag_pool_objects_per_thread = 100000
+numa_policy = "numactl --interleave=all"
+frag_sizes = "64:256"
+prodcons_sizes = "64:256"
+allocators = ["umem","libc","jemalloc","jemalloc@2","libc@2","umem@2"]
+order = "interleaved"
+git_sha = "e7b7ea7b49cdd0e03d62b817268dec5714c75787"
+git_sha_source = "ISOLATED_PROVENANCE"
+configure_flags = ""
+uname = "Linux ip-172-31-4-3 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64 GNU/Linux"
+gcc = "gcc (Debian 14.2.0-19) 14.2.0"
+libc = "ldd (Debian GLIBC 2.41-12+deb13u4) 2.41"
+bench_bin = "test/bench/.libs/bench_main"
+bench_bin_digest = "860885d50ff66b2ded2125120d6e2202f83ff775b3c1cdd45d8da93e72964419"
+libumem_so = ".libs/libumem.so.1.0.0"
+libumem_so_digest = "7414ff01943fa55c42a79d548b16b3863cd10b40e2d994787725852348fd078b"
+
+[allocator_identity."umem"]
+path = ".libs/libumem.so.1.0.0"
+digest = "7414ff01943fa55c42a79d548b16b3863cd10b40e2d994787725852348fd078b"
+
+[allocator_identity."libc"]
+path = "(process libc)"
+version = "ldd (Debian GLIBC 2.41-12+deb13u4) 2.41"
+
+[allocator_identity."jemalloc"]
+path = "/lib/x86_64-linux-gnu/libjemalloc.so.2 (dlopen, via ld.so cache)"
+realpath = "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
+digest = "51952ffe97354b56197c9b765582023d435cfbe1930b0c03b778bdb5faa1fff5"
+package = "libjemalloc2 5.3.0-3 amd64"
+
+[allocator_identity."jemalloc@2"]
+null_control_alias_of = "jemalloc"
+path = "/lib/x86_64-linux-gnu/libjemalloc.so.2 (dlopen, via ld.so cache)"
+realpath = "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
+digest = "51952ffe97354b56197c9b765582023d435cfbe1930b0c03b778bdb5faa1fff5"
+package = "libjemalloc2 5.3.0-3 amd64"
+
+[allocator_identity."libc@2"]
+null_control_alias_of = "libc"
+path = "(process libc)"
+version = "ldd (Debian GLIBC 2.41-12+deb13u4) 2.41"
+
+[allocator_identity."umem@2"]
+null_control_alias_of = "umem"
+path = ".libs/libumem.so.1.0.0"
+digest = "7414ff01943fa55c42a79d548b16b3863cd10b40e2d994787725852348fd078b"
+
+[[run]]
+allocator = "umem"
+workload = "prodcons-sustained"
+started = "2026-09-27T06:58:01Z"
+ended = "2026-09-27T07:13:01Z"
+rc = 0
+csv = "heavy-t192.umem.prodcons.csv"
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 0
+interval = 5
+threads = 192
+size = "64:256"
+total_ops = 114606824
+ops_per_thread = 596910
+elapsed_sec = 60.000185
+ops_per_sec = 1910107.85
+lat_min = 25
+lat_p50 = 169
+lat_p90 = 376
+lat_p99 = 4545
+lat_p999 = 20211
+lat_max = 11208564
+lat_mean = 334
+rss_at_live_peak = 173420544
+vmhwm_bytes = 173420544
+allocated_bytes = 9139280323
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 1
+interval = 6
+threads = 192
+size = "64:256"
+total_ops = 114598981
+ops_per_thread = 596869
+elapsed_sec = 60.000154
+ops_per_sec = 1909978.12
+lat_min = 25
+lat_p50 = 167
+lat_p90 = 377
+lat_p99 = 4596
+lat_p999 = 20240
+lat_max = 7878227
+lat_mean = 333
+rss_at_live_peak = 173813760
+vmhwm_bytes = 173813760
+allocated_bytes = 9139388244
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 2
+interval = 7
+threads = 192
+size = "64:256"
+total_ops = 114576386
+ops_per_thread = 596752
+elapsed_sec = 60.000195
+ops_per_sec = 1909600.23
+lat_min = 25
+lat_p50 = 169
+lat_p90 = 388
+lat_p99 = 4212
+lat_p999 = 20034
+lat_max = 7064556
+lat_mean = 333
+rss_at_live_peak = 174030848
+vmhwm_bytes = 174030848
+allocated_bytes = 9137396329
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 3
+interval = 8
+threads = 192
+size = "64:256"
+total_ops = 116572024
+ops_per_thread = 607145
+elapsed_sec = 60.000145
+ops_per_sec = 1942862.38
+lat_min = 23
+lat_p50 = 172
+lat_p90 = 352
+lat_p99 = 4455
+lat_p999 = 19675
+lat_max = 8444745
+lat_mean = 331
+rss_at_live_peak = 174256128
+vmhwm_bytes = 174256128
+allocated_bytes = 9296578840
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 4
+interval = 9
+threads = 192
+size = "64:256"
+total_ops = 121351221
+ops_per_thread = 632037
+elapsed_sec = 60.000135
+ops_per_sec = 2022515.79
+lat_min = 25
+lat_p50 = 172
+lat_p90 = 381
+lat_p99 = 4180
+lat_p999 = 19061
+lat_max = 5364104
+lat_mean = 327
+rss_at_live_peak = 174342144
+vmhwm_bytes = 174342144
+allocated_bytes = 9677486511
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 5
+interval = 10
+threads = 192
+size = "64:256"
+total_ops = 121365825
+ops_per_thread = 632113
+elapsed_sec = 60.000152
+ops_per_sec = 2022758.63
+lat_min = 25
+lat_p50 = 172
+lat_p90 = 443
+lat_p99 = 3839
+lat_p999 = 19188
+lat_max = 6094984
+lat_mean = 326
+rss_at_live_peak = 174465024
+vmhwm_bytes = 174465024
+allocated_bytes = 9679161193
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 6
+interval = 11
+threads = 192
+size = "64:256"
+total_ops = 121164078
+ops_per_thread = 631062
+elapsed_sec = 60.003480
+ops_per_sec = 2019284.18
+lat_min = 25
+lat_p50 = 173
+lat_p90 = 433
+lat_p99 = 3987
+lat_p999 = 18872
+lat_max = 9314259
+lat_mean = 326
+rss_at_live_peak = 174567424
+vmhwm_bytes = 174567424
+allocated_bytes = 9663168922
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 7
+interval = 12
+threads = 192
+size = "64:256"
+total_ops = 121188182
+ops_per_thread = 631188
+elapsed_sec = 60.000193
+ops_per_sec = 2019796.55
+lat_min = 25
+lat_p50 = 174
+lat_p90 = 459
+lat_p99 = 4055
+lat_p999 = 18774
+lat_max = 34850543
+lat_mean = 326
+rss_at_live_peak = 174845952
+vmhwm_bytes = 174845952
+allocated_bytes = 9664459517
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 8
+interval = 13
+threads = 192
+size = "64:256"
+total_ops = 121036037
+ops_per_thread = 630396
+elapsed_sec = 60.000151
+ops_per_sec = 2017262.22
+lat_min = 25
+lat_p50 = 175
+lat_p90 = 424
+lat_p99 = 3827
+lat_p999 = 18973
+lat_max = 8327470
+lat_mean = 328
+rss_at_live_peak = 175230976
+vmhwm_bytes = 175230976
+allocated_bytes = 9652318956
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "umem"
+workload = "prodcons-sustained"
+window = 9
+interval = 14
+threads = 192
+size = "64:256"
+total_ops = 121124338
+ops_per_thread = 630855
+elapsed_sec = 60.000205
+ops_per_sec = 2018732.09
+lat_min = 26
+lat_p50 = 170
+lat_p90 = 395
+lat_p99 = 4213
+lat_p999 = 18929
+lat_max = 11197656
+lat_mean = 329
+rss_at_live_peak = 175570944
+vmhwm_bytes = 175570944
+allocated_bytes = 9659699532
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0

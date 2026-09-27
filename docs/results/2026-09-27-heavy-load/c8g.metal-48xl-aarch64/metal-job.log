@@ -1,0 +1,59 @@
+ref=e7b7ea7b49cdd0e03d62b817268dec5714c75787
+Result: PASS (0 failures)
+=== numactl -H
+available: 2 nodes (0-1)
+node 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+node 0 size: 193509 MB
+node 0 free: 191848 MB
+node 1 cpus: 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191
+node 1 size: 192652 MB
+node 1 free: 188806 MB
+node distances:
+node     0    1 
+   0:   10  100 
+   1:  100   10 
+=== lscpu
+CPU(s):                                  192
+Model name:                              Neoverse-V2
+Thread(s) per core:                      1
+Socket(s):                               2
+NUMA node(s):                            2
+NUMA node0 CPU(s):                       0-95
+NUMA node1 CPU(s):                       96-191
+=== heavy-load comparison ===
+allocators   : umem,libc,jemalloc,jemalloc@2,libc@2,umem@2
+workloads    : prodcons 64:256, frag 64:256
+threads      : 192  (box has 192 online)
+numa policy  : numactl --interleave=all (every arm)
+per run      : 5 + 10 intervals x 60s in ONE process
+             = 15 min, first 5 min dropped
+total        : 12 runs = ~180 min
+numa         :
+  available: 2 nodes (0-1)
+  node 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+  node 0 size: 193509 MB
+  node 0 free: 191854 MB
+  node 1 cpus: 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191
+  node 1 size: 192652 MB
+  node 1 free: 188817 MB
+  node distances:
+  node     0    1 
+     0:   10  100 
+     1:  100   10 
+jemalloc     : /lib/aarch64-linux-gnu/libjemalloc.so.2
+preflight    : every arm loads and runs prodcons + frag at t=192
+sustained load (continuous): allocators=umem libc jemalloc jemalloc@2 libc@2 umem@2 threads=192
+  per run: 15 x 60s, first 5 discarded; frag pool 100000/thread
+  sha=e7b7ea7b49cdd0e03d62b817268dec5714c75787 (ISOLATED_PROVENANCE) -> docs/results/2026-09-27-c8g.metal-48xl-aarch64/heavy-t192.toml
+  run umem prodcons: 15 x 60s in one process, first 5 discarded (start 2026-09-27T06:57:24Z)
+  umem         prodcons-sustained w=0  ops=85363429  mops=   1.423 p99=      315 p999=      1518 rss@peak=173666304
+  umem         prodcons-sustained w=1  ops=85387947  mops=   1.423 p99=      269 p999=      1688 rss@peak=174624768
+  umem         prodcons-sustained w=2  ops=85372916  mops=   1.423 p99=      261 p999=      1628 rss@peak=175804416
+  umem         prodcons-sustained w=3  ops=85389627  mops=   1.423 p99=      299 p999=      1593 rss@peak=176115712
+  umem         prodcons-sustained w=4  ops=85390408  mops=   1.423 p99=      302 p999=      1503 rss@peak=176480256
+  umem         prodcons-sustained w=5  ops=85396021  mops=   1.423 p99=      284 p999=      1615 rss@peak=176812032
+  umem         prodcons-sustained w=6  ops=85340988  mops=   1.422 p99=      291 p999=      1503 rss@peak=176902144
+  umem         prodcons-sustained w=7  ops=85380904  mops=   1.423 p99=      271 p999=      1606 rss@peak=177188864
+  umem         prodcons-sustained w=8  ops=85385464  mops=   1.423 p99=      287 p999=      1512 rss@peak=177430528
+  umem         prodcons-sustained w=9  ops=85360246  mops=   1.423 p99=      291 p999=      1570 rss@peak=177651712
+  run libc prodcons: 15 x 60s in one process, first 5 discarded (start 2026-09-27T07:12:24Z)
