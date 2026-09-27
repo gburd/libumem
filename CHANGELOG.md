@@ -30,16 +30,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `--enable-asan`: 0 aliasing / 0 corruption / 0 failures across every
   configuration (intel 391 M / 936 M allocs, arm 674 M / 1.47 B allocs).
 
-  Sustained p999 (intel `c7i.metal-48xl`, 192t, prodcons 64:256,
+  ~~Sustained p999 (intel `c7i.metal-48xl`, 192t, prodcons 64:256,
   `sustained_load.sh`): the tail is roughly halved and lands well under the
-  85 us target --
+  85 us target --~~
+
+  **CORRECTION: measured with `UMEM_RSEQ_OFF`, which had no effect after
+  545bbce. Both arms may have been rseq on, so this A/B does not attribute any
+  p999 change to the rseq layer. Re-measured with `UMEM_OPTIONS=norseq`; see
+  "Fixed" below.** The original, unattributed table:
 
   | prodcons p999 | rseq off (before) | rseq on (after) |
   |---|---|---|
   | median of 3 windows | ~93.7 us | ~46.5 us |
 
-  p99 also improved (7.2 -> 6.1 us) and prodcons RSS at peak dropped
-  (~300 -> ~133 MB, less depot magazine retention). The t=1 fast path is not
+  ~~p99 also improved (7.2 -> 6.1 us) and prodcons RSS at peak dropped
+  (~300 -> ~133 MB, less depot magazine retention).~~ (Same unattributed A/B.) The t=1 fast path is not
   regressed (identical p50/p90/p99, throughput within noise). `make check`,
   the 6-bug rseq suite, `repro_reload_commit_safe`, the PTC/depot oracles, the
   P5.13/P5.13b mangle tests, and the P1.2/P1.3a/P1.3d fork/exit oracles all

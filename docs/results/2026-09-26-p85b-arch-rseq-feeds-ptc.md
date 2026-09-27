@@ -151,12 +151,17 @@ resize both happen) reported no heap overflow, no use-after-free, no aliasing.
 `sustained_load.sh umem 60 192`, prodcons 64:256, same binary, `UMEM_RSEQ_OFF`
 toggled, 3 measured windows each (1 warmup discarded):
 
-| prodcons p999 (ns) | BEFORE (rseq off) | AFTER (rseq on) |
+| prodcons p999 (ns) | ~~BEFORE (rseq off)~~ BEFORE (`UMEM_RSEQ_OFF=1`: no effect after 545bbce, arm may have been rseq ON) | AFTER (rseq on) |
 |---|---|---|
 | window 0 | 87,490 | 44,504 |
 | window 1 | 93,698 | 48,667 |
 | window 2 | 102,642 | 46,542 |
 | **median** | **~93.7 us** | **~46.5 us** |
+
+> **CORRECTION (2026-09-26):** measured with `UMEM_RSEQ_OFF`, which had no
+> effect after 545bbce, so both arms may have been rseq on. The difference
+> above is NOT attributable to the rseq layer. Re-measured with
+> `UMEM_OPTIONS=norseq` under "P8.5b-fix" below.
 
 p99 also improved (7.2 us -> 6.1 us) and prodcons RSS at peak dropped
 (~300 MB -> ~133 MB, less depot magazine retention). The tail is roughly
@@ -253,5 +258,5 @@ falls back to the always-correct `cc_lock`/depot path. Honoured under
 
 **Ship to master.** Every mandatory gate passes on both arches and both build
 configurations, the layer demonstrably fires (0 -> 257 M served), and the
-sustained p999 is roughly halved to ~46 us, beating the 85 us criterion, with
+~~sustained p999 is roughly halved to ~46 us, beating the 85 us criterion,~~ (UNATTRIBUTED, see the correction under the p999 table) with
 no t=1 regression and no fork/exit regression.
