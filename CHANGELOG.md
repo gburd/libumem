@@ -35,6 +35,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   surface. The review recommends dropping it. Full classification and
   evidence: `docs/reviews/2026-09-27-sparsemap-5.6.0-review.md`.
 
+### Fixed
+
+- **The first allocation needed ~67 KB of stack; it now needs ~5 KB.**
+  `umem_init()` runs on whichever thread makes the first allocation, and
+  `umem_get_max_ncpus()` (`init_lib.c`) put `char proc_stat[65536]` on that
+  thread's stack. The comment above it said "a static buffer". Measured
+  first-call peak depth, Debian 13 / gcc 14 / glibc 2.41: umem 69,144 B
+  (x86_64) / 66,880 B (aarch64), against glibc `malloc` <= 3.4 KB and
+  jemalloc <= 3.2 KB. As a result, a first `umem_alloc()` on a 16-64 KiB pthread
+  SEGV'd on x86_64, where glibc and jemalloc survive 16 KiB. On x86_64 the
+  64 KiB frame could also jump the single guard page and `read()`
+  `/proc/stat` into a neighbouring thread's stack or TLS (3,547 canary
+  bytes changed in a neighbour thread's TLS). The buffer is now static.
+  That is safe because the only caller is the one thread doing `umem_init`,
+  and the new comment states that invariant. The next contributor on the
+  same path, `log_message`/`debug_printf`/`umem_vprintf` in `misc.c` with
+  their 4 KiB stack buffers (reached during init by a bad `UMEM_*` item),
+  now uses 1 KiB. The longest message in the tree is ~540 B.
+  Post-fix, the first call peaks at ~5.2-5.4 KB. The residual is
+  libgcc_s/libdw/ld.so, not libumem code. Regression
+  `test/integration/test_first_alloc_small_stack.sh`, in `TESTS`: it fails
+  at 0de29ef/df1af67 on arm-lo and intel-lo (rc=139) and passes after the fix.
+  **The arm-hi `sustained_load.sh` SEGV that led here is a separate cause.**
+  The harness's `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608`
+  takes the static TLS out of every thread's 8 MiB stack and leaves
+  2,448 B (aarch64) / 8,208 B (x86_64). jemalloc used via `dlopen` crashes
+  there too (5/5 on arm-lo). The harness change is tracked separately.
+  `docs/results/2026-09-27-arm-dlopen-stack-crash.md`.
+
 ## [3.3.2] - 2026-09-27
 
 Arms the rseq lock-free per-CPU layer (P8.5b), on by default, and fixes the
