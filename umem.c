@@ -1776,7 +1776,7 @@ umem_slab_link_valid(umem_cache_t *cp, umem_slab_t *sp, umem_bufctl_t *bcp)
 	if (P2PHASE((uintptr_t)bcp, UMEM_ALIGN) != 0)
 		return (0);
 	if (!(cp->cache_flags & UMF_HASH) &&
-	    !UMEM_SLAB_MEMBER(sp, UMEM_BUF(cp, bcp)))
+	    !UMEM_SLAB_CHUNK(sp, UMEM_BUF(cp, bcp)))
 		return (0);
 	return (1);
 }
@@ -2098,7 +2098,7 @@ umem_slab_free(umem_cache_t *cp, void *buf)
 		sp = UMEM_SLAB(cp, buf);
 	}
 
-	if (bcp == NULL || sp->slab_cache != cp || !UMEM_SLAB_MEMBER(sp, buf)) {
+	if (bcp == NULL || sp->slab_cache != cp || !UMEM_SLAB_CHUNK(sp, buf)) {
 		(void) mutex_unlock(&cp->cache_lock);
 		umem_error(UMERR_BADADDR, cp, buf);
 		return;

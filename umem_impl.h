@@ -483,9 +483,24 @@ extern uintptr_t umem_link_cookie __attribute__((visibility("hidden")));
 	((int)(((umem_slab_t *)P2END((uintptr_t)(mp), PAGESIZE) - 1)-> \
 	    slab_cache->cache_bufsize / sizeof (void *)) - 1)
 
+/*
+ * Is buf inside sp's buffers?  The range is the slab's chunks,
+ * [slab_base, slab_base + slab_chunks * chunksize).  It used to be
+ * slab_base + cache_slabsize, but slab_base already includes the colour
+ * offset (umem_slab_create), so that range ran past the last chunk into the
+ * slab header and, for a non-hash cache, up to `colour` bytes past the slab:
+ * the same over-wide bound as whatis's T6 (0e395ef).  test_slab_member
+ * checks it.  Containment only: a buffer START also needs UMEM_SLAB_CHUNK.
+ */
 #define	UMEM_SLAB_MEMBER(sp, buf)	\
 	((size_t)(buf) - (size_t)(sp)->slab_base < \
-	    (sp)->slab_cache->cache_slabsize)
+	    (size_t)(sp)->slab_chunks * (sp)->slab_cache->cache_chunksize)
+
+/* buf is inside sp's buffers AND is the start of one of its chunks. */
+#define	UMEM_SLAB_CHUNK(sp, buf)	\
+	(UMEM_SLAB_MEMBER(sp, buf) && \
+	    ((size_t)(buf) - (size_t)(sp)->slab_base) % \
+	    (sp)->slab_cache->cache_chunksize == 0)
 
 #define	UMEM_BUFTAG_ALLOC	0xa110c8edUL
 #define	UMEM_BUFTAG_FREE	0xf4eef4eeUL
