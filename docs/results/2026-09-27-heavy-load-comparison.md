@@ -380,7 +380,7 @@ supports.
 |---|---|---|---|---|---|
 | intel prodcons | inside noise (1.05x, noise 5.8 %) | umem 1.7x lower, separated | **umem 4.0x lower**, separated | umem 1.7x lower, separated | **jemalloc 2.6x lower** (64 vs 166 MB), separated |
 | intel frag | umem 12 % higher, separated (noise 8.3 %) | **jemalloc 7.7x lower** (27 vs 209), separated | umem 8 % lower, separated (noise 7.2 %) | inside noise (0.95x) | jemalloc 14 % lower, separated |
-| arm prodcons | **jemalloc 1.30x higher**, separated | umem 1.9x lower, separated | umem 1.7x lower, separated (noise 48 %) | jemalloc 2.6x lower means, but **not separated** (umem's runs 1.6 and 5.4 us straddle jemalloc's 1.3-1.4) | **jemalloc 1.8x lower** (96 vs 169 MB), separated |
+| arm prodcons | **jemalloc 1.30x higher**, separated | umem 1.9x lower, separated | umem 1.7x lower, separated (noise 48 %) | **jemalloc 2.6x lower**, separated (jemalloc runs 1.28 / 1.39 us, umem 1.58 / 5.36 us; 160 % vs noise 109 %) | **jemalloc 1.8x lower** (96 vs 169 MB), separated |
 | arm frag | inside noise (0.97x, noise 5.1 %) | **jemalloc 3.7x lower**, separated | **jemalloc 1.8x lower**, separated | **jemalloc 5.2x lower** (0.87 vs 4.5 us), separated | jemalloc 10 % lower, separated |
 
 ### What the numbers say
@@ -391,20 +391,21 @@ supports.
   Every one of these is separated across runs.
 - **Cross-thread producer/consumer, arm.** umem has the lowest p50 and p99 (72
   and 367 ns, vs jemalloc 141 / 639 and glibc 284 / 4,289). **jemalloc has
-  30 % more throughput** than umem and glibc, which tie. umem's p999 is not
-  reliable here: its two runs gave 1.6 and 5.4 us. glibc's runs gave 6.9 and
-  21.5 us, and jemalloc was 1.3-1.4 us both times. So umem beats glibc at
-  p999 but is not shown to be worse or better than jemalloc.
+  30 % more throughput** than umem and glibc, which tie, **and the lowest
+  p999**: 1.28 / 1.39 us in its two runs vs umem 1.58 / 5.36 us and glibc
+  6.9 / 21.5 us. umem's p999 is 4x below glibc's but 2.6x above jemalloc's,
+  and it was the least repeatable number in the study (its two runs differ
+  3.4x).
 - **Fragmentation churn.** Throughput is a three-way tie on arm and a tie
   with glibc on intel (umem +12 % over jemalloc there, only just past
   jemalloc's 8 % noise). **jemalloc has by far the lowest median** (27-33 ns
-  vs umem 121-209 and glibc 288-456). On intel the tails of all three are
-  within ~25 % of each other (p999 25-30 us), with umem lowest and ahead of
-  glibc. On arm, **jemalloc's tail is 5x lower than umem's** (p999 0.87 vs
+  vs umem 121-209 and glibc 288-456). On intel, umem's and jemalloc's p999
+  are inside noise of each other (25.1 vs 26.4 us), and both are below
+  glibc's 30.1 us (umem by 20 % vs 6 % noise). On arm, **jemalloc's tail is 5x lower than umem's** (p999 0.87 vs
   4.5 us), and umem's is 4x lower than glibc's (17.7 us).
 - **Memory: umem uses the most, on every box and workload, and the result
   is separated in every case.** In prodcons (a ring-bounded live set) that
-  is 166-169 MB vs glibc 46-49 and jemalloc 64-96, i.e. 2-3.7x. In frag
+  is 166-169 MB vs glibc 46-49 and jemalloc 64-96, i.e. 1.8-3.7x. In frag
   (~2.25 GB live) it is 7-14 % more than the others: 4.0-4.1 GB vs 3.6-3.7
   (RSS / live at the live-set peak: umem 1.72-1.80, glibc 1.64-1.67,
   jemalloc 1.59-1.62).
@@ -450,18 +451,35 @@ supports.
 > |---|---|---|---|
 > | cross-thread alloc/free, p99 latency (x86 / arm) | **3.7 / 0.37 us** | 18.9 / 4.3 us | 14.8 / 0.64 us |
 > | cross-thread alloc/free, peak RSS | 166-169 MB | **46-49 MB** | 64-96 MB |
-> | fragmentation churn (2.2 GB live), p999 latency (x86 / arm) | 25 / 4.5 us | 30 / 17.7 us | 26 / **0.87 us** |
+> | fragmentation churn (2.2 GB live), p999 latency (x86 / arm) | 25\* / 4.5 us | 30 / 17.7 us | 26\* / **0.87 us** |
 > | fragmentation churn, peak RSS | 4.0-4.1 GB | 3.7 GB | **3.6 GB** |
+>
+> \* inside run-to-run noise of each other.
 >
 > - **Cross-thread allocate/free** (the all-to-all NUMA pattern): libumem has
 >   the lowest p50 and p99 of the three on both architectures (x86 p99 4-5x
 >   lower than glibc and jemalloc). On x86 it also has the lowest p999, and
 >   its throughput matches jemalloc at about 2x glibc. On arm, jemalloc has
->   30 % more throughput.
+>   30 % more throughput and a 2.6x lower p999; libumem's p999 is still 4x
+>   below glibc's.
 > - **Fragmentation churn**: throughput is tied with glibc on both arches.
->   libumem's tail is 2.6-3.9x lower than glibc's on arm. jemalloc is faster
->   at the median everywhere and has a 5x lower tail than libumem on arm.
-> - **Memory**: libumem uses the most. It takes 2-3.7x the RSS of glibc and
+>   libumem's tail is 2.6-3.9x lower than glibc's on arm and 17-28 % lower on
+>   x86. jemalloc is faster at the median everywhere and has a 5x lower tail
+>   than libumem on arm.
+> - **Memory**: libumem uses the most. It takes 1.8-3.7x the RSS of glibc and
 >   jemalloc when the live set is small, and 7-14 % more with a 2 GB live set.
 > - Not measured: more threads than cores, objects above 256 B, and the
 >   `libumem_malloc.so` drop-in.
+
+### Verification of the verdict tables
+
+Every "clears / inside noise / separated" cell above was recomputed from the
+raw TOML with an independent script after the doc was drafted (the same
+per-run medians `summarize.py` uses; clears = |dA-B|/min > max(gap_A,
+gap_B); separated = both runs of one arm beyond both of the other). The
+check caught two errors in the first draft, both corrected in the same
+commit: arm prodcons p999 umem vs jemalloc had been called "not separated"
+(it is: jemalloc 1.28/1.39 us vs umem 1.58/5.36 us), and the prodcons RSS
+range had been written 2-3.7x (it is 1.8-3.7x; umem vs jemalloc on arm is
+1.76x). Also removed: "umem lowest" for intel frag p999 (inside noise of
+jemalloc).
