@@ -669,7 +669,7 @@ static vmem_t           *umem_internal_arena;
 static vmem_t           *umem_cache_arena;
 static vmem_t           *umem_hash_arena;
 static vmem_t           *umem_log_arena;
-static vmem_t           *umem_oversize_arena;
+vmem_t                  *umem_oversize_arena;	/* extern: whatis (T3) */
 static vmem_t           *umem_va_arena;
 static vmem_t           *umem_default_arena;
 static vmem_t           *umem_firewall_va_arena;

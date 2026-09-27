@@ -48,6 +48,7 @@ extern size_t pagesize;
  * umem.c: non-tunables
  */
 extern vmem_t		*umem_memalign_arena;
+extern vmem_t		*umem_oversize_arena;
 
 extern int umem_ready;
 extern thread_t umem_init_thr;		/* the thread doing the init */

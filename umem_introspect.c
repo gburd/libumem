@@ -60,6 +60,7 @@
 #include "umem_impl.h"
 #include "misc.h"
 #include "umem_introspect.h"
+#include "umem_inspect.h"
 
 /* RSS in KiB from /proc/self/statm (resident pages * pagesize). */
 static long
@@ -405,6 +406,23 @@ cmd_cache(FILE *out, const char *name)
 	fprintf(out, ".\n");
 }
 
+/* vmem_walk() callback: find the allocated segment containing w->addr.
+ * Runs under the arena's vm_lock, so it must not allocate or print. */
+struct vseg_find {
+	uintptr_t addr, start;
+	size_t size;
+};
+
+static void
+vseg_find_cb(void *arg, void *start, size_t size)
+{
+	struct vseg_find *w = arg;
+	if (w->addr - (uintptr_t)start < size) {
+		w->start = (uintptr_t)start;
+		w->size = size;
+	}
+}
+
 static void
 cmd_whatis(FILE *out, uintptr_t addr)
 {
@@ -450,9 +468,43 @@ cmd_whatis(FILE *out, uintptr_t addr)
 	(void) mutex_unlock(&umem_cache_lock);
 
 	if (best == NULL) {
-		fprintf(out, "0x%lx: not a umem buffer\n.\n",
-		    (unsigned long)addr);
+		/*
+		 * Not in any cache: allocations larger than the largest cache
+		 * (and large memalign) are vmem segments, not slab buffers
+		 * (T3).  An allocated segment is a held allocation.
+		 */
+		vmem_t *arenas[2] = { umem_oversize_arena, umem_memalign_arena };
+		struct vseg_find w = { addr, 0, 0 };
+		int i;
+		for (i = 0; i < 2 && w.size == 0; i++) {
+			if (arenas[i] != NULL)
+				vmem_walk(arenas[i], VMEM_ALLOC,
+				    vseg_find_cb, &w);
+		}
+		if (w.size == 0) {
+			fprintf(out, "0x%lx: not a umem buffer\n.\n",
+			    (unsigned long)addr);
+			return;
+		}
+		fprintf(out, "addr 0x%lx\n", (unsigned long)addr);
+		fprintf(out, "arena %s\n", i == 1 ? "umem_oversize" :
+		    "umem_memalign");
+		fprintf(out, "buffer 0x%lx\n", (unsigned long)w.start);
+		fprintf(out, "size %zu\n", w.size);
+		fprintf(out, "state held\n.\n");
 		return;
+	}
+	/*
+	 * A slab-held buffer may be freed into a magazine (depot, per-CPU,
+	 * rseq): umem_whatis() subtracts that set and says CACHED.  It takes
+	 * the cache locks itself, so no lock is held here.
+	 */
+	if (alloc) {
+		umem_buffer_info_t info;
+		if (umem_whatis((void *)buf, &info) == 0 &&
+		    (uintptr_t)info.addr == buf &&
+		    info.state == UMEM_BUF_CACHED)
+			alloc = 2;
 	}
 	fprintf(out, "addr 0x%lx\n", (unsigned long)addr);
 	fprintf(out, "cache %s\n", best_name);
@@ -460,12 +512,14 @@ cmd_whatis(FILE *out, uintptr_t addr)
 	fprintf(out, "buffer 0x%lx\n", (unsigned long)buf);
 	fprintf(out, "slab 0x%lx\n", (unsigned long)best_slab);
 	/*
-	 * "held", not "allocated": this reflects the slab/buftag view, so a
-	 * buffer the application has already freed into a magazine, an rseq
-	 * magazine or a PTC bin still reads held.  Same caveat as HELD in
-	 * umem_status_dump().
+	 * held / cached / free.  "cached" = freed into a magazine, subtracted
+	 * above.  A buffer in a PTC bin or PTC per-thread magazine still reads
+	 * "held": those are thread-local and mutated lock-free by their owner,
+	 * so no other thread can read them soundly (see
+	 * cached_set_has_unaccounted() in umem_inspect.c).
 	 */
-	fprintf(out, "state %s\n", alloc ? "held" : "free");
+	fprintf(out, "state %s\n", alloc == 2 ? "cached" :
+	    alloc ? "held" : "free");
 	fprintf(out, ".\n");
 }
 
