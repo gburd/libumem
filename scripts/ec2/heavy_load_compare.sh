@@ -12,10 +12,10 @@
 #     minutes of THAT process) are dropped; the next 10 are printed, one row
 #     each.  Separate short processes would warm the OS but never the
 #     allocator instance being measured.
-#   * Whole 15-minute runs in the order given, workload-major:
-#     prodcons: umem, libc, jemalloc, umem@null; then frag in the same order.
-#     umem@null is a second, identical umem run placed LAST, so it brackets
-#     the others in time: umem vs umem@null is this run's own noise and drift.
+#   * Whole 15-minute runs, workload-major: prodcons in the order below, then
+#     frag in reverse.  Every allocator runs TWICE (x and x@2, independent
+#     processes), so each allocator's own run-to-run gap is on the record; a
+#     difference between allocators only counts if it exceeds BOTH gaps.
 #   * No op budgets: every run is time-bounded, so throughput is ops done in
 #     the same 10 measured minutes.
 #   * frag sizes 64:256 by default (16:4096 at 192 threads holds ~10 GB live,
@@ -28,7 +28,20 @@
 set -euo pipefail
 
 THREADS="${THREADS:-$(nproc)}"
-ALLOCS="${ALLOCS:-umem,libc,jemalloc,umem@null}"
+# Two independent 15-min runs per allocator, so every allocator's own
+# run-to-run gap is measured.  Palindromic order (A B C C' B' A'): each
+# allocator's pair straddles the middle of the sequence, and sustained_load.sh
+# walks frag in the REVERSED order, so no allocator is always early or late.
+ALLOCS="${ALLOCS:-umem,libc,jemalloc,jemalloc@2,libc@2,umem@2}"
+# Same NUMA policy for every arm.  interleave=all: pages round-robin over all
+# nodes, so no arm's result depends on which node its first touches landed on
+# (first-touch from 192 floating threads is not reproducible run to run).
+# Threads are NOT pinned (the kernel schedules them), the same for all arms.
+if command -v numactl >/dev/null 2>&1; then
+	export SUSTAINED_NUMA_PREFIX="${SUSTAINED_NUMA_PREFIX-numactl --interleave=all}"
+else
+	echo "FATAL: numactl not installed (bootstrap installs it)" >&2; exit 1
+fi
 
 export SUSTAINED_MODE=continuous
 export SUSTAINED_SEC="${SUSTAINED_SEC:-60}"
@@ -47,6 +60,7 @@ echo "=== heavy-load comparison ==="
 echo "allocators   : $ALLOCS"
 echo "workloads    : prodcons 64:256, frag $SUSTAINED_FRAG_SIZES"
 echo "threads      : $THREADS  (box has $(nproc) online)"
+echo "numa policy  : ${SUSTAINED_NUMA_PREFIX:-kernel default} (every arm)"
 echo "per run      : $SUSTAINED_WARMUPS + $SUSTAINED_WINDOWS intervals x ${SUSTAINED_SEC}s in ONE process"
 echo "             = $(( per_run / 60 )) min, first $(( SUSTAINED_WARMUPS * SUSTAINED_SEC / 60 )) min dropped"
 echo "total        : $(( 2 * nallocs )) runs = ~$(( 2 * nallocs * per_run / 60 )) min"
@@ -71,7 +85,8 @@ export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=65536}"
 for a in $(echo "$ALLOCS" | tr ',' ' '); do
 	b="${a%%@*}"
 	for w in prodcons frag; do
-		if ! test/bench/.libs/bench_main -a "$b" -w "$w" -t "$THREADS" -n $((THREADS * 100000)) \
+		# shellcheck disable=SC2086
+		if ! $SUSTAINED_NUMA_PREFIX test/bench/.libs/bench_main -a "$b" -w "$w" -t "$THREADS" -n $((THREADS * 100000)) \
 			-s 64:256 -c 2>/dev/null | grep -q "^$b,"; then
 			echo "FATAL: preflight: $b $w at t=$THREADS produced no row (not loadable or crashed)" >&2
 			exit 1

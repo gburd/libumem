@@ -67,6 +67,14 @@ MODE="${SUSTAINED_MODE:-windows}"
 # as -n / threads / 4, and never below 25,000 because of the per-thread work
 # floor).  The live set is a stated input, not a function of box speed.
 FRAG_POOL="${SUSTAINED_FRAG_POOL:-25000}"
+# continuous mode: a process-wide NUMA/CPU policy applied IDENTICALLY to every
+# run, as a command prefix (e.g. "numactl --interleave=all").  Empty = the
+# kernel default (first-touch memory, free scheduling), recorded as such.
+# Neither bench_main nor libumem sets CPU affinity or memory policy (libumem
+# reads the CPU->node map for depot steal order only; umem_numa_bind_thread /
+# _migrate_memory have no callers), so this prefix is the only placement
+# policy in effect, and it is the same for all allocators.
+NUMA_PREFIX="${SUSTAINED_NUMA_PREFIX:-}"
 BENCH_BIN="${BENCH_BIN:-test/bench/.libs/bench_main}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_ROOT"
@@ -248,6 +256,7 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
         echo "interval_sec = $DURATION"
         echo "intervals_per_run = $(( WARMUPS + WINDOWS ))"
         echo "frag_pool_objects_per_thread = $FRAG_POOL"
+        echo "numa_policy = \"${NUMA_PREFIX:-kernel default (none)}\""
     fi
     echo "frag_sizes = \"$FRAG_MIN:$FRAG_MAX\""
     echo "prodcons_sizes = \"64:256\""
@@ -427,7 +436,8 @@ run_continuous() {
     t0=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     echo "  run $label_a $w: $((WARMUPS + WINDOWS)) x ${DURATION}s in one process, first $WARMUPS discarded (start $t0)"
     set +e
-    LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$n" \
+    # shellcheck disable=SC2086  # NUMA_PREFIX is a deliberate word list
+    LD_PRELOAD="${pre:-}" $NUMA_PREFIX "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$n" \
         -s "$min:$max" -D "$DURATION:$(( WARMUPS + WINDOWS ))" -W "$WARMUPS" -c \
         > "$csv" 2>>"$LOG"
     rc=$?
@@ -451,14 +461,20 @@ if [[ $MODE == continuous ]]; then
     echo "sustained load (continuous): allocators=${ALLOCS[*]} threads=$THREADS"
     echo "  per run: $((WARMUPS + WINDOWS)) x ${DURATION}s, first $WARMUPS discarded; frag pool $FRAG_POOL/thread"
     echo "  sha=$GIT_SHA ($SHA_SRC) -> $OUT"
+    # Each workload walks ALLOCS in the given order; the next workload walks
+    # it REVERSED, so no arm is always first (or last) on the box.
+    rev=0
     for w in prodcons frag; do
         case "$w" in
             prodcons) mn=64; mx=256 ;;
             frag)     mn=$FRAG_MIN; mx=$FRAG_MAX ;;
         esac
-        for a in "${ALLOCS[@]}"; do
+        order=("${ALLOCS[@]}")
+        (( rev )) && { order=(); for (( i=${#ALLOCS[@]}-1; i>=0; i-- )); do order+=("${ALLOCS[$i]}"); done; }
+        for a in "${order[@]}"; do
             run_continuous "$a" "$w" "$mn" "$mx" "$w-sustained"
         done
+        rev=$(( 1 - rev ))
     done
     echo "done: ${ALLOCS[*]} -> $OUT"
     exit 0

@@ -1,0 +1,38 @@
+ref=bd12c8d9d50bb2e6a4e1a3aaa813c533eac56dc0
+preflight    : every arm loads and runs prodcons + frag at t=192
+done: umem libc jemalloc umem@null -> docs/results/2026-09-27-c7g.2xlarge-aarch64/e192.toml
+## docs/results/2026-09-27-c7g.2xlarge-aarch64/e192.toml
+c7g.2xlarge aarch64 threads=192 sha=bd12c8d9d50b mode=continuous tunables=glibc.rtld.optional_static_tls=65536 stack=8317599
+| workload | allocator | Mops/s med | Mops/s min / max | p50 | p99 med (min-max) | p999 med (min-max) | peak RSS MB |
+|---|---|---:|---|---:|---|---|---:|
+| frag-sustained | jemalloc | 22.710 | 22.710 / 22.710 | 32 | 402 (401-403) | 1466 (1459-1473) | 864 |
+| frag-sustained | libc | 16.229 | 16.223 / 16.235 | 150 | 1062 (1060-1063) | 1532 (1531-1534) | 906 |
+| frag-sustained | umem | 22.858 | 22.847 / 22.868 | 120 | 312 (312-313) | 608 (606-609) | 935 |
+| frag-sustained | umem@null | 22.039 | 22.038 / 22.040 | 119 | 311 (311-311) | 596 (593-599) | 934 |
+| prodcons-sustained | jemalloc | 14.438 | 14.228 / 14.649 | 100 | 486 (470-503) | 1253 (1180-1326) | 63 |
+| prodcons-sustained | libc | 14.801 | 14.796 / 14.805 | 180 | 18965 (14939-22991) | 1652536 (1649902-1655169) | 63 |
+| prodcons-sustained | umem | 17.341 | 17.321 / 17.362 | 70 | 150 (146-155) | 546 (545-546) | 111 |
+| prodcons-sustained | umem@null | 16.811 | 16.769 / 16.853 | 68 | 137 (136-138) | 548 (547-549) | 92 |
+null frag-sustained: mops 3.6%, p50 0.8%, p99 0.5%, p999 1.9%, rss 0.1%
+null prodcons-sustained: mops 3.1%, p50 2.1%, p99 9.0%, p999 0.5%, rss 17.3%
+RESULT: PASS (0 invariant failures)
+SUM192 rc=0
+preflight    : every arm loads and runs prodcons + frag at t=384
+done: umem libc jemalloc umem@null -> docs/results/2026-09-27-c7g.2xlarge-aarch64/e384.toml
+## docs/results/2026-09-27-c7g.2xlarge-aarch64/e384.toml
+c7g.2xlarge aarch64 threads=384 sha=bd12c8d9d50b mode=continuous tunables=glibc.rtld.optional_static_tls=65536 stack=8317599
+  FAIL libc frag-sustained interval 2: 39.76803s vs 10s
+| workload | allocator | Mops/s med | Mops/s min / max | p50 | p99 med (min-max) | p999 med (min-max) | peak RSS MB |
+|---|---|---:|---|---:|---|---|---:|
+| frag-sustained | jemalloc | 24.876 | 24.871 / 24.881 | 32 | 443 (426-460) | 1752 (1734-1771) | 1623 |
+| frag-sustained | libc | 14.306 | 14.252 / 14.360 | 152 | 1146 (1140-1152) | 1763 (1743-1783) | 1712 |
+| frag-sustained | umem | 22.207 | 22.193 / 22.222 | 136 | 352 (352-353) | 640 (638-642) | 1792 |
+| frag-sustained | umem@null | 19.641 | 19.619 / 19.664 | 134 | 350 (348-353) | 648 (645-650) | 1793 |
+| prodcons-sustained | jemalloc | 15.311 | 15.256 / 15.366 | 104 | 534 (531-538) | 14712 (7674-21750) | 80 |
+| prodcons-sustained | libc | 14.162 | 14.132 / 14.193 | 184 | 31596 (27304-35887) | 3084671 (3035829-3133513) | 72 |
+| prodcons-sustained | umem | 20.682 | 20.656 / 20.708 | 70 | 144 (142-145) | 541 (540-542) | 139 |
+| prodcons-sustained | umem@null | 16.932 | 16.807 / 17.057 | 72 | 162 (149-176) | 570 (557-582) | 193 |
+null frag-sustained: mops 11.6%, p50 0.7%, p99 0.6%, p999 1.2%, rss 0.1%
+null prodcons-sustained: mops 18.1%, p50 3.6%, p99 13.2%, p999 5.3%, rss 39.1%
+RESULT: FAIL (1 invariant failures)
+SUM384 rc=1

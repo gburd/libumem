@@ -1,0 +1,248 @@
+=== rep 1: libc frag t=384 -D 10:4
+--- t=12s rows_so_far=1 main-thread wchan=hrtimer_nanosleep
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fa6cea9b388 in __internal_syscall_cancel (a1=a1@entry=0, a2=a2@entry=0, a3=a3@entry=140725288951008, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=230) at ./nptl/cancellation.c:49
+#2  0x00007fa6ceae7cfa in __GI___clock_nanosleep (clock_id=<optimized out>, clock_id@entry=0, flags=flags@entry=0, req=req@entry=0x7ffd28dbdce0, rem=rem@entry=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:48
+#3  0x00007fa6ceaf3113 in __GI___nanosleep (req=req@entry=0x7ffd28dbdce0, rem=rem@entry=0x0) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#4  0x000055d93689a343 in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1641
+#5  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#6  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#7  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=18s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa670000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa670000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa670000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa670000030, p=p@entry=0x7fa671742ab0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa670000030, p=0x7fa671742ab0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa6707ae490) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=24s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa5d0000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa5d0000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa5d0000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa5d0000030, p=p@entry=0x7fa5d1816c80, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa5d0000030, p=0x7fa5d1816c80, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa5d0b51430) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=30s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa628000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa628000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa628000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa628000030, p=p@entry=0x7fa6297063f0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa628000030, p=0x7fa6297063f0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa6293b53f0) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=36s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa5d8000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa5d8000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa5d8000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa5d8000030, p=p@entry=0x7fa5d97f3ea0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa5d8000030, p=0x7fa5d97f3ea0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa5d8f12ea0) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=42s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa674000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa674000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa674000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa674000030, p=p@entry=0x7fa67562ec30, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa674000030, p=0x7fa67562ec30, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa674866520) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=50s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa650000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa650000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa650000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa650000030, p=p@entry=0x7fa6513b9a30, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa650000030, p=0x7fa6513b9a30, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa65038d600) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=60s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa658000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa658000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa658000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa658000030, p=p@entry=0x7fa6597fe660, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa658000030, p=0x7fa6597fe660, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa659342f20) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=75s rows_so_far=2 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa688000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa688000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa688000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa688000030, p=p@entry=0x7fa6897c7ed0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa688000030, p=0x7fa6897c7ed0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa688abcec0) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=90s rows_so_far=2 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fa680000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fa680000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fa680000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fa6ceaac4f1 in _int_free_chunk (av=av@entry=0x7fa680000030, p=p@entry=0x7fa68163db70, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fa6ceaaf140 in _int_free (av=0x7fa680000030, p=0x7fa68163db70, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055d93689e202 in td_free (histogram=histogram@entry=0x7fa68029e0b0) at test/tdigest.c:202
+#6  0x000055d936899f4b in iv_drive (clk=clk@entry=0x7ffd28dbde40, cfg=cfg@entry=0x7ffd28dbe248, slots=slots@entry=0x55d965489f00, started=started@entry=0x55d965907870 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7ffd28dbddd8, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055d93689c942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055d93689cbf7 in bench_run (ops=ops@entry=0x55d9368a5400 <allocator_libc>, workload=workload@entry=0x7ffd28dbe248, stats=stats@entry=0x7ffd28dbe050) at test/bench/bench_framework.c:1662
+#9  0x000055d936897b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+rc=0
+fragmentation/interval=0,10.000119,17035902.90
+fragmentation/interval=1,10.000128,16607067.07
+fragmentation/interval=2,73.866967,16345554.51
+fragmentation/interval=3,63.882995,16562148.17
+=== rep 2: libc frag t=384 -D 10:4
+--- t=12s rows_so_far=1 main-thread wchan=hrtimer_nanosleep
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fe9b189b388 in __internal_syscall_cancel (a1=a1@entry=0, a2=a2@entry=0, a3=a3@entry=140736223648800, a4=a4@entry=0, a5=a5@entry=0, a6=a6@entry=0, nr=230) at ./nptl/cancellation.c:49
+#2  0x00007fe9b18e7cfa in __GI___clock_nanosleep (clock_id=<optimized out>, clock_id@entry=0, flags=flags@entry=0, req=req@entry=0x7fffb49e1c20, rem=rem@entry=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:48
+#3  0x00007fe9b18f3113 in __GI___nanosleep (req=req@entry=0x7fffb49e1c20, rem=rem@entry=0x0) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#4  0x000055ef26d17343 in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1641
+#5  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#6  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#7  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=18s rows_so_far=1 main-thread wchan=hrtimer_nanosleep
+#0  futex_wait (futex_word=0x7fe98c000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe98c000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe98c000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe98c000030, p=p@entry=0x7fe98d7ce7d0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe98c000030, p=0x7fe98d7ce7d0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe98c5558f0) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=24s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe8b4000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe8b4000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe8b4000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe8b4000030, p=p@entry=0x7fe8b5736470, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe8b4000030, p=0x7fe8b5736470, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe8b4c9db10) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=30s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe960000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe960000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe960000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe960000030, p=p@entry=0x7fe9616c1e70, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe960000030, p=0x7fe9616c1e70, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe960685560) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=36s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe950000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe950000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe950000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe950000030, p=p@entry=0x7fe951540fc0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe950000030, p=0x7fe951540fc0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe95079e5b0) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=42s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe904000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe904000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe904000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe904000030, p=p@entry=0x7fe905721070, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe904000030, p=0x7fe905721070, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe90499d930) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=50s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe90c000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe90c000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe90c000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe90c000030, p=p@entry=0x7fe90d4efe60, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe90c000030, p=0x7fe90d4efe60, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe90c7a7b70) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=60s rows_so_far=1 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe914000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe914000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe914000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe914000030, p=p@entry=0x7fe9156841d0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe914000030, p=0x7fe9156841d0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe914a80840) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=75s rows_so_far=2 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe918000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe918000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe918000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe918000030, p=p@entry=0x7fe9194cb100, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe918000030, p=0x7fe9194cb100, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe91881c020) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+--- t=90s rows_so_far=2 main-thread wchan=futex_wait_queue
+#0  futex_wait (futex_word=0x7fe8c0000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#0  futex_wait (futex_word=0x7fe8c0000030, expected=2, private=0) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait_private (futex=0x7fe8c0000030) at ./nptl/lowlevellock.c:34
+#2  0x00007fe9b18ac4f1 in _int_free_chunk (av=av@entry=0x7fe8c0000030, p=p@entry=0x7fe8c0c7eab0, size=4896, have_lock=<optimized out>, have_lock@entry=0) at ./malloc/malloc.c:4665
+#3  0x00007fe9b18af140 in _int_free (av=0x7fe8c0000030, p=0x7fe8c0c7eab0, have_lock=0) at ./malloc/malloc.c:4699
+#4  __GI___libc_free (mem=<optimized out>) at ./malloc/malloc.c:3476
+#5  0x000055ef26d1b202 in td_free (histogram=histogram@entry=0x7fe8c00b8630) at test/tdigest.c:202
+#6  0x000055ef26d16f4b in iv_drive (clk=clk@entry=0x7fffb49e1d80, cfg=cfg@entry=0x7fffb49e2178, slots=slots@entry=0x55ef2d8a4f00, started=started@entry=0x55ef2dd5d0a0 '\001' <repeats 200 times>..., nworkers=<optimized out>, live=live@entry=0x7fffb49e1d18, series=<optimized out>) at test/bench/bench_framework.c:1621
+#7  0x000055ef26d19942 in workload_fragmentation (ops=<optimized out>, stats=<optimized out>, config=<optimized out>) at test/bench/bench_framework.c:1354
+#8  0x000055ef26d19bf7 in bench_run (ops=ops@entry=0x55ef26d22400 <allocator_libc>, workload=workload@entry=0x7fffb49e2178, stats=stats@entry=0x7fffb49e1f80) at test/bench/bench_framework.c:1662
+#9  0x000055ef26d14b96 in main (argc=<optimized out>, argv=<optimized out>) at test/bench/bench_main.c:309
+rc=0
+fragmentation/interval=0,10.004045,15564757.58
+fragmentation/interval=1,10.003972,14982752.23
+fragmentation/interval=2,62.364157,14842539.82
+fragmentation/interval=3,59.119872,15459466.13
