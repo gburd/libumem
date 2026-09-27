@@ -3,67 +3,6 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
-
-### Dependencies
-
-- **Vendored sparsemap deliberately held at v5.5.0; upstream v5.6.0 not
-  taken** (`sm.c`/`sm.h` remain byte-identical to upstream tag `v5.5.0`).
-  v5.6.0 is a hardening release with real memory-safety fixes, but it
-  regressed code that 5.5.0 had correct. Every defect below was shown with a
-  public-API probe that passes on v5.5.0 and fails on v5.6.0, identically on
-  x86_64 and aarch64 (`docs/reviews/2026-09-27-sparsemap-5.6.0-probe.c`,
-  written to be handed upstream):
-  - `sm_split` with the split index in the gap between two chunks moves the
-    *lower* chunk into the destination (`{1,8193}` split at 5000 leaves
-    `map={}`, `other={1,8193}`). Upstream's new `start <= idx` guard made a
-    dead rewind branch live; a two-line fix is in the review.
-  - `sm_equals` and `sm_hash` now depend on the encoding. An RLE run and the
-    same bits held as sparse chunks compare unequal and hash differently,
-    contrary to `sm.h`.
-  - The "amplification closed" claim is incomplete: `sm_is_subset`,
-    `sm_is_superset` and `sm_overlap` still take more than 10 s on a valid
-    24-byte input.
-  - The new run iterator puts about 33 KB of stack in each of `sm_xor`,
-    `sm_equals`, `sm_compare`, `sm_subset_compare` and the `*_cardinality`
-    family. In 5.5.0 the largest frame was 1.8 KB.
-
-  libumem was not exposed to either version's defects: no libumem code calls
-  sparsemap (0 of 128 built binaries reference a `umem_sm_*` symbol) and
-  `sm.h` is not installed. `libumem.so` does still export 86 `umem_sm_*`
-  functions (all prefixed, zero bare `sm_*`), which is undocumented ABI
-  surface. The review recommends dropping it. Full classification and
-  evidence: `docs/reviews/2026-09-27-sparsemap-5.6.0-review.md`.
-
-### Fixed
-
-- **The first allocation needed ~67 KB of stack; it now needs ~5 KB.**
-  `umem_init()` runs on whichever thread makes the first allocation, and
-  `umem_get_max_ncpus()` (`init_lib.c`) put `char proc_stat[65536]` on that
-  thread's stack. The comment above it said "a static buffer". Measured
-  first-call peak depth, Debian 13 / gcc 14 / glibc 2.41: umem 69,144 B
-  (x86_64) / 66,880 B (aarch64), against glibc `malloc` <= 3.4 KB and
-  jemalloc <= 3.2 KB. As a result, a first `umem_alloc()` on a 16-64 KiB pthread
-  SEGV'd on x86_64, where glibc and jemalloc survive 16 KiB. On x86_64 the
-  64 KiB frame could also jump the single guard page and `read()`
-  `/proc/stat` into a neighbouring thread's stack or TLS (3,547 canary
-  bytes changed in a neighbour thread's TLS). The buffer is now static.
-  That is safe because the only caller is the one thread doing `umem_init`,
-  and the new comment states that invariant. The next contributor on the
-  same path, `log_message`/`debug_printf`/`umem_vprintf` in `misc.c` with
-  their 4 KiB stack buffers (reached during init by a bad `UMEM_*` item),
-  now uses 1 KiB. The longest message in the tree is ~540 B.
-  Post-fix, the first call peaks at ~5.2-5.4 KB. The residual is
-  libgcc_s/libdw/ld.so, not libumem code. Regression
-  `test/integration/test_first_alloc_small_stack.sh`, in `TESTS`: it fails
-  at 0de29ef/df1af67 on arm-lo and intel-lo (rc=139) and passes after the fix.
-  **The arm-hi `sustained_load.sh` SEGV that led here is a separate cause.**
-  The harness's `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608`
-  takes the static TLS out of every thread's 8 MiB stack and leaves
-  2,448 B (aarch64) / 8,208 B (x86_64). jemalloc used via `dlopen` crashes
-  there too (5/5 on arm-lo). The harness change is tracked separately.
-  `docs/results/2026-09-27-arm-dlopen-stack-crash.md`.
-
 ## [3.3.2] - 2026-09-27
 
 Arms the rseq lock-free per-CPU layer (P8.5b), on by default, and fixes the
@@ -77,9 +16,33 @@ fix. The p999 improvement first claimed for this change (93.7 -> 46.5 us) was
 measured with an off-switch that had been removed; the re-measured,
 attributable numbers are under "Fixed". Also three Debian 13 / GCC 14 build
 fixes, Debian EC2 support for the harness, and a record that several
-advertised debugging-tool features do not work ("Known limitation"). No API or
-ABI change: `sizeof(umem_hook_t)` is still 120 and the soname is
-`libumem.so.1`.
+advertised debugging-tool features do not work ("Known limitation"). It also
+fixes a first-allocation stack depth of ~67 KB (now ~5 KB), which crashed a
+program whose first allocation was on a small-stack thread and could write
+into a neighbouring thread's memory on x86; corrects three benchmark-harness
+defects that had shortened and distorted every earlier "sustained" result;
+holds the vendored sparsemap at v5.5.0 after finding regressions in v5.6.0;
+and adds a 15-minute comparison against glibc and jemalloc on 192-core Debian
+metal. No API or ABI change: `sizeof(umem_hook_t)` is still 120 and the soname
+is `libumem.so.1`.
+
+### Performance -- measured
+
+- **libumem vs glibc 2.41 vs jemalloc 5.3 on 192-core Debian metal**
+  (`docs/results/2026-09-27-heavy-load-comparison.md`, raw data in
+  `docs/results/2026-09-27-heavy-load/`, at `e7b7ea7`). `c7i.metal-48xl` and
+  `c8g.metal-48xl`, 2 NUMA nodes, 192 threads, 64-256 B, `numactl
+  --interleave=all`. Each allocator ran twice for 15 minutes per workload,
+  with the first 5 minutes discarded; a difference counts only if it exceeds
+  both allocators' own run-to-run gaps. libumem has the lowest cross-thread
+  p50/p99 on both architectures (x86 p99 3.7 us vs glibc 18.9 and jemalloc
+  14.8) and the lowest x86 cross-thread p999. Its fragmentation-churn tail is
+  2.6-3.9x lower than glibc's on arm and 17-28 % lower on x86. jemalloc is
+  faster at the fragmentation median everywhere, and on arm has 30 % more
+  cross-thread throughput and a 2.6-5x lower tail. libumem uses the most
+  memory: 1.8-3.7x glibc and jemalloc with a small live set, 7-14 % more with
+  2 GB live. The 384-thread run was not done: run-to-run noise at 192 threads
+  (glibc 16.8 % on x86) exceeded the 10 % limit set before any result.
 
 ### Performance -- added
 
@@ -258,6 +221,91 @@ ABI change: `sizeof(umem_hook_t)` is still 120 and the soname is
   failure-rate loop that keeps the full stderr of every failing run) and
   `heavy_load_compare.sh`. The Debian bootstrap still silently drops lldb
   because it names a `jemalloc-bin` package that does not exist on Debian 13.
+
+### Dependencies
+
+- **Vendored sparsemap deliberately held at v5.5.0; upstream v5.6.0 not
+  taken** (`sm.c`/`sm.h` remain byte-identical to upstream tag `v5.5.0`).
+  v5.6.0 is a hardening release with real memory-safety fixes, but it
+  regressed code that 5.5.0 had correct. Every defect below was shown with a
+  public-API probe that passes on v5.5.0 and fails on v5.6.0, identically on
+  x86_64 and aarch64 (`docs/reviews/2026-09-27-sparsemap-5.6.0-probe.c`,
+  written to be handed upstream):
+  - `sm_split` with the split index in the gap between two chunks moves the
+    *lower* chunk into the destination (`{1,8193}` split at 5000 leaves
+    `map={}`, `other={1,8193}`). Upstream's new `start <= idx` guard made a
+    dead rewind branch live; a two-line fix is in the review.
+  - `sm_equals` and `sm_hash` now depend on the encoding. An RLE run and the
+    same bits held as sparse chunks compare unequal and hash differently,
+    contrary to `sm.h`.
+  - The "amplification closed" claim is incomplete: `sm_is_subset`,
+    `sm_is_superset` and `sm_overlap` still take more than 10 s on a valid
+    24-byte input.
+  - The new run iterator puts about 33 KB of stack in each of `sm_xor`,
+    `sm_equals`, `sm_compare`, `sm_subset_compare` and the `*_cardinality`
+    family. In 5.5.0 the largest frame was 1.8 KB.
+
+  libumem was not exposed to either version's defects: no libumem code calls
+  sparsemap (0 of 128 built binaries reference a `umem_sm_*` symbol) and
+  `sm.h` is not installed. `libumem.so` does still export 86 `umem_sm_*`
+  functions (all prefixed, zero bare `sm_*`), which is undocumented ABI
+  surface. The review recommends dropping it. Full classification and
+  evidence: `docs/reviews/2026-09-27-sparsemap-5.6.0-review.md`.
+
+### Fixed -- first allocation stack depth
+
+- **The first allocation needed ~67 KB of stack; it now needs ~5 KB.**
+  `umem_init()` runs on whichever thread makes the first allocation, and
+  `umem_get_max_ncpus()` (`init_lib.c`) put `char proc_stat[65536]` on that
+  thread's stack. The comment above it said "a static buffer". Measured
+  first-call peak depth, Debian 13 / gcc 14 / glibc 2.41: umem 69,144 B
+  (x86_64) / 66,880 B (aarch64), against glibc `malloc` <= 3.4 KB and
+  jemalloc <= 3.2 KB. As a result, a first `umem_alloc()` on a 16-64 KiB pthread
+  SEGV'd on x86_64, where glibc and jemalloc survive 16 KiB. On x86_64 the
+  64 KiB frame could also jump the single guard page and `read()`
+  `/proc/stat` into a neighbouring thread's stack or TLS (3,547 canary
+  bytes changed in a neighbour thread's TLS). The buffer is now static.
+  That is safe because the only caller is the one thread doing `umem_init`,
+  and the new comment states that invariant. The next contributor on the
+  same path, `log_message`/`debug_printf`/`umem_vprintf` in `misc.c` with
+  their 4 KiB stack buffers (reached during init by a bad `UMEM_*` item),
+  now uses 1 KiB. The longest message in the tree is ~540 B.
+  Post-fix, the first call peaks at ~5.2-5.4 KB. The residual is
+  libgcc_s/libdw/ld.so, not libumem code. Regression
+  `test/integration/test_first_alloc_small_stack.sh`, in `TESTS`: it fails
+  at 0de29ef/df1af67 on arm-lo and intel-lo (rc=139) and passes after the fix.
+  **The arm-hi `sustained_load.sh` SEGV that led here is a separate cause.**
+  The harness's `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608`
+  takes the static TLS out of every thread's 8 MiB stack and leaves
+  2,448 B (aarch64) / 8,208 B (x86_64). jemalloc used via `dlopen` crashes
+  there too (5/5 on arm-lo). The harness change is tracked separately.
+  `docs/results/2026-09-27-arm-dlopen-stack-crash.md`.
+
+### Fixed -- benchmark harness (results before these are qualified)
+
+- `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608`, set by
+  `sustained_load.sh`, `matrix.sh` and `allocator_comparison.sh` so jemalloc
+  could be `dlopen`ed, was carved out of every non-main thread's stack,
+  leaving 2.7 KB (aarch64) / 8.3 KB (x86_64). umem and jemalloc crashed under
+  it; this was the "arm metal crash". Now 64 KiB everywhere, and
+  `sustained_load.sh` refuses to run if a new thread gets less than 1 MiB
+  (`3780624`).
+- `sustained_load.sh` calibrated from 2 M ops while `bench_main` ran the
+  100k-per-thread floor, so at 192 threads every "sustained" window was about
+  10x shorter than labelled: 2-43 s, not 20 or 180 s (`38ec141`). The
+  2026-09-24 comparison's sustained section and the P8.5b-fix sustained table
+  are corrected in place.
+- The discarded warm-up windows were separate processes and warmed nothing in
+  the allocator. `bench_main -D SEC:COUNT` now runs one long process per
+  measurement with per-interval rows, and the first intervals are discarded
+  (`153a0c8`, `99acb32`, `ac71949`). A stalled worker no longer stretches the
+  interval clock (`bd12c8d`, regression `5e4e07b`), and the harness no longer
+  frees its own bookkeeping into the allocator under test while intervals run
+  (`fde96c1`: it had put the harness's frees on glibc's arenas during the glibc
+  arm, stretching a 10 s interval to 67 s).
+- The Debian EC2 bootstrap installs packages individually. A package name that
+  does not exist on Debian 13 had failed the whole install, and the fallback
+  silently dropped lldb and libjemalloc-dev (`631596d`).
 
 ## [3.3.1] - 2026-09-25
 

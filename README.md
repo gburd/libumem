@@ -632,6 +632,48 @@ allocator, with the method and the null analysis, and
 [`2026-09-24`](docs/results/2026-09-24-allocator-comparison.md) at `d6f04ab`
 after the fixes below. Numbers here are from the second run unless marked.
 
+### Under heavy load: 192 cores, 2 NUMA nodes (v3.3.2)
+
+On Debian 13 metal (`c7i.metal-48xl` Sapphire Rapids and `c8g.metal-48xl`
+Graviton4, 192 vCPU, 2 NUMA nodes), with 192 threads, sizes 64-256 B, and
+memory interleaved over both nodes, each allocator ran **twice for 15 minutes
+per workload**. The first 5 minutes of each run were discarded, leaving ten
+one-minute intervals per run. A difference is reported only if it is larger
+than the gap between that allocator's own two runs, which is large here:
+glibc's two prodcons runs differed by 17 % in throughput on x86, and on arm the
+two runs of umem and of glibc differed by 2-3x in prodcons p999. Method, raw
+data and every verdict:
+[`docs/results/2026-09-27-heavy-load-comparison.md`](docs/results/2026-09-27-heavy-load-comparison.md).
+
+| 192 threads, median of both runs | libumem | glibc 2.41 | jemalloc 5.3 |
+|---|---|---|---|
+| cross-thread alloc/free, p99 latency (x86 / arm) | **3.7 / 0.37 us** | 18.9 / 4.3 us | 14.8 / 0.64 us |
+| cross-thread alloc/free, peak RSS | 171-177 MB | **48-52 MB** | 66-98 MB |
+| fragmentation churn (2.2 GB live), p999 latency (x86 / arm) | 25\* / 4.5 us | 30 / 17.7 us | 26\* / **0.87 us** |
+| fragmentation churn, peak RSS | 4.2-4.3 GB | 3.9 GB | **3.8 GB** |
+
+\* inside run-to-run noise of each other.
+
+- **Cross-thread allocate/free** (the all-to-all NUMA pattern): libumem has
+  the lowest p50 and p99 of the three on both architectures (x86 p99 4-5x
+  lower than glibc and jemalloc). On x86 it also has the lowest p999, and its
+  throughput matches jemalloc at about 2x glibc. On arm, jemalloc has 30 % more
+  throughput and a 2.6x lower p999; libumem's p999 is still 4x below glibc's.
+- **Fragmentation churn**: throughput is tied with glibc on both
+  architectures. libumem's tail is 2.6-3.9x lower than glibc's on arm and
+  17-28 % lower on x86. jemalloc is faster at the median everywhere, and has a
+  5x lower tail than libumem on arm.
+- **Memory**: libumem uses the most. It takes 1.8-3.7x the RSS of glibc and
+  jemalloc when the live set is small, and 7-14 % more with a 2 GB live set.
+- **Not measured**: more threads than cores (the 384-thread run was cancelled
+  because run-to-run noise at 192 threads exceeded the 10 % limit set in
+  advance), objects above 256 B, and the `libumem_malloc.so` drop-in (libumem
+  was measured through its API). The x86 box ran with the `powersave` CPU
+  governor (the metal default), the same for every run. The cross-thread
+  throughput mostly measures the benchmark's own hand-off queue: allocator
+  calls are 0.1-1.3 % of thread time there, so its latency columns are the
+  meaningful ones.
+
 ### Two libumem paths
 
 Every earlier comparison in this repository measured libumem through the
@@ -819,7 +861,10 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
 > - lldb `umem status` always ends with an error.
 >
 > `umem findleaks|status|log|walk|whatis|snapshot` and umemctl
-> `stats|caches|cache` work as documented.
+> `stats|caches|cache` work as documented. Three of these findings (the event
+> hook, `monitor`, and `learn` after refusal) have regression tests that run in
+> `make check` as expected failures (`XFAIL_TESTS`). Each one passes, and must
+> be removed from that list, once its finding is fixed.
 
 ```bash
 # umem(1): live pid / offline snapshot / CI leak-finding
