@@ -271,16 +271,20 @@ main(int argc, char **argv)
 
 	long iters = (argc > 1) ? atol(argv[1]) : 200000;
 	/*
-	 * ponytail: 1us default livelocks on some x86_64 hosts (observed:
-	 * a real 5+ hour hang on c7i.2xlarge) -- rt_sigreturn overhead per
-	 * signal can exceed the loop body's own per-iteration cost at 1us,
-	 * so the alloc-leak loop's `null_returns < 4` exit condition never
-	 * accumulates forward progress. 5us leaves ample margin (verified:
-	 * still delivers hundreds of thousands of signals per run, 0 leaks
-	 * found, on both x86_64 and aarch64) while never livelocking.
-	 * Raise back toward 1us only with a livelock timeout guard.
+	 * Signal interval.  The storm must be fast enough to land inside a
+	 * two-instruction window but slower than the loop's per-iteration
+	 * cost including rt_sigreturn, or the loop livelocks: every iteration
+	 * aborts and the alloc loop's exit condition never accumulates.
+	 * 1 us livelocked on a c7i.2xlarge (a 5+ hour hang, 2026-09-10), so the
+	 * default went to 5 us.  5 us livelocked too, on Debian 13 c7i.2xlarge
+	 * (2026-09-27): 2 of 6 runs did not finish in 240 s, still cycling
+	 * through the fast path under gdb at 35 M+ signals, while every
+	 * interval from 8 to 50 us finished 6/6 in about 1 s with 7,000-44,000
+	 * signals per phase, and arm64 finished 6/6 at every interval.  10 us
+	 * is the default.  A run that sees too few signals to have tested the
+	 * window is reported INCONCLUSIVE below, not PASS.
 	 */
-	long interval_us = (argc > 2) ? atol(argv[2]) : 5;
+	long interval_us = (argc > 2) ? atol(argv[2]) : 10;
 
 	arm_signal_storm(interval_us);
 	int r1 = repro_alloc_leak(cpu, iters);
@@ -292,6 +296,16 @@ main(int argc, char **argv)
 	if (r1 || r2) {
 		printf("RESULT: BUG REPRODUCED (trailing stat-counter store "
 		    "sits inside the rseq-checked window)\n");
+		return (1);
+	}
+	/*
+	 * A run with too few signals did not test the window, so it cannot
+	 * pass.  1,000 is well below the ~7,000 the slowest measured default
+	 * (12 us) delivered per phase.
+	 */
+	if (g_signal_count < 1000) {
+		printf("RESULT: INCONCLUSIVE (only %ld signals delivered)\n",
+		    g_signal_count);
 		return (1);
 	}
 	printf("RESULT: no window found (commit store is correctly last "
