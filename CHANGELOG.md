@@ -70,6 +70,38 @@ c7i.2xlarge, `--enable-introspect`).
   magazines. The partial-magazine refill was not built.
   `docs/results/2026-09-27-sheaves-barn-review.md`.
 
+### Dependencies
+
+- **sparsemap v5.7.0 reviewed and not taken.** The vendored copy stays at
+  v5.5.0 (byte-identical) in v3.3.x, and v4.0.0 removes it. libumem has
+  never called it.
+  - **Fixed in 5.7.0.** The two regressions 5.6.0 introduced:
+    - `sm_split` at an inter-chunk gap.
+    - encoding-dependent `sm_equals`/`sm_hash`.
+
+    Plus three older bugs:
+    - `sm_split` producing invalid halves (the new fuzz: 395 failures on
+      5.5.0, 0 on 5.7.0).
+    - length-1 RLE remove.
+    - `sm_offset` signed overflow.
+  - **Still open.**
+    - `sm_is_subset`/`sm_overlap` take more than 10 s on a 24-byte input.
+    - The ~33 KB stack frames: `sm_equals` of two 1-bit maps now
+      segfaults on a 24 KiB stack.
+    - An `sm_difference` result that fails the library's own
+      `sm_validate`, so it cannot be reloaded.
+    - `sm_validate` accepting a length-0 RLE chunk.
+  - **New in 5.7.0**, all from its small-set mode:
+    - bytes that 5.6.x cannot read, despite "mutually readable".
+    - ENOSPC on fixed buffers.
+    - reads that allocate and return wrong answers when malloc fails.
+    - unaligned loads.
+
+  Every item has a public-API reproducer that passes or fails identically on
+  x86_64 and aarch64. The standalone upstream report and probe are
+  `docs/reviews/2026-09-27-sparsemap-5.7.0-review.md` (section 4) and
+  `docs/reviews/2026-09-27-sparsemap-5.7.0-probe.c`.
+
 ## [3.3.2] - 2026-09-27
 
 Arms the rseq lock-free per-CPU layer (P8.5b), on by default, and fixes the
