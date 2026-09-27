@@ -373,3 +373,36 @@ not crash with the default.
 The P8.5b **t=1 A/B** (`docs/results/jobs/intel-lo-r5rseq-t1ab/cmd`) selected
 its off arm the same way (`UMEM_RSEQ_OFF=1`, non-isolated tree), so the claim
 "t=1 not regressed" is also unattributed. It is re-measured with `norseq`.
+
+## Metal, intel-hi c7i.metal-48xl (Debian 13), fix at 66fd33b: default gate
+
+`docs/results/r5fix/mdef-intel-hi.log`. The oracle 192t/60s mixed/all
+default PASSED: 370,252,584 allocs, 0 failures.
+
+Sustained `sustained_load.sh umem 180 192`, prodcons 64:256, frag 64:256,
+3 measured windows + 1 warmup, the SAME binary, rseq on vs `UMEM_OPTIONS=norseq`,
+run sequentially (on first):
+
+| prodcons | rseq ON w0 / w1 / w2 | median | norseq w0 / w1 / w2 | median |
+|---|---|---:|---|---:|
+| p999 (ns) | 29,737 / 32,278 / 26,355 | **29.7 us** | 41,673 / 41,735 / 39,079 | **41.7 us** |
+| p99 (ns) | 4,062 / 5,555 / 3,681 | 4.1 us | 6,533 / 6,273 / 6,770 | 6.5 us |
+| Mops/s | 1.697 / 1.837 / 2.183 | 1.84 | 1.958 / 1.882 / 1.901 | 1.90 |
+| RSS@peak (MB) | 141 / 122 / 130 | 130 | 264 / 246 / 245 | 246 |
+
+| frag | rseq ON median | norseq median |
+|---|---:|---:|
+| p999 | 1.97 ms | 2.00 ms |
+| Mops/s | 8.80 | 9.17 |
+| RSS@peak | 4.57 GB | 4.75 GB |
+
+Read plainly: with the fix, rseq ON beats `norseq` on prodcons p999 by about
+29 % (29.7 vs 41.7 us), cuts p99 by about 37 %, and roughly halves RSS. Both
+arms are well under the old 85 us target, and so is `norseq` itself (41.7 us).
+So the old "93.7 us rseq off" figure does not describe norseq on this build.
+The rseq layer is not what brings the tail under 85 us. It adds a further
+~12 us p999 reduction on top. Throughput is lower with rseq on: prodcons
+1.84 vs 1.90 Mops/s (-3 %), frag 8.80 vs 9.17 (-4 %). n=3 windows per arm and
+w0-w2 spread about ±10 %, so the throughput difference is within about one
+spread and is not claimed as significant either way. The run order was not
+alternated (on, then off), so drift is not controlled for.
