@@ -30,6 +30,7 @@
 #include "umem_impl.h"
 #include "umem_base.h"
 #include "umem_inspect.h"
+#include "umem_introspect.h"
 #include "umem_stacktrace.h"
 #include "umem_ptc.h"
 /*
@@ -74,7 +75,7 @@ extern uint32_t umem_stack_depth;
  * inlining or eliding them, so `call` from a debugger always resolves.
  * ------------------------------------------------------------------------ */
 
-static atomic_int umem_inspect_events_enabled;
+int umem_hooks;	/* see umem_base.h */
 static _Atomic(umem_event_cb_t) umem_inspect_event_cb;
 static void *umem_inspect_event_cb_arg;
 static atomic_uint umem_inspect_event_mask = 0xffffffffu;
@@ -106,7 +107,12 @@ umem_event_error(int code, void *buf, void *cache)
 void
 umem_inspect_enable_events(int on)
 {
-	atomic_store(&umem_inspect_events_enabled, on ? 1 : 0);
+	if (on)
+		(void) __atomic_fetch_or(&umem_hooks, UMEM_HOOK_EVENTS,
+		    __ATOMIC_RELEASE);
+	else
+		(void) __atomic_fetch_and(&umem_hooks, ~UMEM_HOOK_EVENTS,
+		    __ATOMIC_RELEASE);
 }
 
 void
@@ -122,7 +128,7 @@ umem_inspect_set_event_cb(umem_event_cb_t cb, void *arg, unsigned event_mask)
 void
 umem_inspect_notify(umem_event_t ev, const umem_buffer_info_t *info)
 {
-	if (!atomic_load(&umem_inspect_events_enabled))
+	if (!(__atomic_load_n(&umem_hooks, __ATOMIC_ACQUIRE) & UMEM_HOOK_EVENTS))
 		return;
 
 	switch (ev) {
@@ -147,6 +153,75 @@ umem_inspect_notify(umem_event_t ev, const umem_buffer_info_t *info)
 	umem_event_cb_t cb = atomic_load(&umem_inspect_event_cb);
 	if (cb != NULL)
 		cb(ev, info, umem_inspect_event_cb_arg);
+}
+
+/*
+ * Out-of-line halves of UMEM_HOOKS_ON() (umem_base.h).  Called from the
+ * public entry points AFTER an allocation / BEFORE a free, with no umem lock
+ * held, so a umemctl break may park the thread here.  cp NULL means "resolve
+ * from size": a umem_alloc_<n> cache, or NULL for oversize.  hook_depth
+ * stops a callback that allocates from recursing.
+ *
+ * ponytail: malloc() under libumem_malloc.so reports through umem_alloc()
+ * with the malloc header's base and size; memalign's vmem_xalloc path and
+ * bootstrap allocations before umem is ready do not report.  Add hooks in
+ * malloc.c if a tool needs user pointers.
+ */
+extern umem_cache_t *umem_alloc_table[];
+static __thread int umem_hook_depth;
+
+static umem_cache_t *
+umem_hook_cache(size_t size, umem_cache_t *cp)
+{
+	size_t idx = (size - 1) >> UMEM_ALIGN_SHIFT;
+
+	if (cp == NULL && idx < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT)
+		cp = umem_alloc_table[idx];
+	return (cp);
+}
+
+static void
+umem_hook_event(umem_event_t ev, void *buf, size_t size, umem_cache_t *cp)
+{
+	umem_buffer_info_t info;
+
+	(void) memset(&info, 0, sizeof (info));
+	info.addr = buf;
+	info.size = size;
+	info.cache = cp;
+	info.cache_name = cp != NULL ? cp->cache_name : NULL;
+	info.state = ev == UMEM_EV_FREE ? UMEM_BUF_FREE : UMEM_BUF_ALLOCATED;
+	umem_inspect_notify(ev, &info);
+}
+
+__attribute__((noinline, cold)) void
+umem_hook_alloc(void *buf, size_t size, umem_cache_t *cp)
+{
+	int h = __atomic_load_n(&umem_hooks, __ATOMIC_ACQUIRE);
+
+	if (umem_hook_depth)
+		return;
+	umem_hook_depth = 1;
+	cp = umem_hook_cache(size, cp);
+	if (h & UMEM_HOOK_EVENTS)
+		umem_hook_event(buf != NULL ? UMEM_EV_ALLOC : UMEM_EV_ALLOC_FAIL,
+		    buf, size, cp);
+#ifdef UMEM_INTROSPECT
+	if ((h & UMEM_HOOK_BREAK) && buf != NULL)
+		umem_introspect_break_check(buf, size, cp);
+#endif
+	umem_hook_depth = 0;
+}
+
+__attribute__((noinline, cold)) void
+umem_hook_free(void *buf, size_t size, umem_cache_t *cp)
+{
+	if (buf == NULL || umem_hook_depth ||
+	    !(__atomic_load_n(&umem_hooks, __ATOMIC_ACQUIRE) & UMEM_HOOK_EVENTS))
+		return;
+	umem_hook_depth = 1;
+	umem_hook_event(UMEM_EV_FREE, buf, size, umem_hook_cache(size, cp));
+	umem_hook_depth = 0;
 }
 
 /* ------------------------------------------------------------------------

@@ -3689,8 +3689,22 @@ umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 #ifndef NO_WEAK_SYMBOLS
 #pragma weak umem_cache_alloc = _umem_cache_alloc
 #endif
+static inline __attribute__((always_inline)) void *
+umem_cache_alloc_body(umem_cache_t *cp, int umflag);
+
+/* Public entry: the body below, then the T1/T8 hook (umem_base.h). */
 void *
 _umem_cache_alloc(umem_cache_t *cp, int umflag)
+{
+	void *buf = umem_cache_alloc_body(cp, umflag);
+
+	if (UMEM_HOOKS_ON() && !(cp->cache_cflags & (UMC_INTERNAL | UMC_QCACHE)))
+		umem_hook_alloc(buf, cp->cache_bufsize, cp);
+	return (buf);
+}
+
+static inline __attribute__((always_inline)) void *
+umem_cache_alloc_body(umem_cache_t *cp, int umflag)
 {
 	umem_cpu_cache_t *ccp;
 	umem_magazine_t *fmp;
@@ -3963,6 +3977,9 @@ umem_cache_alloc_batch(umem_cache_t *cp, void **bufs, int count, int umflag)
 		bufs[got++] = buf;
 	}
 
+	if (UMEM_HOOKS_ON() && !(cp->cache_cflags & (UMC_INTERNAL | UMC_QCACHE)))
+		for (int h = 0; h < got; h++)
+			umem_hook_alloc(bufs[h], cp->cache_bufsize, cp);
 	return (got);
 }
 
@@ -3979,6 +3996,9 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	umem_magazine_t *emp;
 	umem_magtype_t *mtp;
 	int rounds, magsize;
+
+	if (UMEM_HOOKS_ON() && !(cp->cache_cflags & (UMC_INTERNAL | UMC_QCACHE)))
+		umem_hook_free(buf, cp->cache_bufsize, cp);	/* T1 */
 
 	/*
 	 * NULL is not an object (P1.8): stored into a magazine it would come
@@ -4149,6 +4169,9 @@ umem_cache_free_batch(umem_cache_t *cp, void **bufs, int count)
 
 	if (count <= 0)
 		return (0);
+	if (UMEM_HOOKS_ON() && !(cp->cache_cflags & (UMC_INTERNAL | UMC_QCACHE)))
+		for (int h = 0; h < count; h++)
+			umem_hook_free(bufs[h], cp->cache_bufsize, cp);
 
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
 
@@ -4248,6 +4271,8 @@ retry:
 				((uint32_t *)btp)[1] = UMEM_SIZE_ENCODE(size);
 			}
 			bzero(buf, size);
+			if (UMEM_HOOKS_ON())		/* T1/T8 */
+				umem_hook_alloc(buf, size, cp);
 		} else if (umem_alloc_retry(cp, umflag))
 			goto retry;
 	} else {
@@ -4261,8 +4286,25 @@ retry:
 #ifndef NO_WEAK_SYMBOLS
 #pragma weak umem_alloc = _umem_alloc
 #endif
+static inline __attribute__((always_inline)) void *
+umem_alloc_body(size_t size, int umflag);
+
+/*
+ * Public entry: every umem_alloc() -- PTC hit, magazine, slab, oversize --
+ * returns through here, so the T1/T8 hook (umem_base.h) sees all of them.
+ */
 void *
 _umem_alloc(size_t size, int umflag)
+{
+	void *buf = umem_alloc_body(size, umflag);
+
+	if (UMEM_HOOKS_ON())
+		umem_hook_alloc(buf, size, NULL);
+	return (buf);
+}
+
+static inline __attribute__((always_inline)) void *
+umem_alloc_body(size_t size, int umflag)
 {
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
 	void *buf;
@@ -4440,10 +4482,6 @@ umem_alloc_retry:
 		}
 		if (buf == NULL && umem_alloc_retry(cp, umflag))
 			goto umem_alloc_retry;
-#ifdef UMEM_INTROSPECT
-		if (unlikely(umem_introspect_break_armed) && buf != NULL)
-			umem_introspect_break_check(buf, size, cp);
-#endif
 		return (buf);
 	}
 	if (size == 0)
@@ -4492,6 +4530,8 @@ umem_alloc_align_retry:
 		if (umem_alloc_retry(NULL, umflag))
 			goto umem_alloc_align_retry;
 	}
+	if (UMEM_HOOKS_ON())
+		umem_hook_alloc(buf, size, NULL);
 	return (buf);
 }
 
@@ -4503,6 +4543,9 @@ _umem_free(void *buf, size_t size)
 {
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
 	static __thread int ptc_initializing_free = 0;
+
+	if (UMEM_HOOKS_ON())		/* T1; ignores NULL */
+		umem_hook_free(buf, size, NULL);
 
 	/*
 	 * Freeing NULL is a no-op for every size (P1.8).  Without this the
@@ -4734,6 +4777,8 @@ _umem_free_align(void *buf, size_t size)
 	/* Same contract as umem_free (P1.8).  Before: umem_panic "bad free". */
 	if (buf == NULL)
 		return;
+	if (UMEM_HOOKS_ON())
+		umem_hook_free(buf, size, NULL);
 	vmem_xfree(umem_memalign_arena, buf, size);
 }
 

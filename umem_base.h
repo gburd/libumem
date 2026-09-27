@@ -51,6 +51,26 @@ extern vmem_t		*umem_memalign_arena;
 extern vmem_t		*umem_oversize_arena;
 
 extern int umem_ready;
+
+/*
+ * Debug hooks (review T1/T8).  umem_hooks is 0 unless a debugger or tool
+ * asked for events (UMEM_HOOK_EVENTS, umem_inspect_enable_events) or armed
+ * a umemctl break (UMEM_HOOK_BREAK, umem_introspect.c).  The public alloc
+ * and free entry points test it with UMEM_HOOKS_ON() -- one relaxed load
+ * and a predicted-not-taken branch -- and only then call the out-of-line
+ * umem_hook_alloc/free (umem_inspect.c).  Internal (UMC_INTERNAL) caches
+ * never report, so umem_alloc() through umem_alloc_<n> reports once.
+ */
+#define	UMEM_HOOK_EVENTS	0x1
+#define	UMEM_HOOK_BREAK		0x2
+extern int umem_hooks __attribute__((visibility("hidden")));
+#define	UMEM_HOOKS_ON()	\
+	__builtin_expect(__atomic_load_n(&umem_hooks, __ATOMIC_RELAXED) != 0, 0)
+struct umem_cache;
+__attribute__((visibility("hidden"))) void umem_hook_alloc(void *buf,
+    size_t size, struct umem_cache *cp);
+__attribute__((visibility("hidden"))) void umem_hook_free(void *buf,
+    size_t size, struct umem_cache *cp);
 extern thread_t umem_init_thr;		/* the thread doing the init */
 
 extern int umem_init(void);		/* do umem's initialization */

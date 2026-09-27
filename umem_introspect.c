@@ -153,7 +153,11 @@ break_publish_locked(int armed)
 {
 	if (armed) {
 		umem_introspect_break_armed = 1;
+		(void) __atomic_fetch_or(&umem_hooks, UMEM_HOOK_BREAK,
+		    __ATOMIC_RELEASE);
 	} else {
+		(void) __atomic_fetch_and(&umem_hooks, ~UMEM_HOOK_BREAK,
+		    __ATOMIC_RELEASE);
 		umem_introspect_break_armed = 0;
 	}
 }
@@ -603,8 +607,20 @@ learn_printer(umem_bufctl_audit_t *bcap, umem_cache_t *cp, void *arg)
 {
 	FILE *out = arg;
 	uintptr_t pc = (bcap->bc_depth > 0) ? bcap->bc_stack[0] : 0;
-	fprintf(out, "sig size=%zu pc=0x%lx\n", cp->cache_bufsize,
-	    (unsigned long)pc);
+	size_t size = cp->cache_bufsize;
+
+	/*
+	 * T9: break_check compares the REQUEST size, so learn must record it.
+	 * umem_alloc() encodes it in the buftag (UMEM_SIZE_ENCODE); a user
+	 * cache's buftag word is not a valid encoding and its request size is
+	 * cache_bufsize, which is what the hook passes for it.
+	 */
+	if (cp->cache_flags & UMF_BUFTAG) {
+		uint32_t w = ((uint32_t *)UMEM_BUFTAG(cp, bcap->bc_addr))[1];
+		if (UMEM_SIZE_VALID(w) && UMEM_SIZE_DECODE(w) <= size)
+			size = UMEM_SIZE_DECODE(w);
+	}
+	fprintf(out, "sig size=%zu pc=0x%lx\n", size, (unsigned long)pc);
 }
 
 static void
