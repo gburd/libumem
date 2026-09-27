@@ -1,0 +1,16 @@
+=== sustained rseq on GLIBC_TUNABLES=glibc.malloc.check=0 ===
+  umem         prodcons-sustained w=0  ops=54591360  mops=   1.704 p99=     1691 p999=      5040 rss@peak=121733120
+  umem         frag-sustained     w=0  ops=228354921 mops=  12.956 p99=    48630 p999=   1130621 rss@peak=6301237248
+  umem         prodcons-sustained w=1  ops=54591360  mops=   1.703 p99=     1665 p999=      4504 rss@peak=121790464
+  umem         frag-sustained     w=1  ops=228354921 mops=  13.077 p99=    48646 p999=   1097567 rss@peak=6499995648
+  umem         prodcons-sustained w=2  ops=54591360  mops=   1.692 p99=     2116 p999=      5653 rss@peak=121847808
+  umem         frag-sustained     w=2  ops=228354921 mops=  13.547 p99=    46347 p999=   1131573 rss@peak=6396342272
+done: umem -> docs/results/2026-09-27-c8g.metal-48xl-aarch64/sustained-rseq-on.toml
+=== sustained rseq off GLIBC_TUNABLES=glibc.malloc.check=0 ===
+  umem         prodcons-sustained w=0  ops=65438400  mops=   1.592 p99=     1220 p999=     18370 rss@peak=230166528
+  umem         frag-sustained     w=0  ops=295396323 mops=  13.443 p99=    38179 p999=   1080404 rss@peak=8289124352
+  umem         prodcons-sustained w=1  ops=65438400  mops=   1.824 p99=     1027 p999=     11783 rss@peak=218767360
+  umem         frag-sustained     w=1  ops=295396323 mops=  12.398 p99=    52002 p999=   1250196 rss@peak=8435851264
+  umem         prodcons-sustained w=2  ops=65438400  mops=   1.859 p99=      893 p999=     16944 rss@peak=167874560
+  umem         frag-sustained     w=2  ops=295396323 mops=  12.397 p99=    60347 p999=   1158311 rss@peak=8458350592
+done: umem -> docs/results/2026-09-27-c8g.metal-48xl-aarch64/sustained-rseq-off.toml

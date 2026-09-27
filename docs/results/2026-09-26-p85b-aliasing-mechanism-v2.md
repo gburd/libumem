@@ -424,3 +424,34 @@ At t=1, rseq on is not slower (+1.5 % ops/s, within run spread) and its tail
 is lower (p99 23 vs 34 ns). At t=192 the two are equal within noise (-0.9 %
 ops/s, p999 409 vs 416 ns). Neither arm regresses the other.
 intel-hi terminated immediately after this job (i-0ef9c16cf90ea208d).
+
+## Metal, arm-hi c8g.metal-48xl (Debian 13), fix at 66fd33b
+
+- Default oracle 192t/60s mixed/all: **PASS**, 700,035,306 allocs, 0 failures
+  (`docs/results/r5fix/mdef-arm-hi.log`).
+- ASan oracle 192t/60s mixed/all: **PASS**, 1,527,652,349 allocs, 0 failures
+  (`docs/results/r5fix/masan-arm-hi.log`).
+- Sustained, `sustained_load.sh umem 180 192`, same binary, with
+  `GLIBC_TUNABLES=glibc.malloc.check=0` instead of the script's default
+  `optional_static_tls` (that default SEGVs pre-existing on this box; see above).
+  Budgets were calibrated per arm by the script, so prodcons `ops` differ:
+  54.6 M on vs 65.4 M norseq. `docs/results/r5fix/msus-arm-hi.log`.
+
+| prodcons | rseq ON w0 / w1 / w2 | median | norseq w0 / w1 / w2 | median |
+|---|---|---:|---|---:|
+| p999 (ns) | 5,040 / 4,504 / 5,653 | **5.0 us** | 18,370 / 11,783 / 16,944 | **16.9 us** |
+| p99 (ns) | 1,691 / 1,665 / 2,116 | 1.7 us | 1,220 / 1,027 / 893 | 1.0 us |
+| Mops/s | 1.704 / 1.703 / 1.692 | 1.70 | 1.592 / 1.824 / 1.859 | 1.82 |
+| RSS@peak (MB) | 122 / 122 / 122 | 122 | 230 / 219 / 168 | 219 |
+
+| frag | ON median | norseq median |
+|---|---:|---:|
+| p999 | 1.13 ms | 1.16 ms |
+| Mops/s | 13.08 | 12.40 |
+| RSS@peak | 6.40 GB | 8.44 GB |
+
+Read plainly: on arm, rseq ON cuts prodcons p999 by about 3.4x
+(5.0 vs 16.9 us) and roughly halves RSS, but p99 is WORSE (1.7 vs 1.0 us) and
+prodcons throughput is 7 % lower (1.70 vs 1.82 Mops/s). The ops budgets
+differ by 17 %, so the throughput comparison is not matched work. frag is
+equal or better with rseq on. Both arms are far under 85 us.
