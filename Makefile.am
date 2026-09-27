@@ -766,6 +766,12 @@ noinst_PROGRAMS += test/unit/test_slab_floor
 test_unit_test_slab_floor_SOURCES = test/unit/test_slab_floor.c
 test_unit_test_slab_floor_LDADD = libumem.la
 test_unit_test_slab_floor_CPPFLAGS = -I$(srcdir)
+
+# UMEM_SLAB_MEMBER's range vs the slab's actual chunks (same wide bound as T6).
+noinst_PROGRAMS += test/unit/test_slab_member
+test_unit_test_slab_member_SOURCES = test/unit/test_slab_member.c
+test_unit_test_slab_member_LDADD = libumem.la
+test_unit_test_slab_member_CPPFLAGS = -I$(srcdir)
 test_unit_test_hash_partition_LDFLAGS = -lm
 
 # P2.2/P2.5 diagnostic: why does umem_alloc return NULL under the 192-thread
@@ -895,6 +901,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_aligned_contracts \
 	test/unit/test_hash_partition \
 	test/unit/test_slab_floor \
+	test/unit/test_slab_member \
 	test/unit/test_hook_contracts \
 	test/unit/test_inspect_contracts \
 	test/stress/interpose_regress.sh \
