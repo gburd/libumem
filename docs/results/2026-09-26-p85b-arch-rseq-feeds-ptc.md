@@ -142,6 +142,12 @@ resize both happen) reported no heap overflow, no use-after-free, no aliasing.
 
 ### Sustained p999 A/B (the ship criterion): intel-hi c7i.metal-48xl, 192t
 
+> **UNATTRIBUTED (2026-09-26, @r5fix).** The "BEFORE (rseq off)" arm below
+> was selected with `UMEM_RSEQ_OFF=1`, a debug-only env gate that 545bbce
+> removed. The run came from a non-isolated `run-remote.sh` tree of unknown
+> revision, so it is not known whether that arm had rseq off. See the
+> re-measure with `UMEM_OPTIONS=norseq` under "P8.5b-fix".
+
 `sustained_load.sh umem 60 192`, prodcons 64:256, same binary, `UMEM_RSEQ_OFF`
 toggled, 3 measured windows each (1 warmup discarded):
 
@@ -195,7 +201,23 @@ reached on a PTC-magazine miss.
 - `test_ptc_thread_exit_drain`, `test_ptc_resize_no_loss` (P1.3a/P1.3c): PASS.
 - `test_fork_mt_load` (P1.2): 300/300 forks, 2,672,193 allocs = frees.
 
-### Known bounded ceiling (not corruption)
+### ~~Known bounded ceiling (not corruption)~~ RETRACTED 2026-09-26
+
+> **RETRACTED (P8.5b-fix, @r5fix).** The section below is wrong on two
+> counts. (1) The stale `magsize` was a LEAK, not an efficiency ceiling. After
+> one forced 1 -> 3 resize of `umem_alloc_114688`, 12,010 buffers were
+> stranded (`repro_rseq_resize_leak`, 16 -> 12,010 pre-fix; `norseq` flat). The
+> "excess rounds ... are reclaimed intact on the next swap-out" claim is false:
+> `umem_ptc_mag_return` drains only `[0, rounds)` and puts the magazine on the
+> empty list with the rest still inside. (2) Its closing evidence, "0 aliasing
+> over 3.4 B allocations", was offered as proof of soundness while the layer
+> had a separate, real aliasing defect: the reload commit was not atomic under
+> rseq abort (5/200 oracle runs at 8t/10s). The ASan and 192t oracle runs could
+> not see that defect (see "Why the P8.5b gates passed" in
+> `docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md`). Both are fixed. See
+> "P8.5b-fix" at the end of this file. The original text is kept below
+> for the record. Do not rely on it.
+
 
 `cache_rseq[cpu].magsize` is set once at cache creation to the cache's INITIAL
 magtype `mt_magsize` and is never updated on a magazine resize. Magtypes only
