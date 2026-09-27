@@ -195,15 +195,8 @@ libumem_malloc_la_LIBADD = libumem.la
 # with zero syscalls in malloc_interpose.c's calloc().  The source also
 # defends against this structurally (see calloc_zero_fill there); this flag
 # is the second line of defense, not the only one.
-#
-# -fno-omit-frame-pointer: the Linux x86_64 and aarch64 getpcstack() walk the
-# frame-pointer chain and nothing else.  gcc -O2 on x86_64 omits frame
-# pointers, which leaves data in %rbp and stops every UMEM_DEBUG=audit stack
-# at depth 1 inside libumem (T9, docs/results/2026-09-27-t9-audit-stack-depth.md).
-# It sits in AM_CFLAGS, which automake places BEFORE $(CFLAGS), so a user's
-# own CFLAGS=-fomit-frame-pointer still wins.
 AM_CFLAGS = -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc \
-	-fno-builtin-free -fno-omit-frame-pointer $(SIMD_CFLAGS) -D_UMEM_INTERNAL
+	-fno-builtin-free $(SIMD_CFLAGS) -D_UMEM_INTERNAL
 # Namespace the vendored sparsemap (sm.c/sm.h, upstream v5.5.0) so its public
 # symbols become umem_sm_* and cannot collide with an application that also
 # links its own copy of sparsemap.  Only sm.c/sm.h consult this macro.
