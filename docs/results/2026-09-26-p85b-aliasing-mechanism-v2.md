@@ -297,3 +297,27 @@ C, headers, asm, and the gdb/lldb helpers:
   a stale-magtype shell drains on swap-out via `umem_ptc_mag_return`
   (`!VALID`), and a cross-cpu slot write from the update thread would not be
   rseq-safe.
+
+## Lo gate at 4634100 (fix 4b30bff + gate script), Debian 13, both arches: ALL PASS
+
+`verify-isolated.sh <role> 4634100 logate 'bash scripts/ec2/p85b_fix_lo_gate.sh 200'`,
+`--enable-rseq CFLAGS="-O2 -g"`, `vm.max_map_count=65530`. Logs:
+`docs/results/r5fix/logate-*.log`.
+
+| gate | intel-lo c7i.2xlarge | arm-lo c7g.2xlarge |
+|---|---|---|
+| `make check` | 50 PASS / 3 SKIP / 0 FAIL | 50 PASS / 3 SKIP / 0 FAIL |
+| `test_rseq_fastpath` (6-bug suite) | PASS | PASS |
+| `repro_rseq_trailing_store` | PASS | PASS |
+| `repro_reload_commit_safe` (ported) | PASS | PASS |
+| `repro_rseq_resize_leak` 16, 32 | PASS (flat) | PASS (flat) |
+| `repro_rseq_reload_alias` 30 s | PASS | PASS |
+| `repro_reload_commit_abort` x 200 | 0 / 200 fail | 0 / 200 fail |
+| oracle 8t/10s small/multi, mag/multi, mixed/all, large/churn | 4 / 4 PASS | 4 / 4 PASS |
+
+The 3 SKIPs are the `test_introspect_*` trio, the same as pre-P8.5b (no
+`--enable-introspect`). `make check` includes `test_ptc_slot_mangle`,
+`test_mag_round_mangle`, `test_freelist_mangle`, `test_ptc_resize_no_loss(_probe)`,
+`test_ptc_thread_exit_drain_probe`, `test_fork_ptc_drain_probe`,
+`test_depot_empty_scan`, `repro_ptc_resize_capacity`, `oracle_fast`,
+`oracle_control`, and `test_norseq`.

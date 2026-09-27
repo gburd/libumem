@@ -1,0 +1,23 @@
+GATE make_check PASS
+# TOTAL: 53
+# PASS:  50
+# SKIP:  3
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+SKIP: test/debugger/test_introspect_contracts.sh
+SKIP: test/security/test_introspect_sock_path.sh
+SKIP: test/security/test_introspect_peer_uid
+GATE rseq_fastpath_6bug PASS
+GATE trailing_store PASS
+GATE commit_safe PASS
+GATE resize_leak_16 PASS
+GATE resize_leak_32 PASS
+GATE alias_e2e PASS
+GATE commit_abort PASS fails=0/200
+GATE oracle_small PASS
+GATE oracle_mag PASS
+GATE oracle_mixed PASS
+GATE oracle_large PASS
+LO_GATE rc=0
