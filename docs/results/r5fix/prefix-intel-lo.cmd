@@ -1,0 +1,1 @@
+cd ~/libumem-iso-prefix-017520f0b1be && { ./scripts/ec2/clean-regen.sh --enable-rseq CFLAGS="-O2 -g" >regen.log 2>&1 && make -j$(nproc) test/stress/repro_reload_commit_abort >make.log 2>&1 && for i in 1 2 3; do LD_LIBRARY_PATH=$PWD/.libs ./test/stress/.libs/repro_reload_commit_abort 20000000 5; echo rc=$?; done ; }
