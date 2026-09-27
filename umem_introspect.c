@@ -598,12 +598,32 @@ cmd_leaks(FILE *out)
 }
 
 /* ---- learn-leaks: write signatures (size + top PC) to the client ---- */
+
+/*
+ * The size a signature records must be the one BRK_LEAKED compares: the
+ * REQUEST size handed to umem_alloc(), not the cache bufsize (T9: 200, not
+ * 224).  UMEM_DEBUG=audit forces UMF_REDZONE, so umem_alloc()/umem_zalloc()
+ * have stored UMEM_SIZE_ENCODE(request) in the buftag's second word.  A
+ * buffer from umem_cache_alloc() on a named cache (or a firewall cache, which
+ * has no buftag) carries no request size; its bufsize IS what was asked for.
+ */
+static size_t
+leak_request_size(umem_bufctl_audit_t *bcap, umem_cache_t *cp)
+{
+	if (cp->cache_flags & UMF_BUFTAG) {
+		uint32_t enc = ((uint32_t *)UMEM_BUFTAG(cp, bcap->bc_addr))[1];
+		if (UMEM_SIZE_VALID(enc) && UMEM_SIZE_DECODE(enc) <= cp->cache_bufsize)
+			return (UMEM_SIZE_DECODE(enc));
+	}
+	return (cp->cache_bufsize);
+}
+
 static void
 learn_printer(umem_bufctl_audit_t *bcap, umem_cache_t *cp, void *arg)
 {
 	FILE *out = arg;
 	uintptr_t pc = (bcap->bc_depth > 0) ? bcap->bc_stack[0] : 0;
-	fprintf(out, "sig size=%zu pc=0x%lx\n", cp->cache_bufsize,
+	fprintf(out, "sig size=%zu pc=0x%lx\n", leak_request_size(bcap, cp),
 	    (unsigned long)pc);
 }
 
