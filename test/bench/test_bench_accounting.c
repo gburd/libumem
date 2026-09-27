@@ -420,8 +420,9 @@ test_frag_live_slots(void)
 
 /*
  * frag must run the sizes asked for.  frag_worker clamped max_size to 4096,
- * so a 16-64 KB cell ran <= 4 KB objects and reported them as large.  A fixed
- * 8192-byte request must reach the allocator as 8192.
+ * so a 16-64 KB cell ran <= 4 KB objects and reported them as large.  With
+ * -s 16:8192 some request must exceed 4096.  (A fixed 8192:8192 does NOT
+ * catch the clamp: the old max_sz < min_sz fallback raised it back to 8192.)
  */
 static void
 test_frag_large_sizes(void)
@@ -435,14 +436,15 @@ test_frag_large_sizes(void)
 		.name = "fragmentation", .fn = workload_fragmentation,
 		.thread_count = 1,
 		.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD,
-		.min_size = 8192, .max_size = 8192,
+		.min_size = 16, .max_size = 8192,
 	};
 	bench_stats_t st;
 	bench_run(&cnt, &cfg, &st);
-	printf("   asked 8192:8192 -> largest request %zu\n",
+	printf("   asked 16:8192 -> largest request %zu\n",
 	    atomic_load(&cnt_maxreq));
-	CHECK(atomic_load(&cnt_maxreq) == 8192,
-	    "asked for 8192-byte objects, the allocator saw at most %zu",
+	CHECK(atomic_load(&cnt_maxreq) > 4096 &&
+	    atomic_load(&cnt_maxreq) <= 8192,
+	    "asked for 16:8192, the largest request was %zu (clamped?)",
 	    atomic_load(&cnt_maxreq));
 }
 
