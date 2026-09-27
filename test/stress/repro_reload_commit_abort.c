@@ -159,7 +159,14 @@ main(int argc, char **argv)
 	 * a larger count explicitly for a longer soak.
 	 */
 	long iters = argc > 1 ? atol(argv[1]) : 2000000;
-	long us = argc > 2 ? atol(argv[2]) : 5;
+	/*
+	 * Signal interval.  At 5 us the storm livelocked this test on Debian 13
+	 * c7i.2xlarge: 7 of 12 runs made no progress in 300 s.  At 10 us all 8
+	 * runs finished in ~1 s on the fixed code, and the pre-fix code
+	 * (017520f) still FAILED 3 of 3 with 58-257 violations per run, so
+	 * 10 us keeps the test's teeth without the hang.
+	 */
+	long us = argc > 2 ? atol(argv[2]) : 10;
 	long commits = 0, aborts = 0, bad;
 	cpu_set_t set;
 	int cpu;
@@ -184,9 +191,13 @@ main(int argc, char **argv)
 	storm(0);
 
 	printf("commits=%ld aborts=%ld signals=%ld\n", commits, aborts, g_sig);
-	if (aborts == 0) {
-		/* No abort ever landed: the test proved nothing. */
-		printf("RESULT: INCONCLUSIVE (0 aborts)\n");
+	/*
+	 * Too few aborts means the storm never landed where it matters and the
+	 * run tested nothing.  The fixed code saw >= 2,397 aborts per run at
+	 * 10 us and >= 440 at 20 us; 100 is a floor, not a target.
+	 */
+	if (aborts < 100) {
+		printf("RESULT: INCONCLUSIVE (only %ld aborts)\n", aborts);
 		return (1);
 	}
 	printf("RESULT: %s\n", bad ? "FAIL (reload commit not atomic)" :

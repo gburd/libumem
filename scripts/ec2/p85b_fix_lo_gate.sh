@@ -31,7 +31,7 @@ gate resize_leak_32 "$S/repro_rseq_resize_leak" 32
 gate alias_e2e "$S/repro_rseq_reload_alias" 30
 f=0
 for i in $(seq 1 "$N_ABORT"); do
-	"$S/repro_reload_commit_abort" 2000000 5 >abort.log 2>&1 || { f=$((f+1)); cat abort.log; }
+	"$S/repro_reload_commit_abort" 2000000 10 >abort.log 2>&1 || { f=$((f+1)); cat abort.log; }
 done
 echo "GATE commit_abort $([ $f -eq 0 ] && echo PASS || echo FAIL) fails=$f/$N_ABORT"
 [ "$f" -eq 0 ] || rc=1
