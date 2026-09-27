@@ -1,0 +1,6 @@
+ref=e7b7ea7b49cdd0e03d62b817268dec5714c75787
+Result: PASS (0 failures)
+numa policy  : numactl --interleave=all (every arm)
+preflight    : every arm loads and runs prodcons + frag at t=384
+done: umem libc jemalloc jemalloc@2 libc@2 umem@2 -> docs/results/2026-09-27-c7i.2xlarge-x86_64/tip.toml
+RESULT: PASS (0 invariant failures)

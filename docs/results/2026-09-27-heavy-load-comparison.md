@@ -6,9 +6,9 @@ with NUMA and hundreds of active threads? Run this test in EC2 on an instance
 running the latest Debian version of Linux. Be sure to run it for 15 minutes
 each, ignore the first 5 minutes."*
 
-Status: **Phase A (harness validation) done. Phase B (metal measurement) has
-not run yet.** It waits for the final v3.3.2 ref. Every result table below
-comes from lo boxes and says so. None of them is a result of the comparison.
+Status: **Phase A (harness validation) done. Phase B (metal) is running** at
+`e7b7ea7`. The Phase A tables below come from lo boxes and say so. None of
+them is a result of the comparison.
 
 ## Phase A: what was wrong with the harness, and what changed
 
@@ -188,11 +188,59 @@ dropped.
 | `test_bench_accounting` incl. straggler | both | PASS 3/3 at `bd12c8d` |
 | continuous end-to-end at `bd12c8d`, t=192 and t=384 | both | see "E2E" below |
 
-## Phase B (pending the final ref)
+### A4. Two more defects found by the replicate design, before metal (`fde96c1`, `e7b7ea7`)
 
-Phase B has not started. It measures the final committed ref on Debian 13
-metal, both arches: intel-hi `c7i.metal-48xl` and arm-hi `c8g.metal-48xl`,
-192 vCPU each. For each box: `numactl -H`, then `heavy_load_compare.sh` at
-THREADS=192 and THREADS=384. Each is 8 runs x 15 min = 2 h, so 4 h per box.
-Both boxes run in parallel, each is terminated when its runs end, and results
-are committed per box.
+- **The lo "null gap" came from oversubscription, not from the allocators.**
+  At `bd12c8d`, t=192 on 8 vCPUs, the single umem@null differed from umem by
+  30.6 % in prodcons Mops/s on intel-lo, while each run's own 10 intervals
+  moved less than 0.6 %. With 24 threads per vCPU, whichever threads the
+  scheduler happens to favour for a whole run set its throughput. The six-arm
+  lo run at `e7b7ea7`'s harness (`phaseA/v3-*.log`, t=384 on 8 vCPUs) shows
+  the same thing for every allocator: prodcons run-to-run gap umem 36.5 %,
+  libc 7.1 % (p99 gap 113 %), jemalloc 0.4 % (p999 gap 21 %) on intel-lo;
+  frag gap jemalloc 18.1 % / 23.3 %. That is why each allocator now gets two
+  runs. Metal at t=192 (one thread per vCPU) shows whether the gap survives
+  without oversubscription (see Phase B).
+- **Harness frees on the libc arm's own arenas (`fde96c1`).** At `bd12c8d`,
+  t=384, a 10 s libc frag interval took 66.9 s (intel-lo) / 39.8 s (arm-lo).
+  gdb on the live process, sampled 8 times over 90 s
+  (`phaseA/stall-gdb-intel-lo.log`), found the driver in `iv_drive -> td_free
+  -> _int_free_chunk -> __lll_lock_wait_private` every time: it was freeing
+  each worker's digest into the glibc arena that worker was hammering. That is
+  also a cross-arm confound at any thread count, because only the libc arm's
+  arenas saw harness frees. Now every digest is allocated before the start
+  barrier, reset instead of freed, and freed after the join. **No harness
+  malloc or free happens while intervals run**, for any arm. The t=384 run at
+  the fixed tree passes on both lo boxes.
+- **Design (`e7b7ea7`).** Six arms `umem, libc, jemalloc, jemalloc@2, libc@2,
+  umem@2`: each allocator twice, independent processes, palindromic order so
+  each pair straddles the middle. frag walks the reversed order, so no arm is
+  always first or last on the box. NUMA: `numactl --interleave=all` for every
+  run of every arm, threads unpinned for all. Neither bench_main nor libumem
+  sets CPU affinity or a memory policy (libumem reads the CPU-to-node map only
+  for depot steal order; `umem_numa_bind_thread` and `_migrate_memory` have no
+  callers), so the numactl prefix is the only placement policy in effect.
+  `summarize.py` counts a difference between A and B on a metric only if
+  `|A - B| / min(A, B)` exceeds the larger of A's and B's own run-to-run gaps
+  on that metric. Otherwise it reports "inside noise".
+- Tip check at `e7b7ea7`, isolated, intel-lo: accounting PASS, six-arm
+  heavy_load_compare t=384 5 s x (1+2) PASS (`phaseA/tip-e7b7ea7-intel-lo.log`).
+
+## Phase B: metal
+
+**Ref measured: `e7b7ea7b49cdd0e03d62b817268dec5714c75787`** (origin/master
+HEAD at launch, 2026-09-27 06:55 UTC). It contains @r6arm's `59ab75e` (first
+allocation needs ~5 KB of stack) and every harness commit above. Between
+`59ab75e` and `e7b7ea7` the only C changes are `test/bench/bench_framework.c`
+and `test/bench/test_bench_accounting.c` (`git diff --stat -- '*.c' '*.h'`);
+no library source changed. @r6sm held sparsemap at 5.5.0 (`1e004ee`), so no
+vendored change is pending either.
+
+| | intel-hi | arm-hi |
+|---|---|---|
+| instance | `c7i.metal-48xl`, Intel Xeon Platinum 8488C, 2 sockets, SMT 2 | `c8g.metal-48xl`, Neoverse-V2 (Graviton4), 2 sockets, SMT 1 |
+| vCPU / NUMA | 192, 2 nodes: 0-47,96-143 / 48-95,144-191, distance 10/21 | 192, 2 nodes: 0-95 / 96-191, distance 10/100 |
+| memory | 193,254 + 193,466 MB | 193,509 + 192,652 MB |
+| runs | t=192 (12 x 15 min), then t=384 if t=192's gaps allow | t=192 (12 x 15 min) |
+
+(Full `numactl -H` and the rest of the provenance are in each TOML header.)
