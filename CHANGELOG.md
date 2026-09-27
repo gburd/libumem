@@ -89,6 +89,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     before the first store, and ASan cannot see two valid owners. See
     `docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md`. The
     asm design spec's "Resolution A" is corrected in place.
+  - Gates after the fix: lo, both arches: `make check` 50/3/0, the 6-bug rseq
+    suite, `repro_rseq_trailing_store`, `repro_reload_commit_safe`, oracle x4:
+    all PASS. 192t/60s mixed/all oracle on Debian metal, default and ASan,
+    intel-hi and arm-hi: all PASS.
+  - Sustained p999, re-measured correctly (same binary, rseq on vs
+    `UMEM_OPTIONS=norseq`, 192t prodcons 64:256, median of 3 windows):
+    intel-hi 29.7 vs 41.7 us, arm-hi 5.0 vs 16.9 us. RSS is about halved on
+    both. At t=1 and t=192 (multi bench), rseq on is within ±3 % of norseq on
+    both arches. Sustained prodcons throughput is 3-7 % lower with rseq on,
+    and arm p99 is higher (1.7 vs 1.0 us). norseq itself is under the old
+    85 us target, so rseq's p999 contribution is about 12 us, not the
+    unattributed ~47 us claimed above.
+  - Known, pre-existing, not fixed here: on arm-hi, `sustained_load.sh`'s
+    default `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608` makes
+    `bench_main` SEGV. The stack overflows in ld.so under `umem_init ->
+    umem_setup_envvars -> dlopen` on a producer thread. It reproduces 3/3 at
+    `e622f65`, before this fix, and 0/3 without the tunable.
 
 ### Known limitation
 
