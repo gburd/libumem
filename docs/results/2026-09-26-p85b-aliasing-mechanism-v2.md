@@ -350,3 +350,23 @@ dlopen -> ... stp x29,x30,[sp,#16]` right after `sub sp,sp,#0x440`.
 `sustained_load.sh` exports that tunable itself (line ~59). The rseq reload
 is not on the stack. Untested so far: whether it happens pre-fix (e622f65),
 and whether it is the tunable or `-n`. Next: a control run.
+
+### Attribution: PRE-EXISTING, not caused by this fix (arm-hi, e622f65)
+
+Same box, `verify-isolated.sh arm-hi@r5fix e622f65 crashpre`, i.e. master
+BEFORE the fix, same bench invocation (`docs/results/r5fix/crashpre-arm-hi.log`):
+
+| `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608` | runs | rc |
+|---|---|---|
+| set (what `sustained_load.sh` exports by default) | 3 | 139, 139, 139 |
+| unset | 3 | 0, 0, 0 |
+
+The crash reproduces on the pre-fix ref and depends on the tunable. It is
+not in the rseq code. Mechanism (not fully proven): the first allocation in a
+192-thread bench happens on a small producer thread stack. `umem_init`
+`dlopen()`s from there, and with an 8 MiB optional static-TLS reservation
+ld.so's frame overflows that stack. It is outside this task's scope and is
+recorded as its own defect: `umem_init` should not `dlopen` on an arbitrary
+caller's stack. The arm-hi sustained measurement below runs with
+`GLIBC_TUNABLES` set to an empty tunable, and this is labelled. intel-hi does
+not crash with the default.

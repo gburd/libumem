@@ -1,0 +1,10 @@
+ref=e622f65 sha=e622f6551f0e7a28e0c8916d9377c843be65f33f 
+bash: line 1: 65989 Segmentation fault      GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608 timeout 200 $B > /dev/null 2>&1
+tunable run1 rc=139
+bash: line 1: 66183 Segmentation fault      GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608 timeout 200 $B > /dev/null 2>&1
+tunable run2 rc=139
+bash: line 1: 66377 Segmentation fault      GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608 timeout 200 $B > /dev/null 2>&1
+tunable run3 rc=139
+no-tunable run1 rc=0
+no-tunable run2 rc=0
+no-tunable run3 rc=0
