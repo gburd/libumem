@@ -1245,3 +1245,291 @@ frag_samples = 0
 # frag: undefined here (no live set, or too few samples)
 ops_floor_raised = false
 alloc_failures = 0
+
+[[run]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+started = "2026-09-27T07:58:02Z"
+ended = "2026-09-27T08:13:02Z"
+rc = 0
+csv = "heavy-t192.libc-2.prodcons.csv"
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 0
+interval = 5
+threads = 192
+size = "64:256"
+total_ops = 55289157
+ops_per_thread = 287964
+elapsed_sec = 60.000086
+ops_per_sec = 921484.63
+lat_min = 17
+lat_p50 = 899
+lat_p90 = 5800
+lat_p99 = 19403
+lat_p999 = 42519
+lat_max = 13294471
+lat_mean = 2198
+rss_at_live_peak = 50057216
+vmhwm_bytes = 50057216
+allocated_bytes = 4408997396
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 1
+interval = 6
+threads = 192
+size = "64:256"
+total_ops = 55273614
+ops_per_thread = 287883
+elapsed_sec = 60.000083
+ops_per_sec = 921225.63
+lat_min = 17
+lat_p50 = 895
+lat_p90 = 5822
+lat_p99 = 19048
+lat_p999 = 42370
+lat_max = 13456771
+lat_mean = 2192
+rss_at_live_peak = 50384896
+vmhwm_bytes = 50384896
+allocated_bytes = 4407895066
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 2
+interval = 7
+threads = 192
+size = "64:256"
+total_ops = 55267064
+ops_per_thread = 287849
+elapsed_sec = 60.000077
+ops_per_sec = 921116.54
+lat_min = 17
+lat_p50 = 885
+lat_p90 = 5677
+lat_p99 = 18664
+lat_p999 = 42184
+lat_max = 6708718
+lat_mean = 2191
+rss_at_live_peak = 50388992
+vmhwm_bytes = 50388992
+allocated_bytes = 4407788391
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 3
+interval = 8
+threads = 192
+size = "64:256"
+total_ops = 55420208
+ops_per_thread = 288646
+elapsed_sec = 60.000085
+ops_per_sec = 923668.83
+lat_min = 17
+lat_p50 = 877
+lat_p90 = 5669
+lat_p99 = 19056
+lat_p999 = 42391
+lat_max = 6719228
+lat_mean = 2192
+rss_at_live_peak = 50401280
+vmhwm_bytes = 50401280
+allocated_bytes = 4419891523
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 4
+interval = 9
+threads = 192
+size = "64:256"
+total_ops = 66025161
+ops_per_thread = 343881
+elapsed_sec = 60.000106
+ops_per_sec = 1100417.41
+lat_min = 17
+lat_p50 = 946
+lat_p90 = 6416
+lat_p99 = 30351
+lat_p999 = 87222
+lat_max = 10371577
+lat_mean = 2695
+rss_at_live_peak = 51277824
+vmhwm_bytes = 51277824
+allocated_bytes = 5265208134
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 5
+interval = 10
+threads = 192
+size = "64:256"
+total_ops = 72141891
+ops_per_thread = 375739
+elapsed_sec = 60.000107
+ops_per_sec = 1202362.70
+lat_min = 17
+lat_p50 = 1053
+lat_p90 = 6556
+lat_p99 = 36896
+lat_p999 = 102109
+lat_max = 16073446
+lat_mean = 3006
+rss_at_live_peak = 52047872
+vmhwm_bytes = 52047872
+allocated_bytes = 5753011569
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 6
+interval = 11
+threads = 192
+size = "64:256"
+total_ops = 61730964
+ops_per_thread = 321515
+elapsed_sec = 60.000109
+ops_per_sec = 1028847.53
+lat_min = 17
+lat_p50 = 943
+lat_p90 = 6063
+lat_p99 = 25878
+lat_p999 = 73138
+lat_max = 12096569
+lat_mean = 2508
+rss_at_live_peak = 52060160
+vmhwm_bytes = 52060160
+allocated_bytes = 4923623592
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 7
+interval = 12
+threads = 192
+size = "64:256"
+total_ops = 55221402
+ops_per_thread = 287611
+elapsed_sec = 60.000084
+ops_per_sec = 920355.41
+lat_min = 17
+lat_p50 = 871
+lat_p90 = 5720
+lat_p99 = 18929
+lat_p999 = 41788
+lat_max = 7173875
+lat_mean = 2166
+rss_at_live_peak = 52060160
+vmhwm_bytes = 52060160
+allocated_bytes = 4404078626
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 8
+interval = 13
+threads = 192
+size = "64:256"
+total_ops = 55101252
+ops_per_thread = 286985
+elapsed_sec = 60.000074
+ops_per_sec = 918353.07
+lat_min = 17
+lat_p50 = 860
+lat_p90 = 5632
+lat_p99 = 18617
+lat_p999 = 41780
+lat_max = 5721566
+lat_mean = 2166
+rss_at_live_peak = 52064256
+vmhwm_bytes = 52064256
+allocated_bytes = 4394264419
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "libc@2"
+workload = "prodcons-sustained"
+window = 9
+interval = 14
+threads = 192
+size = "64:256"
+total_ops = 55123242
+ops_per_thread = 287100
+elapsed_sec = 60.000086
+ops_per_sec = 918719.38
+lat_min = 17
+lat_p50 = 870
+lat_p90 = 5713
+lat_p99 = 18865
+lat_p999 = 41801
+lat_max = 6597929
+lat_mean = 2168
+rss_at_live_peak = 52068352
+vmhwm_bytes = 52068352
+allocated_bytes = 4396204173
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
