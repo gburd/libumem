@@ -33,26 +33,30 @@ for path in sys.argv[1:]:
         for w in ws:
             if abs(w['elapsed_sec'] - T) > 0.05 * T:
                 print(f"  FAIL {a} {wl} interval {w['interval']}: {w['elapsed_sec']}s vs {T}s"); bad += 1
+            if w['vmhwm_bytes'] <= 0:
+                print(f"  FAIL {a} {wl} interval {w['interval']}: no RSS sample"); bad += 1
             if w['alloc_failures'] or w['threads'] != d['threads']:
                 print(f"  FAIL {a} {wl} interval {w['interval']}: failures={w['alloc_failures']} threads={w['threads']}"); bad += 1
         r = runs.get((a, wl))
         if r is None or r['rc'] != 0:
             print(f"  FAIL {a} {wl}: run rc={None if r is None else r['rc']}"); bad += 1
-    print(f"| workload | allocator | Mops/s med | min / max | p50 | p99 | p999 (ns, med) | peak RSS MB |")
-    print(f"|---|---|---:|---|---:|---:|---:|---:|")
+    print(f"| workload | allocator | Mops/s med | Mops/s min / max | p50 | p99 med (min-max) | p999 med (min-max) | peak RSS MB |")
+    print(f"|---|---|---:|---|---:|---|---|---:|")
     summ = {}
     for (wl, a), ws in sorted(g.items()):
         m = [w['ops_per_sec'] / 1e6 for w in ws]
+        p99 = [w['lat_p99'] for w in ws]; p999 = [w['lat_p999'] for w in ws]
         s = dict(mops=med(m), lo=min(m), hi=max(m), p50=med([w['lat_p50'] for w in ws]),
-                 p99=med([w['lat_p99'] for w in ws]), p999=med([w['lat_p999'] for w in ws]),
+                 p99=med(p99), p99r=(min(p99), max(p99)), p999=med(p999), p999r=(min(p999), max(p999)),
                  rss=max(w['vmhwm_bytes'] for w in ws) / 2**20)
         summ[(wl, a)] = s
         print(f"| {wl} | {a} | {s['mops']:.3f} | {s['lo']:.3f} / {s['hi']:.3f} | {s['p50']:.0f} | "
-              f"{s['p99']:.0f} | {s['p999']:.0f} | {s['rss']:.0f} |")
+              f"{s['p99']:.0f} ({s['p99r'][0]:.0f}-{s['p99r'][1]:.0f}) | "
+              f"{s['p999']:.0f} ({s['p999r'][0]:.0f}-{s['p999r'][1]:.0f}) | {s['rss']:.0f} |")
     for wl in sorted({k[0] for k in summ}):
         u, n = summ.get((wl, 'umem')), summ.get((wl, 'umem@null'))
         if u and n:
             print(f"null {wl}: " + ", ".join(
-                f"{k} {abs(u[k] - n[k]) / u[k] * 100:.1f}%" for k in ('mops', 'p50', 'p99', 'p999', 'rss')))
+                (f"{k} {abs(u[k] - n[k]) / u[k] * 100:.1f}%" if u[k] else f"{k} n/a") for k in ('mops', 'p50', 'p99', 'p999', 'rss')))
 print("RESULT:", "FAIL" if bad else "PASS", f"({bad} invariant failures)")
 sys.exit(1 if bad else 0)

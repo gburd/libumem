@@ -1493,116 +1493,154 @@ static void frag_summarise(const struct frag_series *series,
 
 /*
  * Interval-mode driver (see iv_clock_t for the ownership rules).  Runs on the
- * thread that released the start barrier.  For each interval: sleep in
- * 100 ms ticks until the interval's deadline, sampling VmRSS (and, for frag,
- * the aggregate live bytes with it) at each tick; then advance the clock and
- * collect every started worker's published slot.  The next interval's
- * deadline is measured from the switch, so collection time is not lost.
+ * thread that released the start barrier.  It keeps the clock -- closing
+ * interval k exactly at its deadline, fixing its elapsed time, CPU and memory
+ * there, and advancing iv -- independently of collection: each worker's
+ * published slot for k is merged whenever it appears, and k's row is emitted
+ * (interval_done) once every started worker has published it.  Between
+ * events it sleeps in <= 100 ms ticks and samples VmRSS (and, for frag, the
+ * aggregate live bytes with it) into the open interval.
  *
  * Frag's (RSS, live) pairs are taken on this timer, not by the workers after
  * every batch as in op-budget mode: at 192 threads the per-batch sampler
  * overflowed FRAG_MAX_SAMPLES within seconds and serialised every worker on
  * peak_lock.  prodcons reports the largest VmRSS seen in the interval as
  * rss_at_live_peak (op-budget mode reads it once, after the run), and both
- * report it in the vmhwm column (see below).
+ * report it in the vmhwm column: the process VmHWM would include intervals the
+ * caller discards (the warm-up), and every column of a kept row must come
+ * from that interval alone.
  */
+/* One (RSS, live) sample on the driver's tick, into the open interval. */
+static void iv_sample(size_t *rss_max, atomic_size_t *live,
+                      struct frag_series *series) {
+    size_t rss = bench_get_vmrss_bytes();
+    if (rss > *rss_max) *rss_max = rss;
+    size_t lv = series ? atomic_load(live) : 0;
+    if (lv == 0) return;
+    if (series->n < FRAG_MAX_SAMPLES) {
+        series->live[series->n] = lv;
+        series->rss[series->n] = rss;
+        series->n++;
+    } else {
+        series->dropped++;
+    }
+}
+
+/* Interval k's slots are all merged: derive its latency and rate, report it. */
+static void iv_finish(const workload_config_t *cfg, int k,
+                      td_histogram_t *comb, int nstarted) {
+    bench_stats_t *st = &cfg->interval_out[k];
+    st->workload_name = cfg->name;
+    st->thread_count = nstarted;
+    st->runs_measured = 1;
+    st->ops_per_second = st->elapsed_seconds > 0 ?
+        (double)st->total_operations / st->elapsed_seconds : 0;
+    st->bytes_freed = st->bytes_allocated;
+    if (td_size(comb) > 0) {
+        st->latency_min = td_min(comb);
+        st->latency_max = td_max(comb);
+        st->latency_p50 = td_quantile(comb, 0.50);
+        st->latency_p90 = td_quantile(comb, 0.90);
+        st->latency_p99 = td_quantile(comb, 0.99);
+        st->latency_p999 = td_quantile(comb, 0.999);
+        double sum = 0;
+        td_compress(comb);
+        for (int i = 0; i < td_centroid_count(comb); i++)
+            sum += td_centroids_mean_at(comb, i) *
+                   td_centroids_weight_at(comb, i);
+        st->latency_mean = sum / (double)td_size(comb);
+    }
+    if (cfg->interval_done)
+        cfg->interval_done(st, k);
+}
+
 static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
                      iv_slot_t *slots, const unsigned char *started,
                      int nworkers, atomic_size_t *live,
                      struct frag_series *series) {
     const uint64_t period = (uint64_t)(cfg->interval_sec * 1e9);
     const uint64_t tick = 100000000ull;
+    const int n = clk->n;
     int nstarted = 0;
     for (int w = 0; w < nworkers; w++)
         nstarted += started[w] ? 1 : 0;
-    uint64_t t_start = bench_get_ns();
+
+    /* cur: the interval being timed and sampled (n once all are closed).
+     * col: the oldest closed interval not yet fully merged; cursor: the next
+     * worker to merge for it.  col <= cur always; rows complete in order. */
+    int cur = 0, col = 0, cursor = 0;
+    td_histogram_t *comb = NULL;
+    size_t rss_max = 0;
+    if (series) { series->n = 0; series->dropped = 0; }
+    uint64_t t_start = bench_get_ns(), t_end = t_start + period;
     bench_cpu_usage_t cpu0 = bench_get_cpu_usage();
 
-    for (int k = 0; k < clk->n; k++) {
-        bench_stats_t *st = &cfg->interval_out[k];
-        memset(st, 0, sizeof(*st));
-        size_t rss_max = 0;
-        if (series) { series->n = 0; series->dropped = 0; }
-        const uint64_t t_end = t_start + period;
-        for (uint64_t now; (now = bench_get_ns()) < t_end; ) {
-            uint64_t d = t_end - now < tick ? t_end - now : tick;
-            struct timespec ts = { (time_t)(d / 1000000000ull),
-                                   (long)(d % 1000000000ull) };
-            nanosleep(&ts, NULL);
-            size_t rss = bench_get_vmrss_bytes();
-            if (rss > rss_max) rss_max = rss;
-            size_t lv = series ? atomic_load(live) : 0;
-            if (lv > 0) {
-                if (series->n < FRAG_MAX_SAMPLES) {
-                    series->live[series->n] = lv;
-                    series->rss[series->n] = rss;
-                    series->n++;
-                } else {
-                    series->dropped++;
-                }
+    while (col < n) {
+        uint64_t now = bench_get_ns();
+        if (cur < n && now >= t_end) {
+            /* Close interval cur.  Its time, CPU and memory are fixed here;
+             * its work and latency arrive as each worker publishes. */
+            bench_stats_t *st = &cfg->interval_out[cur];
+            memset(st, 0, sizeof(*st));
+            st->elapsed_seconds = (double)(now - t_start) / 1e9;
+            bench_cpu_usage_t cpu1 = bench_get_cpu_usage();
+            st->cpu_usage.user_ms = cpu1.user_ms - cpu0.user_ms;
+            st->cpu_usage.sys_ms = cpu1.sys_ms - cpu0.sys_ms;
+            cpu0 = cpu1;
+            if (series)
+                frag_summarise(series, st);
+            else
+                st->peak_rss_bytes = rss_max;
+            st->max_rss_bytes = rss_max;
+            st->current_rss_bytes = bench_get_vmrss_bytes();
+            atomic_store_explicit(&clk->iv, cur + 1, memory_order_relaxed);
+            cur++;
+            t_start = now;
+            t_end = now + period;
+            rss_max = 0;
+            if (series) { series->n = 0; series->dropped = 0; }
+        }
+        /* Merge what is published, never waiting: a worker stalled inside one
+         * operation delays only its interval's ROW, not the next interval's
+         * clock or samples.  (Observed: 384 threads on 8 vCPUs, one umem frag
+         * operation took 12.7 s; a blocking collect lost that interval's
+         * samples and stretched it to 11.7 s of a 10 s target.) */
+        while (col < cur) {
+            if (!comb && td_init(100.0, &comb) != 0) {
+                fprintf(stderr, "bench: tdigest init failed (interval driver)\n");
+                abort();
             }
+            bench_stats_t *st = &cfg->interval_out[col];
+            for (; cursor < nworkers; cursor++) {
+                if (!started[cursor]) continue;
+                iv_slot_t *s = &slots[(size_t)cursor * (size_t)n + (size_t)col];
+                td_histogram_t *h =
+                    atomic_load_explicit(&s->hist, memory_order_acquire);
+                if (h == NULL) break;
+                td_merge(comb, h);
+                td_free(h);
+                st->total_operations += s->ops;
+                st->alloc_failures += s->failures;
+                st->bytes_allocated += s->bytes;
+            }
+            if (cursor < nworkers) break;
+            iv_finish(cfg, col, comb, nstarted);
+            td_free(comb);
+            comb = NULL;
+            col++;
+            cursor = 0;
         }
-        const uint64_t t_switch = bench_get_ns();
-        atomic_store_explicit(&clk->iv, k + 1, memory_order_relaxed);
-        bench_cpu_usage_t cpu1 = bench_get_cpu_usage();
-
-        td_histogram_t *comb = NULL;
-        if (td_init(100.0, &comb) != 0) {
-            fprintf(stderr, "bench: tdigest init failed (interval driver)\n");
-            abort();
-        }
-        for (int w = 0; w < nworkers; w++) {
-            if (!started[w]) continue;
-            iv_slot_t *s = &slots[(size_t)w * (size_t)clk->n + (size_t)k];
-            td_histogram_t *h;
-            while ((h = atomic_load_explicit(&s->hist,
-                                             memory_order_acquire)) == NULL)
-                sched_yield();
-            td_merge(comb, h);
-            td_free(h);
-            st->total_operations += s->ops;
-            st->alloc_failures += s->failures;
-            st->bytes_allocated += s->bytes;
-        }
-
-        st->workload_name = cfg->name;
-        st->thread_count = nstarted;
-        st->runs_measured = 1;
-        st->elapsed_seconds = (double)(t_switch - t_start) / 1e9;
-        st->ops_per_second = st->elapsed_seconds > 0 ?
-            (double)st->total_operations / st->elapsed_seconds : 0;
-        st->bytes_freed = st->bytes_allocated;
-        if (td_size(comb) > 0) {
-            st->latency_min = td_min(comb);
-            st->latency_max = td_max(comb);
-            st->latency_p50 = td_quantile(comb, 0.50);
-            st->latency_p90 = td_quantile(comb, 0.90);
-            st->latency_p99 = td_quantile(comb, 0.99);
-            st->latency_p999 = td_quantile(comb, 0.999);
-            double sum = 0;
-            td_compress(comb);
-            for (int i = 0; i < td_centroid_count(comb); i++)
-                sum += td_centroids_mean_at(comb, i) *
-                       td_centroids_weight_at(comb, i);
-            st->latency_mean = sum / (double)td_size(comb);
-        }
-        td_free(comb);
-        st->cpu_usage.user_ms = cpu1.user_ms - cpu0.user_ms;
-        st->cpu_usage.sys_ms = cpu1.sys_ms - cpu0.sys_ms;
-        if (series)
-            frag_summarise(series, st);
-        else
-            st->peak_rss_bytes = rss_max;
-        /* The vmhwm column is THIS interval's largest sampled VmRSS, not the
-         * process VmHWM: the lifetime mark would include intervals the caller
-         * discards (the warm-up), and every column of a kept row must come
-         * from that interval alone. */
-        st->max_rss_bytes = rss_max;
-        st->current_rss_bytes = bench_get_vmrss_bytes();
-        if (cfg->interval_done)
-            cfg->interval_done(st, k);
-        cpu0 = cpu1;
-        t_start = t_switch;
+        if (col >= n) break;
+        /* Sleep to the next tick or the deadline, then sample; after the last
+         * deadline only stragglers' publishes are awaited. */
+        now = bench_get_ns();
+        uint64_t d = cur < n ? (t_end > now ? t_end - now : 0) : 1000000ull;
+        if (d > tick) d = tick;
+        struct timespec ts = { (time_t)(d / 1000000000ull),
+                               (long)(d % 1000000000ull) };
+        nanosleep(&ts, NULL);
+        if (cur < n)
+            iv_sample(&rss_max, live, series);
     }
 }
 
