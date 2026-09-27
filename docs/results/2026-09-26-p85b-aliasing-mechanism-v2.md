@@ -194,3 +194,106 @@ Same tests, `verify-isolated.sh <role> 4b30bff fix1`, Debian lo. Logs:
 run drove the old swap commits, since the fix removed them, and the contract
 checked (returned 1 means exactly the committed state, returned 0 means
 exactly the prior state) is the same.
+
+## Why the P8.5b gates passed with a real double-owner bug (a finding about the gates)
+
+- **`repro_reload_commit_safe`** aborts only through a cpu-id mismatch, which
+  jumps to the abort handler before the first store. It never landed an abort
+  between stores or after the commit store, and those are the only places the
+  defect lives. It tested the gate of the section, not the section's
+  atomicity. (Ported to detach/attach, with a note saying what it does not
+  cover. `repro_reload_commit_abort` covers the rest.)
+- **`repro_rseq_trailing_store`** drives only the two fast paths, which were
+  correct. It never called the reload commits.
+- **192t/60s oracle, default and ASan, both metal arches: PASS.** The window
+  is a few instructions per reload. An abort needs preemption, a signal, or a
+  migration inside those instructions. At 192 threads on 192 vCPUs there is
+  little preemption. Most allocations in the mixed/all run are small classes
+  (magsize 127/255), which reload about once per 100+ ops, and PTC absorbs
+  most of those. The bug needs a >64 KiB class (reload on nearly every op),
+  an abort in the window, then a second owner that reuses the buffer while
+  the first still holds it. The 8t/10s rate of ~2.5 %/run (5/200) means one
+  60 s run at 192t can easily see zero: a PASS was never evidence at that
+  rate. ASan cannot see this defect at all: both owners hold a valid, live
+  allocation, so there is no overflow or use-after-free for it to report.
+  Only the stamp oracle can see it.
+- **The design spec's own safety argument** (asm-design §4) reasoned only
+  about the fast path's view of a torn slot, never about the C caller's
+  "0 = nothing written" assumption. The checklist it gave implementers
+  therefore contained no test that aborts mid-section.
+
+Lesson recorded: an rseq critical section needs a test that aborts it at
+every instruction boundary (a signal storm on a pinned thread), with the
+return-value/state contract checked on every call. A "migration abort" test
+exercises only the entry gate.
+
+## Sibling audit: every rseq critical section in both .S files
+
+After the fix there are eight sections (4 per arch): `alloc_fastpath`,
+`free_fastpath`, `reload_detach`, `reload_attach`. The rule: at most one
+store that another path acts on, placed last before `post_commit`, and the
+result register set before it.
+
+| section | stores in window, in order | commit store last? | result set before commit? | verdict |
+|---|---|---|---|---|
+| alloc_fastpath (x86, arm) | `alloc_count++`, `rounds = r-1` | yes | yes (`%rax`/`x0` = popped buf) | OK |
+| free_fastpath (x86, arm) | `mag_round[r] = buf`, `free_count++`, `rounds = r+1` | yes | yes (x86 `xorq %rax` after the label; arm `mov x0,#0` after the label; both are outside the window) | OK |
+| reload_detach (x86, arm) | `*old_mag_out`, `*old_rounds_out`, `loaded_mag = NULL` | yes | yes (`mov $1` before) | OK |
+| reload_attach (x86, arm) | `rounds`, `magsize`, `loaded_mag = new` | yes | yes (`mov $1` before) | OK |
+
+Why the non-commit stores are safe to waste:
+- `alloc_count` / `free_count` are advisory statistics. They are read only by
+  `umem_cache_print_stats`-style reporting (umem.c ~1011) and the probes, and
+  never feed a decision. An abort after the increment over-counts by one.
+- `mag_round[r] = buf` (free fastpath): the slot is at index `rounds`, which
+  no reader reads until `rounds` advances. An abort leaves it overwritten by
+  the next push. (This is the bug-6 argument, and it still holds.)
+- `*old_mag_out` / `*old_rounds_out`: caller stack memory, which the caller
+  reads only when 1 is returned.
+- attach's `rounds` / `magsize`: both fast paths test `loaded_mag == NULL`
+  before they read either (alloc: `rounds` is read first, but a NULL
+  `loaded_mag` then sends it to `alloc_empty` with nothing popped; free tests
+  `loaded_mag` first). Every attach rewrites both before it publishes.
+- `restart_count++` runs in the abort handler, outside the window.
+
+The abort handlers set the result in the handler (`xorl %eax` / `mov w0,#0` /
+`movq $-1`), outside the checked range, so an abort always reports "not
+committed", and the commit store never retired in that case.
+
+The fast paths had neither defect. The two removed swap commits had both.
+No other file contains rseq critical sections (`grep post_commit`: only the
+two `.S` files).
+
+## Other readers of the per-cpu rseq slot (sibling grep)
+
+`grep -rn "cache_rseq\|CACHE_MAGSIZE_OFFSET\|rc->magsize\|\.magsize"` over
+C, headers, asm, and the gdb/lldb helpers:
+- `umem.c` slowpaths: rewritten (detach/attach, per-magazine capacity).
+- `umem.c` cache create: per-cache `magsize` init removed. Slots start zeroed
+  and detached.
+- `umem.c umem_cache_destroy`: reads the slot directly with no rseq section.
+  That is legal only because destroy runs with no other user of the cache.
+  It calls `umem_magazine_destroy()`, which freed the shell to the cache's
+  CURRENT magtype and asserted `UMEM_MAGAZINE_VALID`. The per-cpu slot can
+  hold a pre-resize shell there (purge does not touch `cache_rseq[]`), so
+  that would free a 2-word shell into the 4-word magtype cache. **Fixed:**
+  the shell goes back to its own source cache. The same function is used by
+  `umem_cache_magazine_purge` and `umem_maglist_ws_reap`, and both paths
+  were already valid-only. They are unaffected.
+- `umem.c` stats (~1007): reads counters only.
+- `umem_inspect.c` cached-set (~943): bounds by `UMEM_MAGAZINE_CAPACITY(mp)`
+  (already per-magazine, CB-2) and never reads `rc->magsize`. Best-effort
+  read without rseq, as documented. A NULL `loaded_mag` means it skips the
+  slot, which is correct for a detached slot.
+- `umem_rseq.h`: field comment now states that `magsize` is per-magazine and
+  meaningful only while `loaded_mag != NULL`.
+- Tests that set `rc.magsize` by hand (`test_rseq_fastpath`,
+  `repro_rseq_trailing_store`, `repro_naive_reload_race`): they build private
+  slots with `loaded_mag` set, which is still a valid state. No change.
+- gdb-macros and tools/gdb, tools/lldb: no reference to `cache_rseq` (they
+  read only `cc_magsize`).
+- `umem_cache_magazine_purge` does not touch `cache_rseq[]`, deliberately.
+  The comment on `umem_rseq_reload()` explains why: the bound is per-magazine,
+  a stale-magtype shell drains on swap-out via `umem_ptc_mag_return`
+  (`!VALID`), and a cross-cpu slot write from the update thread would not be
+  rseq-safe.
