@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **`UMEM_SLAB_MEMBER` accepted addresses past a slab's last buffer** (`080ef6f`,
+  test `0a60891`). It bounded a slab by `slab_base + cache_slabsize`, but
+  `slab_base` already includes the colour offset, so the range ran past the
+  last chunk into the slab header and, for a non-hash cache, up to `colour`
+  bytes into the next page -- the same over-wide bound that made `whatis` name
+  the wrong cache (T6). It also never required a chunk start. The range is now
+  the slab's chunks, and `UMEM_SLAB_CHUNK` adds the start test on the two paths
+  that need one: the free-path bad-address check in `umem_slab_free` and the
+  freelist-link check in `umem_slab_link_valid`. `test/unit/test_slab_member`:
+  before the fix all 64 examined slabs accepted the first byte past their last
+  chunk, on both arches; after, 0. `make check` 67 tests, 0 FAIL, both arches;
+  `test_freelist_mangle`, `test_forged_free` and the 8-thread oracle pass. The
+  free path costs nothing measurable: every `bench_pairs` A/B point, t=1 and
+  t=8, is inside its null on both arches (`docs/results/r7slab/`).
+
 Debugging-tool findings from the 2026-09-26 tool review
 (`docs/reviews/2026-09-26-tool-review.md`). Each one has a regression in
 `test/debugger/test_tool_T<N>_*.sh` that failed before the fix (Debian 13,

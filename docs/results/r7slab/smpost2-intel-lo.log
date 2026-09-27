@@ -1,0 +1,27 @@
+=== test_slab_member (post-fix) ===
+slabs checked=64 chunksize=208 slabsize=4096
+A chunk starts rejected: 0 (must be 0)
+B mid-chunk accepted:    64 (informational)
+C past-last-chunk accepted: 0 (must be 0)
+PASS
+rc=0
+=== make check ===
+check_rc=0
+# TOTAL: 67
+# PASS:  54
+# SKIP:  10
+# XFAIL: 2
+# FAIL:  1
+# XPASS: 0
+# ERROR: 0
+# TOTAL: 67
+# PASS:  55
+# SKIP:  10
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+=== freelist mangle + forged free + oracle ===
+test_freelist_mangle rc=0 :: PASS: freelist links are not an arbitrary-address primitive
+test_forged_free rc=0 :: test_forged_free: PASS
+Result: PASS (no aliasing or corruption; 297909416 successful allocations, 0 failures)

@@ -1,0 +1,6 @@
+slabs checked=64 chunksize=208 slabsize=4096
+A chunk starts rejected: 0 (must be 0)
+B mid-chunk accepted:    64 (informational)
+C past-last-chunk accepted: 64 (must be 0)
+FAIL: UMEM_SLAB_MEMBER's range does not match the slab's buffers
+rc=1
