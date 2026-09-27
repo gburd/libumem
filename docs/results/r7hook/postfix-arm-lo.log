@@ -1,0 +1,85 @@
+GATE make_check FAIL rc=2
+# TOTAL: 67
+# PASS:  56
+# SKIP:  10
+# XFAIL: 0
+# FAIL:  1
+# XPASS: 0
+# ERROR: 0
+============================================================================
+See ./test-suite.log for debugging.
+============================================================================
+make[2]: *** [Makefile:7035: test-suite.log] Error 1
+make[2]: Leaving directory '/home/admin/libumem-iso-postfix-a59e7d661f02'
+make[1]: *** [Makefile:7170: check-TESTS] Error 2
+make[1]: Leaving directory '/home/admin/libumem-iso-postfix-a59e7d661f02'
+make: *** [Makefile:7610: check-am] Error 2
+# TOTAL: 67
+# PASS:  56
+# SKIP:  10
+# XFAIL: 0
+# FAIL:  1
+# XPASS: 0
+# ERROR: 0
+SKIP: test/debugger/test_introspect_contracts.sh
+SKIP: test/security/test_introspect_sock_path.sh
+SKIP: test/debugger/test_tool_T2_monitor.sh
+SKIP: test/debugger/test_tool_T7_learn_noaudit.sh
+SKIP: test/debugger/test_tool_T12_rearm.sh
+SKIP: test/debugger/test_tool_T3_whatis_oversize.sh
+SKIP: test/debugger/test_tool_T6_whatis_colour.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+SKIP: test/security/test_introspect_peer_uid
+FAIL: test/integration/test_heap_ceiling
+GATE rseq_fastpath_6bug PASS
+GATE trailing_store PASS
+GATE commit_safe PASS
+GATE resize_leak_16 PASS
+GATE resize_leak_32 PASS
+GATE alias_e2e PASS
+GATE commit_abort PASS fails=0/100
+GATE oracle_small PASS
+GATE oracle_mag PASS
+GATE oracle_mixed PASS
+GATE oracle_large PASS
+LO_GATE rc=1
+DEFAULT_GATE_RC=1
+gate-make_check.log:PASS: test/debugger/test_tool_T1_event_cb.sh
+gate-make_check.log:PASS: test/debugger/test_tool_T1_gdb_break.sh
+gate-make_check.log:PASS: test/integration/test_first_alloc_small_stack.sh
+gate-make_check.log:PASS: test/unit/test_slab_member
+gate-make_check.log:SKIP: test/debugger/test_tool_T8_break_ptc.sh
+test-suite.log:SKIP: test/debugger/test_tool_T8_break_ptc
+=== INTROSPECT
+REGEN_OK
+CHECK_I_RC=2
+# TOTAL: 67
+# PASS:  65
+# SKIP:  0
+# XFAIL: 1
+# FAIL:  1
+# XPASS: 0
+# ERROR: 0
+XFAIL: test/debugger/test_tool_T9_leak_stack.sh
+FAIL: test/integration/test_heap_ceiling_512.sh
+=== T1_event_cb
+event callback hits: alloc=1800 free=1800 (1800 allocations made)
+PASS
+T1 FIXED: alloc callbacks=1800 free=1800 for 1800 allocations
+EXIT T1_event_cb=0
+=== T1_gdb_break
+Breakpoint 1 at 0xffff88fa8500: file umem_inspect.c, line 96.
+Thread 3 "tool_target" hit Breakpoint 1, umem_event_free (buf=0xffff87ffaf00, size=100, cache=0xffff88a04780) at umem_inspect.c:96
+#0  umem_event_free (buf=0xffff87ffaf00, size=100, cache=0xffff88a04780) at umem_inspect.c:96
+#1  0x0000ffff88fa8620 in umem_inspect_notify (ev=UMEM_EV_FREE, info=0xffff86fed4e8) at umem_inspect.c:139
+#2  umem_inspect_notify (ev=UMEM_EV_FREE, info=0xffff86fed4e8) at umem_inspect.c:129
+T1 FIXED: gdb umem break alloc and free both stopped
+EXIT T1_gdb_break=0
+=== T8_break_ptc
+break size=1500: parked
+break size=777: parked
+break cache=tt_user: parked
+break size=200000: parked
+T8 FIXED: zalloc, user-cache and oversize predicates all park
+EXIT T8_break_ptc=0

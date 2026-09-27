@@ -1,0 +1,95 @@
+=== make check -j1 default sha=a59e7d661f02cac9aa3c4ba6b4f2b337cb139f0c
+REGEN_OK
+CHECK_RC=0
+# TOTAL: 67
+# PASS:  57
+# SKIP:  10
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+SKIP: test/debugger/test_introspect_contracts.sh
+SKIP: test/security/test_introspect_sock_path.sh
+SKIP: test/security/test_introspect_peer_uid
+SKIP: test/debugger/test_tool_T2_monitor.sh
+SKIP: test/debugger/test_tool_T7_learn_noaudit.sh
+SKIP: test/debugger/test_tool_T12_rearm.sh
+SKIP: test/debugger/test_tool_T3_whatis_oversize.sh
+SKIP: test/debugger/test_tool_T6_whatis_colour.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+PASS: test/unit/test_slab_member
+PASS: test/integration/test_first_alloc_small_stack.sh
+PASS: test/debugger/test_tool_T1_event_cb.sh
+PASS: test/debugger/test_tool_T1_gdb_break.sh
+=== make check -j1 introspect sha=a59e7d661f02cac9aa3c4ba6b4f2b337cb139f0c
+REGEN_OK
+#define UMEM_INTROSPECT 1
+CHECK_RC=0
+# TOTAL: 67
+# PASS:  66
+# SKIP:  0
+# XFAIL: 1
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+XFAIL: test/debugger/test_tool_T9_leak_stack.sh
+PASS: test/unit/test_slab_member
+PASS: test/integration/test_first_alloc_small_stack.sh
+PASS: test/debugger/test_tool_T1_event_cb.sh
+PASS: test/debugger/test_tool_T1_gdb_break.sh
+PASS: test/debugger/test_tool_T8_break_ptc.sh
+=== A/B default build
+# hotpath A/B  vcpu=8  2026-09-27T21:56:32Z  pre=1c1eac055993204b1803eec4e0de534e932c57e7 post=a59e7d661f02cac9aa3c4ba6b4f2b337cb139f0c  replicates=9 dur=1s
+# instance=c7i.2xlarge gcc=14
+## builds
+  built pre from /home/admin/libumem-ab-r7hook/pre: libumem.so sha256=3e24457be42e6638
+  built post from /home/admin/libumem-ab-r7hook/post: libumem.so sha256=5d5e58b5401f0c51
+  built pre2 from /home/admin/libumem-ab-r7hook/pre2: libumem.so sha256=b2c1f19d86dd00d8
+  bench_pairs (one binary, from post): sha256=d115b059aaf2a3ec
+
+## bench_pairs Mpairs/s (delta = B relative to A)
+  null  s=512 N=1 t=1                last A=127.27    B=127.12     median   -0.01%  (min   -0.12%, max   +0.23%, n=9)
+  A/B   s=512 N=1 t=1                last A=127.20    B=105.55     median  -17.21%  (min  -17.50%, max  -16.57%, n=9)
+  null  s=512 N=64 t=1               last A=131.45    B=131.49     median   +0.03%  (min   -0.07%, max   +0.11%, n=9)
+  A/B   s=512 N=64 t=1               last A=131.47    B=120.99     median   -7.94%  (min   -8.44%, max   -7.83%, n=9)
+  null  s=512 N=128 t=1              last A=121.93    B=122.22     median   +0.12%  (min   -0.12%, max   +0.25%, n=9)
+  A/B   s=512 N=128 t=1              last A=122.45    B=108.06     median  -11.73%  (min  -12.56%, max  -10.30%, n=9)
+  null  s=16:64 N=1 t=1              last A=95.91     B=95.83      median   +0.08%  (min   -0.62%, max   +1.40%, n=9)
+  A/B   s=16:64 N=1 t=1              last A=95.42     B=87.12      median   -8.93%  (min   -9.57%, max   -8.28%, n=9)
+  null  s=16:64 N=64 t=1             last A=98.60     B=98.62      median   +0.02%  (min   -0.12%, max   +0.10%, n=9)
+  A/B   s=16:64 N=64 t=1             last A=98.75     B=83.69      median  -15.51%  (min  -18.88%, max  -14.87%, n=9)
+  null  s=16:1024 N=1 t=1            last A=67.90     B=67.80      median   +0.07%  (min   -0.22%, max   +0.73%, n=9)
+  A/B   s=16:1024 N=1 t=1            last A=68.05     B=64.74      median   -5.04%  (min   -5.39%, max   -4.84%, n=9)
+  null  s=16:1024 N=64 t=1           last A=75.84     B=76.97      median   +0.09%  (min   -0.38%, max   +1.49%, n=9)
+  A/B   s=16:1024 N=64 t=1           last A=77.21     B=69.67      median   -9.68%  (min  -11.09%, max   -8.80%, n=9)
+  null  s=512 N=1 t=8                last A=525.72    B=521.66     median   -0.01%  (min   -0.77%, max   +1.43%, n=9)
+  A/B   s=512 N=1 t=8                last A=525.78    B=493.96     median   -6.16%  (min   -6.48%, max   -4.05%, n=9)
+  null  s=512 N=128 t=8              last A=503.71    B=499.58     median   -0.32%  (min   -0.82%, max   +1.38%, n=9)
+  A/B   s=512 N=128 t=8              last A=500.40    B=469.14     median   -6.60%  (min   -7.27%, max   -4.92%, n=9)
+  null  s=16:64 N=1 t=8              last A=392.00    B=393.17     median   +0.02%  (min   -0.09%, max   +1.25%, n=9)
+  A/B   s=16:64 N=1 t=8              last A=393.63    B=384.29     median   -2.37%  (min   -3.77%, max   -1.46%, n=9)
+  null  s=16:64 N=64 t=8             last A=427.90    B=424.81     median   -0.09%  (min   -0.72%, max   +0.30%, n=9)
+  A/B   s=16:64 N=64 t=8             last A=423.65    B=410.43     median   -2.21%  (min   -3.12%, max   -1.26%, n=9)
+  null  s=16:1024 N=1 t=8            last A=342.86    B=342.62     median   +0.10%  (min   -0.07%, max   +2.79%, n=9)
+  A/B   s=16:1024 N=1 t=8            last A=344.21    B=337.59     median   -1.88%  (min   -4.63%, max   +0.15%, n=9)
+  null  s=16:1024 N=64 t=8           last A=369.43    B=369.34     median   +0.01%  (min   -0.29%, max   +0.72%, n=9)
+  A/B   s=16:1024 N=64 t=8           last A=368.87    B=357.28     median   -3.22%  (min   -4.33%, max   -2.56%, n=9)
+
+## perf stat instructions per pair, t=1 (delta = B relative to A; lower is better)
+  null  insn s=512 N=1               last A=147.1     B=147.2      median   +0.00%  (min   -0.07%, max   +0.07%, n=9)
+  A/B   insn s=512 N=1               last A=147.2     B=154.3      median   +4.82%  (min   +4.69%, max   +4.83%, n=9)
+  null  insn s=512 N=64              last A=132.3     B=132.3      median   +0.00%  (min   -0.08%, max   +0.08%, n=9)
+  A/B   insn s=512 N=64              last A=132.3     B=139.3      median   +5.29%  (min   +5.21%, max   +5.44%, n=9)
+  null  insn s=512 N=128             last A=142.4     B=142.2      median   +0.00%  (min   -0.14%, max   +0.07%, n=9)
+  A/B   insn s=512 N=128             last A=142.2     B=149.2      median   +4.92%  (min   +4.85%, max   +4.99%, n=9)
+  null  insn s=16:64 N=1             last A=172.1     B=172.3      median   +0.06%  (min   -0.06%, max   +0.12%, n=9)
+  A/B   insn s=16:64 N=1             last A=172.3     B=179.2      median   +4.00%  (min   +4.00%, max   +4.18%, n=9)
+  null  insn s=16:64 N=64            last A=157.4     B=157.5      median   +0.00%  (min   -0.06%, max   +0.06%, n=9)
+  A/B   insn s=16:64 N=64            last A=157.4     B=164.4      median   +4.44%  (min   +4.38%, max   +4.51%, n=9)
+  null  insn s=16:1024 N=1           last A=174.5     B=174.6      median   +0.00%  (min   -0.06%, max   +0.06%, n=9)
+  A/B   insn s=16:1024 N=1           last A=174.5     B=181.5      median   +4.01%  (min   +3.71%, max   +4.07%, n=9)
+  null  insn s=16:1024 N=64          last A=159.8     B=159.8      median   +0.06%  (min   +0.00%, max   +0.06%, n=9)
+  A/B   insn s=16:1024 N=64          last A=159.7     B=166.8      median   +4.38%  (min   +4.32%, max   +4.51%, n=9)
+# done 2026-09-27T22:09:32Z
+AB_RC=0

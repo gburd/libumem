@@ -1,0 +1,33 @@
+=== pre 1c1eac055993204b1803eec4e0de534e932c57e7
+REGEN_OK
+CHECK_RC=2
+# TOTAL: 67
+# PASS:  61
+# SKIP:  0
+# XFAIL: 4
+# FAIL:  2
+# XPASS: 0
+# ERROR: 0
+FAIL: test/integration/test_cpu_hint_spread
+FAIL: test/integration/test_heap_ceiling
+[ 1064.205158] Out of memory: Killed process 93537 (test_heap_ceili) total-vm:8906540kB, anon-rss:8877568kB, file-rss:0k
+--- serial heap_ceiling
+SERIAL_RC=0
+PASS: test/integration/test_heap_ceiling
+PASS: test/integration/test_heap_ceiling_512.sh
+=== post a59e7d661f02cac9aa3c4ba6b4f2b337cb139f0c
+REGEN_OK
+CHECK_RC=2
+# TOTAL: 67
+# PASS:  65
+# SKIP:  0
+# XFAIL: 1
+# FAIL:  1
+# XPASS: 0
+# ERROR: 0
+FAIL: test/integration/test_heap_ceiling
+[ 1136.725238] Out of memory: Killed process 117521 (test_heap_ceili) total-vm:9500620kB, anon-rss:9470336kB, file-rss:2
+--- serial heap_ceiling
+SERIAL_RC=0
+PASS: test/integration/test_heap_ceiling
+PASS: test/integration/test_heap_ceiling_512.sh

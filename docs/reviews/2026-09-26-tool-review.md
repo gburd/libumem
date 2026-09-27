@@ -438,3 +438,69 @@ Still open from this set:
   **not been done**.
 - EC2: intel-lo@r7lib and arm-lo@r7lib were terminated at stop. See the
   commit that adds this section.
+
+## Status: T1 / T8 (agent @r7hook, 2026-09-27) -- fixed on a branch, NOT merged: default-off cost outside the null
+
+Measured on Debian 13, c7i.2xlarge + c7g.2xlarge. Logs are in `docs/results/r7hook/`.
+
+- **Pre-fix (5610d8a, `--enable-introspect`):** `test_tool_T1_event_cb`,
+  `test_tool_T1_gdb_break` and `test_tool_T8_break_ptc` each exit **1** on
+  both arches, and every control passes. `alloc=0 free=0 (1800 allocations
+  made)`. gdb `break _umem_alloc` hits but `umem break alloc|free` never
+  stops. `break size=1500` parks while `size=777`, `cache=tt_user` and
+  `size=200000` do not. None exits 0 or 99, so no script needed a fix.
+- **Fix = `a59e7d6`** on `origin/r7hook-fix`. This is the r7lib-wip draft
+  40428b9 cherry-picked onto 1c1eac0 with no compile fixes needed, **minus
+  its T9 `learn_printer` hunk** (T9 belongs to another agent). The same
+  commit removes the three XFAIL lines.
+- **Post-fix:** all three exit **0** on both arches:
+  `alloc=1800 free=1800`, gdb stops in `umem_event_alloc`/`umem_event_free`,
+  and all four break predicates park.
+- **`make check -j1` at a59e7d6, both arches:** default 67 total, 57 PASS,
+  10 SKIP, 0 FAIL/XPASS/ERROR. `--enable-introspect`: 67 total, 66 PASS,
+  1 XFAIL (T9), 0 FAIL/XPASS/ERROR. The P8.5b lo gate (`--enable-rseq`)
+  passed on both arches: 6-bug rseq, trailing store, commit safe/abort
+  0/100, resize leak and alias. `test_first_alloc_small_stack`,
+  `test_slab_member` and the 8t oracle ×4 all PASS. The gate is `-j1`
+  because `-j8` OOM-killed `test_heap_ceiling[_512]` (exit 137; dmesg
+  shows `Killed process test_heap_ceili`). That failure reproduces on
+  1c1eac0 without the fix, and serial runs pass pre and post. It is fixed
+  on master in 79cdd89, which a59e7d6 predates.
+- **Hot-path A/B, default build (hooks off), pre=1c1eac0, post=a59e7d6,
+  `hotpath_ab.sh`, 9 alternating pairs, one bench binary.** Every point is
+  outside its null on both arches:
+
+  | point | x86 A/B (null range) | arm A/B (null range) |
+  |---|---|---|
+  | 512 N=1 t=1 | −17.21 % (−0.12..+0.23) | −5.71 % (−0.09..+0.07) |
+  | 512 N=64 t=1 | −7.94 % (−0.07..+0.11) | −2.84 % (−0.12..+0.03) |
+  | 512 N=128 t=1 | −11.73 % (−0.12..+0.25) | −3.20 % (−0.23..+0.17) |
+  | 16:64 N=1 t=1 | −8.93 % (−0.62..+1.40) | −3.81 % (−0.12..+0.13) |
+  | 16:64 N=64 t=1 | −15.51 % (−0.12..+0.10) | −3.57 % (−0.22..+0.04) |
+  | 16:1024 N=1 t=1 | −5.04 % (−0.22..+0.73) | −3.09 % (−0.23..+0.40) |
+  | 16:1024 N=64 t=1 | −9.68 % (−0.38..+1.49) | −3.25 % (−0.35..+0.21) |
+  | 512 N=1 t=8 | −6.16 % (−0.77..+1.43) | −5.95 % (−0.12..+0.03) |
+  | 512 N=128 t=8 | −6.60 % (−0.82..+1.38) | −3.29 % (−0.05..+0.41) |
+  | 16:64 N=1 t=8 | −2.37 % (−0.09..+1.25) | −3.87 % (−0.35..+0.42) |
+  | 16:64 N=64 t=8 | −2.21 % (−0.72..+0.30) | −3.52 % (−0.61..+0.07) |
+  | 16:1024 N=1 t=8 | −1.88 % (−0.07..+2.79)¹ | −3.18 % (−0.14..+0.05) |
+  | 16:1024 N=64 t=8 | −3.22 % (−0.29..+0.72) | −3.38 % (−0.10..+0.16) |
+  | insn/pair, 7 points | **+4.00..+5.29 %** (null ≤ ±0.14) | **+5.14..+6.69 %** (null ≤ ±0.38) |
+
+  ¹ The median is outside the null, but this A/B's min..max (−4.63..+0.15)
+  overlaps it. It is the only such point.
+
+  That is about 7 extra instructions per alloc/free pair. One visible
+  cause (x86 disassembly): `_umem_free` lost its shrink-wrapped prologue.
+  Before the fix, the NULL test ran before any register push. After it,
+  six pushes come first, because the hook call sits at the top of the
+  function. This has not been profiled further, so it is not the whole
+  explanation.
+- **Not merged, coordinator's decision.** The CHANGELOG entry and the README
+  "Known broken" edit sit on `r7hook-fix` on top of the fix. a59e7d6 is
+  based on 1c1eac0, so it needs a rebase onto current master before it
+  ships. Nothing was redesigned. Two options: ship with the cost on the
+  record, or restructure the hook placement (for example, test in the
+  PTC/magazine miss paths only and keep `_umem_free` shrink-wrappable)
+  and re-measure.
+- EC2: intel-lo@r7hook and arm-lo@r7hook terminated at stop.
