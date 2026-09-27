@@ -56,12 +56,61 @@ BENCH_BIN="${BENCH_BIN:-test/bench/.libs/bench_main}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_ROOT"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}.libs"
-export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
+# glibc.rtld.optional_static_tls: needed ONLY so allocators.c can dlopen() an
+# allocator with initial-exec TLS.  Debian 13's libjemalloc2 5.3.0 is
+# DF_STATIC_TLS with a 2.6-2.7 KB PT_TLS; unset, its dlopen fails "cannot
+# allocate memory in static TLS block" and the jemalloc arm silently vanishes.
+# umem and glibc do not need it.  The surplus is reserved inside EVERY
+# thread's stack, so it must stay small: the 8388608 used from b6d955c until
+# 2026-09-27 left a new thread 2,719 B of usable stack on arm64 and 8,319 B on
+# x86_64 (vs 8.38 MB unset; Debian 13, glibc 2.41, pthread_getattr_np), and
+# bench_main SEGV'd for umem AND jemalloc on arm -- the "umem_init -> dlopen
+# stack overflow".  65536 is ~24x jemalloc's need and leaves 8.32 MB.  The
+# SAME value is used for every allocator; stack_guard below refuses to run if
+# whatever is exported starves thread stacks again.
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=65536}"
 
 if [[ ! -x $BENCH_BIN ]]; then
     echo "SKIP: $BENCH_BIN not built -- nothing measured" >&2
     exit 77
 fi
+
+# Usable stack of a new thread under the exported GLIBC_TUNABLES, in bytes.
+# FATAL below 1 MiB: that is how the 8 MiB tunable crashed every arm window
+# while looking like an allocator bug.  An unbuildable probe is FATAL too,
+# not a skip -- an unchecked environment is exactly what this guards against.
+stack_guard() {
+    local d; d=$(mktemp -d)
+    cat > "$d/p.c" <<'PROBE'
+#define _GNU_SOURCE
+#include <pthread.h>
+#include <stdio.h>
+static void *t(void *a) {
+    pthread_attr_t at; void *lo; size_t sz; char c;
+    (void)a;
+    pthread_getattr_np(pthread_self(), &at);
+    pthread_attr_getstack(&at, &lo, &sz);
+    printf("%ld\n", (long)((char *)&c - (char *)lo));
+    return 0;
+}
+int main(void) { pthread_t th; pthread_create(&th, 0, t, 0); pthread_join(th, 0); return 0; }
+PROBE
+    local usable=""
+    cc -O1 -pthread -o "$d/p" "$d/p.c" 2>"$d/err" && usable=$("$d/p")
+    local err; err=$(cat "$d/err")
+    rm -f "$d/p" "$d/p.c" "$d/err"; rmdir "$d"
+    if [[ -z $usable ]]; then
+        echo "FATAL: thread-stack probe failed: $err" >&2; exit 1
+    fi
+    STACK_USABLE="$usable"
+    if (( usable < 1048576 )); then
+        echo "FATAL: GLIBC_TUNABLES='$GLIBC_TUNABLES' leaves a new thread $usable B of" >&2
+        echo "       usable stack (< 1 MiB); every multi-threaded window would measure" >&2
+        echo "       stack overflows, not allocators.  Lower optional_static_tls." >&2
+        exit 1
+    fi
+}
+stack_guard
 
 # Same per-allocator LD_PRELOAD resolution as matrix.sh (see its comment):
 # never global, only for the one allocator under test.
@@ -159,6 +208,8 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
     echo "vcpu = $NCPU"
     echo "threads = $THREADS"
     echo "governor = \"$GOV\""
+    echo "glibc_tunables = \"$GLIBC_TUNABLES\""
+    echo "thread_stack_usable_bytes = $STACK_USABLE"
     echo "duration_target_sec_per_window = $DURATION"
     echo "windows_per_allocator = $WINDOWS"
     echo "warmup_windows_discarded = $WARMUPS"

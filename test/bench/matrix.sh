@@ -108,8 +108,14 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}../../.libs"
 # LD_PRELOAD detection -- see the comment at the top of that file for why:
 # statically linking them collides with the process-wide malloc symbol).
 # glibc's static-TLS surplus needs bumping for some of them under dlopen;
-# this must be set before the process starts.
-export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=8388608}"
+# this must be set before the process starts.  Kept SMALL: the surplus is
+# reserved inside every thread's stack, and the 8388608 used until 2026-09-27
+# left new threads 2.7 KB (arm64) / 8.3 KB (x86_64) of usable stack on
+# Debian 13 and SEGV'd umem and jemalloc runs.  See scripts/ec2/sustained_load.sh
+# for the measurement.  Same value there and in allocator_comparison.sh.  If
+# an allocator's TLS ever exceeds it, its dlopen fails and it is reported
+# unavailable, not mis-measured.
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=65536}"
 
 # Some allocators (scudo always; on musl, every third-party allocator) only
 # work via LD_PRELOAD, not dlopen (see allocators.c's file-header comment).

@@ -140,7 +140,10 @@ AVAIL="$OUT/availability.toml"
     echo ""
 } > "$AVAIL"
 export LD_LIBRARY_PATH=".libs:${LD_LIBRARY_PATH:-}"
-export GLIBC_TUNABLES="glibc.rtld.optional_static_tls=8388608"
+# 64 KiB, not the former 8 MiB: the surplus comes out of every thread's stack
+# (8 MiB left 2.7 KB usable on arm64 and crashed umem and jemalloc; see
+# scripts/ec2/sustained_load.sh).  Same value as matrix.sh/sustained_load.sh.
+export GLIBC_TUNABLES="glibc.rtld.optional_static_tls=65536"
 PRELOAD_SO=$(ls .libs/libumem_malloc.so.*.*.* | head -1)
 SCUDO_SO=$(ldconfig -p 2>/dev/null | grep -oE '/[^ ]*scudo[_a-z]*[^ ]*\.so[^ ]*' | head -1)
 avail_of() {
