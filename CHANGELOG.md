@@ -40,6 +40,21 @@ c7i.2xlarge, `--enable-introspect`).
   below it (seen as a freed 96 KiB buffer named `umem_magazine_1`). Both
   whatis implementations now bound a slab by its chunks. The same
   `UMEM_SLAB_MEMBER` test in `umem_impl.h` is not changed here.
+- **T1** gdb/lldb `umem break alloc|free`, `umem events` and the
+  `umem_inspect_set_event_cb()` C API never fired: nothing in the allocator
+  called `umem_inspect_notify()`. **T8** `umemctl break size=|cache=` parked
+  only on `_umem_alloc`'s cache-backed slow path, never on per-thread-cache
+  hits, `umem_zalloc`, `umem_cache_alloc` or oversize allocations. One
+  hidden flag, `umem_hooks`, is now tested at every public alloc/free entry
+  point and calls out-of-line hooks that feed both. Internal caches do not
+  report (a `umem_alloc` reports once). `malloc` reports through
+  `umem_alloc` with its header base. Regressions: `test_tool_T1_event_cb`,
+  `test_tool_T1_gdb_break` and `test_tool_T8_break_ptc` exited 1 before
+  the fix and 0 after, on both arches. `make check -j1` 0 FAIL, default and
+  `--enable-introspect`, both arches. **Cost with hooks off is outside
+  the null at every point:** `bench_pairs` t=1 −5.0..−17.2 % (x86) and
+  −2.8..−5.7 % (arm); t=8 −1.9..−6.6 % (x86) and −3.2..−6.0 % (arm);
+  +4.0..+6.7 % instructions per pair (`docs/results/r7hook/final-*.log`).
 - **T7** `umemctl record --learn-leaks` without audit printed the refusal,
   claimed to write a leak set and exited 0. It now exits 1 and writes nothing.
 - **T10** `umem walk log` without a transaction log exited 2 ("gdb produced

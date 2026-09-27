@@ -858,19 +858,16 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
 > **Known broken as of v3.3.2** (found by the 2026-09-26 tool review,
 > [`docs/reviews/2026-09-26-tool-review.md`](docs/reviews/2026-09-26-tool-review.md);
 > not fixed in this release):
-> - gdb and lldb `umem break alloc|free|error` and `umem events`, and the
->   `umem_inspect_set_event_cb()` C API, never fire. Nothing in the
->   allocator calls the event hook they rely on.
 > - The `record --learn-leaks` / `break leaked` workflow cannot find a leak:
 >   x86_64 audit stacks are one frame deep and inside libumem, and the
 >   learned size is the cache size rather than the requested size.
-> - `umemctl break size=|cache=` never parks a thread for allocations served
->   by the per-thread cache or for oversize allocations.
 > - `umemctl whatis` and `findleaks` count a buffer freed into a per-thread
 >   cache bin as held: those bins are thread-local and cannot be read safely
 >   from another thread (a documented limit, not scheduled).
 >
-> Fixed since v3.3.2 (T2, T3, T6, T7, T10, T12, T13, T14): `monitor`'s held
+> Fixed since v3.3.2 (T1, T2, T3, T6, T7, T8, T10, T12, T13, T14): gdb/lldb
+> `umem break alloc|free` and `umem events`, the event-callback C API, umemctl
+> `break` on per-thread-cache and oversize allocations, `monitor`'s held
 > count, `whatis` on oversize, magazine-cached and page-boundary addresses,
 > `record --learn-leaks` after a refusal, `walk log` without a log, `break`
 > re-arm, gdb `umem break error -c`, and lldb `umem status`.
