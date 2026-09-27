@@ -321,6 +321,46 @@ whichever **4 KiB slab lies just below it in memory**:
   when the first `apt-get install` fails. lldb-19 was installed by hand.
   Not fixed here.
 
+## Regressions (XFAIL)
+
+Rule: **every `XFAIL_TESTS` entry is an open finding.** A fix makes its test
+exit 0, which `make check` reports as XPASS, a failure, until the entry is
+removed from `XFAIL_TESTS`. `XFAIL_TESTS` must be empty before a release
+claims the tools work. Exit codes: 0 fixed, 1 finding reproduces, 77 SKIP
+(prerequisite missing), 99 ERROR (positive control failed or harness
+broken). Shared harness: `test/debugger/tool_common.sh`.
+
+`XFAIL_TESTS` (Makefile.am, commit `639a071`):
+
+| finding | test | positive control |
+|---|---|---|
+| T1 | `test/debugger/test_tool_T1_event_cb.sh` | `test_event_cb` reports > 0 allocations made |
+| T2 | `test/debugger/test_tool_T2_monitor.sh` | `umemctl stats` shows `bufs_held` > 0 |
+| T7 | `test/debugger/test_tool_T7_learn_noaudit.sh` | `umemctl leaks` refuses with `requires UMEM_DEBUG=audit` |
+
+Not yet covered, each **regression not yet written**: T3, T4, T6, T8, T9,
+T10, T11, T12, T13, T14.
+
+How they were shown to behave: `verify-isolated.sh intel-lo@r6xf 639a071` =
+`639a071861e705e142b071a8127e2d3cc471bbb4`, Debian 13, `c7i.2xlarge`
+i-07e18cf6a4c65488b (terminated). Log:
+`docs/results/r6xf/tool-xfail-639a071-intel-lo.log`.
+
+1. `clean-regen.sh --enable-introspect`, full `make check`: `TOTAL 57, PASS
+   52, SKIP 2 (heap_ceiling, heap_ceiling_512), XFAIL 3, FAIL 0, XPASS 0,
+   ERROR 0`. T1: `alloc=0 free=0 (1800 allocations made)`. T2: `stats`
+   `bufs_held 4846`, `monitor --once` `bufs in-use 0`. T7: `leaks` refused;
+   `record --learn-leaks` printed `learn: requires UMEM_DEBUG=audit` and
+   `wrote leak set`, rc 0.
+2. Default build, `make check TESTS='<the three>'`: T1 XFAIL (same `alloc=0
+   free=0`), T2 and T7 SKIP (77, `built without --enable-introspect`); FAIL 0,
+   XPASS 0, ERROR 0.
+3. Harness-broken path (the override variable is in the scripts; pointing it
+   at a missing binary was done only for this run):
+   `TOOL_TARGET=/nonexistent/tool_target test_tool_T2_monitor.sh` -> rc 99;
+   `TOOL_EVENT_CB=/nonexistent/test_event_cb test_tool_T1_event_cb.sh` ->
+   rc 99.
+
 ## Next
 
 1. Runtime pass on a Debian EC2 box with `--enable-introspect`: run every

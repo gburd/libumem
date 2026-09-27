@@ -1,0 +1,130 @@
++ ./scripts/ec2/clean-regen.sh --enable-introspect
+REGEN_OK
+++ nproc
++ make -j8
+++ nproc
++ make -j8 check
++ echo CHECK1_RC=0
+CHECK1_RC=0
++ grep -E '^(# |PASS|FAIL|XFAIL|XPASS|ERROR|SKIP)' /tmp/c1.log
++ grep -Ev '^PASS'
+SKIP: test/integration/test_heap_ceiling_512.sh
+XFAIL: test/debugger/test_tool_T1_event_cb.sh
+XFAIL: test/debugger/test_tool_T2_monitor.sh
+XFAIL: test/debugger/test_tool_T7_learn_noaudit.sh
+SKIP: test/integration/test_heap_ceiling
+# TOTAL: 57
+# PASS:  52
+# SKIP:  2
+# XFAIL: 3
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
++ for t in test/debugger/test_tool_T1_event_cb.sh test/debugger/test_tool_T2_monitor.sh test/debugger/test_tool_T7_learn_noaudit.sh
++ echo '== test/debugger/test_tool_T1_event_cb.sh'
+== test/debugger/test_tool_T1_event_cb.sh
++ cat test/debugger/test_tool_T1_event_cb.log
+event callback hits: alloc=0 free=0 (1800 allocations made)
+FAIL: T1 umem_inspect_set_event_cb() callback never ran for alloc/free with events enabled
+T1 REPRODUCES: 1800 allocations, alloc callbacks=0 free=0
+XFAIL test/debugger/test_tool_T1_event_cb.sh (exit status: 1)
++ for t in test/debugger/test_tool_T1_event_cb.sh test/debugger/test_tool_T2_monitor.sh test/debugger/test_tool_T7_learn_noaudit.sh
++ echo '== test/debugger/test_tool_T2_monitor.sh'
+== test/debugger/test_tool_T2_monitor.sh
++ cat test/debugger/test_tool_T2_monitor.log
+pid 26062
+caches 68
+bufs_held 4846
+bufs_total 8468
+slab_create 157
+slab_destroy 0
+depot_contention 0
+rss_kb 6064
+libumem monitor  pid=26062  Sun Sep 27 05:30:33 2026
+=====================================================
+  caches            68
+  bufs in-use       0
+  bufs total        8468
+  slabs created     157
+  slabs destroyed   0
+  depot contention  0
+  RSS               6060 KiB
+
+  cache                           bufsize      inuse      total
+  ----------------------------------------------------------------
+  umem_magazine_1                      16         32        251
+  umem_magazine_3                      32          5        125
+  umem_magazine_7                      64          5         62
+  umem_magazine_127                  1024          9          9
+  umem_magazine_255                  2048          6          6
+  umem_slab_cache                      72        105        150
+  umem_bufctl_cache                    24       3714       3750
+  umem_ptc_cache                    24000          4          8
+  umem_va_4096                       4096          7       1024
+  umem_va_8192                       8192          2        512
+  umem_va_16384                     16384         40        768
+  umem_va_20480                     20480          7        204
+T2 REPRODUCES: monitor bufs in-use 0, stats bufs_held 4846
+XFAIL test/debugger/test_tool_T2_monitor.sh (exit status: 1)
++ for t in test/debugger/test_tool_T1_event_cb.sh test/debugger/test_tool_T2_monitor.sh test/debugger/test_tool_T7_learn_noaudit.sh
++ echo '== test/debugger/test_tool_T7_learn_noaudit.sh'
+== test/debugger/test_tool_T7_learn_noaudit.sh
++ cat test/debugger/test_tool_T7_learn_noaudit.log
+leaks: requires UMEM_DEBUG=audit
+umemctl: wrote leak set to /tmp/tmp.GDy5DTpXsw/leak.set
+learn: requires UMEM_DEBUG=audit
+rc=0
+T7 REPRODUCES: learn refused but umemctl rc=0 and claims a leak set
+XFAIL test/debugger/test_tool_T7_learn_noaudit.sh (exit status: 1)
++ echo '== 99 proof'
+== 99 proof
++ TOOL_TARGET=/nonexistent/tool_target
++ bash test/debugger/test_tool_T2_monitor.sh
+ERROR: /nonexistent/tool_target not built
++ echo T2_OVERRIDE_RC=99
+T2_OVERRIDE_RC=99
++ TOOL_EVENT_CB=/nonexistent/test_event_cb
++ bash test/debugger/test_tool_T1_event_cb.sh
+ERROR: /nonexistent/test_event_cb not built
++ echo T1_OVERRIDE_RC=99
+T1_OVERRIDE_RC=99
++ echo '== default build'
+== default build
++ ./scripts/ec2/clean-regen.sh
+REGEN_OK
+++ nproc
++ make -j8
++ make check 'TESTS=test/debugger/test_tool_T1_event_cb.sh test/debugger/test_tool_T2_monitor.sh test/debugger/test_tool_T7_learn_noaudit.sh'
++ echo CHECK2_RC=0
+CHECK2_RC=0
++ grep -E '^(# |PASS|FAIL|XFAIL|XPASS|ERROR|SKIP)' /tmp/c2.log
+XFAIL: test/debugger/test_tool_T1_event_cb.sh
+SKIP: test/debugger/test_tool_T2_monitor.sh
+SKIP: test/debugger/test_tool_T7_learn_noaudit.sh
+# TOTAL: 3
+# PASS:  0
+# SKIP:  2
+# XFAIL: 1
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
++ for t in test/debugger/test_tool_T1_event_cb.sh test/debugger/test_tool_T2_monitor.sh test/debugger/test_tool_T7_learn_noaudit.sh
++ echo '== test/debugger/test_tool_T1_event_cb.sh'
+== test/debugger/test_tool_T1_event_cb.sh
++ cat test/debugger/test_tool_T1_event_cb.log
+event callback hits: alloc=0 free=0 (1800 allocations made)
+FAIL: T1 umem_inspect_set_event_cb() callback never ran for alloc/free with events enabled
+T1 REPRODUCES: 1800 allocations, alloc callbacks=0 free=0
+XFAIL test/debugger/test_tool_T1_event_cb.sh (exit status: 1)
++ for t in test/debugger/test_tool_T1_event_cb.sh test/debugger/test_tool_T2_monitor.sh test/debugger/test_tool_T7_learn_noaudit.sh
++ echo '== test/debugger/test_tool_T2_monitor.sh'
+== test/debugger/test_tool_T2_monitor.sh
++ cat test/debugger/test_tool_T2_monitor.log
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T2_monitor.sh (exit status: 77)
++ for t in test/debugger/test_tool_T1_event_cb.sh test/debugger/test_tool_T2_monitor.sh test/debugger/test_tool_T7_learn_noaudit.sh
++ echo '== test/debugger/test_tool_T7_learn_noaudit.sh'
+== test/debugger/test_tool_T7_learn_noaudit.sh
++ cat test/debugger/test_tool_T7_learn_noaudit.log
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T7_learn_noaudit.sh (exit status: 77)
