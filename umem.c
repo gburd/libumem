@@ -3825,11 +3825,14 @@ retry:
 	 */
 #ifdef UMEM_BARN_PROBE
 	{
-		/* Racy unlocked reads: an estimate, as the probe comment says. */
+		/*
+		 * Racy unlocked reads: an estimate.  Only the umem_alloc_<N>
+		 * caches (which are UMC_INTERNAL, so name, not cflags).
+		 */
 		int held = cp->cache_full.ml_list != NULL;
 		for (int i = 0; !held && i < cp->cache_depot_ncpus; i++)
 			held = cp->cache_depot_full[i].ml_list != NULL;
-		if (!(cp->cache_cflags & UMC_INTERNAL)) {
+		if (strncmp(cp->cache_name, "umem_alloc_", 11) == 0) {
 			UMEM_BARN_ADD(umem_barn_miss_slab, 1);
 			if (held)
 				UMEM_BARN_ADD(umem_barn_miss_slab_depot, 1);
