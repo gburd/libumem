@@ -406,3 +406,21 @@ The rseq layer is not what brings the tail under 85 us. It adds a further
 w0-w2 spread about ±10 %, so the throughput difference is within about one
 spread and is not claimed as significant either way. The run order was not
 alternated (on, then off), so drift is not controlled for.
+
+## Metal, intel-hi: ASan gate + t=1 / t=192 A/B (fix, 3b82b59 = 66fd33b + scripts)
+
+`docs/results/r5fix/masan-intel-hi.log`. The 192t/60s mixed/all oracle under
+`--enable-asan` PASSED: 972,884,666 allocs, 0 failures, no ASan report.
+
+`bench_main -w multi -s 16:256`, same binary, rseq on vs `UMEM_OPTIONS=norseq`,
+alternating on/off, 5 runs each, medians:
+
+| | ops/s ON | ops/s norseq | p50 / p90 / p99 / p999 ON (ns) | norseq (ns) |
+|---|---:|---:|---|---|
+| t=1 (20 M ops) | 7,197,211 | 7,088,259 | 21 / 22 / 23 / 25 | 21 / 22 / 34 / 36 |
+| t=192 (96 M ops) | 256,965,460 | 259,344,872 | 31 / 50 / 190 / 409 | 31 / 48 / 192 / 416 |
+
+At t=1, rseq on is not slower (+1.5 % ops/s, within run spread) and its tail
+is lower (p99 23 vs 34 ns). At t=192 the two are equal within noise (-0.9 %
+ops/s, p999 409 vs 416 ns). Neither arm regresses the other.
+intel-hi terminated immediately after this job (i-0ef9c16cf90ea208d).
