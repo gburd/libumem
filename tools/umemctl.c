@@ -353,20 +353,44 @@ main(int argc, char **argv)
 		stream(sock, NULL);
 	} else if (strcmp(cmd, "record") == 0) {
 		if (argc > 4 && strcmp(argv[3], "--learn-leaks") == 0) {
-			/* phase 1: dump leak signatures to the set file */
-			FILE *out = fopen(argv[4], "w");
+			/*
+			 * phase 1: dump leak signatures to the set file.  The
+			 * file is opened only once the reply is known not to be
+			 * a refusal ("learn: requires UMEM_DEBUG=audit"), so a
+			 * refused learn neither truncates <set> nor exits 0.
+			 */
+			FILE *out = NULL;
 			char line[512];
-			if (out == NULL) {
-				perror("fopen");
-				return (1);
-			}
+			int refused = 0;
 			fprintf(sock, "learn\n");
 			fflush(sock);
 			while (fgets(line, sizeof (line), sock) != NULL) {
 				if (strcmp(line, ".\n") == 0)
 					break;
+				if (strncmp(line, "sig ", 4) != 0) {
+					fputs(line, stderr);
+					refused = 1;
+					continue;
+				}
+				if (out == NULL &&
+				    (out = fopen(argv[4], "w")) == NULL) {
+					perror("fopen");
+					return (1);
+				}
 				fputs(line, out);
 				fputs(line, stdout);
+			}
+			if (refused) {
+				if (out != NULL)
+					fclose(out);
+				fprintf(stderr, "umemctl: learn refused; "
+				    "no leak set written\n");
+				fclose(sock);
+				return (1);
+			}
+			if (out == NULL && (out = fopen(argv[4], "w")) == NULL) {
+				perror("fopen");
+				return (1);
 			}
 			fclose(out);
 			fprintf(stderr, "umemctl: wrote leak set to %s\n",
