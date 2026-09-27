@@ -605,6 +605,16 @@ cleanup:
  *     digest pointer is non-NULL while a worker is still recording.
  *   - Workers poll between operations, never inside a timed alloc/free, so
  *     the poll costs every allocator the same and is not in any latency.
+ *   - No harness allocation happens while intervals run.  Every digest a
+ *     worker will ever record into (one per interval) and the driver's merge
+ *     digests are allocated BEFORE the start barrier; the driver resets a
+ *     merged digest instead of freeing it, and all are freed after the join.
+ *     The first version td_free()'d each worker's digest in the driver as it
+ *     merged it: at 384 threads on 8 vCPUs the driver then queued on 384
+ *     busy glibc arena locks (gdb: iv_drive -> td_free -> _int_free_chunk ->
+ *     __lll_lock_wait_private) and a 10 s libc frag interval took 40-67 s;
+ *     it also put harness frees on the libc arm's own arenas, which is a
+ *     cross-arm confound whatever the thread count.
  */
 typedef struct {
     _Alignas(64) atomic_int iv;
@@ -612,7 +622,9 @@ typedef struct {
 } iv_clock_t;
 
 typedef struct {
-    _Atomic(td_histogram_t *) hist;
+    _Atomic(td_histogram_t *) hist; /* published digest (NULL until then) */
+    td_histogram_t *spare;          /* preallocated: this worker records
+                                     * interval k+1 into slot[k+1].spare */
     uint64_t ops;
     uint64_t failures;
     size_t bytes;
@@ -624,6 +636,28 @@ typedef struct {
     int mine;               /* interval this worker is accumulating into */
 } iv_worker_t;
 
+/* nworkers x n slots, each with its interval digest preallocated (slot 0's
+ * spare is handed to the worker as its first digest by the caller).  Aborts
+ * on failure: a harness that cannot build its own bookkeeping measures
+ * nothing. */
+static iv_slot_t *iv_slots_new(int nworkers, int n) {
+    iv_slot_t *s = calloc((size_t)nworkers * (size_t)n, sizeof(*s));
+    if (!s) abort();
+    for (size_t i = 0; i < (size_t)nworkers * (size_t)n; i++)
+        if (td_init(100.0, &s[i].spare) != 0) abort();
+    return s;
+}
+
+/* After every worker has been joined: each digest is freed exactly once --
+ * published ones were reset (not freed) by the driver, unpublished ones
+ * (a worker that never started) are still only in .spare. */
+static void iv_slots_free(iv_slot_t *s, int nworkers, int n) {
+    if (!s) return;
+    for (size_t i = 0; i < (size_t)nworkers * (size_t)n; i++)
+        td_free(s[i].spare);
+    free(s);
+}
+
 /* Returns 1 while recording, 0 once this worker has published its last
  * interval (the caller stops recording and winds down). */
 static int iv_poll(iv_worker_t *w, td_histogram_t **hist, uint64_t *ops,
@@ -634,12 +668,9 @@ static int iv_poll(iv_worker_t *w, td_histogram_t **hist, uint64_t *ops,
         td_histogram_t *h = *hist;
         s->ops = *ops; s->failures = *failures; s->bytes = *bytes;
         *ops = 0; *failures = 0; *bytes = 0;
-        *hist = NULL;
         w->mine++;
-        if (w->mine < w->clock->n && td_init(100.0, hist) != 0) {
-            fprintf(stderr, "bench: tdigest init failed (interval mode)\n");
-            abort();
-        }
+        /* Next interval's digest was preallocated (see iv_clock_t). */
+        *hist = w->mine < w->clock->n ? w->slots[w->mine].spare : NULL;
         atomic_store_explicit(&s->hist, h, memory_order_release);
     }
     return w->mine < w->clock->n;
@@ -880,16 +911,16 @@ void workload_producer_consumer(allocator_ops_t *ops,
     iv_slot_t *slots = NULL;
     unsigned char *pc_started = NULL;
     if (clk.n > 0) {
-        slots = calloc((size_t)total * (size_t)clk.n, sizeof(*slots));
+        slots = iv_slots_new(total, clk.n);
         pc_started = calloc((size_t)total, 1);
-        if (!slots || !pc_started) {
-            free(slots); free(pc_started);
-            goto cleanup;
-        }
+        if (!pc_started) abort();
         for (int i = 0; i < total; i++) {
             contexts[i].iv.clock = &clk;
             contexts[i].iv.slots = &slots[(size_t)i * (size_t)clk.n];
             contexts[i].iv.mine = 0;
+            /* Record into the preallocated slot-0 digest (see iv_clock_t). */
+            td_free(contexts[i].latency_hist);
+            contexts[i].latency_hist = contexts[i].iv.slots[0].spare;
         }
     }
 
@@ -937,7 +968,12 @@ void workload_producer_consumer(allocator_ops_t *ops,
         pthread_join(threads[i], NULL);
     }
     uint64_t end = bench_get_ns();
-    free(slots);
+    if (slots) {
+        /* The workers' current digests are slot spares: freed below. */
+        for (int i = 0; i < total; i++)
+            contexts[i].latency_hist = NULL;
+        iv_slots_free(slots, total, clk.n);
+    }
     free(pc_started);
 
     /* Aggregate */
@@ -1302,12 +1338,7 @@ void workload_fragmentation(allocator_ops_t *ops,
     atomic_init(&iv_clk.iv, 0);
     iv_slot_t *iv_slots = NULL;
     if (iv_clk.n > 0) {
-        iv_slots = calloc((size_t)nthreads * (size_t)iv_clk.n,
-                          sizeof(*iv_slots));
-        if (!iv_slots) {
-            fprintf(stderr, "bench: interval slot allocation failed\n");
-            abort();
-        }
+        iv_slots = iv_slots_new(nthreads, iv_clk.n);
     }
 
     for (int i = 0; i < nthreads; i++) {
@@ -1324,7 +1355,10 @@ void workload_fragmentation(allocator_ops_t *ops,
         ctxs[i].peak_lock = &peak_lock;
         ctxs[i].series = series;
         ctxs[i].start_barrier = &start_barrier;
-        if (td_init(100.0, &ctxs[i].hist) != 0) {
+        if (iv_clk.n > 0) {
+            /* Record into the preallocated slot-0 digest (see iv_clock_t). */
+            ctxs[i].hist = ctxs[i].iv.slots[0].spare;
+        } else if (td_init(100.0, &ctxs[i].hist) != 0) {
             fprintf(stderr, "bench: frag tdigest init failed (thread %d)\n", i);
             ctxs[i].hist = NULL;
             break;
@@ -1359,7 +1393,12 @@ void workload_fragmentation(allocator_ops_t *ops,
     for (int i = 0; i < started; i++)
         pthread_join(threads[i], NULL);
     uint64_t end = bench_get_ns();
-    free(iv_slots);
+    if (iv_slots) {
+        /* The workers' current digests are slot spares: freed below. */
+        for (int i = 0; i < nthreads; i++)
+            ctxs[i].hist = NULL;
+        iv_slots_free(iv_slots, nthreads, iv_clk.n);
+    }
 
     td_histogram_t *combined = NULL;
     uint64_t total_ops = 0;
@@ -1570,6 +1609,7 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
      * worker to merge for it.  col <= cur always; rows complete in order. */
     int cur = 0, col = 0, cursor = 0;
     td_histogram_t *comb = NULL;
+    if (td_init(100.0, &comb) != 0) abort();   /* reused; see iv_clock_t */
     size_t rss_max = 0;
     if (series) { series->n = 0; series->dropped = 0; }
     uint64_t t_start = bench_get_ns(), t_end = t_start + period;
@@ -1606,10 +1646,6 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
          * operation took 12.7 s; a blocking collect lost that interval's
          * samples and stretched it to 11.7 s of a 10 s target.) */
         while (col < cur) {
-            if (!comb && td_init(100.0, &comb) != 0) {
-                fprintf(stderr, "bench: tdigest init failed (interval driver)\n");
-                abort();
-            }
             bench_stats_t *st = &cfg->interval_out[col];
             for (; cursor < nworkers; cursor++) {
                 if (!started[cursor]) continue;
@@ -1618,15 +1654,14 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
                     atomic_load_explicit(&s->hist, memory_order_acquire);
                 if (h == NULL) break;
                 td_merge(comb, h);
-                td_free(h);
+                td_reset(h);   /* freed with its slot after the join */
                 st->total_operations += s->ops;
                 st->alloc_failures += s->failures;
                 st->bytes_allocated += s->bytes;
             }
             if (cursor < nworkers) break;
             iv_finish(cfg, col, comb, nstarted);
-            td_free(comb);
-            comb = NULL;
+            td_reset(comb);
             col++;
             cursor = 0;
         }
@@ -1642,6 +1677,7 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
         if (cur < n)
             iv_sample(&rss_max, live, series);
     }
+    td_free(comb);
 }
 
 /* Run a benchmark once (no warm-up discard, no repeats). */
