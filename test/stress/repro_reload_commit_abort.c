@@ -153,10 +153,10 @@ main(int argc, char **argv)
 {
 	/*
 	 * Default 2,000,000 iterations per side: what scripts/ec2/p85b_fix_*.sh
-	 * gates with, ~50 s on an 8-vCPU box under the 5 us storm.  The earlier
-	 * default (20,000,000) took well over 5 minutes there and a release
-	 * script's per-test timeout killed it (2026-09-27, not a failure).  Pass
-	 * a larger count explicitly for a longer soak.
+	 * gates with, ~1 s on an 8-vCPU box at the 10 us storm below.  The
+	 * earlier default (20,000,000 at 5 us) hit a release script's per-test
+	 * timeout; the storm interval, not the count, was the cause (see
+	 * below).  Pass a larger count explicitly for a longer soak.
 	 */
 	long iters = argc > 1 ? atol(argv[1]) : 2000000;
 	/*
