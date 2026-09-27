@@ -963,7 +963,6 @@ TESTS += test/debugger/test_tool_T1_event_cb.sh \
 	test/debugger/test_tool_T14_lldb_status.sh
 
 XFAIL_TESTS = test/debugger/test_tool_T1_event_cb.sh # T1
-XFAIL_TESTS += test/debugger/test_tool_T13_gdb_error_code.sh # T13
 XFAIL_TESTS += test/debugger/test_tool_T14_lldb_status.sh # T14
 
 # P5.8: forges a malloc header and asserts free() refuses it without mutating

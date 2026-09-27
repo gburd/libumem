@@ -391,7 +391,12 @@ Inside the breakpoint you have live access to `buf`, `size`, and
             elif a in ("-a", "--addr") and args:
                 addr = args.pop(0)
             elif a in ("-c", "--cache") and args:
-                cache = args.pop(0)
+                # -c is the error code for `error`, the cache otherwise
+                # (same as the lldb helper).
+                if ev == "error":
+                    code = int(args.pop(0), 0)
+                else:
+                    cache = args.pop(0)
             else:
                 raise gdb.GdbError("unknown arg: {}".format(a))
 
