@@ -272,6 +272,7 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 	uintptr_t fp_ceiling, stk_lo = 0, stk_hi = 0;
 	int have_bounds;
 	int depth = 0;
+	uintptr_t first_internal = 0;
 
 	if (check_sigthread)
 		return (0);		/* not safe from a signal handler */
@@ -298,12 +299,22 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 		/* return address; leading libumem frames are dropped */
 		if (depth > 0 || !umem_pc_internal(fp[1]))
 			pcstack[depth++] = fp[1];
+		else if (first_internal == 0)
+			first_internal = fp[1];
 
 		/* stack grows down: a valid caller frame is at a higher address */
 		if (nextfp <= fp)
 			break;
 		fp = nextfp;
 	}
+
+	/*
+	 * The walk never left libumem (x86_64 without --enable-frame-pointers:
+	 * %rbp holds data after the first frame).  Keep that one frame rather
+	 * than an empty stack; findleaks/leaks print why it is only one.
+	 */
+	if (depth == 0 && first_internal != 0 && pcstack_limit > 0)
+		pcstack[depth++] = first_internal;
 
 	return (depth);
 }
@@ -325,6 +336,8 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 	uintptr_t fp_ceiling, stk_lo = 0, stk_hi = 0;
 	int have_bounds;
 	int depth = 0;
+
+	uintptr_t first_internal = 0;
 
 	if (check_sigthread) {
 		/* Skip if in signal handler - not safe */
@@ -363,8 +376,10 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 
 		/* return_address = *(fp + 1) (at [fp + 8]); leading libumem
 		 * frames are dropped */
-		if (depth < pcstack_limit &&
-		    (depth > 0 || !umem_pc_internal(*(fp + 1)))) {
+		if (depth == 0 && umem_pc_internal(*(fp + 1))) {
+			if (first_internal == 0)
+				first_internal = *(fp + 1);
+		} else if (depth < pcstack_limit) {
 			pcstack[depth] = *(fp + 1);
 			depth++;
 		}
@@ -376,6 +391,14 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 
 		fp = nextfp;
 	}
+
+	/*
+	 * The walk never left libumem (x86_64 without --enable-frame-pointers:
+	 * %rbp holds data after the first frame).  Keep that one frame rather
+	 * than an empty stack; findleaks/leaks print why it is only one.
+	 */
+	if (depth == 0 && first_internal != 0 && pcstack_limit > 0)
+		pcstack[depth++] = first_internal;
 
 	return (depth);
 }
