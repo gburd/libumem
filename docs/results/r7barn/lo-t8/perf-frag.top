@@ -1,0 +1,14 @@
+    39.20%  [.] frag_worker                                -      -            
+    14.98%  [.] umem_free_wrapper                          -      -            
+    10.27%  [.] __vdso_clock_gettime                       -      -            
+     9.24%  [.] td_qsort                                   -      -            
+     4.56%  [.] umem_alloc_wrapper                         -      -            
+     3.18%  [.] __memset_avx512_unaligned_erms             -      -            
+     3.00%  [.] td_add                                     -      -            
+     2.55%  [.] umem_rseq_alloc_fastpath                   -      -            
+     2.48%  [.] __ieee754_log_fma                          -      -            
+     2.15%  [.] _umem_alloc                                -      -            
+     1.82%  [.] _umem_free                                 -      -            
+     1.79%  [.] td_compress                                -      -            
+     1.66%  [.] umem_rseq_free_fastpath                    -      -            
+     0.37%  [.] iv_poll                                    -      -            

@@ -1,0 +1,2 @@
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.559 MB /home/admin/r7b-out/lo-t8/perf-frag.data (79954 samples) ]

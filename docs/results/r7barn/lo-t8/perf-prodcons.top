@@ -1,0 +1,16 @@
+    36.17%  [.] producer_thread                            -      -            
+    31.90%  [.] ring_pop                                   -      -            
+     7.37%  [.] __vdso_clock_gettime                       -      -            
+     6.08%  [.] td_qsort                                   -      -            
+     5.03%  [.] umem_free_wrapper                          -      -            
+     1.75%  [.] umem_rseq_alloc_fastpath                   -      -            
+     1.69%  [.] __ieee754_log_fma                          -      -            
+     1.63%  [.] umem_rseq_free_fastpath                    -      -            
+     1.23%  [.] td_compress                                -      -            
+     1.05%  [.] td_add                                     -      -            
+     0.75%  [.] _umem_alloc                                -      -            
+     0.73%  [.] _umem_free                                 -      -            
+     0.71%  [.] iv_poll                                    -      -            
+     0.67%  [.] __memset_avx512_unaligned_erms             -      -            
+     0.52%  [.] consumer_thread                            -      -            
+     0.44%  [.] umem_alloc_wrapper                         -      -            

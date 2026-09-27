@@ -1,0 +1,2 @@
+[ perf record: Woken up 21 times to write data ]
+[ perf record: Captured and wrote 5.817 MB /home/admin/r7b-out/lo-t8/perf-prodcons.data (79877 samples) ]

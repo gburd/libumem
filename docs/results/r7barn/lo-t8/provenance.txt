@@ -1,0 +1,9 @@
+sha=f93672a78b997a31b4c6952ae000ff619d92b19f
+Linux ip-172-31-18-39 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64 GNU/Linux
+8
+
+Debian GNU/Linux 13 (trixie)
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+4f643bf44aac0851bf6f1643989a85f59de168513b711a0cf27651ef676dbca9  /home/admin/libumem-iso-build2-f93672a78b99-probe/.libs/libumem.so
+b5d91e5e9c60c732ffe5a0b99541b9d0a6657497483b12de2a711fa5f38de6e2  /home/admin/libumem-iso-build2-f93672a78b99/.libs/libumem.so
