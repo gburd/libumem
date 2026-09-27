@@ -103,7 +103,11 @@ def _call_library(debugger, result, expr):
         # tmpfile pointer through (void *) -> the inferior's FILE *.
         full = expr.replace("$OUT$", "((struct _IO_FILE *) {})".format(fp))
         v = _evaluate(debugger, full)
-        if v.GetError() is not None and v.GetError().Fail():
+        err = v.GetError()
+        # A (void) call has no result, which lldb reports as Fail() with
+        # code 0x1001 (kNoResult, "unknown error").  That is success here;
+        # every other failure is still reported.
+        if err is not None and err.Fail() and err.GetError() != 0x1001:
             result.SetError(
                 "library call failed: " + str(v.GetError())
             )
