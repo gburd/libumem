@@ -1,0 +1,6 @@
+ref=38ec14137769a12dd493930d040b5748faabdbe9
+  calibrate umem prodcons: would need total_n=281921076 (~60s/window, from 4.08625s @ 19200000; floor 19200000)
+  calibrate umem frag: would need total_n=407702462 (~60s/window, from 2.82559s @ 19200000; floor 19200000)
+  umem         prodcons-sustained w=0  ops=563841984 mops=  11.215 p99=      302 p999=       776 rss@peak=87605248
+  CRASH: umem frag rc=137 (window not recorded)
+WINDOW prodcons-sustained threads 192 ops 563841984 elapsed_sec=50.3 target=60

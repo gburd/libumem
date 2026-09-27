@@ -1,0 +1,12 @@
+ref=bd12c8d9d50bb2e6a4e1a3aaa813c533eac56dc0
+run 1 rc=0
+run 2 rc=0
+run 3 rc=0
+interval mode: one 0.7 s operation in 0.3 s intervals
+   interval 0: 0.300 s ops=2836821 rss=19464192 samples=3
+   interval 1: 0.300 s ops=2904523 rss=19542016 samples=3
+   interval 2: 0.300 s ops=3178855 rss=22630400 samples=3
+   interval 3: 0.300 s ops=3449335 rss=22663168 samples=3
+   interval 4: 0.300 s ops=3443005 rss=22687744 samples=3
+
+Result: PASS (0 failures)

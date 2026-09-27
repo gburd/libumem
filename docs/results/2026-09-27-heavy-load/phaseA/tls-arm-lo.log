@@ -1,0 +1,46 @@
+glibc.rtld.optional_static_tls=8388608   ulimit-s=8192   umem     /tmp/tls.sh: line 5: 24609 Segmentation fault      GLIBC_TUNABLES="$1" $B -a $3 -w prodcons -t 16 -n 2000000 -s 64:256 -c > /dev/null 2>&1
+rc=139
+glibc.rtld.optional_static_tls=8388608   ulimit-s=16384  umem     rc=0
+glibc.rtld.optional_static_tls=65536     ulimit-s=8192   umem     rc=0
+glibc.rtld.optional_static_tls=8388608   ulimit-s=8192   jemalloc /tmp/tls.sh: line 5: 24665 Segmentation fault      GLIBC_TUNABLES="$1" $B -a $3 -w prodcons -t 16 -n 2000000 -s 64:256 -c > /dev/null 2>&1
+rc=139
+glibc.rtld.optional_static_tls=8388608   ulimit-s=16384  jemalloc rc=0
+glibc.rtld.optional_static_tls=65536     ulimit-s=8192   jemalloc rc=0
+glibc.rtld.optional_static_tls=8388608   ulimit-s=8192   libc     rc=0
+glibc.rtld.optional_static_tls=8388608   ulimit-s=16384  libc     rc=0
+glibc.rtld.optional_static_tls=65536     ulimit-s=8192   libc     rc=0
+stack probe tls=65536 ulimit=8192:   thread stack=8388608 B usable_below_sp=8317599 B
+stack probe tls=65536 ulimit=16384:   thread stack=16777216 B usable_below_sp=16706207 B
+stack probe tls=8388608 ulimit=8192:   thread stack=8396800 B usable_below_sp=2719 B
+stack probe tls=8388608 ulimit=16384:   thread stack=16777216 B usable_below_sp=8383135 B
+=== gdb bt jemalloc crash
+----- Backtrace -----
+0xaaaad1db150b ???
+0xaaaad1edea27 ???
+0xaaaad1edec53 ???
+0xffff91518807 ???
+0xaaaad1e35908 ???
+0xaaaad1e39b97 ???
+0xaaaad1e3fc97 ???
+0xaaaad1dd40f3 ???
+0xaaaad1e6444b ???
+0xaaaad1e65797 ???
+0xaaaad1e65bc7 ???
+0xffff901fb70b __pthread_once_slow
+	./nptl/pthread_once.c:116
+0xffff901fb7c3 ___pthread_once
+	./nptl/pthread_once.c:143
+0xaaaad2377c3f ???
+0xffff904fb4df ???
+0xffff901f61d7 start_thread
+	./nptl/pthread_create.c:448
+0xffff9025e15b thread_start
+	../sysdeps/unix/sysv/linux/aarch64/clone3.S:79
+0xffffffffffffffff ???
+---------------------
+A fatal error internal to GDB has been detected, further
+debugging is not possible.  GDB will now terminate.
+
+This is a bug, please report it.  For instructions, see:
+<https://www.gnu.org/software/gdb/bugs/>.
+

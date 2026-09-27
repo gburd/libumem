@@ -1,0 +1,101 @@
+build=1
+Result: PASS (0 failures)
+=== calibration check: SUSTAINED_SEC=20 windows mode, t=16 (floor-bound), umem only, 1 window
+  sha=ec1c98d3cc9d5b03c0aa6235dcc87aef41ee3075 (ISOLATED_PROVENANCE) -> docs/results/2026-09-27-c7i.2xlarge-x86_64/cal.toml
+  calibrate umem prodcons: would need total_n=96822058 (~20s/window, from 0.413129s @ 2000000; floor 1600000)
+  -> prodcons: ALL allocators get total_n=96822058 (matched work; windows will
+  calibrate umem frag: would need total_n=131002364 (~20s/window, from 0.305338s @ 2000000; floor 1600000)
+  -> frag: ALL allocators get total_n=131002364 (matched work; windows will
+  umem         prodcons-sustained w=0  ops=193644112 mops=  10.536 p99=      290 p999=       752 rss@peak=19640320
+  umem         frag-sustained     w=0  ops=249210859 mops=   9.927 p99=     4440 p999=    153745 rss@peak=7410376704
+done: umem -> docs/results/2026-09-27-c7i.2xlarge-x86_64/cal.toml
+  window prodcons-sustained elapsed_sec=18.4 target=20
+  window frag-sustained elapsed_sec=25.1 target=20
+=== heavy_load_compare continuous, tiny: 3s x (1 warm + 2 measured), t=16
+=== heavy-load comparison ===
+allocators   : umem,libc,jemalloc,umem@null
+workloads    : prodcons 64:256, frag 64:256
+threads      : 16  (box has 8 online)
+per run      : 1 + 2 intervals x 3s in ONE process
+             = 0 min, first 0 min dropped
+total        : 8 runs = ~1 min
+numa         :
+  available: 1 nodes (0)
+  node 0 cpus: 0 1 2 3 4 5 6 7
+  node 0 size: 15714 MB
+  node 0 free: 12856 MB
+  node distances:
+  node     0 
+     0:   10 
+jemalloc     : /lib/x86_64-linux-gnu/libjemalloc.so.2
+preflight    : every arm loads and runs prodcons + frag at t=16
+sustained load (continuous): allocators=umem libc jemalloc umem@null threads=16
+  per run: 3 x 3s, first 1 discarded; frag pool 25000/thread
+  sha=ec1c98d3cc9d5b03c0aa6235dcc87aef41ee3075 (ISOLATED_PROVENANCE) -> docs/results/2026-09-27-c7i.2xlarge-x86_64/hlc-tiny.toml
+  run umem prodcons: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:09:54Z)
+  umem         prodcons-sustained w=0  ops=32170037  mops=  10.723 p99=      274 p999=       747 rss@peak=18776064
+  umem         prodcons-sustained w=1  ops=32073507  mops=  10.691 p99=      274 p999=       743 rss@peak=19001344
+  run libc prodcons: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:10:03Z)
+  libc         prodcons-sustained w=0  ops=22741426  mops=   7.580 p99=    21275 p999=     75829 rss@peak=14282752
+  libc         prodcons-sustained w=1  ops=22907115  mops=   7.635 p99=    21164 p999=     75493 rss@peak=14733312
+  run jemalloc prodcons: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:10:12Z)
+  jemalloc     prodcons-sustained w=0  ops=47676161  mops=  15.891 p99=      827 p999=      1674 rss@peak=15880192
+  jemalloc     prodcons-sustained w=1  ops=40759449  mops=  13.586 p99=      997 p999=      2360 rss@peak=18669568
+  run umem@null prodcons: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:10:21Z)
+  umem@null    prodcons-sustained w=0  ops=24088528  mops=   8.029 p99=      282 p999=       839 rss@peak=18870272
+  umem@null    prodcons-sustained w=1  ops=26838064  mops=   8.946 p99=      273 p999=       810 rss@peak=19148800
+  run umem frag: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:10:30Z)
+  umem         frag-sustained     w=0  ops=64914783  mops=  21.637 p99=      421 p999=       632 rss@peak=96018432
+  umem         frag-sustained     w=1  ops=64811966  mops=  21.603 p99=      422 p999=       642 rss@peak=96190464
+  run libc frag: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:10:39Z)
+  libc         frag-sustained     w=0  ops=58289071  mops=  19.404 p99=      856 p999=      1296 rss@peak=87568384
+  libc         frag-sustained     w=1  ops=58598821  mops=  19.532 p99=      851 p999=      1294 rss@peak=87793664
+  run jemalloc frag: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:10:48Z)
+  jemalloc     frag-sustained     w=0  ops=87751852  mops=  29.212 p99=      296 p999=       687 rss@peak=89026560
+  jemalloc     frag-sustained     w=1  ops=87678197  mops=  29.225 p99=      292 p999=       686 rss@peak=89112576
+  run umem@null frag: 3 x 3s in one process, first 1 discarded (start 2026-09-27T05:10:57Z)
+  umem@null    frag-sustained     w=0  ops=72074601  mops=  23.993 p99=      418 p999=       630 rss@peak=95285248
+  umem@null    frag-sustained     w=1  ops=72091411  mops=  23.999 p99=      420 p999=       631 rss@peak=96018432
+done: umem libc jemalloc umem@null -> docs/results/2026-09-27-c7i.2xlarge-x86_64/hlc-tiny.toml
+HLC rc=0
+## docs/results/2026-09-27-c7i.2xlarge-x86_64/hlc-tiny.toml
+c7i.2xlarge x86_64 threads=16 sha=ec1c98d3cc9d mode=continuous tunables=glibc.rtld.optional_static_tls=65536 stack=8319103
+| workload | allocator | Mops/s med | min / max | p50 | p99 | p999 (ns, med) | peak RSS MB |
+|---|---|---:|---|---:|---:|---:|---:|
+| frag-sustained | jemalloc | 29.218 | 29.212 / 29.225 | 37 | 294 | 686 | 85 |
+| frag-sustained | libc | 19.468 | 19.404 / 19.532 | 142 | 854 | 1295 | 84 |
+| frag-sustained | umem | 21.620 | 21.603 / 21.637 | 94 | 422 | 637 | 92 |
+| frag-sustained | umem@null | 23.996 | 23.993 / 23.999 | 94 | 419 | 630 | 92 |
+| prodcons-sustained | jemalloc | 14.739 | 13.586 / 15.891 | 98 | 912 | 2017 | 18 |
+| prodcons-sustained | libc | 7.608 | 7.580 / 7.635 | 221 | 21220 | 75661 | 14 |
+| prodcons-sustained | umem | 10.707 | 10.691 / 10.723 | 114 | 274 | 745 | 18 |
+| prodcons-sustained | umem@null | 8.487 | 8.029 / 8.946 | 110 | 278 | 824 | 18 |
+null frag-sustained: mops 11.0%, p50 1.1%, p99 0.6%, p999 1.0%, rss 0.1%
+null prodcons-sustained: mops 20.7%, p50 3.5%, p99 1.3%, p999 10.7%, rss 0.8%
+RESULT: PASS (0 invariant failures)
+SUM rc=0
+glibc_tunables = "glibc.rtld.optional_static_tls=65536"
+umem_options = ""
+config_h_rseq = "#define HAVE_LINUX_RSEQ_H 1"
+os_release = "Debian GNU/Linux 13 (trixie) (13.7)"
+kernel = "6.12.107+deb13-cloud-amd64"
+numa_nodes = 1
+thread_stack_usable_bytes = 8319103
+mode = "continuous"
+[allocator_identity."jemalloc"]
+path = "/lib/x86_64-linux-gnu/libjemalloc.so.2 (dlopen, via ld.so cache)"
+realpath = "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
+digest = "51952ffe97354b56197c9b765582023d435cfbe1930b0c03b778bdb5faa1fff5"
+package = "libjemalloc2 5.3.0-3 amd64"
+
+[allocator_identity."umem@null"]
+hlc-tiny.jemalloc.frag.csv
+hlc-tiny.jemalloc.prodcons.csv
+hlc-tiny.libc.frag.csv
+hlc-tiny.libc.prodcons.csv
+hlc-tiny.toml
+hlc-tiny.toml.log
+hlc-tiny.umem-null.frag.csv
+hlc-tiny.umem-null.prodcons.csv
+hlc-tiny.umem.frag.csv
+hlc-tiny.umem.prodcons.csv

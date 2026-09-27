@@ -1,0 +1,112 @@
+=== provenance
+Linux ip-172-31-21-4 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64 GNU/Linux
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+libc6:amd64	2.41-12+deb13u4
+libjemalloc2:amd64	5.3.0-3
+13.7
+8192
+1048576
+always madvise [never]
+0
+available: 1 nodes (0)
+node 0 cpus: 0 1 2 3 4 5 6 7
+node 0 size: 15714 MB
+node 0 free: 13124 MB
+	libjemalloc.so.2 (libc6,x86-64) => /lib/x86_64-linux-gnu/libjemalloc.so.2
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x0c7500 0x00000000000c8500 0x00000000000c8500 0x000a48 0x000a48 R   0x8
+ 0x000000000000001e (FLAGS)              STATIC_TLS
+=== build
+/tmp/cfg.log:configure: RSEQ support enabled (auto-detected)
+/tmp/cfg.log:  RSEQ support:     yes
+config.log:configure:15371: RSEQ support enabled (auto-detected)
+=== stack probe
+GLIBC_TUNABLES=''
+  thread stack=8388608 B usable_below_sp=8384127 B
+  dlopen: /lib/x86_64-linux-gnu/libjemalloc.so.2: cannot allocate memory in static TLS block
+  bench umem    : umem,producer-consumer,16,4000000,250000,0.422841,9459814.87,28,97,175,420,1536,
+ rc=0
+  bench libc    : libc,producer-consumer,16,4000000,250000,0.538039,7434401.13,25,226,1762,22104,7
+ rc=0
+  bench jemalloc:  rc=0
+GLIBC_TUNABLES='glibc.rtld.optional_static_tls=65536'
+  thread stack=8388608 B usable_below_sp=8319103 B
+  dlopen: ok
+  bench umem    : umem,producer-consumer,16,4000000,250000,0.394752,10132933.58,29,97,176,388,1431
+ rc=0
+  bench libc    : libc,producer-consumer,16,4000000,250000,0.522912,7649470.61,25,221,1198,20698,7
+ rc=0
+  bench jemalloc: jemalloc,producer-consumer,16,4000000,250000,0.316113,12653722.60,24,96,327,818,
+ rc=0
+GLIBC_TUNABLES='glibc.rtld.optional_static_tls=8388608'
+  thread stack=8400896 B usable_below_sp=8319 B
+  dlopen: ok
+  bench umem    : umem,producer-consumer,16,4000000,250000,0.400724,9981933.75,28,95,171,407,1386,
+ rc=0
+  bench libc    : libc,producer-consumer,16,4000000,250000,0.533669,7495279.47,25,225,1212,21079,8
+ rc=0
+  bench jemalloc: jemalloc,producer-consumer,16,4000000,250000,0.334895,11944043.70,24,91,293,765,
+ rc=0
+=== heavy_load_compare as shipped (tiny)
+=== heavy-load comparison ===
+allocators   : umem,libc,jemalloc,umem@null
+workloads    : prodcons + frag (both, per sustained_load.sh)
+threads      : 16  (box has 8 online)
+per alloc/wl : 1 warmup + 2 measured x 5s
+             = 0 min, first 0 min discarded
+numa         :
+  available: 1 nodes (0)
+  node 0 cpus: 0 1 2 3 4 5 6 7
+  node 0 size: 15714 MB
+  node 0 free: 13060 MB
+  node distances:
+  node     0 
+jemalloc     : /lib/x86_64-linux-gnu/libjemalloc.so.2
+sustained load: allocators=umem libc jemalloc umem@null threads=16
+  windows=2 x ~5s each, interleaved; warmups=1
+  sha=ec1c98d3cc9d5b03c0aa6235dcc87aef41ee3075 (ISOLATED_PROVENANCE) -> docs/results/2026-09-27-c7i.2xlarge-x86_64/heavy-load-compare.toml
+  calibrate umem prodcons: would need total_n=25512351 (~5s/window, from 0.391967s @ 2000000; floor 1600000)
+  calibrate libc prodcons: would need total_n=18967234 (~5s/window, from 0.527225s @ 2000000; floor 1600000)
+  calibrate jemalloc prodcons: would need total_n=26051843 (~5s/window, from 0.38385s @ 2000000; floor 1600000)
+  calibrate umem prodcons: would need total_n=33589396 (~5s/window, from 0.297713s @ 2000000; floor 1600000)
+  -> prodcons: ALL allocators get total_n=18967234 (matched work; windows will
+     differ in duration, which is the honest result)
+  calibrate umem frag: would need total_n=28791394 (~5s/window, from 0.347326s @ 2000000; floor 1600000)
+  calibrate libc frag: would need total_n=42281331 (~5s/window, from 0.236511s @ 2000000; floor 1600000)
+  calibrate jemalloc frag: would need total_n=52484897 (~5s/window, from 0.190531s @ 2000000; floor 1600000)
+  calibrate umem frag: would need total_n=30625620 (~5s/window, from 0.326524s @ 2000000; floor 1600000)
+  -> frag: ALL allocators get total_n=28791394 (matched work; windows will
+     differ in duration, which is the honest result)
+  warmup window 0: umem (discarded)
+  warmup window 0: libc (discarded)
+  warmup window 0: jemalloc (discarded)
+  warmup window 0: umem@null (discarded)
+  umem         prodcons-sustained w=0  ops=37934464  mops=  12.971 p99=      268 p999=       713 rss@peak=18485248
+  umem         frag-sustained     w=0  ops=54995101  mops=  11.187 p99=     3597 p999=    153596 rss@peak=1594642432
+  libc         prodcons-sustained w=0  ops=37934464  mops=   7.383 p99=    22346 p999=     72495 rss@peak=14802944
+  libc         frag-sustained     w=0  ops=54995101  mops=  13.956 p99=     1580 p999=      5279 rss@peak=1429635072
+  jemalloc     prodcons-sustained w=0  ops=37934464  mops=  10.113 p99=      875 p999=      1805 rss@peak=9904128
+  jemalloc     frag-sustained     w=0  ops=54995101  mops=  29.435 p99=      448 p999=       969 rss@peak=1322749952
+  umem@null    prodcons-sustained w=0  ops=37934464  mops=  12.695 p99=      281 p999=       739 rss@peak=18382848
+  umem@null    frag-sustained     w=0  ops=54995101  mops=  11.147 p99=     3955 p999=    149439 rss@peak=1592573952
+  umem         prodcons-sustained w=1  ops=37934464  mops=  10.848 p99=      304 p999=       774 rss@peak=18501632
+  umem         frag-sustained     w=1  ops=54995101  mops=  11.699 p99=     4357 p999=    155872 rss@peak=1582194688
+  libc         prodcons-sustained w=1  ops=37934464  mops=   7.714 p99=    21939 p999=     67054 rss@peak=14766080
+  libc         frag-sustained     w=1  ops=54995101  mops=  14.432 p99=     1532 p999=      5333 rss@peak=1218408448
+  jemalloc     prodcons-sustained w=1  ops=37934464  mops=  14.344 p99=      929 p999=      2071 rss@peak=12238848
+  jemalloc     frag-sustained     w=1  ops=54995101  mops=  24.499 p99=      439 p999=       978 rss@peak=1248047104
+  umem@null    prodcons-sustained w=1  ops=37934464  mops=   9.626 p99=      302 p999=       817 rss@peak=18300928
+  umem@null    frag-sustained     w=1  ops=54995101  mops=  12.027 p99=     4152 p999=    158741 rss@peak=1591676928
+done: umem libc jemalloc umem@null -> docs/results/2026-09-27-c7i.2xlarge-x86_64/heavy-load-compare.toml
+HLC rc=0
+toml=docs/results/2026-09-27-c7i.2xlarge-x86_64/heavy-load-compare.toml
+header keys: ['captured', 'instance_type', 'arch', 'vcpu', 'threads', 'governor', 'duration_target_sec_per_window', 'windows_per_allocator', 'warmup_windows_discarded', 'frag_sizes', 'prodcons_sizes', 'order', 'git_sha', 'git_sha_source', 'configure_flags', 'uname', 'gcc', 'libc', 'bench_bin', 'bench_bin_digest', 'libumem_so', 'libumem_so_digest']
+('jemalloc', 'frag-sustained') [(1.86839, 29434485.45, 0), (2.244815, 24498717.86, 0)]
+('jemalloc', 'prodcons-sustained') [(3.750949, 10113298.45, 0), (2.644557, 14344353.37, 0)]
+('libc', 'frag-sustained') [(3.940719, 13955601.81, 0), (3.810615, 14432079.49, 0)]
+('libc', 'prodcons-sustained') [(5.137896, 7383268.04, 0), (4.917599, 7714021.73, 0)]
+('umem', 'frag-sustained') [(4.916023, 11186908.81, 0), (4.700832, 11699013.66, 0)]
+('umem', 'prodcons-sustained') [(2.924545, 12971065.72, 0), (3.496984, 10847767.47, 0)]
+('umem@null', 'frag-sustained') [(4.933571, 11147118.5, 0), (4.572663, 12026929.86, 0)]
+('umem@null', 'prodcons-sustained') [(2.988245, 12694562.16, 0), (3.940678, 9626379.72, 0)]
+=== log tail

@@ -1,0 +1,127 @@
+=== provenance
+Linux ip-172-31-34-107 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64 GNU/Linux
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+libc6:arm64	2.41-12+deb13u4
+libjemalloc2:arm64	5.3.0-3
+13.7
+8192
+1048576
+always madvise [never]
+0
+available: 1 nodes (0)
+node 0 cpus: 0 1 2 3 4 5 6 7
+node 0 size: 15689 MB
+node 0 free: 13258 MB
+	libjemalloc.so.2 (libc6,AArch64) => /lib/aarch64-linux-gnu/libjemalloc.so.2
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x08a6e8 0x000000000009a6e8 0x000000000009a6e8 0x000a88 0x000a88 R   0x8
+=== build
+/tmp/cfg.log:configure: RSEQ support enabled (auto-detected)
+/tmp/cfg.log:  RSEQ support:     yes
+config.log:configure:15371: RSEQ support enabled (auto-detected)
+=== stack probe
+GLIBC_TUNABLES=''
+  thread stack=8388608 B usable_below_sp=8382623 B
+  dlopen: /lib/aarch64-linux-gnu/libjemalloc.so.2: cannot allocate memory in static TLS block
+  bench umem    : umem,producer-consumer,16,4000000,250000,0.220589,18133271.62,32,58,85,277,717,1
+ rc=0
+  bench libc    : libc,producer-consumer,16,4000000,250000,0.313341,12765647.26,30,189,440,5936,93
+ rc=0
+  bench jemalloc:  rc=0
+GLIBC_TUNABLES='glibc.rtld.optional_static_tls=65536'
+  thread stack=8388608 B usable_below_sp=8317599 B
+  dlopen: ok
+  bench umem    : umem,producer-consumer,16,4000000,250000,0.243128,16452241.04,31,60,87,283,632,2
+ rc=0
+  bench libc    : libc,producer-consumer,16,4000000,250000,0.298396,13405004.13,30,188,496,6661,89
+ rc=0
+  bench jemalloc: jemalloc,producer-consumer,16,4000000,250000,0.233078,17161611.25,28,109,323,653
+ rc=0
+GLIBC_TUNABLES='glibc.rtld.optional_static_tls=8388608'
+  thread stack=8396800 B usable_below_sp=2719 B
+  dlopen: ok
+  bench umem    :  rc=139
+  bench libc    : libc,producer-consumer,16,4000000,250000,0.330743,12093968.26,31,196,585,7214,90
+ rc=0
+  bench jemalloc:  rc=139
+=== heavy_load_compare as shipped (tiny)
+=== heavy-load comparison ===
+allocators   : umem,libc,jemalloc,umem@null
+workloads    : prodcons + frag (both, per sustained_load.sh)
+threads      : 16  (box has 8 online)
+per alloc/wl : 1 warmup + 2 measured x 5s
+             = 0 min, first 0 min discarded
+numa         :
+  available: 1 nodes (0)
+  node 0 cpus: 0 1 2 3 4 5 6 7
+  node 0 size: 15689 MB
+  node 0 free: 13208 MB
+  node distances:
+  node     0 
+jemalloc     : /lib/aarch64-linux-gnu/libjemalloc.so.2
+sustained load: allocators=umem libc jemalloc umem@null threads=16
+  windows=2 x ~5s each, interleaved; warmups=1
+  sha=ec1c98d3cc9d5b03c0aa6235dcc87aef41ee3075 (ISOLATED_PROVENANCE) -> docs/results/2026-09-27-c7g.2xlarge-aarch64/heavy-load-compare.toml
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 220: 23219 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$calib_n" -s "$min:$max" -c > /dev/null 2>> "$LOG"
+  calibrate umem prodcons: would need total_n=40000000 (~5s/window, from 0.00491142s @ 2000000; floor 1600000)
+  calibrate libc prodcons: would need total_n=30543211 (~5s/window, from 0.327405s @ 2000000; floor 1600000)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 220: 23266 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$calib_n" -s "$min:$max" -c > /dev/null 2>> "$LOG"
+  calibrate jemalloc prodcons: would need total_n=40000000 (~5s/window, from 0.00480914s @ 2000000; floor 1600000)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 220: 23289 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$calib_n" -s "$min:$max" -c > /dev/null 2>> "$LOG"
+  calibrate umem prodcons: would need total_n=40000000 (~5s/window, from 0.00475669s @ 2000000; floor 1600000)
+  -> prodcons: ALL allocators get total_n=30543211 (matched work; windows will
+     differ in duration, which is the honest result)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 220: 23312 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$calib_n" -s "$min:$max" -c > /dev/null 2>> "$LOG"
+  calibrate umem frag: would need total_n=40000000 (~5s/window, from 0.00481701s @ 2000000; floor 1600000)
+  calibrate libc frag: would need total_n=34953180 (~5s/window, from 0.286097s @ 2000000; floor 1600000)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 220: 23359 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$calib_n" -s "$min:$max" -c > /dev/null 2>> "$LOG"
+  calibrate jemalloc frag: would need total_n=40000000 (~5s/window, from 0.00494862s @ 2000000; floor 1600000)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 220: 23382 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$calib_n" -s "$min:$max" -c > /dev/null 2>> "$LOG"
+  calibrate umem frag: would need total_n=40000000 (~5s/window, from 0.0049417s @ 2000000; floor 1600000)
+  -> frag: ALL allocators get total_n=34953180 (matched work; windows will
+     differ in duration, which is the honest result)
+  warmup window 0: umem (discarded)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 335: 23404 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w prodcons -t "$THREADS" -n "${TARGET_N["prodcons"]}" -s 64:256 -c > /dev/null 2>> "$LOG"
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 335: 23421 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w frag -t "$THREADS" -n "${TARGET_N["frag"]}" -s "$FRAG_MIN:$FRAG_MAX" -c > /dev/null 2>> "$LOG"
+  warmup window 0: libc (discarded)
+  warmup window 0: jemalloc (discarded)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 335: 23476 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w prodcons -t "$THREADS" -n "${TARGET_N["prodcons"]}" -s 64:256 -c > /dev/null 2>> "$LOG"
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 335: 23493 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w frag -t "$THREADS" -n "${TARGET_N["frag"]}" -s "$FRAG_MIN:$FRAG_MAX" -c > /dev/null 2>> "$LOG"
+  warmup window 0: umem@null (discarded)
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 335: 23512 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w prodcons -t "$THREADS" -n "${TARGET_N["prodcons"]}" -s 64:256 -c > /dev/null 2>> "$LOG"
+/home/admin/libumem-iso-phaseA-ec1c98d3cc9d/scripts/ec2/sustained_load.sh: line 335: 23529 Segmentation fault      LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w frag -t "$THREADS" -n "${TARGET_N["frag"]}" -s "$FRAG_MIN:$FRAG_MAX" -c > /dev/null 2>> "$LOG"
+  CRASH: umem prodcons rc=139 (window not recorded)
+  CRASH: umem frag rc=139 (window not recorded)
+  libc         prodcons-sustained w=0  ops=61086416  mops=  12.263 p99=     6587 p999=     93630 rss@peak=13479936
+  libc         frag-sustained     w=0  ops=66629070  mops=  14.292 p99=     1359 p999=      4837 rss@peak=1521451008
+  CRASH: jemalloc prodcons rc=139 (window not recorded)
+  CRASH: jemalloc frag rc=139 (window not recorded)
+  CRASH: umem@null prodcons rc=139 (window not recorded)
+  CRASH: umem@null frag rc=139 (window not recorded)
+  CRASH: umem prodcons rc=139 (window not recorded)
+  CRASH: umem frag rc=139 (window not recorded)
+  libc         prodcons-sustained w=1  ops=61086416  mops=  13.893 p99=     6450 p999=     91847 rss@peak=13058048
+  libc         frag-sustained     w=1  ops=66629070  mops=  16.272 p99=     1370 p999=      5279 rss@peak=1564147712
+  CRASH: jemalloc prodcons rc=139 (window not recorded)
+  CRASH: jemalloc frag rc=139 (window not recorded)
+  CRASH: umem@null prodcons rc=139 (window not recorded)
+  CRASH: umem@null frag rc=139 (window not recorded)
+done: umem libc jemalloc umem@null -> docs/results/2026-09-27-c7g.2xlarge-aarch64/heavy-load-compare.toml
+HLC rc=0
+toml=docs/results/2026-09-27-c7g.2xlarge-aarch64/heavy-load-compare.toml
+header keys: ['captured', 'instance_type', 'arch', 'vcpu', 'threads', 'governor', 'duration_target_sec_per_window', 'windows_per_allocator', 'warmup_windows_discarded', 'frag_sizes', 'prodcons_sizes', 'order', 'git_sha', 'git_sha_source', 'configure_flags', 'uname', 'gcc', 'libc', 'bench_bin', 'bench_bin_digest', 'libumem_so', 'libumem_so_digest']
+('libc', 'frag-sustained') [(4.662052, 14291789.24, 0), (4.094816, 16271567.7, 0)]
+('libc', 'prodcons-sustained') [(4.981431, 12262824.62, 0), (4.39692, 13893002.58, 0)]
+=== log tail
+  CRASH: umem prodcons rc=139 (window not recorded)
+  CRASH: umem frag rc=139 (window not recorded)
+  CRASH: jemalloc prodcons rc=139 (window not recorded)
+  CRASH: jemalloc frag rc=139 (window not recorded)
+  CRASH: umem@null prodcons rc=139 (window not recorded)
+  CRASH: umem@null frag rc=139 (window not recorded)
+  CRASH: umem prodcons rc=139 (window not recorded)
+  CRASH: umem frag rc=139 (window not recorded)
+  CRASH: jemalloc prodcons rc=139 (window not recorded)
+  CRASH: jemalloc frag rc=139 (window not recorded)
+  CRASH: umem@null prodcons rc=139 (window not recorded)
+  CRASH: umem@null frag rc=139 (window not recorded)

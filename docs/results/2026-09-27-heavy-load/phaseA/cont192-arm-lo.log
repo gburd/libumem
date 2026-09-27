@@ -1,0 +1,73 @@
+ref=ac7194941b2888d892f5a14e8059f2e5c2c690c3
+=== heavy-load comparison ===
+allocators   : umem,libc,jemalloc,umem@null
+workloads    : prodcons 64:256, frag 64:256
+threads      : 192  (box has 8 online)
+per run      : 1 + 1 intervals x 60s in ONE process
+             = 2 min, first 1 min dropped
+total        : 8 runs = ~16 min
+numa         :
+     0:   10 
+jemalloc     : /lib/aarch64-linux-gnu/libjemalloc.so.2
+preflight    : every arm loads and runs prodcons + frag at t=192
+sustained load (continuous): allocators=umem libc jemalloc umem@null threads=192
+  per run: 2 x 60s, first 1 discarded; frag pool 100000/thread
+  sha=ac7194941b2888d892f5a14e8059f2e5c2c690c3 (ISOLATED_PROVENANCE) -> docs/results/2026-09-27-c7g.2xlarge-aarch64/c192.toml
+  run umem prodcons: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:15:15Z)
+  umem         prodcons-sustained w=0  ops=1310309267 mops=  21.838 p99=      141 p999=       551 rss@peak=120643584
+  run libc prodcons: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:17:15Z)
+  libc         prodcons-sustained w=0  ops=855704134 mops=  14.262 p99=    33660 p999=   1743413 rss@peak=67014656
+  run jemalloc prodcons: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:19:15Z)
+  jemalloc     prodcons-sustained w=0  ops=994166910 mops=  16.569 p99=      522 p999=      1762 rss@peak=64409600
+  run umem@null prodcons: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:21:15Z)
+  umem@null    prodcons-sustained w=0  ops=1303227325 mops=  21.720 p99=      147 p999=       558 rss@peak=112787456
+  run umem frag: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:23:15Z)
+  umem         frag-sustained     w=0  ops=1115000273 mops=  18.582 p99=      377 p999=       693 rss@peak=3849854976
+  run libc frag: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:25:16Z)
+  libc         frag-sustained     w=0  ops=992553390 mops=  16.542 p99=     1269 p999=      1947 rss@peak=3700416512
+  run jemalloc frag: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:27:17Z)
+  jemalloc     frag-sustained     w=0  ops=1405826236 mops=  23.430 p99=      546 p999=      1812 rss@peak=3262660608
+  run umem@null frag: 2 x 60s in one process, first 1 discarded (start 2026-09-27T05:29:17Z)
+  umem@null    frag-sustained     w=0  ops=1208068086 mops=  20.133 p99=      380 p999=       701 rss@peak=3829030912
+done: umem libc jemalloc umem@null -> docs/results/2026-09-27-c7g.2xlarge-aarch64/c192.toml
+## docs/results/2026-09-27-c7g.2xlarge-aarch64/c192.toml
+c7g.2xlarge aarch64 threads=192 sha=ac7194941b28 mode=continuous tunables=glibc.rtld.optional_static_tls=65536 stack=8317599
+| workload | allocator | Mops/s med | min / max | p50 | p99 | p999 (ns, med) | peak RSS MB |
+|---|---|---:|---|---:|---:|---:|---:|
+| frag-sustained | jemalloc | 23.430 | 23.430 / 23.430 | 32 | 546 | 1812 | 3148 |
+| frag-sustained | libc | 16.541 | 16.541 / 16.541 | 167 | 1269 | 1947 | 3530 |
+| frag-sustained | umem | 18.582 | 18.582 / 18.582 | 162 | 377 | 693 | 3672 |
+| frag-sustained | umem@null | 20.133 | 20.133 / 20.133 | 162 | 380 | 701 | 3652 |
+| prodcons-sustained | jemalloc | 16.569 | 16.569 / 16.569 | 101 | 522 | 1762 | 61 |
+| prodcons-sustained | libc | 14.262 | 14.262 / 14.262 | 181 | 33660 | 1743413 | 64 |
+| prodcons-sustained | umem | 21.838 | 21.838 / 21.838 | 71 | 141 | 551 | 115 |
+| prodcons-sustained | umem@null | 21.720 | 21.720 / 21.720 | 71 | 147 | 558 | 108 |
+null frag-sustained: mops 8.3%, p50 0.0%, p99 0.8%, p999 1.2%, rss 0.5%
+null prodcons-sustained: mops 0.5%, p50 0.0%, p99 4.3%, p999 1.3%, rss 6.5%
+RESULT: PASS (0 invariant failures)
+preflight    : every arm loads and runs prodcons + frag at t=384
+done: umem libc jemalloc umem@null -> docs/results/2026-09-27-c7g.2xlarge-aarch64/c384.toml
+## docs/results/2026-09-27-c7g.2xlarge-aarch64/c384.toml
+c7g.2xlarge aarch64 threads=384 sha=ac7194941b28 mode=continuous tunables=glibc.rtld.optional_static_tls=65536 stack=8317599
+  FAIL umem frag-sustained interval 1: 11.736449s vs 10s
+  FAIL umem@null frag-sustained interval 1: 12.983127s vs 10s
+| workload | allocator | Mops/s med | min / max | p50 | p99 | p999 (ns, med) | peak RSS MB |
+|---|---|---:|---|---:|---:|---:|---:|
+| frag-sustained | jemalloc | 24.247 | 24.247 / 24.247 | 32 | 635 | 2405 | 5983 |
+| frag-sustained | libc | 15.201 | 15.201 / 15.201 | 168 | 1446 | 2010 | 6457 |
+| frag-sustained | umem | 19.409 | 19.409 / 19.409 | 157 | 383 | 709 | 0 |
+| frag-sustained | umem@null | 19.128 | 19.128 / 19.128 | 157 | 382 | 701 | 0 |
+| prodcons-sustained | jemalloc | 15.895 | 15.895 / 15.895 | 102 | 529 | 8139 | 78 |
+| prodcons-sustained | libc | 13.499 | 13.499 / 13.499 | 186 | 36702 | 3418478 | 66 |
+| prodcons-sustained | umem | 17.314 | 17.314 / 17.314 | 69 | 161 | 567 | 163 |
+| prodcons-sustained | umem@null | 19.354 | 19.354 / 19.354 | 71 | 146 | 538 | 142 |
+Traceback (most recent call last):
+  File "/home/admin/libumem-iso-cont192-ac7194941b28/docs/results/2026-09-27-heavy-load/summarize.py", line 55, in <module>
+    print(f"null {wl}: " + ", ".join(
+                           ~~~~~~~~~^
+        f"{k} {abs(u[k] - n[k]) / u[k] * 100:.1f}%" for k in ('mops', 'p50', 'p99', 'p999', 'rss')))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/admin/libumem-iso-cont192-ac7194941b28/docs/results/2026-09-27-heavy-load/summarize.py", line 56, in <genexpr>
+    f"{k} {abs(u[k] - n[k]) / u[k] * 100:.1f}%" for k in ('mops', 'p50', 'p99', 'p999', 'rss')))
+           ~~~~~~~~~~~~~~~~~^~~~~~
+ZeroDivisionError: float division by zero

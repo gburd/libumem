@@ -1,0 +1,45 @@
+/tmp/ivt.sh: line 9: bc: command not found
+umem      prodcons  rc=0 wall=3.00s rows=
+umem,producer-consumer/interval=2,16,26452570,1653285,2.001873,13213909.51,90,268,705,19103744,0,0,0
+umem,producer-consumer/interval=3,16,26905112,1681569,2.000120,13451745.75,91,275,710,19144704,0,0,0
+umem,producer-consumer/interval=4,16,26831674,1676979,2.000120,13415033.20,91,274,699,19189760,0,0,0
+/tmp/ivt.sh: line 9: bc: command not found
+umem      frag      rc=0 wall=3.00s rows=
+umem,fragmentation/interval=2,16,45892719,2868294,2.000128,22944889.12,101,425,653,96169984,51055630,20,0
+umem,fragmentation/interval=3,16,46019907,2876244,2.000126,23008509.03,95,427,653,96206848,51316763,20,0
+umem,fragmentation/interval=4,16,46284166,2892760,2.000126,23140626.55,91,420,633,96305152,51097985,20,0
+/tmp/ivt.sh: line 9: bc: command not found
+libc      prodcons  rc=0 wall=3.00s rows=
+libc,producer-consumer/interval=2,16,13879072,867442,2.000124,6939107.12,233,22922,85681,14831616,0,0,0
+libc,producer-consumer/interval=3,16,13998701,874918,2.000134,6998881.67,233,22559,89953,14872576,0,0,0
+libc,producer-consumer/interval=4,16,13966483,872905,2.000123,6982812.17,231,22527,87979,14938112,0,0,0
+/tmp/ivt.sh: line 9: bc: command not found
+libc      frag      rc=0 wall=3.00s rows=
+libc,fragmentation/interval=2,16,50861414,3178838,2.003875,25381526.07,103,531,792,87752704,53257368,20,0
+libc,fragmentation/interval=3,16,48565316,3035332,2.000125,24281142.97,109,619,977,87879680,52591639,20,0
+libc,fragmentation/interval=4,16,44296860,2768553,2.000123,22147072.07,130,784,1203,87961600,53788154,20,0
+/tmp/ivt.sh: line 9: bc: command not found
+jemalloc  prodcons  rc=0 wall=3.00s rows=
+jemalloc,producer-consumer/interval=2,16,22745491,1421593,2.000095,11372207.30,97,828,1702,17383424,0,0,0
+jemalloc,producer-consumer/interval=3,16,26347731,1646733,2.000085,13173305.74,103,842,1636,16277504,0,0,0
+jemalloc,producer-consumer/interval=4,16,24068874,1504304,2.000109,12033779.99,99,860,1715,16289792,0,0,0
+/tmp/ivt.sh: line 9: bc: command not found
+jemalloc  frag      rc=0 wall=3.00s rows=
+jemalloc,fragmentation/interval=2,16,46392117,2899507,2.000129,23194560.60,37,290,666,89030656,55001258,20,0
+jemalloc,fragmentation/interval=3,16,46484707,2905294,2.000130,23240847.21,37,297,669,88809472,55144775,20,0
+jemalloc,fragmentation/interval=4,16,46306475,2894154,2.000131,23151724.59,37,301,673,88846336,51935320,20,0
+=== op-budget mode unchanged? (prodcons+frag -n 3.2M)
+umem,producer-consumer,16,6400000,400000,0.715815,8940856.57
+umem,fragmentation,16,6111621,381976,0.514137,11887153.61,164425728,108454744,1.5161,121
+libc,producer-consumer,16,6400000,400000,0.899232,7117183.37
+libc,fragmentation,16,6111621,381976,0.378292,16155811.76,162873344,110014170,1.4805,121
+=== bad args
+-D supports prodcons and frag only
+rc=1
+-D requires -c, excludes -A and -r, and needs -W < COUNT
+rc=1
+-D requires -c, excludes -A and -r, and needs -W < COUNT
+rc=1
+=== accounting test
+
+Result: PASS (0 failures)

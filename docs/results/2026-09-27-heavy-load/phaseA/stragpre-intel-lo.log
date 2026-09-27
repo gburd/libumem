@@ -1,0 +1,16 @@
+ref=5e4e07b2b6f87d19a69c592c13fed67b3821815e
+run 1 rc=1
+run 2 rc=1
+run 3 rc=1
+interval mode: one 0.7 s operation in 0.3 s intervals
+   interval 0: 0.300 s ops=3349816 rss=18513920 samples=3
+   interval 1: 0.400 s ops=4464003 rss=0 samples=0
+  FAIL: interval 1 lasted 0.400 s, asked 0.3 (a straggler must not stretch the clock)
+        (test/bench/test_bench_accounting.c:465: iv[k].elapsed_seconds > 0.29 && iv[k].elapsed_seconds < 0.4)
+  FAIL: interval 1 has no RSS sample (the driver stopped sampling while waiting)
+        (test/bench/test_bench_accounting.c:469: iv[k].max_rss_bytes > 0)
+   interval 2: 0.300 s ops=4211410 rss=23224320 samples=3
+   interval 3: 0.300 s ops=4213667 rss=23261184 samples=3
+   interval 4: 0.300 s ops=4226340 rss=23298048 samples=3
+
+Result: FAIL (2 failures)

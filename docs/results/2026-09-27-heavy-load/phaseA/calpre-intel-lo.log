@@ -1,0 +1,7 @@
+ref=378062437cb5b42507f39a9b9b939246a9ae95b8
+  calibrate umem prodcons: would need total_n=80494774 (~60s/window, from 1.49078s @ 2000000; floor 19200000)
+  calibrate umem frag: would need total_n=41071416 (~60s/window, from 2.92174s @ 2000000; floor 19200000)
+  umem         prodcons-sustained w=0  ops=160989504 mops=  10.755 p99=      308 p999=       788 rss@peak=67137536
+  umem         frag-sustained     w=0  ops=78218032  mops=  11.809 p99=     3369 p999=   1760627 rss@peak=1941123072
+WINDOW prodcons-sustained threads 192 ops 160989504 elapsed_sec=15.0 target=60
+WINDOW frag-sustained threads 192 ops 78218032 elapsed_sec=6.6 target=60
