@@ -5,7 +5,7 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v3.3.1): the Linux heap ceiling is gone, the
+> **Status (v3.3.2): the Linux heap ceiling is gone, the
 > maintenance thread runs, the per-CPU caches are used, the drop-in path
 > scales, and the freelist- and ownership-integrity gaps that left libumem
 > behind the size-class allocators are closed — per-thread cache bin slots AND
@@ -25,14 +25,21 @@ FreeBSD, and macOS.
 > pathological workload or a provably-unsound lock skip (closed); the 2.5-8 KB
 > per-thread retention is ~280 KB, not the feared 5.4 MB (measured); the
 > sustained-load slab batch cannot meet its own p999 target (partial, the real
-> fix is an architectural one). v3.3.1 adds the two hardening fixes above and
-> records a third — arming the inert rseq lock-free reload (P8.5b) — as
-> implemented, proven safe, and proven inert under the shipping architecture
-> (the per-thread cache fronts and starves it), left on a branch, not shipped.
+> fix is an architectural one). v3.3.1 added the two hardening fixes above.
+> v3.3.2 arms the rseq lock-free per-CPU layer that v3.3.1 had left inert
+> (P8.5b): it is on by default, and sustained 192-thread prodcons p999 drops
+> from 41.7 to 29.7 us (x86_64) and from 16.9 to 5.0 us (aarch64) against
+> `norseq`, with RSS roughly halved. Its first version aliased buffers under
+> an rseq abort; that was found by a 100-run oracle rate test, not by the
+> gates it had passed, and is fixed with a regression that failed on every
+> pre-fix run. v3.3.2 also records that several advertised debugging-tool
+> features do not work (see "Known broken" under the tools section).
 > Where a first diagnosis was wrong
 > — the heap ceiling (fixed in two halves), the 1k:4k collapse (the CPU hint,
 > not the per-thread cache), the P6.3b drain, the P5.10 bootstrap check, the
-> P7.4 ~80-span estimate (it is thousands) — the
+> P7.4 ~80-span estimate (it is thousands), the P8.5b aliasing cause (not the
+> stale magazine size first suspected), and P8.5b's first p999 claim
+> (measured with an off-switch that no longer worked) — the
 > record says so. Performance conclusions in this file were re-measured with a
 > null control; a proportionate metal comparison shows
 > umem 0.82–1.01 of the best competitor across the small/medium tiers and
@@ -275,33 +282,38 @@ Where libumem **does not win**:
   240-270 us (x86_64 metal) against 5-25 us for jemalloc/mimalloc/rpmalloc
   and 83 us for glibc: not the tens-of-microseconds tier. Under `frag`
   churn the p999 is 22 us at 8 threads and **6-10 ms at 192**, against
-  0.3 us-0.7 ms for every other allocator (P8.5). The old attribution of a
-  residual tail gap to the inert rseq reload path was a hypothesis and is
-  dropped: the rseq layer serves zero hits either way.
+  0.3 us-0.7 ms for every other allocator (P8.5). Those 192-thread numbers
+  predate v3.3.2, which arms the rseq per-CPU layer (below) and re-measured
+  sustained prodcons p999 at 29.7 us (x86_64) and 5.0 us (aarch64) with it on,
+  against 41.7 / 16.9 us with `norseq`. The full cross-allocator comparison
+  has not yet been re-run at v3.3.2.
 - **Sandboxed / security-hardened allocations.**  mimalloc-secure
   and `scudo` add explicit hardening (segregated metadata, randomized
   freelists, double-free detection by design).  libumem's defenses
   are opt-in via `UMEM_DEBUG=guards`.
 
-**Known limitation — the rseq per-CPU layer serves no allocations:**
-the rseq fast-path assembly is registered and executes on every qualifying
-alloc/free on x86_64 and aarch64. It nonetheless satisfies **zero**
-allocations, because `cache_rseq[cpu].rounds` is permanently 0: the only
-functions that would populate a per-CPU magazine are the reload paths, and
-nothing calls them. Entering the code is not the same as the code doing its
-job — so "rseq's benefit is limited to fastpath hits" would be too generous.
-There are no hits. The benefit today is zero, and the cost is the
-fast-path check.
+**The rseq per-CPU layer (v3.3.2, default on):** until v3.3.2 the rseq
+fast-path assembly ran on every qualifying alloc/free but served **zero**
+allocations, because nothing loaded a magazine into it. v3.3.2 routes the
+per-thread cache's magazine refill through it, so a per-thread-cache miss is
+served lock-free from a per-CPU magazine instead of from the mutex-protected
+depot. Measured on Debian metal, same binary, rseq on vs
+`UMEM_OPTIONS=norseq`, 192 threads:
 
-The reload is unimplemented pending migration-safe per-CPU-commit assembly
-on both architectures; a plain-C reload races the lock-free fastpath across
-a CPU migration (measured ~42-47% double-issue rate under contention). See
-[`docs/results/2026-09-09-rseq-reload-analysis-v2.md`](docs/results/2026-09-09-rseq-reload-analysis-v2.md)
-for the re-evaluation and
-[`docs/results/2026-09-09-rseq-reload-asm-design.md`](docs/results/2026-09-09-rseq-reload-asm-design.md)
-for the implementation spec — which the 2026-09-21 review judged unsafe as
-written, so the spec is a starting point, not an approved design. This does
-not affect correctness.
+| | x86_64 on / off | aarch64 on / off |
+|---|---|---|
+| sustained prodcons p999 | 29.7 / 41.7 us | 5.0 / 16.9 us |
+| sustained prodcons p99 | 4.1 / 6.5 us | **1.7 / 1.0 us** (worse) |
+| sustained prodcons throughput | 3 % lower with rseq | 7 % lower with rseq |
+| RSS at peak | 130 / 246 MB | 122 / 219 MB |
+| `multi` at t=1 and t=192 | within +/-3 % | within +/-3 % |
+
+It is a tail and memory win, not a throughput win, and not free: aarch64 p99
+is higher with it on. The first version of this routing (on master, never
+released) handed buffers to two owners at ~2.5 % of oracle runs; the fix and
+how every earlier gate missed it are in
+[`docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md`](docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md).
+`UMEM_OPTIONS=norseq` turns the layer off with no rebuild.
 
 Where libumem **wins decisively**:
 
@@ -478,7 +490,7 @@ behaviour (Phase 4 of the readiness plan).
 
 | Option | Default | Effect |
 |---|---|---|
-| `--enable-rseq[=auto]` | auto (on where `linux/rseq.h` exists) | Builds the rseq fast-path assembly. Currently serves **zero** magazine hits — see "Known limitation" above. |
+| `--enable-rseq[=auto]` | auto (on where `linux/rseq.h` exists) | Builds the rseq per-CPU fast path, which is on at runtime by default. `UMEM_OPTIONS=norseq` turns it off. See "The rseq per-CPU layer" above. |
 | `--enable-numa[=auto]` | auto (on where libnuma exists) | NUMA **topology queries** (node count, CPU→node map, distances) plus the depot's cross-CPU locality accounting. Not a NUMA allocation policy; see `umem_numa.h`. |
 | `--enable-introspect` | off | The in-process `umemctl` control channel. Zero hot-path cost when off. |
 | `--enable-avx2` | **off** | `-mavx2` for the whole library. **Not generic**: the result requires an AVX2-capable CPU (Haswell / Excavator or newer) and will `SIGILL` on older x86-64. x86_64 only; refused elsewhere. |
@@ -788,6 +800,25 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
   (stop the allocating thread so a debugger catches the exact stack).
   Zero hot-path cost when off. See [`docs/UMEMCTL.md`](docs/UMEMCTL.md).
 
+> **Known broken as of v3.3.2** (found by the 2026-09-26 tool review,
+> [`docs/reviews/2026-09-26-tool-review.md`](docs/reviews/2026-09-26-tool-review.md);
+> not fixed in this release):
+> - gdb and lldb `umem break alloc|free|error` and `umem events`, and the
+>   `umem_inspect_set_event_cb()` C API, never fire. Nothing in the
+>   allocator calls the event hook they rely on.
+> - The `record --learn-leaks` / `break leaked` workflow cannot find a leak:
+>   x86_64 audit stacks are one frame deep and inside libumem, and the
+>   learned size is the cache size rather than the requested size.
+> - `umemctl break size=|cache=` never parks a thread for allocations served
+>   by the per-thread cache or for oversize allocations.
+> - `umemctl monitor` always shows 0 buffers in use. `whatis` does not find
+>   oversize allocations and reports buffers freed into a per-thread cache as
+>   held.
+> - lldb `umem status` always ends with an error.
+>
+> `umem findleaks|status|log|walk|whatis|snapshot` and umemctl
+> `stats|caches|cache` work as documented.
+
 ```bash
 # umem(1): live pid / offline snapshot / CI leak-finding
 umem --pid $(pgrep myapp) findleaks
@@ -800,14 +831,14 @@ umem --dump /tmp/state.ums findleaks               # analyze offline
 # umemctl: live streaming + interactive break-on-leak
 #   (built with --enable-introspect; target run with UMEM_OPTIONS=introspect=1)
 umemctl $(pgrep myapp) logtail                 # stream alloc/slab/reap events
-umemctl $(pgrep myapp) monitor                 # live TUI
-umemctl $(pgrep myapp) record --learn-leaks leaks.set   # phase 1
-umemctl $(pgrep myapp) break leaked --set leaks.set     # phase 2, then attach gdb
+umemctl $(pgrep myapp) monitor                 # live TUI (in-use count broken, above)
+umemctl $(pgrep myapp) record --learn-leaks leaks.set   # phase 1 (broken, above)
+umemctl $(pgrep myapp) break leaked --set leaks.set     # phase 2 (broken, above)
 
 # GDB / LLDB (same umem(1) commands, in-debugger)
 (gdb) source /usr/share/umem/debugger/gdb/umem_gdb.py
 (gdb) umem findleaks
-(gdb) umem break alloc -s 1048576           # break on >=1 MB allocs
+(gdb) umem break alloc -s 1048576           # never fires in v3.3.2 (above)
 ```
 
 Detailed walkthrough: [tools/DEBUGGING.md](tools/DEBUGGING.md) and

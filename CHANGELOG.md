@@ -3,7 +3,22 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [3.3.2] - 2026-09-27
+
+Arms the rseq lock-free per-CPU layer (P8.5b), on by default, and fixes the
+two defects its first version had. v3.3.1 shipped that layer compiled and
+registered but serving zero allocations, because the per-thread cache drained
+the depot before it ever looked. v3.3.2 routes the per-thread cache's magazine
+refill through it. The first version (on master only, never released) handed
+buffers to two owners in ~2.5 % of 8-thread oracle runs and leaked after a
+magazine resize. Both are fixed, each with a regression that failed before the
+fix. The p999 improvement first claimed for this change (93.7 -> 46.5 us) was
+measured with an off-switch that had been removed; the re-measured,
+attributable numbers are under "Fixed". Also three Debian 13 / GCC 14 build
+fixes, Debian EC2 support for the harness, and a record that several
+advertised debugging-tool features do not work ("Known limitation"). No API or
+ABI change: `sizeof(umem_hook_t)` is still 120 and the soname is
+`libumem.so.1`.
 
 ### Performance -- added
 
@@ -131,6 +146,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   they PASS once `vm.max_map_count` is lowered to the AL2023-equivalent
   default (65530). The three `test_introspect_*` skips are the standard
   no-`--enable-introspect` skips, identical on AL2023 and Debian.
+
+- **Several advertised debugging-tool features do not work** (found by the
+  2026-09-26 tool review, `docs/reviews/2026-09-26-tool-review.md`; open, not
+  fixed in this release):
+  - gdb and lldb `umem break alloc|free|error` and `umem events`, and the
+    public `umem_inspect_set_event_cb()` callback API, never fire. They hang
+    off `umem_inspect_notify()`, which nothing in the allocator calls, and
+    never has. Confirmed live in gdb, lldb and a C program (0 callbacks over
+    1,800 allocations).
+  - The umemctl break-before-a-leak workflow cannot find a leak. x86_64 audit
+    stacks are one frame deep and that frame is inside libumem. `learn` records
+    the cache's rounded-up size while `break leaked` compares the requested
+    size, so a learned leak never matches itself.
+  - `umemctl break size=|cache=` never parks a thread for allocations served
+    by the per-thread cache, or for oversize allocations.
+  - `umemctl monitor` always shows 0 buffers in use (it parses a stats key the
+    server renamed). `whatis` does not find oversize allocations, reports a
+    buffer freed into a per-thread cache as held, and can name the wrong
+    cache for a freed buffer on a slab whose range overlaps the next page.
+  - `record --learn-leaks` without audit mode prints the refusal and then
+    reports success. lldb `umem status` always ends with "error: unknown
+    error". `umem walk log` exits 2 when logging is off. gdb
+    `umem break error -c CODE` ignores the code.
+  - The docs still give the pre-P5.6 socket path, a deleted "magazine
+    reloads" counter, and `umem --core`, which the tool refuses.
+
+  Working as documented: `umem findleaks|status|log|walk|whatis|snapshot`,
+  `--dump`, and umemctl `stats|caches|cache`.
+
+### Fixed -- build and harness
+
+- Debian 13 / GCC 14 build failures, all real latent bugs: the `mmap_guard`
+  option-table entry was missing its `item_special` NULL, so a flag value
+  landed in a function-pointer slot (`-Wint-conversion` error; the
+  `secure_unsafe` marking now takes effect as its comment intends,
+  `4124550`); `umem.c` used `numa_available()` without including `<numa.h>`
+  when libnuma is present (`4b64153`); `test_reclaim.c` used `snprintf`
+  without `<stdio.h>` (`a87f001`).
+- `scripts/ec2/`: `EC2_OS=debian` launches and bootstraps Debian 13 official
+  AMIs (user `admin`, apt toolchain). New `oracle_rate.sh` (an N-run oracle
+  failure-rate loop that keeps the full stderr of every failing run) and
+  `heavy_load_compare.sh`. The Debian bootstrap still silently drops lldb
+  because it names a `jemalloc-bin` package that does not exist on Debian 13.
 
 ## [3.3.1] - 2026-09-25
 
