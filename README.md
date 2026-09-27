@@ -634,6 +634,17 @@ after the fixes below. Numbers here are from the second run unless marked.
 
 ### Under heavy load: 192 cores, 2 NUMA nodes (v3.3.2)
 
+> **Correction (2026-09-27, after v3.3.2 shipped):** at 192 threads the
+> benchmark harness, not the allocators, dominated this measurement. A `perf`
+> profile on `c8g.metal-48xl` showed 96.5 % of the fragmentation workload's
+> time in one shared atomic counter that every allocation and free updated,
+> and 79.6 % of the cross-thread workload's time in one shared hand-off ring;
+> the allocator's own functions were under 1 %. The throughput and latency
+> rows below therefore mostly measure that contention and are **not a valid
+> comparison of the allocators**. The memory (peak RSS) rows are unaffected.
+> The harness is being fixed and the comparison re-run; this section will be
+> replaced.
+
 On Debian 13 metal (`c7i.metal-48xl` Sapphire Rapids and `c8g.metal-48xl`
 Graviton4, 192 vCPU, 2 NUMA nodes), with 192 threads, sizes 64-256 B, and
 memory interleaved over both nodes, each allocator ran **twice for 15 minutes
