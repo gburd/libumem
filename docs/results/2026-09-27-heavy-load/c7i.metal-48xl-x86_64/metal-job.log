@@ -80,3 +80,14 @@ sustained load (continuous): allocators=umem libc jemalloc jemalloc@2 libc@2 ume
   jemalloc     prodcons-sustained w=8  ops=118764454 mops=   1.979 p99=    14766 p999=     28679 rss@peak=66273280
   jemalloc     prodcons-sustained w=9  ops=118076512 mops=   1.968 p99=    15158 p999=     28443 rss@peak=66600960
   run jemalloc@2 prodcons: 15 x 60s in one process, first 5 discarded (start 2026-09-27T07:43:02Z)
+  jemalloc@2   prodcons-sustained w=0  ops=130110411 mops=   2.168 p99=    14394 p999=     33919 rss@peak=67756032
+  jemalloc@2   prodcons-sustained w=1  ops=119210057 mops=   1.987 p99=    16404 p999=     34400 rss@peak=67735552
+  jemalloc@2   prodcons-sustained w=2  ops=114469400 mops=   1.908 p99=    17306 p999=     34682 rss@peak=67571712
+  jemalloc@2   prodcons-sustained w=3  ops=112707251 mops=   1.878 p99=    16663 p999=     32690 rss@peak=68042752
+  jemalloc@2   prodcons-sustained w=4  ops=111647502 mops=   1.861 p99=    16076 p999=     30956 rss@peak=68132864
+  jemalloc@2   prodcons-sustained w=5  ops=111816287 mops=   1.864 p99=    15609 p999=     30169 rss@peak=67866624
+  jemalloc@2   prodcons-sustained w=6  ops=111980652 mops=   1.866 p99=    15482 p999=     29653 rss@peak=67780608
+  jemalloc@2   prodcons-sustained w=7  ops=111727764 mops=   1.862 p99=    16051 p999=     29855 rss@peak=67809280
+  jemalloc@2   prodcons-sustained w=8  ops=113811006 mops=   1.897 p99=    15929 p999=     30651 rss@peak=68280320
+  jemalloc@2   prodcons-sustained w=9  ops=114897593 mops=   1.915 p99=    16448 p999=     30911 rss@peak=68407296
+  run libc@2 prodcons: 15 x 60s in one process, first 5 discarded (start 2026-09-27T07:58:02Z)

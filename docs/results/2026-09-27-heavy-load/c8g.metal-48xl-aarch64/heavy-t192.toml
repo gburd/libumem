@@ -957,3 +957,291 @@ frag_samples = 0
 # frag: undefined here (no live set, or too few samples)
 ops_floor_raised = false
 alloc_failures = 0
+
+[[run]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+started = "2026-09-27T07:42:24Z"
+ended = "2026-09-27T07:57:24Z"
+rc = 0
+csv = "heavy-t192.jemalloc-2.prodcons.csv"
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 0
+interval = 5
+threads = 192
+size = "64:256"
+total_ops = 119128354
+ops_per_thread = 620460
+elapsed_sec = 60.000068
+ops_per_sec = 1985470.30
+lat_min = 26
+lat_p50 = 148
+lat_p90 = 325
+lat_p99 = 797
+lat_p999 = 1383
+lat_max = 1781815
+lat_mean = 177
+rss_at_live_peak = 101699584
+vmhwm_bytes = 101699584
+allocated_bytes = 9500707835
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 1
+interval = 6
+threads = 192
+size = "64:256"
+total_ops = 119189397
+ops_per_thread = 620778
+elapsed_sec = 60.000066
+ops_per_sec = 1986487.75
+lat_min = 26
+lat_p50 = 152
+lat_p90 = 325
+lat_p99 = 792
+lat_p999 = 1378
+lat_max = 997681
+lat_mean = 178
+rss_at_live_peak = 100413440
+vmhwm_bytes = 100413440
+allocated_bytes = 9505159063
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 2
+interval = 7
+threads = 192
+size = "64:256"
+total_ops = 119279622
+ops_per_thread = 621248
+elapsed_sec = 60.000068
+ops_per_sec = 1987991.45
+lat_min = 26
+lat_p50 = 144
+lat_p90 = 324
+lat_p99 = 792
+lat_p999 = 1400
+lat_max = 1843211
+lat_mean = 177
+rss_at_live_peak = 99459072
+vmhwm_bytes = 99459072
+allocated_bytes = 9513207562
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 3
+interval = 8
+threads = 192
+size = "64:256"
+total_ops = 119342805
+ops_per_thread = 621577
+elapsed_sec = 60.000064
+ops_per_sec = 1989044.61
+lat_min = 26
+lat_p50 = 146
+lat_p90 = 322
+lat_p99 = 749
+lat_p999 = 1386
+lat_max = 557444
+lat_mean = 176
+rss_at_live_peak = 98885632
+vmhwm_bytes = 98885632
+allocated_bytes = 9517299557
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 4
+interval = 9
+threads = 192
+size = "64:256"
+total_ops = 119219164
+ops_per_thread = 620933
+elapsed_sec = 60.000069
+ops_per_sec = 1986983.79
+lat_min = 26
+lat_p50 = 129
+lat_p90 = 323
+lat_p99 = 790
+lat_p999 = 1393
+lat_max = 1567104
+lat_mean = 177
+rss_at_live_peak = 98271232
+vmhwm_bytes = 98271232
+allocated_bytes = 9507568741
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 5
+interval = 10
+threads = 192
+size = "64:256"
+total_ops = 119357434
+ops_per_thread = 621653
+elapsed_sec = 60.000067
+ops_per_sec = 1989288.35
+lat_min = 26
+lat_p50 = 155
+lat_p90 = 325
+lat_p99 = 802
+lat_p999 = 1388
+lat_max = 1493067
+lat_mean = 177
+rss_at_live_peak = 97685504
+vmhwm_bytes = 97685504
+allocated_bytes = 9519042097
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 6
+interval = 11
+threads = 192
+size = "64:256"
+total_ops = 119183624
+ops_per_thread = 620748
+elapsed_sec = 60.000068
+ops_per_sec = 1986391.47
+lat_min = 26
+lat_p50 = 128
+lat_p90 = 323
+lat_p99 = 811
+lat_p999 = 1394
+lat_max = 2051130
+lat_mean = 177
+rss_at_live_peak = 97697792
+vmhwm_bytes = 97697792
+allocated_bytes = 9505199308
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 7
+interval = 12
+threads = 192
+size = "64:256"
+total_ops = 119103342
+ops_per_thread = 620329
+elapsed_sec = 60.000066
+ops_per_sec = 1985053.53
+lat_min = 26
+lat_p50 = 129
+lat_p90 = 322
+lat_p99 = 808
+lat_p999 = 1377
+lat_max = 1965297
+lat_mean = 176
+rss_at_live_peak = 96976896
+vmhwm_bytes = 96976896
+allocated_bytes = 9498727412
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 8
+interval = 13
+threads = 192
+size = "64:256"
+total_ops = 119153776
+ops_per_thread = 620592
+elapsed_sec = 60.000068
+ops_per_sec = 1985894.01
+lat_min = 26
+lat_p50 = 151
+lat_p90 = 322
+lat_p99 = 792
+lat_p999 = 1394
+lat_max = 1714024
+lat_mean = 176
+rss_at_live_peak = 97157120
+vmhwm_bytes = 97157120
+allocated_bytes = 9502388256
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
+
+[[window]]
+allocator = "jemalloc@2"
+workload = "prodcons-sustained"
+window = 9
+interval = 14
+threads = 192
+size = "64:256"
+total_ops = 119018639
+ops_per_thread = 619888
+elapsed_sec = 60.000066
+ops_per_sec = 1983641.80
+lat_min = 26
+lat_p50 = 129
+lat_p90 = 322
+lat_p99 = 772
+lat_p999 = 1366
+lat_max = 1912625
+lat_mean = 176
+rss_at_live_peak = 96800768
+vmhwm_bytes = 96800768
+allocated_bytes = 9492238046
+live_bytes_at_peak = 0
+live_bytes_median = 0
+frag_samples = 0
+# frag: undefined here (no live set, or too few samples)
+ops_floor_raised = false
+alloc_failures = 0
