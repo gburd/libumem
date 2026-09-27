@@ -321,3 +321,17 @@ The 3 SKIPs are the `test_introspect_*` trio, the same as pre-P8.5b (no
 `test_ptc_thread_exit_drain_probe`, `test_fork_ptc_drain_probe`,
 `test_depot_empty_scan`, `repro_ptc_resize_capacity`, `oracle_fast`,
 `oracle_control`, and `test_norseq`.
+
+## Finding: the claimed 93.7 -> 46.5 us p999 baseline arm was probably NOT rseq-off
+
+The P8.5b sustained A/B (`docs/results/jobs/intel-hi-r5rseq-sustained/cmd`)
+selected its "BEFORE (rseq OFF)" arm with `UMEM_RSEQ_OFF=1`. That env var was
+read only by a temporary gate compiled under `-DUMEM_RSEQ_ARM_DEBUG`, added in
+2324ba2 and **removed in 545bbce** (the norseq commit). The sustained run did
+build with `-DUMEM_RSEQ_ARM_DEBUG`, from `~/libumem-r5rseq`, a `run-remote.sh`
+sync and not an isolated ref, so its source revision is unknown. If that tree
+was at or after 545bbce, both arms ran with rseq ON and the 2x difference
+comes from something else. The source that was measured cannot be recovered.
+The number is therefore **unattributed**. The re-measure below uses
+`UMEM_OPTIONS=norseq` (the shipped switch, verified by `test_norseq.sh`) on
+the same binary, from an isolated committed ref.
