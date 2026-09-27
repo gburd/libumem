@@ -1563,6 +1563,133 @@ extern int umem_dbg_rseq_probe;
 #define	UMEM_RSEQ_DBG_INC(ctr)	((void)0)
 #endif
 
+/*
+ * Sheaves/barn measurement probe (round 7, docs/results/2026-09-27-sheaves-
+ * barn-review.md).  COMPILED OUT unless -DUMEM_BARN_PROBE; no Makefile
+ * target builds it (./configure CPPFLAGS=-DUMEM_BARN_PROBE).  Observation
+ * only: it changes no decision, and its counters are relaxed atomics that a
+ * reader sums after the threads that wrote them have exited.
+ *
+ * It answers one question: how often does umem_ptc_mag_return*() break up a
+ * magazine that still holds objects (umem_mag_drain), and how much of that
+ * reaches the slab layer, relative to all allocations and to slab traffic.
+ * Linux 1b87ea06a34b fixed the SLUB analogue (a sheaf flushed to slabs).
+ *
+ * Sources: 0 = thread exit (umem_ptc_mag_flush_all, passes cache_empty),
+ * 1 = rseq reload (umem_rseq_reload, passes cache_full), 2 = PTC trylock
+ * path (umem_ptc_mag_return_trylock, from _umem_alloc/_umem_free).
+ */
+#ifdef UMEM_BARN_PROBE
+volatile long umem_barn_ret[3];		/* returns of a VALID magazine */
+volatile long umem_barn_part_mags[3];	/* 0 < rounds < cap: drained */
+volatile long umem_barn_part_objs[3];
+volatile long umem_barn_full_mags[3];	/* rounds == cap, not full list */
+volatile long umem_barn_full_objs[3];
+volatile long umem_barn_stale_mags;	/* !VALID with rounds > 0 */
+volatile long umem_barn_stale_objs;
+volatile long umem_barn_drain_slab;	/* drained objects -> slab_free */
+volatile long umem_barn_miss_slab;	/* slab allocs on magazine miss */
+volatile long umem_barn_miss_slab_depot;	/* ...with a full list non-empty */
+volatile long umem_barn_allocs;		/* _umem_alloc calls (flushed) */
+__thread long umem_barn_tl_allocs;
+__thread umem_cache_t *umem_barn_tl_drain_cp;
+#define	UMEM_BARN_ADD(v, n)	\
+	(void) __atomic_add_fetch(&(v), (long)(n), __ATOMIC_RELAXED)
+#define	UMEM_BARN_FLUSH_TL()	do {					\
+	UMEM_BARN_ADD(umem_barn_allocs, umem_barn_tl_allocs);		\
+	umem_barn_tl_allocs = 0;					\
+} while (0)
+
+/* Classify one umem_ptc_mag_return* call before it drains anything. */
+static void
+umem_barn_note_return(int src, int valid, int to_full, int rounds, int cap)
+{
+	if (rounds > cap)
+		rounds = cap;
+	if (!valid) {
+		if (rounds > 0) {
+			UMEM_BARN_ADD(umem_barn_stale_mags, 1);
+			UMEM_BARN_ADD(umem_barn_stale_objs, rounds);
+		}
+		return;
+	}
+	UMEM_BARN_ADD(umem_barn_ret[src], 1);
+	if (rounds > 0 && rounds < cap) {
+		UMEM_BARN_ADD(umem_barn_part_mags[src], 1);
+		UMEM_BARN_ADD(umem_barn_part_objs[src], rounds);
+	} else if (rounds == cap && !to_full) {
+		UMEM_BARN_ADD(umem_barn_full_mags[src], 1);
+		UMEM_BARN_ADD(umem_barn_full_objs[src], rounds);
+	}
+}
+#define	UMEM_BARN_NOTE_RETURN(src, cp, mlp, mp, rounds, cap)		\
+	umem_barn_note_return((src), UMEM_MAGAZINE_VALID((cp), (mp)),	\
+	    (mlp) == &(cp)->cache_full, (rounds), (cap))
+
+/*
+ * Report at exit.  Threads that exited flushed their alloc count in
+ * umem_ptc_mag_flush_all(); the thread running destructors flushes here.
+ * Slab counters are cache_slab_alloc/free, exact (bumped under cache_lock).
+ */
+static void __attribute__((destructor))
+umem_barn_report(void)
+{
+	umem_cache_t *cp;
+	uint64_t sa = 0, sf = 0, isa = 0, isf = 0;
+	static const char *src[3] = { "exit", "rseq", "ptc" };
+
+	UMEM_BARN_FLUSH_TL();
+	(void) mutex_lock(&umem_cache_lock);
+	for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
+	    cp = cp->cache_next) {
+		if (strncmp(cp->cache_name, "umem_alloc_", 11) == 0) {
+			uint64_t fr = cp->cache_full.ml_alloc;
+			uint64_t er = cp->cache_empty.ml_alloc;
+			for (int i = 0; i < cp->cache_depot_ncpus; i++) {
+				fr += cp->cache_depot_full[i].ml_alloc;
+				er += cp->cache_depot_empty[i].ml_alloc;
+			}
+			sa += cp->cache_slab_alloc;
+			sf += cp->cache_slab_free;
+			if (cp->cache_slab_alloc != 0)
+				fprintf(stderr, "BARN cache %s slab_alloc=%llu "
+				    "slab_free=%llu depot_full_pops=%llu "
+				    "depot_empty_pops=%llu magsize=%d\n",
+				    cp->cache_name,
+				    (unsigned long long)cp->cache_slab_alloc,
+				    (unsigned long long)cp->cache_slab_free,
+				    (unsigned long long)fr,
+				    (unsigned long long)er,
+				    cp->cache_magtype ?
+				    cp->cache_magtype->mt_magsize : -1);
+		} else {
+			isa += cp->cache_slab_alloc;
+			isf += cp->cache_slab_free;
+		}
+	}
+	(void) mutex_unlock(&umem_cache_lock);
+	for (int s = 0; s < 3; s++)
+		fprintf(stderr, "BARN src=%s returns=%ld partial_mags=%ld "
+		    "partial_objs=%ld full_drained_mags=%ld "
+		    "full_drained_objs=%ld\n", src[s], umem_barn_ret[s],
+		    umem_barn_part_mags[s], umem_barn_part_objs[s],
+		    umem_barn_full_mags[s], umem_barn_full_objs[s]);
+	fprintf(stderr, "BARN stale_mags=%ld stale_objs=%ld "
+	    "drained_to_slab=%ld\n", umem_barn_stale_mags,
+	    umem_barn_stale_objs, umem_barn_drain_slab);
+	fprintf(stderr, "BARN allocs=%ld miss_slab_alloc=%ld "
+	    "miss_slab_alloc_depot_nonempty=%ld\n", umem_barn_allocs,
+	    umem_barn_miss_slab, umem_barn_miss_slab_depot);
+	fprintf(stderr, "BARN umem_alloc_* slab_alloc=%llu slab_free=%llu; "
+	    "other caches slab_alloc=%llu slab_free=%llu\n",
+	    (unsigned long long)sa, (unsigned long long)sf,
+	    (unsigned long long)isa, (unsigned long long)isf);
+}
+#else
+#define	UMEM_BARN_FLUSH_TL()	((void)0)
+#define	UMEM_BARN_NOTE_RETURN(src, cp, mlp, mp, rounds, cap)	((void)0)
+#endif
+
 #if defined(__has_include)
 #if __has_include(<sys/auxv.h>)
 #include <sys/auxv.h>
@@ -2924,6 +3051,11 @@ umem_mag_drain(umem_cache_t *cp, umem_magazine_t *mp, int rounds, int cap)
 	if (rounds > cap)
 		rounds = cap;
 
+#ifdef UMEM_BARN_PROBE
+	/* Nested drains (free slowpath -> reload -> return) restore it. */
+	umem_cache_t *barn_saved = umem_barn_tl_drain_cp;
+	umem_barn_tl_drain_cp = cp;
+#endif
 	for (r = 0; r < rounds; r++) {
 		/* P5.13b: rounds are mangled; demangle before free. */
 		void *buf = UMEM_SLOT_DEMANGLE(&mp->mag_round[r],
@@ -2932,6 +3064,9 @@ umem_mag_drain(umem_cache_t *cp, umem_magazine_t *mp, int rounds, int cap)
 		if (buf != NULL)
 			_umem_cache_free(cp, buf);
 	}
+#ifdef UMEM_BARN_PROBE
+	umem_barn_tl_drain_cp = barn_saved;
+#endif
 }
 
 /*
@@ -2964,6 +3099,9 @@ umem_ptc_mag_return(umem_cache_t *cp, umem_maglist_t *mlp,
 {
 	int cap = umem_mag_capacity(mp);
 
+	/* Probe source: thread exit passes cache_empty, rseq reload full. */
+	UMEM_BARN_NOTE_RETURN(mlp == &cp->cache_full ? 1 : 0, cp, mlp, mp,
+	    rounds, cap);
 	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
 		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
@@ -2992,6 +3130,7 @@ umem_ptc_mag_return_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
 {
 	int cap = umem_mag_capacity(mp);
 
+	UMEM_BARN_NOTE_RETURN(2, cp, mlp, mp, rounds, cap);
 	if (!UMEM_MAGAZINE_VALID(cp, mp)) {
 		umem_mag_drain(cp, mp, rounds, cap);
 		atomic_add_64(&cp->cache_mag_total, -1ULL);
@@ -3056,6 +3195,7 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 {
 	int bin_idx;
 
+	UMEM_BARN_FLUSH_TL();
 	for (bin_idx = 0; bin_idx < PTC_NBINS; bin_idx++) {
 		umem_ptc_mag_t *mag = &ptc->mags[bin_idx];
 		umem_cache_t *cp = (umem_cache_t *)mag->cache;
@@ -3683,6 +3823,19 @@ retry:
 	 * We couldn't allocate a constructed object from the magazine layer,
 	 * so get a raw buffer from the slab layer and apply its constructor.
 	 */
+#ifdef UMEM_BARN_PROBE
+	{
+		/* Racy unlocked reads: an estimate, as the probe comment says. */
+		int held = cp->cache_full.ml_list != NULL;
+		for (int i = 0; !held && i < cp->cache_depot_ncpus; i++)
+			held = cp->cache_depot_full[i].ml_list != NULL;
+		if (!(cp->cache_cflags & UMC_INTERNAL)) {
+			UMEM_BARN_ADD(umem_barn_miss_slab, 1);
+			if (held)
+				UMEM_BARN_ADD(umem_barn_miss_slab_depot, 1);
+		}
+	}
+#endif
 	buf = umem_slab_alloc(cp, umflag);
 
 	if (unlikely(buf == NULL)) {
@@ -3971,6 +4124,10 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	if (!unlikely(cp->cache_flags & UMF_BUFTAG) && cp->cache_destructor != NULL)
 		cp->cache_destructor(buf, cp->cache_private);
 
+#ifdef UMEM_BARN_PROBE
+	if (umem_barn_tl_drain_cp == cp)
+		UMEM_BARN_ADD(umem_barn_drain_slab, 1);
+#endif
 	umem_slab_free(cp, buf);
 }
 
@@ -4107,6 +4264,9 @@ _umem_alloc(size_t size, int umflag)
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
 	void *buf;
 	static __thread int ptc_initializing = 0;
+#ifdef UMEM_BARN_PROBE
+	umem_barn_tl_allocs++;
+#endif
 umem_alloc_retry:
 	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
 		umem_cache_t *cp = umem_alloc_table[index];
