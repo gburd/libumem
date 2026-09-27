@@ -153,7 +153,11 @@ break_publish_locked(int armed)
 {
 	if (armed) {
 		umem_introspect_break_armed = 1;
+		(void) __atomic_fetch_or(&umem_hooks, UMEM_HOOK_BREAK,
+		    __ATOMIC_RELEASE);
 	} else {
+		(void) __atomic_fetch_and(&umem_hooks, ~UMEM_HOOK_BREAK,
+		    __ATOMIC_RELEASE);
 		umem_introspect_break_armed = 0;
 	}
 }
