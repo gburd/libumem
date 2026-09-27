@@ -377,6 +377,27 @@ if test "x$tsan" = "xyes"; then
     AC_SUBST(TSAN_LDFLAGS)
 fi
 
+# Frame pointers (T9).  The Linux x86_64 getpcstack() walks the %rbp chain
+# only; gcc -O2 omits frame pointers there, so without this every
+# UMEM_DEBUG=audit stack is one frame inside libumem.  Opt-in: default-on cost
+# 2-9 % on the x86_64 alloc/free fast path (bench_pairs, c7i.2xlarge; see
+# CHANGELOG).  aarch64 keeps frame records at -O2, so it needs no option.  The
+# sanitizers already build with -fno-omit-frame-pointer, so they imply it.
+AC_ARG_ENABLE([frame-pointers],
+    [AS_HELP_STRING([--enable-frame-pointers],
+        [Build libumem with -fno-omit-frame-pointer so UMEM_DEBUG=audit records full stacks on x86_64 (costs 2-9 % on the x86_64 fast path)])],
+    [frame_pointers=$enableval], [frame_pointers=no])
+if test "x$asan$ubsan$tsan" != "xnonono"; then
+    frame_pointers=yes
+fi
+FP_CFLAGS=""
+if test "x$frame_pointers" = "xyes"; then
+    FP_CFLAGS="-fno-omit-frame-pointer"
+    AC_DEFINE([UMEM_HAVE_FRAME_POINTERS], [1],
+        [libumem is built with -fno-omit-frame-pointer])
+fi
+AC_SUBST(FP_CFLAGS)
+
 # Recursion guard support
 AC_ARG_ENABLE([recursion-guard],
     [AS_HELP_STRING([--enable-recursion-guard],
@@ -520,5 +541,6 @@ Configuration summary:
   AddressSanitizer: $asan
   UBSanitizer:      $ubsan
   ThreadSanitizer:  $tsan
+  Frame pointers:   $frame_pointers
   libdw (DWARF):    $HAVE_LIBDW
 "

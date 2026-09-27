@@ -195,8 +195,11 @@ libumem_malloc_la_LIBADD = libumem.la
 # with zero syscalls in malloc_interpose.c's calloc().  The source also
 # defends against this structurally (see calloc_zero_fill there); this flag
 # is the second line of defense, not the only one.
+#
+# $(FP_CFLAGS) is -fno-omit-frame-pointer under --enable-frame-pointers (T9,
+# configure.ac).  AM_CFLAGS precedes $(CFLAGS), so the user's CFLAGS win.
 AM_CFLAGS = -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc \
-	-fno-builtin-free $(SIMD_CFLAGS) -D_UMEM_INTERNAL
+	-fno-builtin-free $(FP_CFLAGS) $(SIMD_CFLAGS) -D_UMEM_INTERNAL
 # Namespace the vendored sparsemap (sm.c/sm.h, upstream v5.5.0) so its public
 # symbols become umem_sm_* and cannot collide with an application that also
 # links its own copy of sparsemap.  Only sm.c/sm.h consult this macro.
