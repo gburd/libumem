@@ -1,0 +1,49 @@
+153:    static char proc_stat[65536];
+61:#define	UMEM_MAX_ERROR_SIZE 1024 /* error messages are truncated to this */
+ref=0657f3b
+sha=0657f3b601ecd122d8fe5efa1ed318f5622c1bbc
+role=intel-lo@r6arm
+job=exp-static-err
+isolated=yes
+patchset=static+err
+x86_64
+== frames >= 1024 B ==
+umem_inspect.c:1160:1:umem_findleaks	9360	dynamic,bounded
+umem_inspect.c:1160:1:umem_findleaks	9360	dynamic,bounded
+umem_profile.c:671:1:umem_profile_check_phase	4192	static
+umem_profile.c:671:1:umem_profile_check_phase	4192	static
+sm.c:5457:1:umem_sm_offset	1776	static
+sm.c:5457:1:umem_sm_offset	1776	static
+sm.c:7717:1:umem_sm_union	1664	static
+sm.c:7717:1:umem_sm_union	1664	static
+sm.c:7112:1:umem_sm_intersection	1632	static
+sm.c:7112:1:umem_sm_intersection	1632	static
+sm.c:7404:1:umem_sm_difference	1632	static
+sm.c:7404:1:umem_sm_difference	1632	static
+misc.c:340:1:log_message	1248	static
+misc.c:340:1:log_message	1248	static
+misc.c:360:1:debug_printf	1248	static
+misc.c:360:1:debug_printf	1248	static
+misc.c:375:1:umem_vprintf	1040	static
+misc.c:375:1:umem_vprintf	1040	static
+umem_fail.c:128:1:print_stacktrace	1040	static
+umem_fail.c:128:1:print_stacktrace	1040	static
+== depth, default thread (lazy binding / LD_BIND_NOW) ==
+mode=umem stack_kib=0 usable=8379920 depth=5200 result=ok umem_max_ncpus=8
+mode=umem stack_kib=0 usable=8379920 depth=4824 result=ok umem_max_ncpus=8
+mode=malloc stack_kib=0 usable=8379920 depth=3416 result=ok
+mode=umem stack_kib=0 usable=8379920 depth=5528 result=ok umem_max_ncpus=8
+== survival: explicit small stacks ==
+umem 16K=0 umem 20K=0 umem 24K=0 umem 32K=0 umem 64K=0 umem 128K=0 
+umem 16K bogus-opt=0
+== survival: first umem_alloc with N bytes of stack left (PROBE_LEAVE) ==
+4096=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 103677 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 5120=umem:0,glibc:0 6144=umem:0,glibc:0 7168=umem:0,glibc:0 7680=umem:0,glibc:0 8192=umem:0,glibc:0 10240=umem:0,glibc:0 12288=umem:0,glibc:0 16384=umem:0,glibc:0 
+== x86 no-crash under the tunable: where does the 64 KiB frame land? ==
+neighbour: tls canary bytes changed=0, stack canary bytes changed=0
+mode=umem stack_kib=0 usable=8208 depth=n/a:0 result=ok umem_max_ncpus=8
+thread stack lo=0x7f8d9a3f0000 sp=0x7f8d9a3f2010; target=0x7f8d9a3e1e40
+  maps: 7f8d99beb000-7f8d9a3ef000 rw-p 00000000 00:00 0 
+  maps: 7f8d9a3ef000-7f8d9a3f0000 ---p 00000000 00:00 0 
+  maps: 7f8d9a3f0000-7f8d9abf4000 rw-p 00000000 00:00 0 
+rc=0

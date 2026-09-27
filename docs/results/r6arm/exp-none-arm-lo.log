@@ -1,0 +1,52 @@
+ref=0657f3b
+sha=0657f3b601ecd122d8fe5efa1ed318f5622c1bbc
+role=arm-lo@r6arm
+job=exp-none
+isolated=yes
+patchset=none
+aarch64
+== frames >= 1024 B ==
+init_lib.c:114:1:umem_get_max_ncpus	65584	static
+init_lib.c:114:1:umem_get_max_ncpus	65584	static
+umem_inspect.c:1160:1:umem_findleaks	9344	static
+umem_inspect.c:1160:1:umem_findleaks	9344	static
+misc.c:340:1:log_message	4384	static
+misc.c:340:1:log_message	4384	static
+misc.c:360:1:debug_printf	4384	static
+misc.c:360:1:debug_printf	4384	static
+umem_profile.c:671:1:umem_profile_check_phase	4224	static
+umem_profile.c:671:1:umem_profile_check_phase	4224	static
+misc.c:375:1:umem_vprintf	4176	static
+misc.c:375:1:umem_vprintf	4176	static
+sm.c:5457:1:umem_sm_offset	1712	static
+sm.c:5457:1:umem_sm_offset	1712	static
+sm.c:7717:1:umem_sm_union	1664	static
+sm.c:7717:1:umem_sm_union	1664	static
+sm.c:7404:1:umem_sm_difference	1648	static
+sm.c:7404:1:umem_sm_difference	1648	static
+sm.c:7112:1:umem_sm_intersection	1600	static
+sm.c:7112:1:umem_sm_intersection	1600	static
+umem_fail.c:128:1:print_stacktrace	1040	static
+umem_fail.c:128:1:print_stacktrace	1040	static
+== depth, default thread (lazy binding / LD_BIND_NOW) ==
+mode=umem stack_kib=0 usable=8378224 depth=66880 result=ok umem_max_ncpus=8
+mode=umem stack_kib=0 usable=8378224 depth=66032 result=ok umem_max_ncpus=8
+mode=malloc stack_kib=0 usable=8378224 depth=1024 result=ok
+mode=umem stack_kib=0 usable=8378224 depth=66880 result=ok umem_max_ncpus=8
+== survival: explicit small stacks ==
+umem 16K=3 umem 20K=3 umem 24K=3 umem 32K=3 umem 64K=3 umem 128K=0 
+umem 16K bogus-opt=3
+== survival: first umem_alloc with N bytes of stack left (PROBE_LEAVE) ==
+4096=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66483 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 5120=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66487 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 6144=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66491 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 7168=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66495 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 7680=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66499 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 8192=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66503 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 10240=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66507 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 12288=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66511 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 16384=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66515 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 
+== x86 no-crash under the tunable: where does the 64 KiB frame land? ==
+./scripts/ec2/r6arm_fix_experiment.sh: line 39: 66519 Segmentation fault      GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608 PROBE_NEIGHBOUR=1 PROBE_WHERE=66000 ./probe umem 0 2>&1
+rc=139

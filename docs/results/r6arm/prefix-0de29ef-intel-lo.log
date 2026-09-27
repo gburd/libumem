@@ -1,0 +1,15 @@
+ref=0de29ef
+sha=0de29ef93df9816a7cb76e1babaf0ea445375c29
+role=intel-lo@r6arm
+job=prefix
+isolated=yes
+x86_64
+make-check-rc=2
+FAIL: test/integration/test_first_alloc_small_stack.sh
+cat: test/integration/test_first_alloc_small_stack.sh.log: No such file or directory
+./test/integration/test_first_alloc_small_stack.sh: line 18: 122442 Segmentation fault      env "$@" "$BIN" "${ARGS[@]}"
+FAIL: umem_alloc API exited 139
+PASS: first malloc() on a 16384 B thread with 8192 B budget (usable 7696): ok; umem_init never ran (not umem's malloc)
+PASS: first malloc() on a 16384 B thread with 8192 B budget (usable 7696): ok; umem_init had already run before this thread
+FAIL: first allocation on a small stack
+FAIL test/integration/test_first_alloc_small_stack.sh (exit status: 1)

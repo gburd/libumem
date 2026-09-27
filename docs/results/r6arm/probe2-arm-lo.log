@@ -1,0 +1,69 @@
+ref=e23fb25
+sha=e23fb25ecf0e05797b2ab8262372c113969ce1cb
+role=arm-lo@r6arm
+job=probe2
+isolated=yes
+6.12.107+deb13-cloud-arm64 aarch64
+#define HAVE_BACKTRACE 1
+#define HAVE_LIBDW 1
+#define HAVE_LIBNUMA 1
+== per-step depth, default thread ==
+depth ncpus rc=0 mode=ncpus stack_kib=0 usable=8312704 depth=66608 result=ok ncpus=8|
+depth stinit rc=0 mode=stinit stack_kib=0 usable=8312704 depth=5088 result=ok|
+depth numa rc=0 mode=numa stack_kib=0 usable=8312704 depth=1984 result=ok|
+depth dlopen rc=0 mode=dlopen stack_kib=0 usable=8312704 depth=3088 result=ok|
+depth umem rc=0 mode=umem stack_kib=0 usable=8312704 depth=66880 result=ok|
+== which step: default thread, UMEM_OPTIONS / UMEM_DEBUG variants ==
+depth umem UMEM_DEBUG=default rc=0 umem: rseq assembly fast path enabled (glibc=1, fs_offset=70048, ncpus=8)|mode=umem stack_kib=0 usable=8312704 depth=66880 result=ok|
+== neighbour canaries, probe thread 128 KiB (arm PTHREAD_STACK_MIN) / 64 KiB ==
+./scripts/ec2/r6arm_stack_probe2.sh: line 16: 42409 Segmentation fault      env "$@" > out.txt 2>&1
+neighbour umem 128K rc=139 
+neighbour umem 64K rc=3 setstacksize(64 KiB) rc=22 (PTHREAD_STACK_MIN=131072)|
+neighbour glibc 128K rc=0 neighbour: tls canary bytes changed=0, stack canary bytes changed=0|mode=malloc stack_kib=128 usable=55168 depth=n/a:0 result=ok|
+== under the harness tunable, default thread (8 MiB minus static TLS) ==
+./scripts/ec2/r6arm_stack_probe2.sh: line 16: 42422 Segmentation fault      env "$@" > out.txt 2>&1
+tunable ncpus rc=139 
+./scripts/ec2/r6arm_stack_probe2.sh: line 16: 42426 Segmentation fault      env "$@" > out.txt 2>&1
+tunable umem rc=139 
+./scripts/ec2/r6arm_stack_probe2.sh: line 16: 42430 Segmentation fault      env "$@" > out.txt 2>&1
+tunable umem neighbour rc=139 
+./scripts/ec2/r6arm_stack_probe2.sh: line 16: 42435 Segmentation fault      env "$@" > out.txt 2>&1
+tunable ncpus neighbour rc=139 
+no-tunable ncpus rc=0 mode=ncpus stack_kib=0 usable=8312704 depth=n/a:0 result=ok ncpus=8|
+== bench prodcons 16t, tunable, x5: umem; jemalloc dlopen (no preload); jemalloc LD_PRELOAD ==
+./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42448 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+umem=139 ./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42468 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+je-dlopen=139 je-preload=0 
+./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42508 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+umem=139 ./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42526 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+je-dlopen=139 je-preload=0 
+./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42562 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+umem=139 ./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42580 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+je-dlopen=139 je-preload=0 
+./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42616 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+umem=139 ./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42634 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+je-dlopen=139 je-preload=0 
+./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42670 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+umem=139 ./scripts/ec2/r6arm_stack_probe2.sh: line 35: 42688 Segmentation fault      env GLIBC_TUNABLES=$T8 $P timeout 120 $B -a $a -w prodcons -t 16 -n 1600000 -s 64:256 -r 1 -W 0 -A -c > bench.txt 2>&1
+je-dlopen=139 je-preload=0 
+== bisect the smallest surviving stack (KiB) ==
+64K=3 68K=3 72K=3 76K=3 80K=3 84K=3 88K=3 96K=3 112K=3 ./scripts/ec2/r6arm_stack_probe2.sh: line 45: 42733 Segmentation fault      ./probe umem $k > /dev/null 2>&1
+128K=139 ./scripts/ec2/r6arm_stack_probe2.sh: line 45: 42735 Segmentation fault      ./probe umem $k > /dev/null 2>&1
+136K=139 144K=0 160K=0 
+== gdb: first umem_alloc on the smallest stack that faults ==
+
+Thread 2 "probe" received signal SIGSEGV, Segmentation fault.
+0x0000fffff72eacac in umem_get_max_ncpus () at init_lib.c:142
+142	  if (ncpus == 0) {
+#0  0x0000fffff72eacac in umem_get_max_ncpus () at init_lib.c:142
+#1  0x0000fffff72fa0d0 in umem_init () at umem.c:6305
+#2  0x0000fffff72fa954 in umem_alloc_retry (cp=cp@entry=0xfffff7351940 <umem_null_cache>, umflag=umflag@entry=0) at umem.c:1338
+#3  0x0000fffff72ff6a4 in _umem_alloc (size=size@entry=64, umflag=umflag@entry=0) at umem.c:4278
+#4  0x0000aaaaaaaa1604 in op () at test/integration/probe_first_alloc_stack.c:84
+#5  0x0000aaaaaaaa16d0 in thr (arg=0x0) at test/integration/probe_first_alloc_stack.c:126
+#6  0x0000fffff71461d8 in start_thread (arg=0xfffff6d1b0a0) at ./nptl/pthread_create.c:448
+#7  0x0000fffff71ae15c [PAC] in thread_start () at ../sysdeps/unix/sysv/linux/aarch64/clone3.S:79
+sp             0xfffff6d0a610      0xfffff6d0a610
+=> 0xfffff72eacac <umem_get_max_ncpus+8>:	stp	x29, x30, [sp]
+   0xfffff72eacb0 <umem_get_max_ncpus+12>:	mov	x29, sp
+   0xfffff72eacb4 <umem_get_max_ncpus+16>:	stp	x19, x20, [sp, #16]

@@ -1,0 +1,62 @@
+ref=0657f3b
+sha=0657f3b601ecd122d8fe5efa1ed318f5622c1bbc
+role=intel-lo@r6arm
+job=exp-none
+isolated=yes
+patchset=none
+x86_64
+== frames >= 1024 B ==
+init_lib.c:114:1:umem_get_max_ncpus	65568	static
+init_lib.c:114:1:umem_get_max_ncpus	65568	static
+umem_inspect.c:1160:1:umem_findleaks	9360	dynamic,bounded
+umem_inspect.c:1160:1:umem_findleaks	9360	dynamic,bounded
+misc.c:340:1:log_message	4320	static
+misc.c:340:1:log_message	4320	static
+misc.c:360:1:debug_printf	4320	static
+misc.c:360:1:debug_printf	4320	static
+umem_profile.c:671:1:umem_profile_check_phase	4192	static
+umem_profile.c:671:1:umem_profile_check_phase	4192	static
+misc.c:375:1:umem_vprintf	4112	static
+misc.c:375:1:umem_vprintf	4112	static
+sm.c:5457:1:umem_sm_offset	1776	static
+sm.c:5457:1:umem_sm_offset	1776	static
+sm.c:7717:1:umem_sm_union	1664	static
+sm.c:7717:1:umem_sm_union	1664	static
+sm.c:7112:1:umem_sm_intersection	1632	static
+sm.c:7112:1:umem_sm_intersection	1632	static
+sm.c:7404:1:umem_sm_difference	1632	static
+sm.c:7404:1:umem_sm_difference	1632	static
+umem_fail.c:128:1:print_stacktrace	1040	static
+umem_fail.c:128:1:print_stacktrace	1040	static
+== depth, default thread (lazy binding / LD_BIND_NOW) ==
+mode=umem stack_kib=0 usable=8379920 depth=69208 result=ok umem_max_ncpus=8
+mode=umem stack_kib=0 usable=8379920 depth=66120 result=ok umem_max_ncpus=8
+mode=malloc stack_kib=0 usable=8379920 depth=3416 result=ok
+mode=umem stack_kib=0 usable=8379920 depth=69208 result=ok umem_max_ncpus=8
+== survival: explicit small stacks ==
+umem 16K=./scripts/ec2/r6arm_fix_experiment.sh: line 31: 66458 Segmentation fault      ./probe umem $k > /dev/null 2>&1
+139 umem 20K=./scripts/ec2/r6arm_fix_experiment.sh: line 31: 66464 Segmentation fault      ./probe umem $k > /dev/null 2>&1
+139 umem 24K=./scripts/ec2/r6arm_fix_experiment.sh: line 31: 66470 Segmentation fault      ./probe umem $k > /dev/null 2>&1
+139 umem 32K=0 umem 64K=./scripts/ec2/r6arm_fix_experiment.sh: line 31: 66475 Segmentation fault      ./probe umem $k > /dev/null 2>&1
+139 umem 128K=0 
+umem 16K bogus-opt=./scripts/ec2/r6arm_fix_experiment.sh: line 32: 66480 Segmentation fault      UMEM_OPTIONS=bogus_option ./probe umem 16 > /dev/null 2>&1
+139
+== survival: first umem_alloc with N bytes of stack left (PROBE_LEAVE) ==
+4096=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66482 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 5120=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66486 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 6144=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66492 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 7168=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66496 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 7680=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66500 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 8192=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66504 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 10240=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66510 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 12288=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66514 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 16384=./scripts/ec2/r6arm_fix_experiment.sh: line 34: 66518 Segmentation fault      PROBE_LEAVE=$n ./probe umem 0 > /dev/null 2>&1
+umem:139,glibc:0 
+== x86 no-crash under the tunable: where does the 64 KiB frame land? ==
+neighbour: tls canary bytes changed=0, stack canary bytes changed=0
+mode=umem stack_kib=0 usable=8208 depth=n/a:0 result=ok umem_max_ncpus=8
+thread stack lo=0x7f566b760000 sp=0x7f566b762010; target=0x7f566b751e40
+  maps: 7f566af5b000-7f566b75f000 rw-p 00000000 00:00 0 
+  maps: 7f566b75f000-7f566b760000 ---p 00000000 00:00 0 
+  maps: 7f566b760000-7f566bf64000 rw-p 00000000 00:00 0 
+rc=0

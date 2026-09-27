@@ -3,8 +3,8 @@
 Worker `@r6arm`, 2026-09-27. Follows up "Finding: arm-hi sustained_load.sh
 SEGVs in umem_init -> dlopen" in `2026-09-26-p85b-aliasing-mechanism-v2.md`.
 
-Status: **findings recorded before any fix.** Sections marked *pending* have no
-evidence yet.
+Status: findings recorded before any fix (360a83d). Sections 5, 6 and 8-10 were
+added from probe2 and the experiment runs, also before the fix was committed.
 
 ## Summary
 
@@ -134,14 +134,42 @@ aarch64 TCB layout), so the remainder differs by 3.4x.
 - arm64, 2.4 KB left: the dlopen alone (3.1 KB) runs past the guard, and so
   does the ld.so frame, which is where the backtrace faults.
 
-## 5. Why x86 metal did not crash under the tunable (*pending, probe2*)
+## 5. Why x86 did not crash under the tunable (probe2, experiment)
 
-A 69 KB frame on an 8.2 KB stack must leave the thread's mapping. glibc puts
-a single guard page below each thread stack. A frame that moves `sp` past the
-guard in one step, without touching the guard page, writes into whatever is
-mapped below it: normally another thread's stack or TLS. So "did not crash"
-may mean "silently wrote into a neighbouring thread". probe2 tests this with
-canaries in a neighbour thread created directly below the probe thread.
+A 69 KB frame on an 8.2 KB stack must leave the thread's mapping, so on x86
+"did not crash" means the frame landed in some other mapping.
+
+- x86_64, tunable set, default thread, first `umem_alloc()`: rc=0, and
+  `PROBE_WHERE` shows that `sp - 66000` lies **inside the next-lower rw
+  mapping**, past a single 4 KiB `---p` guard page
+  (`docs/results/r6arm/exp-none-intel-lo.log`):
+  ```
+  thread stack lo=0x7f566b760000 sp=0x7f566b762010; target=0x7f566b751e40
+    maps: 7f566af5b000-7f566b75f000 rw-p      <- another thread's stack
+    maps: 7f566b75f000-7f566b760000 ---p      <- guard
+    maps: 7f566b760000-7f566bf64000 rw-p      <- this thread
+  ```
+  gcc emits no stack probes here (Debian's gcc 14 does not enable
+  `-fstack-clash-protection` for this build), so the 64 KiB `sub rsp` jumps
+  the guard. `read()` then writes `/proc/stat` into the neighbouring mapping.
+- The same neighbour write, measured with canaries (probe2,
+  `-DPROBE_NB`, no tunable, 128 KiB probe thread whose TLS pushes usable
+  stack to 56 KB): **3,547 bytes of the neighbour thread's TLS changed** on
+  x86_64. The glibc control changed 0.
+  (`docs/results/r6arm/probe2-intel-lo.log`, "neighbour umem 128K".)
+- On aarch64 the same arms fault (rc=139) instead of writing the neighbour.
+  The gdb trace faults on the first store after the 64 KiB `sub sp`
+  (`stp x29, x30, [sp]` in `umem_get_max_ncpus`, `init_lib.c:142`). GCC's
+  aarch64 back end always probes a frame larger than the 64 KiB guard it
+  assumes, and here it probes at the new `sp`, which lands in unmapped
+  space. That is also why the fault PC in the original arm-hi backtrace was
+  in ld.so under dlopen: with only 2.4 KB left, dlopen reached the guard
+  first.
+
+So on x86_64 the bug is worse than a crash. A first `umem_alloc()` on a thread
+with less than ~69 KB of stack left can **silently write up to 64 KiB of
+`/proc/stat` into another thread's stack or TLS**. The arm64 behaviour (a
+clean SEGV) is the safer failure mode.
 
 ## 6. The bench under the tunable (probe1, 16 threads, prodcons 64:256)
 
@@ -152,10 +180,19 @@ canaries in a neighbour thread created directly below the probe thread.
 | jemalloc, tunable 8 MiB | rc=0 | rc=0 |
 | jemalloc, tunable 64 KiB | rc=0 | rc=0 |
 
-My jemalloc arm used `LD_PRELOAD` (so jemalloc initialized on the main thread
-before any bench thread existed). @r6cmp reports jemalloc also SEGVs on
-arm-lo under the tunable. probe2 runs both jemalloc arms (dlopen and
-LD_PRELOAD), five times each, to reconcile the two.
+My probe1 jemalloc arm used `LD_PRELOAD`, so jemalloc initialized on the main
+thread before any bench thread existed. probe2 ran both arms 5 times each on
+arm64 with the tunable (`docs/results/r6arm/probe2-arm-lo.log`):
+
+| arm64, tunable 8 MiB | 5 runs |
+|---|---|
+| umem | 139 ×5 |
+| jemalloc via `dlopen` (the bench default, what @r6cmp ran) | **139 ×5** |
+| jemalloc via `LD_PRELOAD` | 0 ×5 |
+
+This agrees with @r6cmp: jemalloc also crashes when its first use is on a
+2.4 KB bench thread. x86_64 was 0 for all 15 runs. So under the tunable the
+crash is not umem-specific. 2.4 KB of stack is not enough for anybody.
 
 ## 7. What `dlopen` at `envvar.c:997` does and whether init needs it
 
@@ -168,6 +205,92 @@ strings by defining those functions. Nothing in this tree defines them
 (grep: only envvar.c's table names them). It is part of the documented
 libumem API, so it stays. It costs ~3 KB of stack and is not the defect.
 
+## 8. Sibling sweep: every library frame >= 512 B (gcc `-fstack-usage`)
+
+Built with `-fstack-usage` (`scripts/ec2/r6arm_stack_usage.sh`,
+`docs/results/r6arm/su1-*.log`). x86_64 / aarch64, bytes:
+
+| function | x86 | arm | reached on | action |
+|---|---:|---:|---|---|
+| `umem_get_max_ncpus` (init_lib.c) | 65,568 | 65,584 | **first allocation, always** | **fixed** |
+| `umem_findleaks` (umem_inspect.c) | 9,360 | 9,344 | explicit API call only | none: caller asks for it |
+| `log_message` (misc.c) | 4,320 | 4,384 | **first allocation, if `UMEM_*` has a bad item** | **fixed** |
+| `debug_printf` (misc.c) | 4,320 | 4,384 | no caller in the tree | same buffer as log_message, fixed together |
+| `umem_profile_check_phase` | 4,192 | 4,224 | update thread (libumem's own 8 MiB stack) | none |
+| `umem_vprintf` (misc.c) | 4,112 | 4,176 | panic / error report paths | **fixed** (same macro) |
+| `umem_sm_*` (sm.c) | ≤1,776 | ≤1,712 | not in init; owned by the sparsemap agent | none |
+| `print_stacktrace` (umem_fail.c) | 1,040 | 1,040 | panic | below the 4 KiB bar |
+| `umem_process_value` (envvar.c:863, `buf[512]`) | 560 | 560 | init | below the bar |
+| `umem_cache_init` | 672 | 672 | init | below the bar |
+
+The coordinator's other candidates, checked:
+- `umem_inspect.c:1045` / `:1951`: struct members
+  (`uintptr_t stack[UMEM_INSPECT_MAX_STACK]` in `leak_class`,
+  `uint64_t stack[...]` in the v2 profile record), not stack locals. They
+  show up only inside `umem_findleaks` (9.3 KB), an explicit API call.
+- `umem_own.c:67`: `ohd_alloc_stack[OWN_STACK_DEPTH=8]`, a 64 B struct member.
+- `umem_profile.c:114-143`: members of `profile_state_t`, which is a
+  file-scope static (`static profile_state_t profile_state`), not stack.
+- `umem_fail.c:130` `cur_stack[128]`: 1,040 B frame, panic path only.
+
+Where the first allocation's remaining depth goes after the fix:
+`umem_stacktrace_init` 4.7-5.1 KB (backtrace warm-up into libgcc_s
+unwinding, plus libdw's `dwfl_linux_proc_report`), `dlopen(NULL)` ~3 KB,
+`umem_numa_init` ≤2-3.4 KB. Those are libgcc/libdw/libnuma frames, not
+libumem's own.
+
+## 9. Experiment: candidate fixes applied by sed to an isolated tree
+
+`scripts/ec2/r6arm_fix_experiment.sh`, 0657f3b, `docs/results/r6arm/exp-*.log`.
+It measures only and is not the committed fix. First-`umem_alloc()` peak
+depth on a default thread, and the smallest stack budget that survives
+(`PROBE_LEAVE`, 4 KiB steps up to 16 KiB):
+
+| patch | x86 depth | arm depth | x86 16 KiB thread | survives with N B left (both arches) | x86 16 KiB + bad `UMEM_OPTIONS` |
+|---|---:|---:|---|---|---|
+| none (master) | 69,208 | 66,880 | SEGV | none of 4-16 KiB | SEGV |
+| `proc_stat` static | 5,200 | 5,360 | ok | ≥ 5,120 | **SEGV** (log_message 4.3 KB on top) |
+| + `UMEM_MAX_ERROR_SIZE` 1024 | 5,200 (5,528 bad opt) | 5,360 | ok | ≥ 5,120 | ok |
+
+glibc's first `malloc` survived every budget including 4 KiB. umem's
+post-fix first allocation needs about 5 KB, which is within about 2 KB of
+jemalloc's 3.2 KB. The residual is libgcc_s/libdw/ld.so, not libumem code.
+
+## 10. Regression, pre-fix (0de29ef, test committed alone)
+
+`test/integration/test_first_alloc_small_stack{.c,.sh}`, in `TESTS`.
+A first allocation on a 16 KiB thread (x86_64), or on a `PTHREAD_STACK_MIN`
+thread (arm64, 128 KiB) with only 8 KiB of stack left. Three arms: the
+`umem_alloc` API, a glibc control, and `libumem_malloc.so` under
+LD_PRELOAD. `verify-isolated.sh` at 0de29ef, `make check
+TESTS=test/integration/test_first_alloc_small_stack.sh`
+(`docs/results/r6arm/prefix-0de29ef-*.log`):
+
+```
+arm-lo:   FAIL: umem_alloc API exited 139
+          PASS: first malloc() on a 131072 B thread ... umem_init never ran (not umem's malloc)
+          PASS: first malloc() on a 131072 B thread ... umem_init had already run before this thread
+          FAIL test/integration/test_first_alloc_small_stack.sh (exit status: 1)
+intel-lo: FAIL: umem_alloc API exited 139
+          PASS: first malloc() on a 16384 B thread ... umem_init never ran (not umem's malloc)
+          PASS: first malloc() on a 16384 B thread ... umem_init had already run before this thread
+          FAIL test/integration/test_first_alloc_small_stack.sh (exit status: 1)
+```
+
+The LD_PRELOAD arm passes pre-fix, and the test reports why: libc's own
+startup calls `malloc` on the main thread, so under the interposer
+`umem_init` has always run on the 8 MiB main stack before any thread exists.
+That arm cannot fail from this defect and is kept as a survival check, not
+claimed as a regression.
+
+## 11. Metal re-run: skipped (coordinator decision)
+
+The fix is a stack-depth reduction on small threads, and it reproduces and
+verifies on the lo boxes (section 10). The original arm-hi bench crash comes
+from the harness tunable, which leaves 2.4 KB of stack, and that crashes
+jemalloc too (section 6). @r6cmp owns that change. Re-running the metal bench
+would test @r6cmp's fix, not this one, so no metal was launched.
+
 ## Attribution
 
 - Primary: the harness tunable (confirmed on arm-lo and intel-lo, table 1).
@@ -176,7 +299,6 @@ libumem API, so it stays. It costs ~3 KB of stack and is not the defect.
   first-call stack use is ~67 KB because of `umem_get_max_ncpus()`'s 64 KB
   on-stack buffer. It crashes a first `umem_alloc()` on a 64 KiB thread on
   x86_64, where glibc and jemalloc survive a 16 KiB one.
-- Fix direction (not yet applied): move `proc_stat` off the stack. It is read
-  exactly once, under `umem_init_lock`'s initializing thread, so a `static`
-  buffer is safe and costs 64 KB of BSS. Alternatively read `/proc/stat` in
-  chunks. The regression is a first `umem_alloc()` from a 64 KiB pthread.
+- On x86_64 the same defect can silently overwrite a neighbouring thread's
+  stack/TLS instead of crashing (section 5).
+- Fix: section 12.
