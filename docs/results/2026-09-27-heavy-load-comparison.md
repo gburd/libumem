@@ -244,3 +244,11 @@ vendored change is pending either.
 | runs | t=192 (12 x 15 min), then t=384 if t=192's gaps allow | t=192 (12 x 15 min) |
 
 (Full `numactl -H` and the rest of the provenance are in each TOML header.)
+
+**t=384 go/no-go, fixed before any t=192 result was seen (07:05 UTC).**
+intel-hi runs t=384 after its t=192 only if, at t=192, **every allocator's
+own run-to-run gap in Mops/s is at most 10 % on both workloads**. With two
+runs per arm, a pair that already disagrees by more than 10 % at one thread
+per vCPU leaves no room to read a 2x-oversubscribed run. On lo, that
+oversubscription produced 18-37 % gaps (A4). If the criterion fails,
+intel-hi is terminated after t=192, and the reason is recorded here.
