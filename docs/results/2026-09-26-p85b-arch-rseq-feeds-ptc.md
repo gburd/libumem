@@ -260,3 +260,57 @@ falls back to the always-correct `cc_lock`/depot path. Honoured under
 configurations, the layer demonstrably fires (0 -> 257 M served), and the
 ~~sustained p999 is roughly halved to ~46 us, beating the 85 us criterion,~~ (UNATTRIBUTED, see the correction under the p999 table) with
 no t=1 regression and no fork/exit regression.
+
+## P8.5b-fix (2026-09-26, @r5fix): the aliasing, its cause, the fix, the evidence
+
+Full record: `docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md`.
+
+**Cause (proven, both arches).** The reload commit this branch armed
+(`umem_rseq_reload_{alloc,free}_commit`) was not atomic under rseq abort. It
+made 2-3 slot stores and set its success value after the committing one. An
+abort (preemption, signal, migration) could leave a magazine published while
+the C slowpath believed it unpublished and gave it to the depot as well:
+two owners. A second, independent defect: the per-cache `magsize`, never
+refreshed on resize, stranded rounds (a leak, not the "ceiling" retracted
+above). The 64-120 KB signature is explained by magsize 1-3 classes reloading
+on nearly every operation, which crosses the reload window about 100x more
+often than the small classes do.
+
+**Fix (4b30bff).** Two single-store rseq sections, `umem_rseq_reload_detach`
+(slot -> NULL) and `umem_rseq_reload_attach` (NULL -> magazine, with its own
+capacity as `magsize`). Each sets its result before its only committing
+store. The C slowpath runs detach, then attach, then returns the old
+magazine through `umem_ptc_mag_return` with its exact count. `umem_magazine_destroy`
+frees a shell to its own source cache. Purge still does not touch
+`cache_rseq[]`, deliberately (per-magazine bound; a cross-cpu write would not
+be rseq-safe).
+
+| evidence | pre-fix | post-fix |
+|---|---|---|
+| `repro_reload_commit_abort` (x86_64, aarch64) | FAIL every run, up to 2,824 violations/run | 0/200 runs fail, both arches |
+| `repro_rseq_resize_leak` batch 16 (forced 1 -> 3 resize) | 16 -> 12,010 stranded | 16 -> 16 (flat, = norseq) |
+| `repro_rseq_reload_alias` (e2e, public API) | 1/190 | 0 fails (lo gate, both arches) |
+| `oracle_rate.sh` 100 x 8t/10s mixed/all, rseq on | 5/200 | see below |
+| lo gate: make check, 6-bug suite, trailing_store, commit_safe, oracle x4 | - | ALL PASS both arches (4634100) |
+| 192t/60s oracle default, intel-hi / arm-hi | (PASS; blind) | PASS 370 M / 700 M allocs |
+| 192t/60s oracle ASan, intel-hi / arm-hi | (PASS; blind) | PASS 973 M / 1.53 B allocs |
+
+**Performance, re-measured correctly (same binary, `UMEM_OPTIONS=norseq`,
+isolated ref 66fd33b / 3b82b59, Debian metal):**
+
+| | intel-hi ON | intel-hi norseq | arm-hi ON | arm-hi norseq |
+|---|---:|---:|---:|---:|
+| sustained prodcons p999 (median of 3) | 29.7 us | 41.7 us | 5.0 us | 16.9 us |
+| sustained prodcons p99 | 4.1 us | 6.5 us | 1.7 us | 1.0 us |
+| sustained prodcons Mops/s | 1.84 | 1.90 | 1.70 | 1.82 |
+| sustained prodcons RSS@peak | 130 MB | 246 MB | 122 MB | 219 MB |
+| multi t=1 ops/s | 7.20 M | 7.09 M | 7.10 M | 7.09 M |
+| multi t=192 ops/s | 257.0 M | 259.3 M | 400.0 M | 388.1 M |
+
+rseq ON cuts sustained p999 on both arches and halves RSS. It is not slower
+at t=1 or t=192 in the multi bench on either arch (every difference is within
+±3 %). It is 3-7 % lower on sustained prodcons throughput, and on arm its
+p99 is higher. **norseq is ALSO well under the old 85 us target** on this
+build (41.7 us intel), so the former "93.7 us rseq off" baseline does not
+reproduce as a norseq number. The rseq layer's contribution is about 12 us
+(intel) or 12 us (arm) off p999, not the claimed ~47 us.
