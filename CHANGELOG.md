@@ -3,6 +3,38 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Dependencies
+
+- **Vendored sparsemap deliberately held at v5.5.0; upstream v5.6.0 not
+  taken** (`sm.c`/`sm.h` remain byte-identical to upstream tag `v5.5.0`).
+  v5.6.0 is a hardening release with real memory-safety fixes, but it
+  regressed code that 5.5.0 had correct. Every defect below was shown with a
+  public-API probe that passes on v5.5.0 and fails on v5.6.0, identically on
+  x86_64 and aarch64 (`docs/reviews/2026-09-27-sparsemap-5.6.0-probe.c`,
+  written to be handed upstream):
+  - `sm_split` with the split index in the gap between two chunks moves the
+    *lower* chunk into the destination (`{1,8193}` split at 5000 leaves
+    `map={}`, `other={1,8193}`). Upstream's new `start <= idx` guard made a
+    dead rewind branch live; a two-line fix is in the review.
+  - `sm_equals` and `sm_hash` now depend on the encoding. An RLE run and the
+    same bits held as sparse chunks compare unequal and hash differently,
+    contrary to `sm.h`.
+  - The "amplification closed" claim is incomplete: `sm_is_subset`,
+    `sm_is_superset` and `sm_overlap` still take more than 10 s on a valid
+    24-byte input.
+  - The new run iterator puts about 33 KB of stack in each of `sm_xor`,
+    `sm_equals`, `sm_compare`, `sm_subset_compare` and the `*_cardinality`
+    family. In 5.5.0 the largest frame was 1.8 KB.
+
+  libumem was not exposed to either version's defects: no libumem code calls
+  sparsemap (0 of 128 built binaries reference a `umem_sm_*` symbol) and
+  `sm.h` is not installed. `libumem.so` does still export 86 `umem_sm_*`
+  functions (all prefixed, zero bare `sm_*`), which is undocumented ABI
+  surface. The review recommends dropping it. Full classification and
+  evidence: `docs/reviews/2026-09-27-sparsemap-5.6.0-review.md`.
+
 ## [3.3.2] - 2026-09-27
 
 Arms the rseq lock-free per-CPU layer (P8.5b), on by default, and fixes the
