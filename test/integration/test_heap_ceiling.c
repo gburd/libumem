@@ -59,10 +59,12 @@
 #define _GNU_SOURCE
 #endif
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include "umem.h"
@@ -205,6 +207,30 @@ main(int argc, char **argv)
 			    TARGET_BYTES / (1024 * 1024));
 			return (77);
 		}
+	}
+
+	/*
+	 * One at a time.  The MemTotal check above budgets this process alone,
+	 * but `make -j check` runs the 4096 B and 512 B arms concurrently:
+	 * 2 x 9 GB touched on a 15 GB box, and the OOM killer takes one
+	 * (exit 137, a FAIL unrelated to the change under test; found
+	 * 2026-09-27 on c7i/c7g.2xlarge).  A blocking flock on a per-user file
+	 * serialises the arms without changing the target.  If the lock can't
+	 * be taken, run anyway: this protects make check, it is not a gate.
+	 */
+	{
+		char lp[128];
+		int lfd;
+
+		(void) snprintf(lp, sizeof (lp), "/tmp/umem-heap-ceiling-%ld.lock",
+		    (long)getuid());
+		lfd = open(lp, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+		if (lfd >= 0 && flock(lfd, LOCK_EX) != 0) {
+			(void) close(lfd);
+			lfd = -1;
+		}
+		/* Held until exit; the kernel releases it. */
+		(void) lfd;
 	}
 
 	held = calloc(NCHUNKS, sizeof (void *));
