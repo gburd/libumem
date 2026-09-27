@@ -346,13 +346,16 @@ test_frag_live_bytes(void)
  * pool-full path allocates and immediately frees one buffer past the peak,
  * which the allocator sees and the live total rightly does not).
  */
-static atomic_size_t cnt_live, cnt_peak;
+static atomic_size_t cnt_live, cnt_peak, cnt_maxreq;
 static void *cnt_alloc(size_t n)
 {
 	size_t *h = malloc(n + 16);
 	if (h == NULL)
 		return (NULL);
 	h[0] = n;
+	size_t mr = atomic_load(&cnt_maxreq);
+	while (n > mr && !atomic_compare_exchange_weak(&cnt_maxreq, &mr, n))
+		;
 	size_t now = atomic_fetch_add(&cnt_live, n) + n;
 	size_t pk = atomic_load(&cnt_peak);
 	while (now > pk && !atomic_compare_exchange_weak(&cnt_peak, &pk, now))
@@ -413,6 +416,34 @@ test_frag_live_slots(void)
 	    (BENCH_MIN_OPS_PER_THREAD * 8 / 4 / 4) * max_sz,
 	    "t=4 sampled live peak %zu is not the sum of the workers' slots "
 	    "(true peak %zu)", st.live_bytes_at_peak, truth);
+}
+
+/*
+ * frag must run the sizes asked for.  frag_worker clamped max_size to 4096,
+ * so a 16-64 KB cell ran <= 4 KB objects and reported them as large.  A fixed
+ * 8192-byte request must reach the allocator as 8192.
+ */
+static void
+test_frag_large_sizes(void)
+{
+	printf("frag runs sizes above 4096\n");
+	allocator_ops_t cnt = mock;
+	cnt.alloc = cnt_alloc;
+	cnt.free = cnt_free;
+	atomic_store(&cnt_maxreq, 0);
+	workload_config_t cfg = {
+		.name = "fragmentation", .fn = workload_fragmentation,
+		.thread_count = 1,
+		.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD,
+		.min_size = 8192, .max_size = 8192,
+	};
+	bench_stats_t st;
+	bench_run(&cnt, &cfg, &st);
+	printf("   asked 8192:8192 -> largest request %zu\n",
+	    atomic_load(&cnt_maxreq));
+	CHECK(atomic_load(&cnt_maxreq) == 8192,
+	    "asked for 8192-byte objects, the allocator saw at most %zu",
+	    atomic_load(&cnt_maxreq));
 }
 
 /*
@@ -643,6 +674,7 @@ main(void)
 	test_frag_live_bytes();
 	test_frag_live_slots();
 	test_prodcons_rings();
+	test_frag_large_sizes();
 	test_no_bogus_fragmentation();
 	test_interval_mode();
 	test_interval_straggler();

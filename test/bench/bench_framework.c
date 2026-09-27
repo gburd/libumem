@@ -1217,7 +1217,9 @@ static void *frag_worker(void *arg) {
     workload_config_t *cfg = ctx->cfg;
 
     size_t min_sz = cfg->min_size < 8 ? 8 : cfg->min_size;
-    size_t max_sz = cfg->max_size > 4096 ? 4096 : cfg->max_size;
+    /* No upper clamp: -s 16384:65536 must run 16-64 KB objects.  This used
+     * to clamp to 4096, so every "large" frag cell silently ran <= 4 KB. */
+    size_t max_sz = cfg->max_size;
     if (max_sz < min_sz) max_sz = min_sz;
 
     void **pool = calloc(ctx->pool_cap, sizeof(void *));
