@@ -6,7 +6,10 @@ SEGVs in umem_init -> dlopen" in `2026-09-26-p85b-aliasing-mechanism-v2.md`.
 Status: **fixed** in 59ab75e (libumem half). The findings were committed
 before the fix (360a83d, 563e899). Sections 5, 6 and 8-10 come from probe2 and
 the experiment runs, and section 12 from the post-fix gate. The harness half
-belongs to @r6cmp.
+belongs to @r6cmp. Provenance note: this doc's section 12, the post-fix logs and
+the CHANGELOG entry landed in 286cd75, whose message is about
+`tool_common.sh`. A concurrent commit by another agent swept in my staged
+paths. The content is as I staged it.
 
 ## Summary
 
