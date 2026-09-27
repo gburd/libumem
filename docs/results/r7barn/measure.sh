@@ -10,6 +10,8 @@ export GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536
 if [ "$T" -ge 64 ]; then NP=$((T*400000)); FR=64:256; else NP=40000000; FR=16:4096; fi
 FN=$((T*4*25000))   # frag -n sizes the pool as n/threads/4 objects: 25k/thread
 POOL=$((T*4*25000))
+PF=499; SD=20; SW=3
+[ "$T" -ge 64 ] && { PF=97; SD=30; SW=5; }   # 192t: perf.data small; sustained 6x30s
 run() { # label, then bench args; probe build
   local l=$1; shift
   ( cd "$P" && LD_LIBRARY_PATH=.libs timeout 900 ./test/bench/.libs/bench_main -a umem -c "$@" \
@@ -21,8 +23,8 @@ run frag-n      -w frag     -t $T -n $FN -s $FR
 run prodcons-D  -w prodcons -t $T -n $POOL -s 64:256 -D 10:4 -W 1
 run frag-D      -w frag     -t $T -n $POOL -s $FR    -D 10:4 -W 1
 # sustained_load.sh continuous prodcons (+frag), probe build
-( cd "$P" && SUSTAINED_MODE=continuous SUSTAINED_WINDOWS=3 SUSTAINED_WARMUPS=1 \
-    SUSTAINED_FRAG_SIZES=$FR timeout 1200 ./scripts/ec2/sustained_load.sh umem 20 $T \
+( cd "$P" && SUSTAINED_MODE=continuous SUSTAINED_WINDOWS=$SW SUSTAINED_WARMUPS=1 \
+    SUSTAINED_FRAG_SIZES=$FR timeout 1500 ./scripts/ec2/sustained_load.sh umem $SD $T \
     > "$OUT/sustained.out" 2>&1; echo "rc=$?" >> "$OUT/sustained.out" )
 cp "$P"/docs/results/*/sustained.toml.log "$OUT/sustained.log" 2>/dev/null || \
   find "$P/docs/results" -name 'sustained.toml.log' -newer "$OUT/provenance.txt" -exec cp {} "$OUT/sustained.log" \;
@@ -31,7 +33,7 @@ echo "== sustained"; grep -E "^BARN (src|stale|allocs|umem_alloc_)" "$OUT/sustai
 sudo sysctl -w kernel.perf_event_paranoid=-1 >/dev/null 2>&1
 for w in prodcons frag; do
   s=64:256; [ $w = frag ] && s=$FR
-  LD_LIBRARY_PATH=.libs perf record -F 499 -g -o "$OUT/perf-$w.data" -- \
+  LD_LIBRARY_PATH=.libs perf record -F $PF -g -o "$OUT/perf-$w.data" -- \
     ./test/bench/.libs/bench_main -a umem -c -w $w -t $T -n $POOL -s $s -D 10:2 -W 1 \
     > "$OUT/perf-$w.csv" 2> "$OUT/perf-$w.err"
   perf report -i "$OUT/perf-$w.data" --stdio --no-children -g none --percent-limit 0.3 \

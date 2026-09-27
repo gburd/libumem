@@ -1,0 +1,9 @@
+sha=f93672a78b997a31b4c6952ae000ff619d92b19f
+Linux ip-172-31-47-130 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64 GNU/Linux
+192
+
+Debian GNU/Linux 13 (trixie)
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+4fb4215f06d2fbbc4cde7abe7aec7b8556548522db63b5232bdc1200d66b3fd5  /home/admin/libumem-iso-m192-f93672a78b99-probe/.libs/libumem.so
+45f9b8af272abbb0f167664fb2a22d08f094d7c3c12f389058e90338d4665003  /home/admin/libumem-iso-m192-f93672a78b99/.libs/libumem.so

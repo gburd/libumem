@@ -1,0 +1,30 @@
+BARN cache umem_alloc_80 slab_alloc=54850 slab_free=0 depot_full_pops=2485 depot_empty_pops=2638 magsize=255
+BARN cache umem_alloc_96 slab_alloc=61520 slab_free=0 depot_full_pops=42587 depot_empty_pops=42707 magsize=255
+BARN cache umem_alloc_112 slab_alloc=62472 slab_free=0 depot_full_pops=42583 depot_empty_pops=42693 magsize=255
+BARN cache umem_alloc_128 slab_alloc=62280 slab_free=0 depot_full_pops=42588 depot_empty_pops=42695 magsize=255
+BARN cache umem_alloc_160 slab_alloc=65824 slab_free=0 depot_full_pops=85385 depot_empty_pops=85474 magsize=255
+BARN cache umem_alloc_192 slab_alloc=69058 slab_free=0 depot_full_pops=85385 depot_empty_pops=85454 magsize=255
+BARN cache umem_alloc_224 slab_alloc=65795 slab_free=0 depot_full_pops=85383 depot_empty_pops=85478 magsize=255
+BARN cache umem_alloc_256 slab_alloc=66945 slab_free=0 depot_full_pops=85391 depot_empty_pops=85468 magsize=255
+BARN cache umem_alloc_320 slab_alloc=33162 slab_free=0 depot_full_pops=80347 depot_empty_pops=80443 magsize=127
+BARN src=exit returns=809 partial_mags=1 partial_objs=203 full_drained_mags=797 full_drained_objs=191459
+BARN src=rseq returns=1102671 partial_mags=8 partial_objs=1028 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=1773 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=0 stale_objs=0 drained_to_slab=0
+BARN allocs=130972911 miss_slab_alloc=541906 miss_slab_alloc_depot_nonempty=67
+BARN umem_alloc_* slab_alloc=541906 slab_free=0; other caches slab_alloc=113876 slab_free=0
+BARN cache umem_alloc_80 slab_alloc=31546 slab_free=0 depot_full_pops=0 depot_empty_pops=311 magsize=255
+BARN cache umem_alloc_96 slab_alloc=378863 slab_free=0 depot_full_pops=437570 depot_empty_pops=437779 magsize=255
+BARN cache umem_alloc_112 slab_alloc=376934 slab_free=0 depot_full_pops=450877 depot_empty_pops=451094 magsize=255
+BARN cache umem_alloc_128 slab_alloc=376868 slab_free=0 depot_full_pops=448474 depot_empty_pops=448714 magsize=255
+BARN cache umem_alloc_160 slab_alloc=704451 slab_free=0 depot_full_pops=1165799 depot_empty_pops=1166016 magsize=255
+BARN cache umem_alloc_192 slab_alloc=705866 slab_free=0 depot_full_pops=1169598 depot_empty_pops=1169819 magsize=255
+BARN cache umem_alloc_224 slab_alloc=704292 slab_free=0 depot_full_pops=1167179 depot_empty_pops=1167395 magsize=255
+BARN cache umem_alloc_256 slab_alloc=705769 slab_free=0 depot_full_pops=1162454 depot_empty_pops=1162659 magsize=255
+BARN cache umem_alloc_320 slab_alloc=396949 slab_free=27635 depot_full_pops=555851 depot_empty_pops=555777 magsize=255
+BARN src=exit returns=1692 partial_mags=1492 partial_objs=178542 full_drained_mags=200 full_drained_objs=51000
+BARN src=rseq returns=13112824 partial_mags=26 partial_objs=2865 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=15298 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=262 stale_objs=33274 drained_to_slab=0
+BARN allocs=2191494785 miss_slab_alloc=4381538 miss_slab_alloc_depot_nonempty=425
+BARN umem_alloc_* slab_alloc=4381538 slab_free=27635; other caches slab_alloc=571069 slab_free=0

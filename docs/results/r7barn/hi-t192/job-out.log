@@ -1,0 +1,64 @@
+REGEN_OK
+BUILD_DEFAULT_OK
+REGEN_OK
+probe syms: 15
+default syms: 0
+BUILD_PROBE_OK
+== prodcons-n
+BARN src=exit returns=766 partial_mags=8 partial_objs=815 full_drained_mags=750 full_drained_objs=180882
+BARN src=rseq returns=644023 partial_mags=6 partial_objs=874 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=2042 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=0 stale_objs=0 drained_to_slab=0
+BARN allocs=76800000 miss_slab_alloc=529333 miss_slab_alloc_depot_nonempty=97
+BARN umem_alloc_* slab_alloc=529333 slab_free=0; other caches slab_alloc=117597 slab_free=0
+rc=0
+== frag-n
+BARN src=exit returns=1681 partial_mags=949 partial_objs=103298 full_drained_mags=732 full_drained_objs=175908
+BARN src=rseq returns=97648 partial_mags=1 partial_objs=111 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=16899 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=0 stale_objs=0 drained_to_slab=0
+BARN allocs=19200000 miss_slab_alloc=4314500 miss_slab_alloc_depot_nonempty=541
+BARN umem_alloc_* slab_alloc=4314500 slab_free=0; other caches slab_alloc=627760 slab_free=0
+rc=0
+== prodcons-D
+BARN src=exit returns=826 partial_mags=12 partial_objs=1580 full_drained_mags=810 full_drained_objs=194518
+BARN src=rseq returns=240323 partial_mags=5 partial_objs=751 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=1430 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=0 stale_objs=0 drained_to_slab=0
+BARN allocs=28952678 miss_slab_alloc=499288 miss_slab_alloc_depot_nonempty=62
+BARN umem_alloc_* slab_alloc=499288 slab_free=0; other caches slab_alloc=48548 slab_free=0
+rc=0
+== frag-D
+BARN src=exit returns=1692 partial_mags=1465 partial_objs=179761 full_drained_mags=227 full_drained_objs=57885
+BARN src=rseq returns=2862520 partial_mags=8 partial_objs=1272 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=15476 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=241 stale_objs=30607 drained_to_slab=0
+BARN allocs=451934843 miss_slab_alloc=4356078 miss_slab_alloc_depot_nonempty=569
+BARN umem_alloc_* slab_alloc=4356078 slab_free=21116; other caches slab_alloc=629809 slab_free=0
+rc=0
+== sustained
+BARN src=exit returns=809 partial_mags=1 partial_objs=203 full_drained_mags=797 full_drained_objs=191459
+BARN src=rseq returns=1102671 partial_mags=8 partial_objs=1028 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=1773 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=0 stale_objs=0 drained_to_slab=0
+BARN allocs=130972911 miss_slab_alloc=541906 miss_slab_alloc_depot_nonempty=67
+BARN umem_alloc_* slab_alloc=541906 slab_free=0; other caches slab_alloc=113876 slab_free=0
+BARN src=exit returns=1692 partial_mags=1492 partial_objs=178542 full_drained_mags=200 full_drained_objs=51000
+BARN src=rseq returns=13112824 partial_mags=26 partial_objs=2865 full_drained_mags=0 full_drained_objs=0
+BARN src=ptc returns=15298 partial_mags=0 partial_objs=0 full_drained_mags=0 full_drained_objs=0
+BARN stale_mags=262 stale_objs=33274 drained_to_slab=0
+BARN allocs=2191494785 miss_slab_alloc=4381538 miss_slab_alloc_depot_nonempty=425
+BARN umem_alloc_* slab_alloc=4381538 slab_free=27635; other caches slab_alloc=571069 slab_free=0
+done: umem -> docs/results/2026-09-27-c8g.metal-48xl-aarch64/sustained.toml
+rc=0
+== perf prodcons (self)
+    79.60%  [.] __aarch64_cas8_relax                   -      -            
+    17.16%  [.] producer_thread                        -      -            
+     1.75%  [.] ring_pop                               -      -            
+     0.69%  [k] __schedule                             -      -            
+== perf frag (self)
+    96.47%  [.] __aarch64_ldadd8_acq_rel               -      -            
+     1.15%  [.] umem_free_wrapper                      -      -            
+     0.83%  [.] __kernel_clock_gettime                 -      -            
+     0.46%  [.] td_qsort                               -      -            
+MEASURE_DONE

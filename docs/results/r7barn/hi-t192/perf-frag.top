@@ -1,0 +1,4 @@
+    96.47%  [.] __aarch64_ldadd8_acq_rel               -      -            
+     1.15%  [.] umem_free_wrapper                      -      -            
+     0.83%  [.] __kernel_clock_gettime                 -      -            
+     0.46%  [.] td_qsort                               -      -            

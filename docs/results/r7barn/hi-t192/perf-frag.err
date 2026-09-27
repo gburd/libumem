@@ -1,0 +1,2 @@
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 35.986 MB /home/admin/r7b-out/hi-t192/perf-frag.data (354615 samples) ]

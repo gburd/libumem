@@ -1,0 +1,13 @@
+   100.00%     0.00%  [.] start_thread                             -      -            
+   100.00%     0.00%  [.] thread_start                             -      -            
+    99.99%     0.07%  [.] frag_worker                              -      -            
+    96.48%    96.47%  [.] __aarch64_ldadd8_acq_rel                 -      -            
+     1.15%     1.15%  [.] umem_free_wrapper                        -      -            
+     0.85%     0.02%  [.] clock_gettime@@GLIBC_2.17                -      -            
+     0.83%     0.83%  [.] __kernel_clock_gettime                   -      -            
+     0.71%     0.11%  [.] td_add                                   -      -            
+     0.58%     0.12%  [.] td_compress                              -      -            
+     0.56%     0.16%  [.] umem_alloc_wrapper                       -      -            
+     0.46%     0.46%  [.] td_qsort                                 -      -            
+     0.40%     0.03%  [.] _umem_alloc                              -      -            
+     0.32%     0.01%  [.] _umem_cache_alloc                        -      -            
