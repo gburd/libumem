@@ -123,3 +123,14 @@ sustained load (continuous): allocators=umem libc jemalloc jemalloc@2 libc@2 ume
   umem@2       frag-sustained     w=8  ops=1385642435 mops=  23.094 p99=      733 p999=      3385 rss@peak=4207067136
   umem@2       frag-sustained     w=9  ops=1385596412 mops=  23.092 p99=      646 p999=      8420 rss@peak=4207112192
   run libc@2 frag: 15 x 60s in one process, first 5 discarded (start 2026-09-27T08:42:25Z)
+  libc@2       frag-sustained     w=0  ops=1467469271 mops=  24.458 p99=     1773 p999=     19861 rss@peak=3888832512
+  libc@2       frag-sustained     w=1  ops=1467631616 mops=  24.461 p99=     1778 p999=     18921 rss@peak=3890438144
+  libc@2       frag-sustained     w=2  ops=1467292879 mops=  24.455 p99=     1776 p999=     17529 rss@peak=3891449856
+  libc@2       frag-sustained     w=3  ops=1467529521 mops=  24.458 p99=     1772 p999=     16139 rss@peak=3892609024
+  libc@2       frag-sustained     w=4  ops=1467526480 mops=  24.459 p99=     1770 p999=     18892 rss@peak=3893350400
+  libc@2       frag-sustained     w=5  ops=1467448114 mops=  24.457 p99=     1772 p999=     16126 rss@peak=3893661696
+  libc@2       frag-sustained     w=6  ops=1467488598 mops=  24.458 p99=     1776 p999=     20558 rss@peak=3893968896
+  libc@2       frag-sustained     w=7  ops=1467491408 mops=  24.458 p99=     1774 p999=     20308 rss@peak=3894566912
+  libc@2       frag-sustained     w=8  ops=1467442546 mops=  24.457 p99=     1774 p999=     17902 rss@peak=3895054336
+  libc@2       frag-sustained     w=9  ops=1467410517 mops=  24.457 p99=     1770 p999=     20067 rss@peak=3895500800
+  run jemalloc@2 frag: 15 x 60s in one process, first 5 discarded (start 2026-09-27T08:57:26Z)
