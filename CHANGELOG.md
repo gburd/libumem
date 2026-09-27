@@ -283,6 +283,15 @@ is `libumem.so.1`.
 
 ### Fixed -- benchmark harness (results before these are qualified)
 
+- Two rseq signal-storm regression tests livelocked on Debian 13 x86_64 at
+  their 5 us default interval: `repro_reload_commit_abort` 7 of 12 runs and
+  `repro_rseq_trailing_store` 2 of 6 made no progress in 240-300 s, still
+  cycling through the fast path under gdb. Both now default to 10 us, where
+  they finish in about 1 s. At 10 us the pre-fix P8.5b code (`017520f`) still
+  fails `repro_reload_commit_abort` 3 of 3, so the test keeps its teeth. Both
+  now report INCONCLUSIVE instead of PASS if too few signals or aborts landed
+  to have tested anything (`c50545c`, `ca81476`).
+
 - `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=8388608`, set by
   `sustained_load.sh`, `matrix.sh` and `allocator_comparison.sh` so jemalloc
   could be `dlopen`ed, was carved out of every non-main thread's stack,
