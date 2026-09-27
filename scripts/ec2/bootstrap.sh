@@ -23,12 +23,21 @@ if command -v apt-get >/dev/null 2>&1; then
 	# Debian/Ubuntu path.
 	export DEBIAN_FRONTEND=noninteractive
 	sudo apt-get update -y >/dev/null 2>&1 || true
-	sudo apt-get install -y \
-		build-essential gcc clang autoconf automake libtool make \
+	# One package per line, installed individually: a single name that
+	# does not exist (Debian 13 has no jemalloc-bin) used to fail the whole
+	# install, and the fallback list below silently dropped lldb and
+	# libjemalloc-dev.  Report every package that did not install.
+	for p in build-essential gcc clang autoconf automake libtool make \
 		lcov valgrind numactl libnuma-dev gdb lldb python3 git rsync \
-		linux-perf patchutils pkg-config libdw-dev libjemalloc-dev jemalloc-bin \
-		>/dev/null 2>&1 || \
-		sudo apt-get install -y build-essential clang autoconf automake libtool make numactl libnuma-dev gdb python3 git rsync
+		linux-perf patchutils pkg-config libdw-dev libjemalloc-dev \
+		libjemalloc2; do
+		sudo apt-get install -y "$p" >/dev/null 2>&1 || \
+			echo "bootstrap: apt package '$p' did not install" >&2
+	done
+	# ldconfig lives in /sbin on Debian, which is not on a user's PATH;
+	# the harness (sustained_load.sh preload_for) calls it unqualified.
+	[ -x /usr/local/bin/ldconfig ] || \
+		sudo ln -sf /sbin/ldconfig /usr/local/bin/ldconfig 2>/dev/null || true
 	# perf on Debian is 'perf' via linux-perf; a wrapper picks the running kernel.
 else
 	# Amazon Linux 2023 path.
