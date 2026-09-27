@@ -63,10 +63,12 @@ WARMUPS="${SUSTAINED_WARMUPS:-1}"
 # no calibration; order is whole runs, workload-major, allocators in the
 # order given (put a null alias last to bracket the others).
 MODE="${SUSTAINED_MODE:-windows}"
-# continuous mode: frag's per-thread live pool, in objects (bench_main sizes it
-# as -n / threads / 4, and never below 25,000 because of the per-thread work
-# floor).  The live set is a stated input, not a function of box speed.
-FRAG_POOL="${SUSTAINED_FRAG_POOL:-25000}"
+# continuous mode: frag's target peak live set, MiB total across threads
+# (bench_main -L; pool per thread = MiB / threads / mean size).  It used to be
+# a per-thread object count passed as -n, floored at 25,000 objects by the
+# per-thread work floor: ~196 GB live at 16-64 KB and t=192.  The live set is
+# a stated input, not a function of box speed or thread count.
+FRAG_LIVE_MIB="${SUSTAINED_FRAG_LIVE_MIB:-1024}"
 # continuous mode: a process-wide NUMA/CPU policy applied IDENTICALLY to every
 # run, as a command prefix (e.g. "numactl --interleave=all").  Empty = the
 # kernel default (first-touch memory, free scheduling), recorded as such.
@@ -255,7 +257,7 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
         echo "# the process VmHWM, which would include the dropped warm-up)."
         echo "interval_sec = $DURATION"
         echo "intervals_per_run = $(( WARMUPS + WINDOWS ))"
-        echo "frag_pool_objects_per_thread = $FRAG_POOL"
+        echo "frag_live_mib = $FRAG_LIVE_MIB"
         echo "numa_policy = \"${NUMA_PREFIX:-kernel default (none)}\""
     fi
     echo "frag_sizes = \"$FRAG_MIN:$FRAG_MAX\""
@@ -432,13 +434,13 @@ run_continuous() {
     local label_a="$1" a; a="$(alloc_base "$1")"; local w="$2" min="$3" max="$4" label="$5"
     local pre; pre="$(preload_of "$a" || true)"
     local csv="${OUT%.toml}.${label_a//@/-}.$w.csv" rc t0 t1
-    local n=$(( THREADS * 4 * FRAG_POOL ))
+    local n=$(( THREADS * 100000 ))   # unused by -D; kept at the floor
     t0=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     echo "  run $label_a $w: $((WARMUPS + WINDOWS)) x ${DURATION}s in one process, first $WARMUPS discarded (start $t0)"
     set +e
     # shellcheck disable=SC2086  # NUMA_PREFIX is a deliberate word list
     LD_PRELOAD="${pre:-}" $NUMA_PREFIX "$BENCH_BIN" -a "$a" -w "$w" -t "$THREADS" -n "$n" \
-        -s "$min:$max" -D "$DURATION:$(( WARMUPS + WINDOWS ))" -W "$WARMUPS" -c \
+        -L "$FRAG_LIVE_MIB" -s "$min:$max" -D "$DURATION:$(( WARMUPS + WINDOWS ))" -W "$WARMUPS" -c \
         > "$csv" 2>>"$LOG"
     rc=$?
     set -e
@@ -459,7 +461,7 @@ run_continuous() {
 
 if [[ $MODE == continuous ]]; then
     echo "sustained load (continuous): allocators=${ALLOCS[*]} threads=$THREADS"
-    echo "  per run: $((WARMUPS + WINDOWS)) x ${DURATION}s, first $WARMUPS discarded; frag pool $FRAG_POOL/thread"
+    echo "  per run: $((WARMUPS + WINDOWS)) x ${DURATION}s, first $WARMUPS discarded; frag live ${FRAG_LIVE_MIB} MiB total"
     echo "  sha=$GIT_SHA ($SHA_SRC) -> $OUT"
     # Each workload walks ALLOCS in the given order; the next workload walks
     # it REVERSED, so no arm is always first (or last) on the box.

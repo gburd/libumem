@@ -449,6 +449,39 @@ test_frag_large_sizes(void)
 }
 
 /*
+ * Interval-mode frag sizes its pool from a live-bytes target, not from -n.
+ * Pre-fix the pool was operation_count / threads / 4 with the 100k-op floor,
+ * so >= 25,000 objects per thread whatever was asked: at 16-64 KB and t=192
+ * that is ~196 GB live.  Here: 16 MiB total at 8192 B over 2 threads = 1024
+ * objects per thread = 16 MiB peak; pre-fix it held 25,000 x 8 KiB x 2 =
+ * ~400 MB.
+ */
+static void
+test_frag_live_budget(void)
+{
+	printf("interval-mode frag live set follows the -L budget\n");
+	bench_stats_t iv[2];
+	memset(iv, 0, sizeof(iv));
+	workload_config_t cfg = {
+		.name = "fragmentation", .fn = workload_fragmentation,
+		.thread_count = 2,
+		.operation_count = 1000,	/* below the floor: raised to 100k */
+		.min_size = 8192, .max_size = 8192,
+		.intervals = 2, .interval_sec = 0.3, .interval_out = iv,
+		.frag_live_mib = 16
+	};
+	bench_stats_t st;
+	bench_run(&mock, &cfg, &st);
+	size_t peak = iv[0].live_bytes_at_peak > iv[1].live_bytes_at_peak ?
+	    iv[0].live_bytes_at_peak : iv[1].live_bytes_at_peak;
+	printf("   -L 16 at 8192 B, t=2 -> sampled live peak %zu (budget %u)\n",
+	    peak, 16u << 20);
+	CHECK(peak > 0 && peak <= ((size_t)16 << 20),
+	    "live peak %zu exceeds the 16 MiB budget: the ops floor sized the "
+	    "pool", peak);
+}
+
+/*
  * prodcons ring topology.  One MPMC ring shared by every thread measured the
  * ring (79.6 % of prodcons's time in its CAS at t=192).  Now each consumer
  * owns a ring fed by its own producer(s), so frees stay cross-thread but a
@@ -677,6 +710,7 @@ main(void)
 	test_frag_live_slots();
 	test_prodcons_rings();
 	test_frag_large_sizes();
+	test_frag_live_budget();
 	test_no_bogus_fragmentation();
 	test_interval_mode();
 	test_interval_straggler();

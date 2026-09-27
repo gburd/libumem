@@ -165,17 +165,24 @@ typedef struct workload_config {
      * interval_out[0..intervals-1] (caller-owned).  A long run's warm-up is
      * then discarded from the SAME process's samples; separate short
      * processes warm the OS but never the allocator under test.
-     * operation_count still sizes frag's per-thread live pool
-     * (pool_cap = operation_count / threads / 4), so the live set is chosen
-     * explicitly, not by how fast the box is. */
+     * frag's live pool is sized from frag_live_mib instead (below), so the
+     * live set is chosen explicitly, not by how fast the box is. */
     int intervals;
     double interval_sec;
+    /* Interval-mode frag only: target PEAK live set in MiB, total across
+     * threads (0 => BENCH_FRAG_LIVE_MIB_DEFAULT).  Each worker's pool holds
+     * frag_live_mib / threads / mean((min_size, max_size)) objects.  It used
+     * to be operation_count / threads / 4 with the 100k-op per-thread floor,
+     * i.e. >= 25k objects per thread: ~196 GB live at 16-64 KB and t=192. */
+    size_t frag_live_mib;
     struct bench_stats *interval_out;
     /* Optional: called by the driver thread as each interval completes, with
      * that interval's filled stats and index, so a long run's rows are out
      * (and survive a later crash) before the run ends. */
     void (*interval_done)(const struct bench_stats *st, int k);
 } workload_config_t;
+
+#define BENCH_FRAG_LIVE_MIB_DEFAULT 1024
 
 /* Per-thread share of the total budget, never below the work floor.
  * Returns the per-thread count and, if raised is non-NULL, whether the floor

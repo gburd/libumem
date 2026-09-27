@@ -237,6 +237,14 @@ holes, repeat. The pool's capacity grows with `-n`, so a longer run holds a
 
 **Use case**: Long-running applications with varied allocation patterns
 
+**Pool size.** Op-budget mode: `-n / threads / 4` objects per thread. Interval
+mode (`-D`): from `-L MIB`, the target peak live set total across threads
+(default 1024), i.e. `MIB / threads / mean(MIN,MAX)` objects per thread, at
+least 64. Before 2026-09-27 `-D` used the op-budget rule, whose 100k-op
+per-thread floor forced at least 25,000 objects per thread (~196 GB live at
+16-64 KB and t=192). Sizes above 4096 are honoured; they used to be clamped
+to 4096.
+
 **Honours `-t`.** Each thread owns a private live pool; live bytes are summed
 across threads because RSS is process-wide, so the reported ratio pairs
 process RSS with process-wide live bytes. Before 2026-09-22 `bench_main.c`

@@ -1362,6 +1362,19 @@ void workload_fragmentation(allocator_ops_t *ops,
      */
     size_t pool_cap = (size_t)(per_thread / 4);
     if (pool_cap < 1024) pool_cap = 1024;
+    if (cfg->intervals > 0) {
+        /* Interval mode runs by time, so -n is not a work budget and the
+         * ops floor must not size the live set (see frag_live_mib).  Size
+         * the pool from the live-bytes target instead.  Floor 64 objects:
+         * at 64 KB x 192 threads even that is 768 MB. */
+        size_t mib = cfg->frag_live_mib ? cfg->frag_live_mib
+                                        : BENCH_FRAG_LIVE_MIB_DEFAULT;
+        size_t lo = cfg->min_size < 8 ? 8 : cfg->min_size;
+        size_t hi = cfg->max_size < lo ? lo : cfg->max_size;
+        size_t mean = (lo + hi) / 2;
+        pool_cap = (mib << 20) / (size_t)nthreads / mean;
+        if (pool_cap < 64) pool_cap = 64;
+    }
     if (pool_cap > (size_t)4 << 20) pool_cap = (size_t)4 << 20;
 
     /* One cache line per worker (see frag_live_slot_t); zeroed, so a worker

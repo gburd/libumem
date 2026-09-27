@@ -55,11 +55,15 @@ static void print_usage(const char *prog) {
     printf("                by -n), and prints one CSV row per interval\n");
     printf("                (workload name + /interval=K).  -W K drops the first\n");
     printf("                K intervals' rows (they still run: they ARE the\n");
-    printf("                warm-up of the same process).  -n only sizes frag's\n");
-    printf("                live pool.  In this mode vmhwm_bytes is the interval's\n");
+    printf("                warm-up of the same process).  -n is unused; frag's\n");
+    printf("                live pool is sized by -L.  In this mode vmhwm_bytes is the interval's\n");
     printf("                own max sampled VmRSS (100 ms), not the process VmHWM,\n");
     printf("                so no kept row carries warm-up state.  Requires -c;\n");
     printf("                excludes -A and -r.\n");
+    printf("  -L MIB        -D frag only: target peak live set, MiB total across\n");
+    printf("                threads (default %d).  Pool per thread =\n",
+           BENCH_FRAG_LIVE_MIB_DEFAULT);
+    printf("                MIB / threads / mean(MIN,MAX), at least 64 objects.\n");
     printf("  -c            Output CSV format\n");
     printf("  -H            Print CSV header only and exit\n");
     printf("  --compare     Compare results against historical data\n");
@@ -91,6 +95,7 @@ int main(int argc, char *argv[]) {
     bool emit_each_run = false;
     int iv_count = 0;
     double iv_sec = 0;
+    size_t frag_live_mib = 0;
 
     /* Handle long options manually before getopt */
     for (int i = 1; i < argc; i++) {
@@ -108,7 +113,7 @@ int main(int argc, char *argv[]) {
 
     int opt;
     optind = 1;
-    while ((opt = getopt(argc, argv, "a:w:t:n:s:r:W:D:AcHh?")) != -1) {
+    while ((opt = getopt(argc, argv, "a:w:t:n:s:r:W:D:L:AcHh?")) != -1) {
         switch (opt) {
         case 'a':
             allocator_name = optarg;
@@ -150,6 +155,13 @@ int main(int argc, char *argv[]) {
             }
             break;
         }
+        case 'L':
+            frag_live_mib = strtoull(optarg, NULL, 10);
+            if (frag_live_mib == 0) {
+                fprintf(stderr, "-L wants a positive MiB count\n");
+                return 1;
+            }
+            break;
         case 'c':
             csv_output = true;
             break;
@@ -302,6 +314,7 @@ int main(int argc, char *argv[]) {
                 if (!iv) return 1;
                 workload->intervals = iv_count;
                 workload->interval_sec = iv_sec;
+                workload->frag_live_mib = frag_live_mib;
                 workload->interval_out = iv;
                 workload->interval_done = print_interval;
                 iv_alloc_name = alloc->name;

@@ -20,7 +20,7 @@
 #     the same 10 measured minutes.
 #   * frag sizes 64:256 by default (16:4096 at 192 threads holds ~10 GB live,
 #     which measures umem's heap ceiling rather than fragmentation; see
-#     sustained_load.sh).  frag live pool: SUSTAINED_FRAG_POOL objects/thread.
+#     sustained_load.sh).  frag live set: SUSTAINED_FRAG_LIVE_MIB total.
 #
 # Usage (on the instance, in the build tree):
 #   THREADS=192 ./scripts/ec2/heavy_load_compare.sh
@@ -48,10 +48,11 @@ export SUSTAINED_SEC="${SUSTAINED_SEC:-60}"
 export SUSTAINED_WARMUPS="${SUSTAINED_WARMUPS:-5}"    # 5 x 60s = first 5 min dropped
 export SUSTAINED_WINDOWS="${SUSTAINED_WINDOWS:-10}"   # 10 x 60s = 10 min measured
 export SUSTAINED_FRAG_SIZES="${SUSTAINED_FRAG_SIZES:-64:256}"
-# 100,000 live-pool objects per thread: at 64:256 (+16 B umem header) that is
-# ~3 GB live at t=192 and ~6 GB at t=384 when pools are full -- heavy, and
-# far below these boxes' 384 GB.
-export SUSTAINED_FRAG_POOL="${SUSTAINED_FRAG_POOL:-100000}"
+# 3 GiB peak live set, total across threads (bench_main -L): what the old
+# 100,000 objects/thread gave at 64:256 and t=192, heavy and far below these
+# boxes' 384 GB.  It is now the same total at every thread count and size
+# range (the per-thread object count used to scale the live set with both).
+export SUSTAINED_FRAG_LIVE_MIB="${SUSTAINED_FRAG_LIVE_MIB:-3072}"
 export SUSTAINED_OUT="${SUSTAINED_OUT:-heavy-load-compare-t${THREADS}.toml}"
 
 nallocs=$(echo "$ALLOCS" | tr ',' '\n' | grep -c .)
