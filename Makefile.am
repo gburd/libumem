@@ -962,9 +962,15 @@ TESTS += test/debugger/test_tool_T1_event_cb.sh \
 	test/debugger/test_tool_T13_gdb_error_code.sh \
 	test/debugger/test_tool_T14_lldb_status.sh \
 	test/debugger/test_tool_T3_whatis_oversize.sh \
-	test/debugger/test_tool_T6_whatis_colour.sh
+	test/debugger/test_tool_T6_whatis_colour.sh \
+	test/debugger/test_tool_T1_gdb_break.sh \
+	test/debugger/test_tool_T8_break_ptc.sh \
+	test/debugger/test_tool_T9_leak_stack.sh
 
 XFAIL_TESTS = test/debugger/test_tool_T1_event_cb.sh # T1
+XFAIL_TESTS += test/debugger/test_tool_T1_gdb_break.sh # T1
+XFAIL_TESTS += test/debugger/test_tool_T8_break_ptc.sh # T8
+XFAIL_TESTS += test/debugger/test_tool_T9_leak_stack.sh # T9
 
 # P5.8: forges a malloc header and asserts free() refuses it without mutating
 # anything.  Links BOTH libraries: the forgery must travel the interposer's
@@ -1271,6 +1277,9 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/debugger/test_tool_T1_event_cb.sh \
 	test/debugger/test_tool_T2_monitor.sh \
 	test/debugger/test_tool_T7_learn_noaudit.sh \
+	test/debugger/test_tool_T1_gdb_break.sh \
+	test/debugger/test_tool_T8_break_ptc.sh \
+	test/debugger/test_tool_T9_leak_stack.sh \
 	test/debugger/test_tool_T10_walk_log.sh \
 	test/debugger/test_tool_T12_rearm.sh \
 	test/debugger/test_tool_T13_gdb_error_code.sh \
