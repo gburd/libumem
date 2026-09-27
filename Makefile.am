@@ -980,7 +980,6 @@ TESTS += test/debugger/test_tool_T1_event_cb.sh \
 XFAIL_TESTS = test/debugger/test_tool_T1_event_cb.sh # T1
 XFAIL_TESTS += test/debugger/test_tool_T1_gdb_break.sh # T1
 XFAIL_TESTS += test/debugger/test_tool_T8_break_ptc.sh # T8
-XFAIL_TESTS += test/debugger/test_tool_T9_leak_stack.sh # T9
 
 # P5.8: forges a malloc header and asserts free() refuses it without mutating
 # anything.  Links BOTH libraries: the forgery must travel the interposer's

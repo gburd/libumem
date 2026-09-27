@@ -9,10 +9,18 @@
 # Fixed iff (a) at least one leak record's FIRST pc lies in the target
 # executable (the caller, not the allocator), and (b) the learned set has a
 # `sig size=200 ` line.  Control: >= 1 leak record and a libumem mapping.
-# Exit: 0 fixed, 1 finding reproduces, 77 no introspect, 99 control failed.
+# Exit: 0 fixed, 1 finding reproduces, 77 no introspect or x86_64 without
+# --enable-frame-pointers, 99 control failed.
 set -u
 . "$(dirname "$0")/tool_common.sh"
 skip_unless_introspect
+# x86_64 walks %rbp only: a default build records one frame by design (opt-in
+# --enable-frame-pointers, configure.ac).  aarch64 keeps frame records at -O2.
+if [[ $(uname -m) == x86_64 ]] &&
+    ! grep -q '^#define UMEM_HAVE_FRAME_POINTERS 1' "$ROOT/config.h"; then
+	echo "SKIP: x86_64 libumem built without --enable-frame-pointers"
+	exit 77
+fi
 
 CTL=$ROOT/tools/umemctl
 export UMEM_INTROSPECT_SOCK=$TMPD/umem.sock
