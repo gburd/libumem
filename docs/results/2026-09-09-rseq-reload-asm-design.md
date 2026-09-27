@@ -1,5 +1,30 @@
 # rseq lock-free per-CPU reload: precise assembly design spec (2026-09-09)
 
+> **CORRECTION (2026-09-26, P8.5b aliasing; see
+> `docs/results/2026-09-26-p85b-aliasing-mechanism-v2.md`).** This spec's
+> single "swap" commit (§3, §4 "Resolution A", §5.2, §5.3, §7) is **wrong,
+> and implementing it caused the P8.5b aliasing.** An rseq abort does not
+> roll back stores that already retired, so a section with more than one
+> store another path acts on is not atomic. "Resolution A" makes three such
+> stores (`rounds=0`, `loaded_mag=new`, `rounds=N`), and §5.3 makes two. The
+> spec also places the success `mov $1` after the committing store, inside
+> the checked window, so a commit can be reported as an abort. With
+> a caller that trusts "0 = nothing written", each of these leaves one
+> magazine owned by both the slot and the depot. Proven on x86_64 and aarch64
+> by `test/stress/repro_reload_commit_abort.c` (thousands of torn states per
+> run). The §4 argument "abort after step 2 is safe because rounds=0" only
+> holds for the fast path. It ignores the C caller, which then believes
+> `new_mag` is unpublished and gives it to the depot.
+>
+> **What replaced it (4b30bff):** two sections, each making ONE slot store
+> as its last instruction and setting its result register BEFORE that store.
+> `detach` stores `loaded_mag = NULL` after reading `(loaded_mag, rounds)`
+> out. `attach` requires `loaded_mag == NULL`, writes `rounds` and `magsize`
+> (don't-care while `loaded_mag` is NULL, which both fast paths test first),
+> then stores `loaded_mag = new`. `magsize` is the attached magazine's own
+> capacity, not a per-cache value. Treat the sections below as history. Do
+> not re-implement them.
+
 **Status of this document:** a mechanical implementation spec for the
 reload-commit assembly the 2026-08-06 analysis concluded was needed. Written
 after (a) fixing six independent, pre-existing bugs in the fast path that had
@@ -171,7 +196,7 @@ see §6):
   packing `rounds`+a magazine-table-index into one word (a bigger redesign,
   out of scope for this spec).
 
-**Implement Resolution A.**
+~~**Implement Resolution A.**~~ **RETRACTED 2026-09-26: Resolution A is not atomic under abort; see the correction at the top.**
 
 ## 5. x86_64 exact instruction sequence
 
