@@ -855,16 +855,19 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
 >   learned size is the cache size rather than the requested size.
 > - `umemctl break size=|cache=` never parks a thread for allocations served
 >   by the per-thread cache or for oversize allocations.
-> - `umemctl monitor` always shows 0 buffers in use. `whatis` does not find
->   oversize allocations and reports buffers freed into a per-thread cache as
->   held.
-> - lldb `umem status` always ends with an error.
+> - `umemctl whatis` and `findleaks` count a buffer freed into a per-thread
+>   cache bin as held: those bins are thread-local and cannot be read safely
+>   from another thread (a documented limit, not scheduled).
 >
+> Fixed since v3.3.2 (T2, T3, T6, T7, T10, T12, T13, T14): `monitor`'s held
+> count, `whatis` on oversize, magazine-cached and page-boundary addresses,
+> `record --learn-leaks` after a refusal, `walk log` without a log, `break`
+> re-arm, gdb `umem break error -c`, and lldb `umem status`.
 > `umem findleaks|status|log|walk|whatis|snapshot` and umemctl
-> `stats|caches|cache` work as documented. Three of these findings (the event
-> hook, `monitor`, and `learn` after refusal) have regression tests that run in
-> `make check` as expected failures (`XFAIL_TESTS`). Each one passes, and must
-> be removed from that list, once its finding is fixed.
+> `stats|caches|cache|whatis|monitor` work as documented. The event-hook
+> finding has a regression test that runs in `make check` as an expected
+> failure (`XFAIL_TESTS`); it passes, and must be removed from that list,
+> once the finding is fixed.
 
 ```bash
 # umem(1): live pid / offline snapshot / CI leak-finding

@@ -1,0 +1,32 @@
+# TOTAL: 63
+# PASS:  60
+# SKIP:  2
+# XFAIL: 1
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+XFAIL: test/debugger/test_tool_T1_event_cb
+FAIL: T1 umem_inspect_set_event_cb() callback never ran for alloc/free with events enabled
+== test/debugger/test_tool_T3_whatis_oversize.sh
+state held
+addr 0x7f6aeb667000
+arena umem_oversize
+buffer 0x7f6aeb667000
+size 262144
+state held
+addr 0x7fac01aef000
+cache umem_alloc_98304
+bufsize 98304
+buffer 0x7fac01aef000
+slab 0x7fac0287d970
+state free
+T3 FIXED: whatis identifies the oversize allocation
+PASS test/debugger/test_tool_T3_whatis_oversize.sh (exit status: 0)
+== test/debugger/test_tool_T6_whatis_colour.sh
+run 1: held_96k=0x7f262bb8b000 -> 'umem_alloc_98304'  freed_96k=0x7f262baaa000 -> 'umem_alloc_98304'
+run 2: held_96k=0x7f57ef99e000 -> 'umem_alloc_98304'  freed_96k=0x7f57ef8bd000 -> 'umem_alloc_98304'
+run 3: held_96k=0x7f02b51c6000 -> 'umem_alloc_98304'  freed_96k=0x7f02b50e5000 -> 'umem_alloc_98304'
+run 4: held_96k=0x7f8310079000 -> 'umem_alloc_98304'  freed_96k=0x7f8310018000 -> 'umem_alloc_98304'
+run 5: held_96k=0x7f7cad059000 -> 'umem_alloc_98304'  freed_96k=0x7f7cac768000 -> 'umem_alloc_98304'
+T6 FIXED: freed_96k -> umem_alloc_98304 in 5 fresh runs
+PASS test/debugger/test_tool_T6_whatis_colour.sh (exit status: 0)

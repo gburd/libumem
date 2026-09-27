@@ -1,0 +1,27 @@
+# TOTAL: 61
+# PASS:  58
+# SKIP:  2
+# XFAIL: 1
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+XFAIL: test/debugger/test_tool_T1_event_cb
+FAIL: T1 umem_inspect_set_event_cb() callback never ran for alloc/free with events enabled
+== test/debugger/test_tool_T2_monitor.sh
+T2 FIXED: monitor bufs in-use 4492 (stats bufs_held 4491)
+PASS test/debugger/test_tool_T2_monitor.sh (exit status: 0)
+== test/debugger/test_tool_T7_learn_noaudit.sh
+T7 FIXED: umemctl rc=1, no leak set claimed
+PASS test/debugger/test_tool_T7_learn_noaudit.sh (exit status: 0)
+== test/debugger/test_tool_T10_walk_log.sh
+./test/debugger/tool_common.sh: line 21: 46003 Killed                  LD_LIBRARY_PATH="$ROOT/.libs" "$TOOL_TARGET" "$info" "${2:-3}" "${3:-30}" ${4:+"$4"} > "$TMPD/target.log" 2>&1
+PASS test/debugger/test_tool_T10_walk_log.sh (exit status: 0)
+== test/debugger/test_tool_T12_rearm.sh
+T12 FIXED: re-arm released the parked thread, seq=3 fired (2 BREAK lines)
+PASS test/debugger/test_tool_T12_rearm.sh (exit status: 0)
+== test/debugger/test_tool_T13_gdb_error_code.sh
+T13 FIXED: 'umem break error -c 99' did not stop on code 2
+PASS test/debugger/test_tool_T13_gdb_error_code.sh (exit status: 0)
+== test/debugger/test_tool_T14_lldb_status.sh
+T14 FIXED: umem status clean, batch continued
+PASS test/debugger/test_tool_T14_lldb_status.sh (exit status: 0)

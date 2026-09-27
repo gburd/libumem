@@ -372,3 +372,33 @@ i-07e18cf6a4c65488b (terminated). Log:
    non-zero held against a target that holds buffers.
 3. T1 needs a decision (wire the hook in, with a hot-path A/B, or withdraw the
    feature). The rest are straightforward.
+
+## Round 7 status (@r7tooldoc, 2026-09-27)
+
+Debian 13, c7i.2xlarge, `--enable-introspect`, all via `verify-isolated.sh`.
+Logs: `docs/results/r7tooldoc/tool-{pre,post,pre36,post36}.log`.
+
+| finding | regression | pre-fix (ref) | fix | post-fix |
+|---|---|---|---|---|
+| T2 | T2_monitor | XFAIL, `bufs in-use 0` vs `bufs_held 4656` (5143c2e) | 658238b | PASS, 4492 |
+| T7 | T7_learn_noaudit | XFAIL, rc=0 (5143c2e) | 85501ff | PASS, rc=1 |
+| T10 | T10_walk_log | XFAIL, rc=2 (5143c2e) | 08fb1a7 | PASS |
+| T12 | T12_rearm | XFAIL, 1 BREAK line (5143c2e) | b0d676f | PASS, 2 |
+| T13 | T13_gdb_error_code | XFAIL, stopped on code 2 (5143c2e) | 9d3aa14 | PASS |
+| T14 | T14_lldb_status | XFAIL, `unknown error`, rc=1 (5143c2e) | 0c18ee1 | PASS |
+| T3 (oversize) | T3_whatis_oversize | XFAIL, `not a umem buffer` (39569cd) | c254a6d | PASS, `arena umem_oversize size 262144` |
+| T6 | T6_whatis_colour | XFAIL, freed_96k -> umem_magazine_1 (39569cd) | 0e395ef | PASS, 5/5 runs |
+| T4, T5, T11, T3 doc | none (doc) | | 66f7a8c | |
+
+Full `make check` at 0c18ee1: 61 total, 58 PASS, 2 SKIP, 1 XFAIL (T1), 0
+FAIL/XPASS/ERROR. At 66f7a8c: 63 total, 60 PASS, 2 SKIP, 1 XFAIL (T1).
+
+Still open from this set:
+- T3 "cached": wired (cmd_whatis asks `umem_whatis()`), **unverified**. No
+  target here puts a buffer in the magazine set where the branch can be shown
+  to change. PTC-bin buffers read `held` by design: bins are thread-local and
+  mutated lock-free by their owner.
+- T6 sibling: `UMEM_SLAB_MEMBER` (`umem_impl.h`) has the same
+  `slab_base + cache_slabsize` bound and is used on the umem.c free path. Not
+  changed (allocator code, out of scope). Not probed.
+- T1, T8, T9: @r7lib's.

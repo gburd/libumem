@@ -1,0 +1,21 @@
+# TOTAL: 2
+# PASS:  0
+# SKIP:  0
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+== test/debugger/test_tool_T3_whatis_oversize.sh
+addr 0x7f1b54dc3000
+cache umem_alloc_4096
+bufsize 4096
+buffer 0x7f1b54dc3000
+slab 0x7f1b55e31e20
+state held
+0x7f1b54d13000: not a umem buffer
+T3 REPRODUCES: whatis held_big (0x7f1b54d13000, 256 KiB) not found
+XFAIL test/debugger/test_tool_T3_whatis_oversize.sh (exit status: 1)
+== test/debugger/test_tool_T6_whatis_colour.sh
+run 1: held_96k=0x7faa750e3000 -> 'umem_alloc_98304'  freed_96k=0x7faa75002000 -> 'umem_magazine_1'
+T6 REPRODUCES: freed_96k attributed to 'umem_magazine_1'
+XFAIL test/debugger/test_tool_T6_whatis_colour.sh (exit status: 1)

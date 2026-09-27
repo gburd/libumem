@@ -1,0 +1,37 @@
+# TOTAL: 6
+# PASS:  0
+# SKIP:  0
+# XFAIL: 6
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+== test/debugger/test_tool_T2_monitor.sh
+  umem_va_16384                     16384         39        512
+  umem_va_20480                     20480          4        408
+T2 REPRODUCES: monitor bufs in-use 0, stats bufs_held 4656
+XFAIL test/debugger/test_tool_T2_monitor.sh (exit status: 1)
+== test/debugger/test_tool_T7_learn_noaudit.sh
+learn: requires UMEM_DEBUG=audit
+rc=0
+T7 REPRODUCES: learn refused but umemctl rc=0 and claims a leak set
+XFAIL test/debugger/test_tool_T7_learn_noaudit.sh (exit status: 1)
+== test/debugger/test_tool_T10_walk_log.sh
+warning: 56	../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S: No such file or directory
+rc=2
+T10 REPRODUCES: walk log rc=2, no 'transaction log disabled'
+XFAIL test/debugger/test_tool_T10_walk_log.sh (exit status: 1)
+== test/debugger/test_tool_T12_rearm.sh
+ok continue
+umem: BREAK: thread stopped before returning buf=0x7f4c71280000 size=98304 cache=umem_alloc_98304 (umemctl continue to resume)
+T12 REPRODUCES: after re-arm the thread stayed parked (1 BREAK lines)
+XFAIL test/debugger/test_tool_T12_rearm.sh (exit status: 1)
+== test/debugger/test_tool_T13_gdb_error_code.sh
+$1 = 2
+[Inferior 1 (process 24277) detached]
+T13 REPRODUCES: 'umem break error -c 99' stopped on another code
+XFAIL test/debugger/test_tool_T13_gdb_error_code.sh (exit status: 1)
+== test/debugger/test_tool_T14_lldb_status.sh
+error: library call failed: error: unknown error
+rc=1
+T14 REPRODUCES: umem status ended in an error / aborted the batch
+XFAIL test/debugger/test_tool_T14_lldb_status.sh (exit status: 1)

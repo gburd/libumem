@@ -3,6 +3,43 @@
 All notable changes to libumem are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+Debugging-tool findings from the 2026-09-26 tool review
+(`docs/reviews/2026-09-26-tool-review.md`). Each one has a regression in
+`test/debugger/test_tool_T<N>_*.sh` that failed before the fix (Debian 13,
+c7i.2xlarge, `--enable-introspect`).
+
+- **T2** `umemctl monitor` always showed 0 buffers in use: it parsed
+  `bufs_inuse`, the server emits `bufs_held`. The label now reads "held".
+- **T3** `umemctl whatis` said "not a umem buffer" for oversize allocations;
+  it now looks them up in the oversize/memalign vmem arenas. It also asks
+  `umem_whatis()` whether a held buffer is in the magazine set and reports
+  `state cached` if so; that branch has no regression that shows it change,
+  so it is unverified. A buffer in a per-thread cache bin still reads `held`:
+  those bins are thread-local and cannot be read safely from the server
+  thread.
+- **T6** `whatis` attributed the first bytes of a page to the coloured slab
+  below it (seen as a freed 96 KiB buffer named `umem_magazine_1`). Both
+  whatis implementations now bound a slab by its chunks. The same
+  `UMEM_SLAB_MEMBER` test in `umem_impl.h` is not changed here.
+- **T7** `umemctl record --learn-leaks` without audit printed the refusal,
+  claimed to write a leak set and exited 0. It now exits 1 and writes nothing.
+- **T10** `umem walk log` without a transaction log exited 2 ("gdb produced
+  no report"); it now prints "transaction log disabled", like `log`.
+- **T12** re-arming `umemctl break` left threads parked on the old
+  predicate; re-arming now releases them.
+- **T13** gdb `umem break error -c CODE` ignored the code.
+- **T14** lldb `umem status` (and every other `(void)` helper call) ended in
+  "error: unknown error" and aborted `--batch`; lldb 19's no-result code is
+  no longer treated as a failure.
+- **Docs (T3, T4, T5, T11):** `docs/UMEMCTL.md` and `tools/DEBUGGING.md` now
+  state the real socket path, one client at a time, `--core` refused, and
+  the `findleaks` accounting gaps (PTC bins, oversize, untested rseq
+  subtraction); the deleted "magazine reloads" counter is gone.
+
 ## [3.3.2] - 2026-09-27
 
 Arms the rseq lock-free per-CPU layer (P8.5b), on by default, and fixes the
