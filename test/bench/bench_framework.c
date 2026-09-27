@@ -922,10 +922,8 @@ void workload_producer_consumer(allocator_ops_t *ops,
 
     if (clk.n > 0) {
         iv_drive(&clk, cfg, slots, pc_started, total, NULL, NULL);
-        for (int i = 0; i < clk.n; i++) {
+        for (int i = 0; i < clk.n; i++)
             cfg->interval_out[i].allocator_name = ops->name;
-            cfg->interval_out[i].thread_count = started_p + started_c;
-        }
     }
 
     /* Wait for producers */
@@ -1355,10 +1353,8 @@ void workload_fragmentation(allocator_ops_t *ops,
         memset(st, 1, (size_t)started);
         iv_drive(&iv_clk, cfg, iv_slots, st, nthreads, &live_bytes, series);
         free(st);
-        for (int i = 0; i < iv_clk.n; i++) {
+        for (int i = 0; i < iv_clk.n; i++)
             cfg->interval_out[i].allocator_name = ops->name;
-            cfg->interval_out[i].thread_count = started;
-        }
     }
     for (int i = 0; i < started; i++)
         pthread_join(threads[i], NULL);
@@ -1507,7 +1503,8 @@ static void frag_summarise(const struct frag_series *series,
  * every batch as in op-budget mode: at 192 threads the per-batch sampler
  * overflowed FRAG_MAX_SAMPLES within seconds and serialised every worker on
  * peak_lock.  prodcons reports the largest VmRSS seen in the interval as
- * rss_at_live_peak (op-budget mode reads it once, after the run).
+ * rss_at_live_peak (op-budget mode reads it once, after the run), and both
+ * report it in the vmhwm column (see below).
  */
 static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
                      iv_slot_t *slots, const unsigned char *started,
@@ -1515,6 +1512,9 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
                      struct frag_series *series) {
     const uint64_t period = (uint64_t)(cfg->interval_sec * 1e9);
     const uint64_t tick = 100000000ull;
+    int nstarted = 0;
+    for (int w = 0; w < nworkers; w++)
+        nstarted += started[w] ? 1 : 0;
     uint64_t t_start = bench_get_ns();
     bench_cpu_usage_t cpu0 = bench_get_cpu_usage();
 
@@ -1566,6 +1566,7 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
         }
 
         st->workload_name = cfg->name;
+        st->thread_count = nstarted;
         st->runs_measured = 1;
         st->elapsed_seconds = (double)(t_switch - t_start) / 1e9;
         st->ops_per_second = st->elapsed_seconds > 0 ?
@@ -1588,13 +1589,18 @@ static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
         td_free(comb);
         st->cpu_usage.user_ms = cpu1.user_ms - cpu0.user_ms;
         st->cpu_usage.sys_ms = cpu1.sys_ms - cpu0.sys_ms;
-        if (series) {
+        if (series)
             frag_summarise(series, st);
-        } else {
+        else
             st->peak_rss_bytes = rss_max;
-            st->max_rss_bytes = bench_get_vmhwm_bytes();
-            st->current_rss_bytes = bench_get_vmrss_bytes();
-        }
+        /* The vmhwm column is THIS interval's largest sampled VmRSS, not the
+         * process VmHWM: the lifetime mark would include intervals the caller
+         * discards (the warm-up), and every column of a kept row must come
+         * from that interval alone. */
+        st->max_rss_bytes = rss_max;
+        st->current_rss_bytes = bench_get_vmrss_bytes();
+        if (cfg->interval_done)
+            cfg->interval_done(st, k);
         cpu0 = cpu1;
         t_start = t_switch;
     }

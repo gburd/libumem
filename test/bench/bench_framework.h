@@ -171,6 +171,10 @@ typedef struct workload_config {
     int intervals;
     double interval_sec;
     struct bench_stats *interval_out;
+    /* Optional: called by the driver thread as each interval completes, with
+     * that interval's filled stats and index, so a long run's rows are out
+     * (and survive a later crash) before the run ends. */
+    void (*interval_done)(const struct bench_stats *st, int k);
 } workload_config_t;
 
 /* Per-thread share of the total budget, never below the work floor.

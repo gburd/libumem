@@ -11,6 +11,21 @@
 
 #define HISTORY_FILENAME "test/bench/results/history.toml"
 
+/* -D row printer: the driver calls this as each interval completes. */
+static const char *iv_alloc_name;
+static int iv_skip;
+static void print_interval(const bench_stats_t *st, int k) {
+    if (k < iv_skip)
+        return;
+    bench_stats_t row = *st;
+    char wname[128];
+    snprintf(wname, sizeof(wname), "%s/interval=%d", st->workload_name, k);
+    row.workload_name = wname;
+    row.allocator_name = iv_alloc_name;
+    bench_print_csv_row(&row);
+    fflush(stdout);
+}
+
 static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("\nOptions:\n");
@@ -41,7 +56,10 @@ static void print_usage(const char *prog) {
     printf("                (workload name + /interval=K).  -W K drops the first\n");
     printf("                K intervals' rows (they still run: they ARE the\n");
     printf("                warm-up of the same process).  -n only sizes frag's\n");
-    printf("                live pool.  Requires -c; excludes -A and -r.\n");
+    printf("                live pool.  In this mode vmhwm_bytes is the interval's\n");
+    printf("                own max sampled VmRSS (100 ms), not the process VmHWM,\n");
+    printf("                so no kept row carries warm-up state.  Requires -c;\n");
+    printf("                excludes -A and -r.\n");
     printf("  -c            Output CSV format\n");
     printf("  -H            Print CSV header only and exit\n");
     printf("  --compare     Compare results against historical data\n");
@@ -285,19 +303,14 @@ int main(int argc, char *argv[]) {
                 workload->intervals = iv_count;
                 workload->interval_sec = iv_sec;
                 workload->interval_out = iv;
+                workload->interval_done = print_interval;
+                iv_alloc_name = alloc->name;
+                iv_skip = warmups;
                 bench_run(alloc, workload, &stats);
-                char wname[128];
-                for (int k = warmups; k < iv_count; k++) {
-                    snprintf(wname, sizeof(wname), "%s/interval=%d",
-                             workload->name, k);
-                    iv[k].workload_name = wname;
-                    iv[k].allocator_name = alloc->name;
-                    bench_print_csv_row(&iv[k]);
-                }
-                fflush(stdout);
                 free(iv);
                 workload->intervals = 0;
                 workload->interval_out = NULL;
+                workload->interval_done = NULL;
                 continue;
             }
             if (emit_each_run) {
