@@ -370,3 +370,6 @@ recorded as its own defect: `umem_init` should not `dlopen` on an arbitrary
 caller's stack. The arm-hi sustained measurement below runs with
 `GLIBC_TUNABLES` set to an empty tunable, and this is labelled. intel-hi does
 not crash with the default.
+The P8.5b **t=1 A/B** (`docs/results/jobs/intel-lo-r5rseq-t1ab/cmd`) selected
+its off arm the same way (`UMEM_RSEQ_OFF=1`, non-isolated tree), so the claim
+"t=1 not regressed" is also unattributed. It is re-measured with `norseq`.
