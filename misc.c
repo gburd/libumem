@@ -58,7 +58,19 @@
 #include "misc.h"
 
 #define	UMEM_ERRFD	2	/* goes to standard error */
-#define	UMEM_MAX_ERROR_SIZE 4096 /* error messages are truncated to this */
+/*
+ * Messages are truncated to this.  It is the size of a STACK buffer in
+ * log_message(), debug_printf() and umem_vprintf(), which run on the caller's
+ * thread -- including umem_init() on the first allocating thread when a
+ * UMEM_* item is bad -- so it is kept small: at 4096 those frames were
+ * 4.1-4.4 KB, enough on their own to SEGV a first allocation on a 16 KiB
+ * thread (docs/results/2026-09-27-arm-dlopen-stack-crash.md s.9).  The
+ * longest message in the tree is envvar.c's "'%s' not recognized" with an
+ * item of up to UMEM_ENV_ITEM_MAX (512) bytes, ~540 B; stack-trace lines are
+ * pre-formatted into 512 B.  Not static: these run concurrently and from
+ * signal handlers (test_errlog_signal).
+ */
+#define	UMEM_MAX_ERROR_SIZE 1024
 
 /*
  * This is a circular buffer for holding error messages.

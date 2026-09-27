@@ -149,8 +149,25 @@ umem_get_max_ncpus(void)
      * just non-optimal.
      * ponytail: fixed-size buffer, ceiling ~1500 CPUs; switch to a
      * growing read loop if a box that large ever needs testing.
+     *
+     * STATIC, NOT A LOCAL.  This buffer used to be on the stack, despite
+     * the comment above saying "a static buffer", and it made umem_init()
+     * need ~67 KB of stack on whatever thread made the first allocation
+     * (glibc's first malloc needs ~1-3 KB).  A first umem_alloc() on a
+     * 16-64 KiB thread SEGV'd; on x86_64 the 64 KiB frame could instead jump
+     * the single guard page and read() /proc/stat into a neighbouring
+     * thread's stack or TLS (docs/results/2026-09-27-arm-dlopen-stack-
+     * crash.md; regression: test/integration/test_first_alloc_small_stack).
+     *
+     * INVARIANT that makes a shared buffer safe: the only caller is
+     * umem_init(), on the one thread that moved umem_ready STARTUP ->
+     * INITING under umem_init_lock (umem_init_thr).  Every other thread
+     * blocks on umem_init_cv until init finishes, and recursion into
+     * umem_init() from this point panics, so the buffer is never in use
+     * twice.  The ncpus cache above relies on the same invariant.  A new
+     * caller outside umem_init() must not be added without a lock.
      */
-    char proc_stat[65536];
+    static char proc_stat[65536];
     int fd;
 
     ncpus = 1;
