@@ -35,6 +35,13 @@ static void print_usage(const char *prog) {
     printf("                sustained run can be read as a time series instead of\n");
     printf("                one whole-run aggregate.  Requires -c.  window= is\n");
     printf("                appended to the workload name.\n");
+    printf("  -D SEC:COUNT  Interval mode (prodcons, frag): ONE process runs COUNT\n");
+    printf("                consecutive SEC-second intervals, ends by time (not\n");
+    printf("                by -n), and prints one CSV row per interval\n");
+    printf("                (workload name + /interval=K).  -W K drops the first\n");
+    printf("                K intervals' rows (they still run: they ARE the\n");
+    printf("                warm-up of the same process).  -n only sizes frag's\n");
+    printf("                live pool.  Requires -c; excludes -A and -r.\n");
     printf("  -c            Output CSV format\n");
     printf("  -H            Print CSV header only and exit\n");
     printf("  --compare     Compare results against historical data\n");
@@ -64,6 +71,8 @@ int main(int argc, char *argv[]) {
     bool do_compare = false;
     bool do_save = false;
     bool emit_each_run = false;
+    int iv_count = 0;
+    double iv_sec = 0;
 
     /* Handle long options manually before getopt */
     for (int i = 1; i < argc; i++) {
@@ -81,7 +90,7 @@ int main(int argc, char *argv[]) {
 
     int opt;
     optind = 1;
-    while ((opt = getopt(argc, argv, "a:w:t:n:s:r:W:AcHh?")) != -1) {
+    while ((opt = getopt(argc, argv, "a:w:t:n:s:r:W:D:AcHh?")) != -1) {
         switch (opt) {
         case 'a':
             allocator_name = optarg;
@@ -113,6 +122,16 @@ int main(int argc, char *argv[]) {
             }
             break;
         }
+        case 'D': {
+            char *colon = strchr(optarg, ':');
+            iv_sec = strtod(optarg, NULL);
+            iv_count = colon ? atoi(colon + 1) : 0;
+            if (iv_sec <= 0 || iv_count < 1) {
+                fprintf(stderr, "-D wants SEC:COUNT, e.g. -D 60:15\n");
+                return 1;
+            }
+            break;
+        }
         case 'c':
             csv_output = true;
             break;
@@ -132,6 +151,13 @@ int main(int argc, char *argv[]) {
             print_usage(argv[0]);
             return 1;
         }
+    }
+
+    if (iv_count > 0 && (!csv_output || emit_each_run || runs > 1 ||
+                         warmups >= iv_count)) {
+        fprintf(stderr, "-D requires -c, excludes -A and -r, and needs "
+                "-W < COUNT\n");
+        return 1;
     }
 
     /* If header-only requested, print and exit */
@@ -243,6 +269,37 @@ int main(int argc, char *argv[]) {
             }
 
             bench_stats_t stats;
+            if (iv_count > 0) {
+                /* One process, time-bounded; see workload_config_t.  Only
+                 * the two workloads that implement it are accepted. */
+                if (workload->fn != workload_producer_consumer &&
+                    workload->fn != workload_fragmentation) {
+                    if (strcmp(workload_name, "all") != 0) {
+                        fprintf(stderr, "-D supports prodcons and frag only\n");
+                        return 1;
+                    }
+                    continue;
+                }
+                bench_stats_t *iv = calloc((size_t)iv_count, sizeof(*iv));
+                if (!iv) return 1;
+                workload->intervals = iv_count;
+                workload->interval_sec = iv_sec;
+                workload->interval_out = iv;
+                bench_run(alloc, workload, &stats);
+                char wname[128];
+                for (int k = warmups; k < iv_count; k++) {
+                    snprintf(wname, sizeof(wname), "%s/interval=%d",
+                             workload->name, k);
+                    iv[k].workload_name = wname;
+                    iv[k].allocator_name = alloc->name;
+                    bench_print_csv_row(&iv[k]);
+                }
+                fflush(stdout);
+                free(iv);
+                workload->intervals = 0;
+                workload->interval_out = NULL;
+                continue;
+            }
             if (emit_each_run) {
                 /* Per-window mode: discard the warm-ups, then emit one row
                  * per measured run.  Each row is a window with its OWN

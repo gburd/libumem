@@ -158,6 +158,19 @@ typedef struct workload_config {
     size_t min_size;
     size_t max_size;
     void *custom_data;
+    /* Interval mode (bench_main -D SEC:COUNT), prodcons and frag only.
+     * intervals > 0: run ONE process for `intervals` consecutive
+     * `interval_sec`-second intervals, terminated by time, not by
+     * operation_count, and write each interval's own stats to
+     * interval_out[0..intervals-1] (caller-owned).  A long run's warm-up is
+     * then discarded from the SAME process's samples; separate short
+     * processes warm the OS but never the allocator under test.
+     * operation_count still sizes frag's per-thread live pool
+     * (pool_cap = operation_count / threads / 4), so the live set is chosen
+     * explicitly, not by how fast the box is. */
+    int intervals;
+    double interval_sec;
+    struct bench_stats *interval_out;
 } workload_config_t;
 
 /* Per-thread share of the total budget, never below the work floor.

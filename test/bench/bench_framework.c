@@ -587,6 +587,73 @@ cleanup:
 }
 
 /*
+ * Interval mode (workload_config_t.intervals > 0): ONE time-bounded process,
+ * per-interval stats.  Used by prodcons and frag.
+ *
+ * Ownership and ordering:
+ *   - iv_clock_t.iv is written only by the driver (the thread that called the
+ *     workload), monotonically 0 -> n; n means stop.  Workers read it
+ *     relaxed: it carries no data to them, only "the interval changed".
+ *   - Each worker owns its current-interval accumulators (digest, ops,
+ *     failures, bytes).  On seeing iv > its own interval it moves them into
+ *     its slot for that interval and publishes the digest pointer with a
+ *     release store.  From then on the slot belongs to the driver, which
+ *     reads it after an acquire load of that pointer, merges and frees it.
+ *   - A worker publishes every interval exactly once, in order, including the
+ *     last (when it sees iv == n) before it stops recording, so a driver
+ *     waiting for slot k of every STARTED worker cannot miss one.  The
+ *     digest pointer is non-NULL while a worker is still recording.
+ *   - Workers poll between operations, never inside a timed alloc/free, so
+ *     the poll costs every allocator the same and is not in any latency.
+ */
+typedef struct {
+    _Alignas(64) atomic_int iv;
+    int n;
+} iv_clock_t;
+
+typedef struct {
+    _Atomic(td_histogram_t *) hist;
+    uint64_t ops;
+    uint64_t failures;
+    size_t bytes;
+} iv_slot_t;
+
+typedef struct {
+    iv_clock_t *clock;      /* NULL => op-budget mode (interval code unused) */
+    iv_slot_t *slots;       /* this worker's n slots */
+    int mine;               /* interval this worker is accumulating into */
+} iv_worker_t;
+
+/* Returns 1 while recording, 0 once this worker has published its last
+ * interval (the caller stops recording and winds down). */
+static int iv_poll(iv_worker_t *w, td_histogram_t **hist, uint64_t *ops,
+                   uint64_t *failures, size_t *bytes) {
+    int now = atomic_load_explicit(&w->clock->iv, memory_order_relaxed);
+    while (w->mine < now && w->mine < w->clock->n) {
+        iv_slot_t *s = &w->slots[w->mine];
+        td_histogram_t *h = *hist;
+        s->ops = *ops; s->failures = *failures; s->bytes = *bytes;
+        *ops = 0; *failures = 0; *bytes = 0;
+        *hist = NULL;
+        w->mine++;
+        if (w->mine < w->clock->n && td_init(100.0, hist) != 0) {
+            fprintf(stderr, "bench: tdigest init failed (interval mode)\n");
+            abort();
+        }
+        atomic_store_explicit(&s->hist, h, memory_order_release);
+    }
+    return w->mine < w->clock->n;
+}
+
+struct frag_series;
+static void frag_summarise(const struct frag_series *series,
+                           struct bench_stats *stats);
+static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
+                     iv_slot_t *slots, const unsigned char *started,
+                     int nworkers, atomic_size_t *live,
+                     struct frag_series *series);
+
+/*
  * Lock-free MPMC ring buffer for producer-consumer workload.
  * Uses CAS on head/tail for safe multi-producer/multi-consumer access.
  */
@@ -675,7 +742,11 @@ typedef struct {
     uint64_t operations;
     uint64_t failures;                /* allocations that returned NULL */
     pthread_barrier_t *start_barrier;
+    iv_worker_t iv;
 } pc_context_t;
+
+#define PC_POLL(ctx) iv_poll(&(ctx)->iv, &(ctx)->latency_hist, \
+    &(ctx)->operations, &(ctx)->failures, &(ctx)->bytes_allocated)
 
 static void *producer_thread(void *arg) {
     pc_context_t *ctx = (pc_context_t *)arg;
@@ -685,7 +756,9 @@ static void *producer_thread(void *arg) {
 
     pthread_barrier_wait(ctx->start_barrier);
 
-    for (uint64_t i = 0; i < ctx->ops_target; i++) {
+    for (uint64_t i = 0; ctx->iv.clock || i < ctx->ops_target; i++) {
+        if (ctx->iv.clock && !PC_POLL(ctx))
+            break;
         size_t size = cfg->min_size;
         if (cfg->max_size > cfg->min_size) {
             size = cfg->min_size +
@@ -704,7 +777,10 @@ static void *producer_thread(void *arg) {
         ctx->operations++;
 
         while (!ring_push(ctx->ring, ptr, size)) {
-            /* Spin briefly waiting for consumer to drain */
+            /* Spin briefly waiting for consumer to drain.  Keep publishing
+             * intervals meanwhile so the driver never waits on a full ring. */
+            if (ctx->iv.clock)
+                (void)PC_POLL(ctx);
             sched_yield();
         }
     }
@@ -720,6 +796,17 @@ static void *consumer_thread(void *arg) {
     for (;;) {
         void *ptr;
         size_t sz;
+        /* Interval mode: after the last interval, keep draining the ring
+         * (untimed, uncounted) until the producers are done. */
+        if (ctx->iv.clock && !PC_POLL(ctx)) {
+            if (ring_pop(ctx->ring, &ptr, &sz))
+                ops->free(ptr);
+            else if (atomic_load(&ctx->ring->done))
+                break;
+            else
+                sched_yield();
+            continue;
+        }
         if (ring_pop(ctx->ring, &ptr, &sz)) {
             uint64_t t0 = bench_get_ns();
             ops->free(ptr);
@@ -787,6 +874,25 @@ void workload_producer_consumer(allocator_ops_t *ops,
         }
     }
 
+    /* Interval mode: one clock, n slots per worker (see iv_clock_t). */
+    iv_clock_t clk = { .n = cfg->intervals > 0 ? cfg->intervals : 0 };
+    atomic_init(&clk.iv, 0);
+    iv_slot_t *slots = NULL;
+    unsigned char *pc_started = NULL;
+    if (clk.n > 0) {
+        slots = calloc((size_t)total * (size_t)clk.n, sizeof(*slots));
+        pc_started = calloc((size_t)total, 1);
+        if (!slots || !pc_started) {
+            free(slots); free(pc_started);
+            goto cleanup;
+        }
+        for (int i = 0; i < total; i++) {
+            contexts[i].iv.clock = &clk;
+            contexts[i].iv.slots = &slots[(size_t)i * (size_t)clk.n];
+            contexts[i].iv.mine = 0;
+        }
+    }
+
     int started_p = 0, started_c = 0;
     for (int i = 0; i < n_producers; i++) {
         if (pthread_create(&threads[i], NULL, producer_thread,
@@ -795,6 +901,7 @@ void workload_producer_consumer(allocator_ops_t *ops,
                     "%d\n", i, n_producers);
             break;
         }
+        if (pc_started) pc_started[i] = 1;
         started_p++;
     }
     for (int i = n_producers; i < total; i++) {
@@ -804,6 +911,7 @@ void workload_producer_consumer(allocator_ops_t *ops,
                     i - n_producers);
             break;
         }
+        if (pc_started) pc_started[i] = 1;
         started_c++;
     }
     /* See bench_barrier_shrink(): a sequential absorb loop deadlocks. */
@@ -811,6 +919,14 @@ void workload_producer_consumer(allocator_ops_t *ops,
 
     uint64_t start = bench_get_ns();
     pthread_barrier_wait(&barrier);
+
+    if (clk.n > 0) {
+        iv_drive(&clk, cfg, slots, pc_started, total, NULL, NULL);
+        for (int i = 0; i < clk.n; i++) {
+            cfg->interval_out[i].allocator_name = ops->name;
+            cfg->interval_out[i].thread_count = started_p + started_c;
+        }
+    }
 
     /* Wait for producers */
     for (int i = 0; i < started_p; i++) {
@@ -823,6 +939,8 @@ void workload_producer_consumer(allocator_ops_t *ops,
         pthread_join(threads[i], NULL);
     }
     uint64_t end = bench_get_ns();
+    free(slots);
+    free(pc_started);
 
     /* Aggregate */
     td_histogram_t *combined;
@@ -831,6 +949,7 @@ void workload_producer_consumer(allocator_ops_t *ops,
     uint64_t total_ops = 0;
     size_t total_alloc = 0;
     for (int i = 0; i < total; i++) {
+        if (!contexts[i].latency_hist) continue;   /* interval mode: handed off */
         td_merge(combined, contexts[i].latency_hist);
         total_ops += contexts[i].operations;
         total_alloc += contexts[i].bytes_allocated;
@@ -953,6 +1072,7 @@ typedef struct {
     pthread_mutex_t *peak_lock;
     struct frag_series *series;
     pthread_barrier_t *start_barrier;
+    iv_worker_t iv;
 } frag_context_t;
 
 /*
@@ -1029,6 +1149,13 @@ static void *frag_worker(void *arg) {
         ctx->failures++;
         free(pool); free(pool_sz);
         if (ctx->start_barrier) pthread_barrier_wait(ctx->start_barrier);
+        /* Interval mode: the driver waits for every started worker's slot,
+         * so publish (empty) intervals until the last one. */
+        while (ctx->iv.clock && iv_poll(&ctx->iv, &ctx->hist, &ctx->operations,
+                                        &ctx->failures, &ctx->bytes_allocated)) {
+            struct timespec ts = { 0, 10000000L };
+            nanosleep(&ts, NULL);
+        }
         return NULL;
     }
     size_t pool_count = 0;
@@ -1038,13 +1165,23 @@ static void *frag_worker(void *arg) {
     if (ctx->start_barrier) pthread_barrier_wait(ctx->start_barrier);
 
     uint64_t remaining = ctx->ops_target;
-    while (remaining > 0) {
+    /* Interval mode: run by time, polling the interval clock before every
+     * operation (one relaxed load of a line written once per interval), so an
+     * operation is counted in the interval it started in.  The driver samples
+     * (RSS, live) on its timer instead of every worker after every batch (see
+     * iv_drive). */
+#define FRAG_POLL(ctx) iv_poll(&(ctx)->iv, &(ctx)->hist, &(ctx)->operations, \
+    &(ctx)->failures, &(ctx)->bytes_allocated)
+    while (ctx->iv.clock || remaining > 0) {
         /* Grow the live set: allocate a batch into free pool slots. */
         size_t room = ctx->pool_cap - pool_count;
-        size_t batch = remaining > room ? room : (size_t)remaining;
+        size_t batch = (ctx->iv.clock || remaining > room) ? room
+                                                           : (size_t)remaining;
         if (batch == 0) batch = 1;    /* pool full: still do work, see below */
 
         for (size_t i = 0; i < batch; i++) {
+            if (ctx->iv.clock && !FRAG_POLL(ctx))
+                goto stop;
             size_t sz = min_sz +
                 ((size_t)rand_r(&seed) % (max_sz - min_sz + 1));
 
@@ -1082,11 +1219,14 @@ static void *frag_worker(void *arg) {
         remaining -= (remaining > batch) ? batch : remaining;
 
         /* Sample RSS and live bytes together, at the live-set maximum. */
-        frag_sample(ctx);
+        if (!ctx->iv.clock)
+            frag_sample(ctx);
 
         /* Free a random ~50% of our own pool, creating the holes that make
          * this a fragmentation workload rather than a churn workload. */
         for (size_t i = 0; i < pool_count; ) {
+            if (ctx->iv.clock && !FRAG_POLL(ctx))
+                goto stop;
             if (rand_r(&seed) % 2 == 0) {
                 uint64_t t0 = bench_get_ns();
                 ops->free(pool[i]);
@@ -1105,7 +1245,8 @@ static void *frag_worker(void *arg) {
         }
     }
 
-    /* Release what is still live. */
+stop:
+    /* Release what is still live (untimed, uncounted). */
     for (size_t i = 0; i < pool_count; i++) {
         ops->free(pool[i]);
         held -= pool_sz[i];
@@ -1158,10 +1299,27 @@ void workload_fragmentation(allocator_ops_t *ops,
     pthread_barrier_t start_barrier;
     pthread_barrier_init(&start_barrier, NULL, (unsigned)nthreads + 1);
 
+    /* Interval mode: one clock, n slots per worker (see iv_clock_t). */
+    iv_clock_t iv_clk = { .n = cfg->intervals > 0 ? cfg->intervals : 0 };
+    atomic_init(&iv_clk.iv, 0);
+    iv_slot_t *iv_slots = NULL;
+    if (iv_clk.n > 0) {
+        iv_slots = calloc((size_t)nthreads * (size_t)iv_clk.n,
+                          sizeof(*iv_slots));
+        if (!iv_slots) {
+            fprintf(stderr, "bench: interval slot allocation failed\n");
+            abort();
+        }
+    }
+
     for (int i = 0; i < nthreads; i++) {
         ctxs[i].thread_id = i;
         ctxs[i].ops = ops;
         ctxs[i].cfg = cfg;
+        if (iv_clk.n > 0) {
+            ctxs[i].iv.clock = &iv_clk;
+            ctxs[i].iv.slots = &iv_slots[(size_t)i * (size_t)iv_clk.n];
+        }
         ctxs[i].ops_target = per_thread;
         ctxs[i].pool_cap = pool_cap;
         ctxs[i].live_bytes = &live_bytes;
@@ -1190,9 +1348,22 @@ void workload_fragmentation(allocator_ops_t *ops,
 
     uint64_t start = bench_get_ns();
     pthread_barrier_wait(&start_barrier);
+    if (iv_clk.n > 0) {
+        /* Workers 0..started-1 are exactly the started ones. */
+        unsigned char *st = calloc((size_t)nthreads, 1);
+        if (!st) abort();
+        memset(st, 1, (size_t)started);
+        iv_drive(&iv_clk, cfg, iv_slots, st, nthreads, &live_bytes, series);
+        free(st);
+        for (int i = 0; i < iv_clk.n; i++) {
+            cfg->interval_out[i].allocator_name = ops->name;
+            cfg->interval_out[i].thread_count = started;
+        }
+    }
     for (int i = 0; i < started; i++)
         pthread_join(threads[i], NULL);
     uint64_t end = bench_get_ns();
+    free(iv_slots);
 
     td_histogram_t *combined = NULL;
     uint64_t total_ops = 0;
@@ -1259,6 +1430,20 @@ void workload_fragmentation(allocator_ops_t *ops,
      * noisy sample cannot become a headline; max_rss_bytes is VmHWM, the
      * process's own high-water mark, as the outer bound on the numerator.
      */
+    frag_summarise(series, stats);
+    free(series);
+
+    for (int i = 0; i < nthreads; i++)
+        if (ctxs[i].hist != NULL) td_free(ctxs[i].hist);
+    pthread_barrier_destroy(&start_barrier);
+    free(ctxs);
+    free(threads);
+}
+
+/* The frag (RSS, live) series -> the stats' fragmentation fields.  Shared by
+ * the op-budget run and by every interval of an interval-mode run. */
+static void frag_summarise(const struct frag_series *series,
+                           bench_stats_t *stats) {
     size_t peak_live = 0, rss_at_peak_live = 0;
     double ratio_median = 0.0;
     size_t live_median = 0;
@@ -1308,13 +1493,111 @@ void workload_fragmentation(allocator_ops_t *ops,
         fprintf(stderr, "bench: frag sample series full; %zu samples dropped "
                 "(summary covers the first %zu)\n", series->dropped, series->n);
     }
-    free(series);
+}
 
-    for (int i = 0; i < nthreads; i++)
-        if (ctxs[i].hist != NULL) td_free(ctxs[i].hist);
-    pthread_barrier_destroy(&start_barrier);
-    free(ctxs);
-    free(threads);
+/*
+ * Interval-mode driver (see iv_clock_t for the ownership rules).  Runs on the
+ * thread that released the start barrier.  For each interval: sleep in
+ * 100 ms ticks until the interval's deadline, sampling VmRSS (and, for frag,
+ * the aggregate live bytes with it) at each tick; then advance the clock and
+ * collect every started worker's published slot.  The next interval's
+ * deadline is measured from the switch, so collection time is not lost.
+ *
+ * Frag's (RSS, live) pairs are taken on this timer, not by the workers after
+ * every batch as in op-budget mode: at 192 threads the per-batch sampler
+ * overflowed FRAG_MAX_SAMPLES within seconds and serialised every worker on
+ * peak_lock.  prodcons reports the largest VmRSS seen in the interval as
+ * rss_at_live_peak (op-budget mode reads it once, after the run).
+ */
+static void iv_drive(iv_clock_t *clk, const workload_config_t *cfg,
+                     iv_slot_t *slots, const unsigned char *started,
+                     int nworkers, atomic_size_t *live,
+                     struct frag_series *series) {
+    const uint64_t period = (uint64_t)(cfg->interval_sec * 1e9);
+    const uint64_t tick = 100000000ull;
+    uint64_t t_start = bench_get_ns();
+    bench_cpu_usage_t cpu0 = bench_get_cpu_usage();
+
+    for (int k = 0; k < clk->n; k++) {
+        bench_stats_t *st = &cfg->interval_out[k];
+        memset(st, 0, sizeof(*st));
+        size_t rss_max = 0;
+        if (series) { series->n = 0; series->dropped = 0; }
+        const uint64_t t_end = t_start + period;
+        for (uint64_t now; (now = bench_get_ns()) < t_end; ) {
+            uint64_t d = t_end - now < tick ? t_end - now : tick;
+            struct timespec ts = { (time_t)(d / 1000000000ull),
+                                   (long)(d % 1000000000ull) };
+            nanosleep(&ts, NULL);
+            size_t rss = bench_get_vmrss_bytes();
+            if (rss > rss_max) rss_max = rss;
+            size_t lv = series ? atomic_load(live) : 0;
+            if (lv > 0) {
+                if (series->n < FRAG_MAX_SAMPLES) {
+                    series->live[series->n] = lv;
+                    series->rss[series->n] = rss;
+                    series->n++;
+                } else {
+                    series->dropped++;
+                }
+            }
+        }
+        const uint64_t t_switch = bench_get_ns();
+        atomic_store_explicit(&clk->iv, k + 1, memory_order_relaxed);
+        bench_cpu_usage_t cpu1 = bench_get_cpu_usage();
+
+        td_histogram_t *comb = NULL;
+        if (td_init(100.0, &comb) != 0) {
+            fprintf(stderr, "bench: tdigest init failed (interval driver)\n");
+            abort();
+        }
+        for (int w = 0; w < nworkers; w++) {
+            if (!started[w]) continue;
+            iv_slot_t *s = &slots[(size_t)w * (size_t)clk->n + (size_t)k];
+            td_histogram_t *h;
+            while ((h = atomic_load_explicit(&s->hist,
+                                             memory_order_acquire)) == NULL)
+                sched_yield();
+            td_merge(comb, h);
+            td_free(h);
+            st->total_operations += s->ops;
+            st->alloc_failures += s->failures;
+            st->bytes_allocated += s->bytes;
+        }
+
+        st->workload_name = cfg->name;
+        st->runs_measured = 1;
+        st->elapsed_seconds = (double)(t_switch - t_start) / 1e9;
+        st->ops_per_second = st->elapsed_seconds > 0 ?
+            (double)st->total_operations / st->elapsed_seconds : 0;
+        st->bytes_freed = st->bytes_allocated;
+        if (td_size(comb) > 0) {
+            st->latency_min = td_min(comb);
+            st->latency_max = td_max(comb);
+            st->latency_p50 = td_quantile(comb, 0.50);
+            st->latency_p90 = td_quantile(comb, 0.90);
+            st->latency_p99 = td_quantile(comb, 0.99);
+            st->latency_p999 = td_quantile(comb, 0.999);
+            double sum = 0;
+            td_compress(comb);
+            for (int i = 0; i < td_centroid_count(comb); i++)
+                sum += td_centroids_mean_at(comb, i) *
+                       td_centroids_weight_at(comb, i);
+            st->latency_mean = sum / (double)td_size(comb);
+        }
+        td_free(comb);
+        st->cpu_usage.user_ms = cpu1.user_ms - cpu0.user_ms;
+        st->cpu_usage.sys_ms = cpu1.sys_ms - cpu0.sys_ms;
+        if (series) {
+            frag_summarise(series, st);
+        } else {
+            st->peak_rss_bytes = rss_max;
+            st->max_rss_bytes = bench_get_vmhwm_bytes();
+            st->current_rss_bytes = bench_get_vmrss_bytes();
+        }
+        cpu0 = cpu1;
+        t_start = t_switch;
+    }
 }
 
 /* Run a benchmark once (no warm-up discard, no repeats). */

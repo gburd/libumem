@@ -366,6 +366,59 @@ test_no_bogus_fragmentation(void)
 	}
 }
 
+/*
+ * Interval mode (bench_main -D): ONE process, time-bounded intervals, each
+ * with its own stats.  Each interval must last its period (not its op budget),
+ * carry its own work and latency, and frag intervals must carry their own
+ * timer-sampled (RSS, live) series.
+ */
+static void
+test_interval_mode(void)
+{
+	printf("interval mode: 3 x 0.3 s, one process\n");
+	struct { const char *name; workload_fn fn; } cases[] = {
+		{ "producer-consumer", workload_producer_consumer },
+		{ "fragmentation", workload_fragmentation },
+	};
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		bench_stats_t iv[3];
+		memset(iv, 0, sizeof(iv));
+		workload_config_t cfg = {
+			.name = cases[i].name, .fn = cases[i].fn,
+			.thread_count = 4,
+			.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD * 4,
+			.min_size = 64, .max_size = 256,
+			.intervals = 3, .interval_sec = 0.3, .interval_out = iv
+		};
+		bench_stats_t st;
+		bench_run(&mock, &cfg, &st);
+		for (int k = 0; k < 3; k++) {
+			printf("   %-18s interval %d: %.3f s ops=%llu p50=%.0f "
+			    "rss=%zu samples=%zu\n", cases[i].name, k,
+			    iv[k].elapsed_seconds,
+			    (unsigned long long)iv[k].total_operations,
+			    iv[k].latency_p50, iv[k].peak_rss_bytes,
+			    iv[k].frag_samples);
+			CHECK(iv[k].elapsed_seconds > 0.29 &&
+			    iv[k].elapsed_seconds < 0.6,
+			    "%s interval %d lasted %.3f s, asked 0.3",
+			    cases[i].name, k, iv[k].elapsed_seconds);
+			CHECK(iv[k].total_operations > 0 &&
+			    iv[k].latency_p50 > 0 && iv[k].peak_rss_bytes > 0,
+			    "%s interval %d carries no work/latency/RSS",
+			    cases[i].name, k);
+			CHECK(iv[k].thread_count == 4,
+			    "%s interval %d reports %d threads",
+			    cases[i].name, k, iv[k].thread_count);
+			if (cases[i].fn == workload_fragmentation)
+				CHECK(iv[k].frag_samples >= 2 &&
+				    iv[k].live_bytes_at_peak > 0,
+				    "frag interval %d has no (RSS, live) "
+				    "series of its own", k);
+		}
+	}
+}
+
 int
 main(void)
 {
@@ -374,6 +427,7 @@ main(void)
 	test_work_floor();
 	test_frag_live_bytes();
 	test_no_bogus_fragmentation();
+	test_interval_mode();
 
 	printf("\nResult: %s (%d failure%s)\n", failures ? "FAIL" : "PASS",
 	    failures, failures == 1 ? "" : "s");
