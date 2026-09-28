@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-09-28
+
+Round 8 correctness and diagnosis. No ABI change (soname stays
+`libumem.so.2`); the allocation fast path is byte-identical to v4.0.0. Thread
+exit hands a full per-thread magazine to the depot whole instead of draining
+it object by object (O6, correctness/scalability, no wall-clock speedup at
+t=192 -- thread teardown dominates the exit); the first allocation no longer
+eagerly warms the stacktrace resolver, so an aarch64 first alloc survives a
+4 KiB stack (O7; x86_64's ~5.2 KB floor is dlopen/NUMA, documented). Proven:
+the pre-fix interior-pointer free consequence (O8) and findleaks' rseq-cached
+subtraction (O9). The cross-thread-free RSS gap was diagnosed to free stock
+parked in per-thread caches, not a per-CPU double-hold (refuted by counting);
+a free-only-thread bin trim was attempted and reverted for a fast-path cost,
+leaving that footprint a documented open item with a reaper upgrade path (F1).
+The 192-thread allocator benchmark's own harness distortions were corrected
+(latency sampling, per-op timing, and the size-header coherence miss, O5).
+The release gate now exercises the heap-ceiling regression on Debian (O10).
+
 ### Changed
 
 - **Diagnosis: the cross-thread-free RSS gap (F1) is not a per-CPU-layer
@@ -123,6 +141,7 @@ recipes keep working, and it now pulls in `libumem.so.2`.
   an ABI break, so it is a major release on its own. `test/common.[ch]`,
   sparsemap-era test helpers that nothing built, go with it.
 
+## [3.3.3] - 2026-09-28
 
 Makes the live-heap debugging tools do what they advertise. gdb/lldb
 `umem break` and `umem events`, `umem_inspect_set_event_cb()` and `umemctl
