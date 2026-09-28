@@ -4624,8 +4624,10 @@ umem_alloc_align_retry:
 }
 
 /*
- * _umem_free's buftag check for a UMF_BUFTAG cache: 1 if buf's redzone and
- * encoded size are good (and marks it freed), else reports and returns 0.
+ * umem_free_hooked's buftag check for a UMF_BUFTAG cache: 1 if buf's redzone
+ * and encoded size are good (and marks it freed), else reports and returns 0.
+ * Same logic as the inline block in _umem_free, which keeps f40a2da's form
+ * (routing it through here grew _umem_free by 34 insns, r7h4).
  */
 static inline __attribute__((always_inline)) int
 umem_free_redzone_ok(umem_cache_t *cp, void *buf, size_t size)
@@ -4876,9 +4878,29 @@ _umem_free(void *buf, size_t size)
 			}
 		}
 
-		if (unlikely(cp->cache_flags & UMF_BUFTAG) &&
-		    !umem_free_redzone_ok(cp, buf, size))
-			return;
+		/* f40a2da's inline form; umem_free_redzone_ok is the hooked copy */
+		if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
+			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
+			uint32_t *ip = (uint32_t *)btp;
+			if (ip[1] != UMEM_SIZE_ENCODE(size)) {
+				if (*(uint64_t *)buf == UMEM_FREE_PATTERN) {
+					umem_error(UMERR_DUPFREE, cp, buf);
+					return;
+				}
+				if (UMEM_SIZE_VALID(ip[1])) {
+					ip[0] = UMEM_SIZE_ENCODE(size);
+					umem_error(UMERR_BADSIZE, cp, buf);
+				} else {
+					umem_error(UMERR_REDZONE, cp, buf);
+				}
+				return;
+			}
+			if (((uint8_t *)buf)[size] != UMEM_REDZONE_BYTE) {
+				umem_error(UMERR_REDZONE, cp, buf);
+				return;
+			}
+			btp->bt_redzone = UMEM_REDZONE_PATTERN;
+		}
 
 		_umem_cache_free(cp, buf);
 	} else {
