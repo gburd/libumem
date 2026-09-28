@@ -49,6 +49,21 @@
  * positive; a single build cannot see both, so each build just prints its
  * own number and the driver compares.
  *
+ * WHY THE DRIVER TAKES A MEDIAN AND ALSO CHECKS total_buffers (r8f1).  The
+ * cached_skipped delta is a CROSS-PROCESS comparison: the default and knob
+ * arms are separate runs whose depot/per-CPU residency varies with scheduler
+ * timing, so one pair of runs is noisy (observed band -401..+828; the F1-a
+ * bin trim, which moves objects to the depot, widened it enough to flake a
+ * bare diff>0 once in five on x86).  rseq residency depends on CPU migration
+ * and cannot be pinned deterministically here, so the driver (B) takes the
+ * MEDIAN of N runs per arm and requires it above a floor well over the noise,
+ * as a BOUND not an equality.  Separately, the DETERMINISTIC correctness
+ * invariant is single-process: after the workers free EVERY buffer, the
+ * default build's total_buffers (outstanding count) must stay far below the
+ * churn volume -- if findleaks failed to subtract cached buffers it would
+ * report the whole freed pool as outstanding.  That check does not depend on
+ * the noisy delta at all, and is the real thing O9 protects.
+ *
  * If rseq is unavailable/disabled (no UMEM_RSEQ_AVAILABLE, non-x86/arm, or
  * the kernel refused registration) there is nothing to test: the program
  * still runs and prints its count; the driver detects a zero difference and
@@ -108,25 +123,36 @@ worker(void *arg)
 	return (NULL);
 }
 
-static long
-findleaks_cached_skipped(void)
+/*
+ * Read BOTH findleaks fields in one report: cached_skipped (buffers the
+ * cache walk subtracted) and total_buffers (outstanding, i.e. reported as
+ * still-live/leaked).  total_buffers is the DETERMINISTIC single-process
+ * correctness oracle -- see main().
+ */
+static void
+findleaks_counts(long *cached_skipped, long *total_buffers)
 {
 	char *buf = NULL;
 	size_t len = 0;
 	FILE *ms = open_memstream(&buf, &len);
-	long v = -1;
 
+	*cached_skipped = -1;
+	*total_buffers = -1;
 	if (ms == NULL)
-		return (-1);
+		return;
 	(void) umem_findleaks(ms, UMEM_FMT_JSON, 3);
 	(void) fclose(ms);
 	if (buf != NULL) {
 		const char *p = strstr(buf, "\"cached_skipped\":");
 		if (p != NULL)
-			v = strtol(p + strlen("\"cached_skipped\":"), NULL, 10);
+			*cached_skipped = strtol(p +
+			    strlen("\"cached_skipped\":"), NULL, 10);
+		p = strstr(buf, "\"total_buffers\":");
+		if (p != NULL)
+			*total_buffers = strtol(p +
+			    strlen("\"total_buffers\":"), NULL, 10);
 		free(buf);
 	}
-	return (v);
 }
 
 int
@@ -134,7 +160,7 @@ main(int argc, char **argv)
 {
 	int dur = (argc > 1) ? atoi(argv[1]) : 3;
 	pthread_t *t;
-	long skipped;
+	long skipped, total;
 	int i;
 
 	g_nthreads = (int)sysconf(_SC_NPROCESSORS_ONLN);
@@ -154,7 +180,7 @@ main(int argc, char **argv)
 	while (atomic_load(&g_parked) != g_nthreads)
 		usleep(1000);
 
-	skipped = findleaks_cached_skipped();
+	findleaks_counts(&skipped, &total);
 
 	/* Release the parked workers and join. */
 	atomic_store(&g_parked, -1);
@@ -162,16 +188,18 @@ main(int argc, char **argv)
 		(void) pthread_join(t[i], NULL);
 	free(t);
 
-	if (skipped < 0) {
+	if (skipped < 0 || total < 0) {
 		fprintf(stderr, "harness: findleaks produced no JSON "
-		    "cached_skipped field\n");
+		    "cached_skipped/total_buffers field\n");
 		return (99);
 	}
 
 #ifdef UMEM_FINDLEAKS_NO_RSEQ_SUBTRACT
-	printf("cached_skipped=%ld arm=norseqsub\n", skipped);
+	printf("cached_skipped=%ld total_buffers=%ld arm=norseqsub\n",
+	    skipped, total);
 #else
-	printf("cached_skipped=%ld arm=default\n", skipped);
+	printf("cached_skipped=%ld total_buffers=%ld arm=default\n",
+	    skipped, total);
 #endif
 	return (0);
 }
