@@ -506,7 +506,7 @@ test_integration_test_ptc_thread_exit_drain_CPPFLAGS = -I$(srcdir)
 # O6 regression: a FULL per-thread magazine held at thread exit must reach the
 # depot full list whole (umem_ptc_mag_flush_all used to pass cache_empty, so it
 # was drained one _umem_cache_free per round).  Exact oracle: walks the depot
-# lists for the exiting thread's shell.
+# lists for the exiting thread's shell.  In TESTS.
 noinst_PROGRAMS += test/integration/test_ptc_exit_full_mag
 test_integration_test_ptc_exit_full_mag_SOURCES = \
 	test/integration/test_ptc_exit_full_mag.c
@@ -1001,6 +1001,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_ptc_adjacency \
 	test/security/test_ptc_slot_mangle \
 	test/security/test_mag_round_mangle \
+	test/integration/test_ptc_exit_full_mag \
 	test/security/test_errlog_signal.sh \
 	test/security/test_abort_option.sh \
 	test/security/test_stack_bounds.sh \

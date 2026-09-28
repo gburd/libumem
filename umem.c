@@ -3239,9 +3239,19 @@ umem_ptc_mag_prime(umem_cache_t *cp)
 
 /*
  * Flush all per-thread magazines back to depot.
- * Called from umem_ptc_destroy() at thread exit.
- * umem_ptc_mag_return() drains whatever the magazine still holds before it
- * goes anywhere, so both magazines are simply handed over with their counts.
+ * Called from umem_ptc_destroy() at thread exit, by the exiting thread.
+ *
+ * What this may touch: its own ptc->mags[] (owned by the exiting thread),
+ * and the depot lists, each only under its own ml_lock (umem_depot_push).
+ * No cc_lock or cache_lock is held on entry, which umem_depot_free and the
+ * drain's _umem_cache_free both require.
+ *
+ * Both magazines are offered to cache_full with their counts, and
+ * umem_ptc_mag_return classifies by count, against the magazine's OWN
+ * capacity: exactly full -> full list whole (one push); partial or empty ->
+ * drained, shell to the empty list; stale magtype -> drained, shell freed.
+ * Passing cache_empty here (as it did until O6) sent a FULL magazine down
+ * the drain, one _umem_cache_free per round.  NULL is never passed.
  */
 void
 umem_ptc_mag_flush_all(umem_ptc_t *ptc)
@@ -3257,14 +3267,14 @@ umem_ptc_mag_flush_all(umem_ptc_t *ptc)
 			continue;
 
 		if (mag->loaded != NULL) {
-			umem_ptc_mag_return(cp, &cp->cache_empty,
+			umem_ptc_mag_return(cp, &cp->cache_full,
 			    mag->loaded, mag->rounds);
 			mag->loaded = NULL;
 			mag->rounds = 0;
 		}
 
 		if (mag->previous != NULL) {
-			umem_ptc_mag_return(cp, &cp->cache_empty,
+			umem_ptc_mag_return(cp, &cp->cache_full,
 			    mag->previous, mag->prounds);
 			mag->previous = NULL;
 			mag->prounds = 0;
