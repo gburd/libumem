@@ -503,6 +503,17 @@ test_integration_test_ptc_thread_exit_drain_LDADD = libumem.la
 test_integration_test_ptc_thread_exit_drain_LDFLAGS = -pthread
 test_integration_test_ptc_thread_exit_drain_CPPFLAGS = -I$(srcdir)
 
+# O6 regression: a FULL per-thread magazine held at thread exit must reach the
+# depot full list whole (umem_ptc_mag_flush_all used to pass cache_empty, so it
+# was drained one _umem_cache_free per round).  Exact oracle: walks the depot
+# lists for the exiting thread's shell.
+noinst_PROGRAMS += test/integration/test_ptc_exit_full_mag
+test_integration_test_ptc_exit_full_mag_SOURCES = \
+	test/integration/test_ptc_exit_full_mag.c
+test_integration_test_ptc_exit_full_mag_LDADD = libumem.la
+test_integration_test_ptc_exit_full_mag_LDFLAGS = -pthread
+test_integration_test_ptc_exit_full_mag_CPPFLAGS = -I$(srcdir)
+
 # ...and the exact-oracle variant.  The plain test above compares outstanding
 # buffer counts between a PTC-on and a PTC-off arm, which works but sits on top
 # of ordinary magazine/depot/slab retention: when an unrelated change reduced
