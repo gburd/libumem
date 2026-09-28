@@ -1,0 +1,1 @@
+cd ~/libumem-iso-proof-e8d526c82ef6 && { bash docs/results/r7samp/run.sh ; }

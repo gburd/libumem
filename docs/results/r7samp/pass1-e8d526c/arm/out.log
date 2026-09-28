@@ -1,0 +1,173 @@
+REGEN_OK
+=== provenance ===
+ref=e8d526c
+sha=e8d526c82ef6f8e3aedd7ba3f0a51a88d9623631
+role=arm-lo@r7samp
+job=proof
+isolated=yes
+aarch64
+8
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+ii  libjemalloc2:arm64 5.3.0-3      arm64        general-purpose scalable concurrent malloc(3) implementation
+perf version 6.12.107
+=== test_bench_accounting ===
+=== bench harness accounting regressions (P2.1, P2.2) ===
+P2.1 operation_count is a total across threads (n=800000)
+   t=1 total_ops=800000  t=2 800000  t=4 800000
+P2.1 minimum per-thread work floor
+   requested 1000 total over 8 threads -> total_ops=800000 floor_raised=1
+P2.2 fragmentation live-byte accounting
+   threads=2 live_at_peak=204921408 ceiling=409600000 cumulative=821816606
+   alloc_failures=0
+   rss_at_live_peak/vmhwm = 0.9949 (kernel RSS counters are batched per-thread; exact ordering is not guaranteed)
+   samples=14 live_median=202869993 vmhwm=211017728 frag_median=1.0422
+   frag=1.0245 peak_rss=209936384 -> rss/live=1.0245
+frag live total = sum of per-worker slots
+   t=1 live_at_peak=103135216 true_peak=103135216 end_live=0
+   t=4 live_at_peak=381730293 true_peak=381731446
+prodcons: independent rings, frees cross-thread
+   threads=8 frees=400000 same-thread=0 max consumers per producer=1
+frag runs sizes above 4096
+   asked 16:8192 -> largest request 8192
+interval-mode frag live set follows the -L budget
+   -L 16 at 8192 B, t=2 -> sampled live peak 13623296 (budget 16777216)
+worker contexts are cache-line aligned
+   thread_context_t size=128 align=64
+   pc_context_t     size=128 align=64
+   frag_context_t   size=192 align=64
+P2.2 workloads with no live set report no ratio
+   single-thread      has_fragmentation=0 frag=0.0000
+   multi-thread       has_fragmentation=0 frag=0.0000
+   producer-consumer  has_fragmentation=0 frag=0.0000
+interval mode: 3 x 0.3 s, one process
+   producer-consumer  interval 0: 0.300 s ops=1291182 p50=468 rss=3047424 samples=0
+   producer-consumer  interval 1: 0.300 s ops=1293267 p50=466 rss=3047424 samples=0
+   producer-consumer  interval 2: 0.300 s ops=1287476 p50=469 rss=3047424 samples=0
+   fragmentation      interval 0: 0.300 s ops=1486689 p50=333 rss=287498240 samples=3
+   fragmentation      interval 1: 0.300 s ops=1464577 p50=334 rss=567963648 samples=3
+   fragmentation      interval 2: 0.300 s ops=1433816 p50=334 rss=842563584 samples=3
+interval mode: one 0.7 s operation in 0.3 s intervals
+   interval 0: 0.300 s ops=1194646 rss=772423680 samples=3
+   interval 1: 0.300 s ops=1190809 rss=772423680 samples=3
+   interval 2: 0.300 s ops=1367581 rss=892452864 samples=3
+   interval 3: 0.300 s ops=1451087 rss=1079205888 samples=3
+   interval 4: 0.300 s ops=1461030 rss=1172914176 samples=3
+latency sampled 1 op in 16; every op still counted
+   single   -T 1: ops=100000 clock=200002 samples=100000 | -T 16: ops=100000 clock=12502 samples=6250 every=16
+   multi    -T 1: ops=200000 clock=400002 samples=200000 | -T 16: ops=200000 clock=25002 samples=12500 every=16
+   prodcons -T 1: ops=400000 clock=800002 samples=400000 | -T 16: ops=400000 clock=50002 samples=25000 every=16
+   frag     -T 1: ops=381079 clock=762160 samples=381079 | -T 16: ops=381079 clock=47640 samples=23819 every=16
+   prodcons -D -T 16: ops=2657110 clock=332158 samples=166070
+   frag -D     -T 16: ops=8355314 clock=1044436 samples=522209
+
+Result: PASS (0 failures)
+TEST_RC=0
+=== perf jemalloc-frag-T1: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+rc=0
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.010 MB /tmp/jemalloc-frag-T1.data (9 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T1 clock_gettime+vdso=0.00 td_*=0.00
+--- top 20 symbols ---
+    88.49%  [.] _dl_relocate_object_no_relro
+    10.78%  [k] lru_add_drain
+     0.68%  [k] down_write
+     0.04%  [k] strrchr
+     0.00%  [k] perf_event_exec
+--- dso ---
+    88.49%  ld-linux-aarch64.so.1
+    11.51%  [kernel.kallsyms]    
+            |--10.78%--lru_add_drain
+             --0.68%--down_write
+=== perf jemalloc-frag-T16: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+rc=0
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.010 MB /tmp/jemalloc-frag-T16.data (9 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T16 clock_gettime+vdso=0.00 td_*=0.00
+--- top 20 symbols ---
+    87.83%  [.] strcmp
+    11.40%  [k] kmem_cache_alloc_noprof
+     0.72%  [k] tlb_flush
+     0.04%  [k] begin_new_exec
+     0.00%  [k] perf_event_exec
+--- dso ---
+    87.83%  ld-linux-aarch64.so.1
+    12.17%  [kernel.kallsyms]    
+            |--11.40%--kmem_cache_alloc_noprof
+             --0.72%--tlb_flush
+=== perf umem-frag-T1: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+umem,fragmentation/interval=1,8,226659172,28332396,10.000193,22665478.92,31,164,263,415,721,6621205,169,1212485632,1212514304,232996384585,1001267014,810258868,1.2110,1.4962,100,79896.1,52.8,0.0000,1,0,0,0,1,226659172
+rc=0
+[ perf record: Woken up 32 times to write data ]
+[ perf record: Captured and wrote 8.128 MB /tmp/umem-frag-T1.data (79078 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T1 clock_gettime+vdso=19.59 td_*=19.27
+--- top 20 symbols ---
+    22.57%  [.] umem_free_wrapper
+    18.92%  [.] __kernel_clock_gettime
+                --18.92%--frag_worker
+    18.31%  [.] __memset_sve_zva64
+    11.98%  [.] td_qsort
+            |--9.82%--td_qsort
+            |          |--7.59%--td_qsort
+            |          |          |--5.36%--td_qsort
+            |          |          |          |--3.32%--td_qsort
+            |          |          |          |          |--1.83%--td_qsort
+            |          |          |          |          |          |--0.93%--td_qsort
+            |          |          |          |          |          |           --0.51%--td_compress
+            |          |          |          |          |           --0.90%--td_compress
+            |          |          |          |           --1.49%--td_compress
+            |          |          |           --2.03%--td_compress
+            |          |           --2.23%--td_compress
+            |           --2.24%--td_compress
+             --2.16%--td_compress
+     9.58%  [.] umem_alloc_wrapper
+             --9.57%--frag_worker
+--- dso ---
+    54.59%  bench_main           
+            |--22.57%--umem_free_wrapper
+            |--11.98%--td_qsort
+            |          |--9.82%--td_qsort
+            |          |          |--7.59%--td_qsort
+            |          |          |          |--5.36%--td_qsort
+            |          |          |          |          |--3.32%--td_qsort
+            |          |          |          |          |          |--1.83%--td_qsort
+=== perf umem-frag-T16: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+umem,fragmentation/interval=1,8,362405225,45300653,10.000172,36239898.32,31,147,247,413,701,5898828,160,1189543936,1191530496,372461892686,985798751,831515200,1.2067,1.4374,100,79869.4,83.6,0.0000,1,0,0,0,16,22650325
+rc=0
+[ perf record: Woken up 26 times to write data ]
+[ perf record: Captured and wrote 7.734 MB /tmp/umem-frag-T16.data (79209 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T16 clock_gettime+vdso=2.40 td_*=2.01
+--- top 20 symbols ---
+    36.24%  [.] umem_free_wrapper
+    27.66%  [.] __memset_sve_zva64
+    13.58%  [.] umem_alloc_wrapper
+             --13.43%--frag_worker
+     4.17%  [.] frag_worker
+     3.34%  [.] _umem_alloc
+             --3.32%--umem_alloc_wrapper
+     2.89%  [.] _umem_free
+             --2.86%--frag_worker
+     2.48%  [.] umem_rseq_alloc_fastpath
+             --2.45%--_umem_alloc
+     2.14%  [.] __kernel_clock_gettime
+     1.19%  [.] td_qsort
+             --0.97%--td_qsort
+                        --0.75%--td_qsort
+                                   --0.51%--td_qsort
+     1.11%  [.] umem_rseq_free_fastpath
+             --1.10%--_umem_free
+     0.64%  [.] iv_poll
+     0.51%  [.] __aarch64_cas4_acq
+--- dso ---
+    56.94%  bench_main           
+            |--36.24%--umem_free_wrapper
+            |--13.58%--umem_alloc_wrapper
+            |           --13.43%--frag_worker
+            |--4.17%--frag_worker
+            |--1.19%--td_qsort
+            |           --0.97%--td_qsort
+            |                      --0.75%--td_qsort

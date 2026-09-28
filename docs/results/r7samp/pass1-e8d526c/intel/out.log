@@ -1,0 +1,178 @@
+REGEN_OK
+=== provenance ===
+ref=e8d526c
+sha=e8d526c82ef6f8e3aedd7ba3f0a51a88d9623631
+role=intel-lo@r7samp
+job=proof
+isolated=yes
+x86_64
+8
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+ii  libjemalloc2:amd64 5.3.0-3      amd64        general-purpose scalable concurrent malloc(3) implementation
+perf version 6.12.107
+=== test_bench_accounting ===
+=== bench harness accounting regressions (P2.1, P2.2) ===
+P2.1 operation_count is a total across threads (n=800000)
+   t=1 total_ops=800000  t=2 800000  t=4 800000
+P2.1 minimum per-thread work floor
+   requested 1000 total over 8 threads -> total_ops=800000 floor_raised=1
+P2.2 fragmentation live-byte accounting
+   threads=2 live_at_peak=205946550 ceiling=409600000 cumulative=821816606
+   alloc_failures=0
+   rss_at_live_peak/vmhwm = 0.9992 (kernel RSS counters are batched per-thread; exact ordering is not guaranteed)
+   samples=14 live_median=204571834 vmhwm=211841024 frag_median=1.0369
+   frag=1.0278 peak_rss=211664896 -> rss/live=1.0278
+frag live total = sum of per-worker slots
+   t=1 live_at_peak=103135216 true_peak=103135216 end_live=0
+   t=4 live_at_peak=373200846 true_peak=373211521
+prodcons: independent rings, frees cross-thread
+   threads=8 frees=400000 same-thread=0 max consumers per producer=1
+frag runs sizes above 4096
+   asked 16:8192 -> largest request 8192
+interval-mode frag live set follows the -L budget
+   -L 16 at 8192 B, t=2 -> sampled live peak 16343040 (budget 16777216)
+worker contexts are cache-line aligned
+   thread_context_t size=128 align=64
+   pc_context_t     size=128 align=64
+   frag_context_t   size=192 align=64
+P2.2 workloads with no live set report no ratio
+   single-thread      has_fragmentation=0 frag=0.0000
+   multi-thread       has_fragmentation=0 frag=0.0000
+   producer-consumer  has_fragmentation=0 frag=0.0000
+interval mode: 3 x 0.3 s, one process
+   producer-consumer  interval 0: 0.300 s ops=1202040 p50=423 rss=3903488 samples=0
+   producer-consumer  interval 1: 0.300 s ops=1262274 p50=404 rss=3907584 samples=0
+   producer-consumer  interval 2: 0.300 s ops=1242204 p50=411 rss=3907584 samples=0
+   fragmentation      interval 0: 0.300 s ops=1851615 p50=252 rss=358109184 samples=3
+   fragmentation      interval 1: 0.300 s ops=1785788 p50=253 rss=700014592 samples=3
+   fragmentation      interval 2: 0.300 s ops=1834102 p50=253 rss=1051369472 samples=3
+interval mode: one 0.7 s operation in 0.3 s intervals
+   interval 0: 0.300 s ops=1555799 rss=963858432 samples=3
+   interval 1: 0.300 s ops=1552618 rss=963858432 samples=3
+   interval 2: 0.300 s ops=1570458 rss=1098346496 samples=3
+   interval 3: 0.300 s ops=1699485 rss=1211629568 samples=3
+   interval 4: 0.300 s ops=1851365 rss=1211629568 samples=3
+latency sampled 1 op in 16; every op still counted
+   single   -T 1: ops=100000 clock=200002 samples=100000 | -T 16: ops=100000 clock=12502 samples=6250 every=16
+   multi    -T 1: ops=200000 clock=400002 samples=200000 | -T 16: ops=200000 clock=25002 samples=12500 every=16
+   prodcons -T 1: ops=400000 clock=800002 samples=400000 | -T 16: ops=400000 clock=50002 samples=25000 every=16
+   frag     -T 1: ops=381079 clock=762160 samples=381079 | -T 16: ops=381079 clock=47640 samples=23819 every=16
+   prodcons -D -T 16: ops=1934113 clock=241784 samples=120883
+   frag -D     -T 16: ops=12870980 clock=1608892 samples=804437
+
+Result: PASS (0 failures)
+TEST_RC=0
+=== perf jemalloc-frag-T1: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+rc=0
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.009 MB /tmp/jemalloc-frag-T1.data (6 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T1 clock_gettime+vdso=0.00 td_*=0.00
+--- top 20 symbols ---
+    30.65%  [.] munmap
+    26.06%  [.] _dl_lookup_symbol_x
+    18.97%  [.] do_lookup_x
+    17.73%  [.] _dl_relocate_object_no_relro
+     6.59%  [.] __GI___open64_nocancel
+--- dso ---
+   100.00%  ld-linux-x86-64.so.2
+            |--30.65%--munmap
+            |--26.06%--_dl_lookup_symbol_x
+            |--18.97%--do_lookup_x
+            |--17.73%--_dl_relocate_object_no_relro
+             --6.59%--__GI___open64_nocancel
+=== perf jemalloc-frag-T16: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+rc=0
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.010 MB /tmp/jemalloc-frag-T16.data (5 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T16 clock_gettime+vdso=0.00 td_*=0.00
+--- top 20 symbols ---
+    38.88%  [.] check_match
+    27.89%  [.] strcmp
+    15.67%  [.] _dl_relocate_object_no_relro
+     8.78%  [k] ___slab_alloc
+     8.78%  [k] copy_mc_enhanced_fast_string
+--- dso ---
+    82.44%  ld-linux-x86-64.so.2
+            |--38.88%--check_match
+            |--27.89%--strcmp
+             --15.67%--_dl_relocate_object_no_relro
+    17.56%  [kernel.kallsyms]   
+            |--8.78%--copy_mc_enhanced_fast_string
+             --8.78%--___slab_alloc
+=== perf umem-frag-T1: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+umem,fragmentation/interval=1,8,160265871,20033233,10.000170,16026315.22,31,266,477,719,1276,6126277,300,1211756544,1211760640,164729730359,871308602,798266852,1.3907,1.5284,100,79907.5,44.3,0.0000,1,0,0,0,1,160265871
+rc=0
+[ perf record: Woken up 18 times to write data ]
+[ perf record: Captured and wrote 5.264 MB /tmp/umem-frag-T1.data (79748 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T1 clock_gettime+vdso=14.50 td_*=15.81
+--- top 20 symbols ---
+    19.31%  [.] umem_free_wrapper
+    13.48%  [.] __vdso_clock_gettime
+             --13.12%--clock_gettime@@GLIBC_2.17
+    11.17%  [.] umem_rseq_alloc_fastpath
+             --11.02%--_umem_alloc
+    10.27%  [.] td_qsort
+            |--3.50%--0x4040800000000000
+            |--2.87%--0x4041000000000000
+            |--2.14%--0x4041800000000000
+            |--0.79%--0x4042000000000000
+             --0.58%--0x4040000000000000
+     8.27%  [.] _umem_alloc
+     6.69%  [.] umem_alloc_wrapper
+     6.62%  [.] frag_worker
+     3.99%  [.] __memset_avx512_unaligned_erms
+     3.43%  [.] td_add
+     2.79%  [.] __ieee754_log_fma
+     2.20%  [.] umem_rseq_free_fastpath
+             --2.20%--_umem_free
+     2.19%  [.] _umem_free
+--- dso ---
+    51.32%  bench_main          
+            |--19.31%--umem_free_wrapper
+            |--10.27%--td_qsort
+            |          |--3.50%--0x4040800000000000
+            |          |--2.87%--0x4041000000000000
+            |          |--2.14%--0x4041800000000000
+            |          |--0.79%--0x4042000000000000
+            |           --0.58%--0x4040000000000000
+=== perf umem-frag-T16: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+umem,fragmentation/interval=1,8,209143039,26142879,10.000153,20913983.81,34,313,589,878,1556,617113,362,1214308352,1214541824,215020264129,925546949,816075162,1.3120,1.4915,100,79860.3,61.0,0.0000,1,0,0,0,16,13071438
+rc=0
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.170 MB /tmp/umem-frag-T16.data (79768 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T16 clock_gettime+vdso=3.67 td_*=1.92
+--- top 20 symbols ---
+    25.94%  [.] umem_free_wrapper
+    15.89%  [.] _umem_alloc
+    13.08%  [.] umem_alloc_wrapper
+    10.08%  [.] __memset_avx512_unaligned_erms
+     9.43%  [.] umem_rseq_alloc_fastpath
+             --9.15%--_umem_alloc
+     5.56%  [.] frag_worker
+     3.13%  [.] __vdso_clock_gettime
+             --3.04%--clock_gettime@@GLIBC_2.17
+     2.92%  [.] _umem_free
+     2.49%  [.] umem_rseq_free_fastpath
+             --2.48%--_umem_free
+     2.36%  [.] iv_poll
+             --0.71%--0
+     1.31%  [.] rand_r
+     0.93%  [.] td_qsort
+     0.83%  [.] td_add
+     0.74%  [.] umem_alloc@plt
+     0.56%  [.] __ieee754_log_fma
+     0.53%  [.] clock_gettime@@GLIBC_2.17
+--- dso ---
+    49.97%  bench_main          
+            |--25.94%--umem_free_wrapper
+            |--13.08%--umem_alloc_wrapper
+            |--5.56%--frag_worker
+            |--2.36%--iv_poll
+            |           --0.71%--0
+            |--0.93%--td_qsort
+            |--0.83%--td_add
