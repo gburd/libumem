@@ -632,58 +632,62 @@ allocator, with the method and the null analysis, and
 [`2026-09-24`](docs/results/2026-09-24-allocator-comparison.md) at `d6f04ab`
 after the fixes below. Numbers here are from the second run unless marked.
 
-### Under heavy load: 192 cores, 2 NUMA nodes (v3.3.2)
-
-> **Correction (2026-09-27, after v3.3.2 shipped):** at 192 threads the
-> benchmark harness, not the allocators, dominated this measurement. A `perf`
-> profile on `c8g.metal-48xl` showed 96.5 % of the fragmentation workload's
-> time in one shared atomic counter that every allocation and free updated,
-> and 79.6 % of the cross-thread workload's time in one shared hand-off ring;
-> the allocator's own functions were under 1 %. The throughput and latency
-> rows below therefore mostly measure that contention and are **not a valid
-> comparison of the allocators**. The memory (peak RSS) rows are unaffected.
-> The harness is being fixed and the comparison re-run; this section will be
-> replaced.
+### Under heavy load: 192 cores, 2 NUMA nodes
 
 On Debian 13 metal (`c7i.metal-48xl` Sapphire Rapids and `c8g.metal-48xl`
-Graviton4, 192 vCPU, 2 NUMA nodes), with 192 threads, sizes 64-256 B, and
-memory interleaved over both nodes, each allocator ran **twice for 15 minutes
-per workload**. The first 5 minutes of each run were discarded, leaving ten
-one-minute intervals per run. A difference is reported only if it is larger
-than the gap between that allocator's own two runs, which is large here:
-glibc's two prodcons runs differed by 17 % in throughput on x86, and on arm the
-two runs of umem and of glibc differed by 2-3x in prodcons p999. Method, raw
-data and every verdict:
-[`docs/results/2026-09-27-heavy-load-comparison.md`](docs/results/2026-09-27-heavy-load-comparison.md).
+Graviton4, 192 vCPU, 2 NUMA nodes, memory interleaved over both), each
+allocator ran **three times for 15 minutes per workload**. The first 5 minutes
+of each run were dropped. A difference is reported only if the three runs'
+ranges do not overlap. Latency is sampled (1 op in 16 per thread). libumem
+was measured through `umem_alloc()` with a 16-byte size header, not through
+the `libumem_malloc.so` drop-in. Method, raw data and every verdict:
+[`docs/results/2026-09-28-heavy-load-comparison-v2.md`](docs/results/2026-09-28-heavy-load-comparison-v2.md).
+(This replaces the v3.3.2 table, which measured contention in the benchmark
+harness rather than the allocators.)
 
-| 192 threads, median of both runs | libumem | glibc 2.41 | jemalloc 5.3 |
+| 192 threads, median of 3 runs (x86 / arm) | libumem | glibc 2.41 | jemalloc 5.3 |
 |---|---|---|---|
-| cross-thread alloc/free, p99 latency (x86 / arm) | **3.7 / 0.37 us** | 18.9 / 4.3 us | 14.8 / 0.64 us |
-| cross-thread alloc/free, peak RSS | 171-177 MB | **48-52 MB** | 66-98 MB |
-| fragmentation churn (2.2 GB live), p999 latency (x86 / arm) | 25\* / 4.5 us | 30 / 17.7 us | 26\* / **0.87 us** |
-| fragmentation churn, peak RSS | 4.2-4.3 GB | 3.9 GB | **3.8 GB** |
+| cross-thread alloc/free 64-256 B, Mops/s | 581 / 532 | 867\* / 289 | 865\* / **1330** |
+| cross-thread alloc/free 64-256 B, p99 | **0.53** / **0.51**\* us | 1.67\* / 6.27 us | 1.22\* / **0.53**\* us |
+| cross-thread alloc/free 64-256 B, peak RSS | 237 / 276 MiB | **67 / 65 MiB** | 95 / 160 MiB |
+| fragmentation churn 64-256 B (3 GiB live), Mops/s | 647 / 734 | 430 / 472 | **1120 / 1146** |
+| fragmentation churn 64-256 B, p999 | **1.98**\* / **2.32** us | 3.59 / 3.08 us | **1.94**\* / 3.38 us |
+| cross-thread alloc/free 1-4 KB, Mops/s | 133 / 140 | 179 / 83 | **304 / 1274** |
+| cross-thread alloc/free 1-4 KB, p999 | **4.4** / 4.7 us | 46.7 / 21.1 us | 25.2 / **1.7** us |
+| fragmentation churn 16-64 KB, Mops/s | **8.3 / 9.6** | 8.1 / 7.8 | 8.0 / 9.0 |
+| fragmentation churn 16-64 KB, p999 | **22** / 111 us | 144 / 1375 us | 26 / **58** us |
+| fragmentation churn 16-64 KB, peak RSS | **3.1 / 3.1 GiB** | 3.2 / 3.2 GiB | 4.0 / 4.4 GiB |
 
-\* inside run-to-run noise of each other.
+\* no resolvable difference from the other starred entry in the same row
+and arch. x86 cross-thread 64-256 B throughput: glibc is not distinguishable
+from libumem or from jemalloc (jemalloc > libumem there).
 
-- **Cross-thread allocate/free** (the all-to-all NUMA pattern): libumem has
-  the lowest p50 and p99 of the three on both architectures (x86 p99 4-5x
-  lower than glibc and jemalloc). On x86 it also has the lowest p999, and its
-  throughput matches jemalloc at about 2x glibc. On arm, jemalloc has 30 % more
-  throughput and a 2.6x lower p999; libumem's p999 is still 4x below glibc's.
-- **Fragmentation churn**: throughput is tied with glibc on both
-  architectures. libumem's tail is 2.6-3.9x lower than glibc's on arm and
-  17-28 % lower on x86. jemalloc is faster at the median everywhere, and has a
-  5x lower tail than libumem on arm.
-- **Memory**: libumem uses the most. It takes 1.8-3.7x the RSS of glibc and
-  jemalloc when the live set is small, and 7-14 % more with a 2 GB live set.
-- **Not measured**: more threads than cores (the 384-thread run was cancelled
-  because run-to-run noise at 192 threads exceeded the 10 % limit set in
-  advance), objects above 256 B, and the `libumem_malloc.so` drop-in (libumem
-  was measured through its API). The x86 box ran with the `powersave` CPU
-  governor (the metal default), the same for every run. The cross-thread
-  throughput mostly measures the benchmark's own hand-off queue: allocator
-  calls are 0.1-1.3 % of thread time there, so its latency columns are the
-  meaningful ones.
+- **Throughput (192 threads):** jemalloc is fastest in 64-256 B
+  fragmentation churn (1.5-1.7x libumem) and in cross-thread free (1.5-9x
+  libumem; 9x at 1-4 KB on arm). In 1-4 KB fragmentation churn all three
+  are within 8 %.
+  At 192 threads libumem is 1.5-1.8x glibc at 64-256 B, except x86
+  cross-thread, where there is no resolvable difference. At 16-64 KB
+  libumem is fastest, by 3-7 % over the next allocator.
+- **Tail latency:** libumem has the lowest or tied-lowest p99 in five of the
+  eight 64-256 B cells (192 and 384 threads, both workloads, both arches), and
+  the lowest cross-thread p999 at 1-4 KB on x86. It has 4.5-11x lower
+  cross-thread p999 than glibc at 1-4 KB (4.5x arm, 11x x86), and 6-12x
+  lower fragmentation-churn p999 at 16-64 KB. jemalloc has the lowest
+  cross-thread p999 on arm at both sizes and both thread counts.
+- **Memory:** libumem uses the most RSS in cross-thread free (3.2-4.2x
+  glibc, 1.2-2.6x jemalloc) and 4-13 % more than either in 64-256 B
+  fragmentation churn. At 16-64 KB it uses the least (jemalloc takes 29-40 %
+  more).
+- **384 threads (2x oversubscribed):** fragmentation churn keeps the
+  192-thread ordering. In cross-thread free, glibc becomes fastest (2,960 /
+  3,415 Mops/s) and libumem slowest (624 / 489). The cause is not yet
+  diagnosed (the 192 -> 384 change is 3-12x for glibc and flat for libumem),
+  so treat that row as unexplained.
+- **Not measured:** the `libumem_malloc.so` drop-in, and allocators other
+  than these three. Throughput ratios include the benchmark's own per-op
+  timing and hand-off cost, which every allocator pays equally, so the
+  ratios are compressed toward 1.
 
 ### Two libumem paths
 
