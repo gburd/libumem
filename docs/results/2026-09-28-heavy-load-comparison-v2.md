@@ -149,7 +149,7 @@ from libumem or from jemalloc (jemalloc > libumem there).
   libumem is fastest, by 3-7 % over the next allocator.
 - **Tail latency:** libumem has the lowest or tied-lowest p99 in five of the
   eight 64-256 B cells (192 and 384 threads, both workloads, both arches), and
-  the lowest cross-thread p999 at 1-4 KB on x86. It has 5-11x lower
+  the lowest cross-thread p999 at 1-4 KB on x86. It has 4.5-11x lower
   cross-thread p999 than glibc at 1-4 KB (4.5x arm, 11x x86), and 6-12x
   lower fragmentation-churn p999 at 16-64 KB. jemalloc has the lowest
   cross-thread p999 on arm at both sizes and both thread counts.
