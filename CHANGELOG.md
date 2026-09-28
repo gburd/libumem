@@ -7,7 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- **Benchmark (measurement only, not the allocator): the `prodcons` workload
+- **Diagnosis: the cross-thread-free RSS gap (F1) is not a per-CPU-layer
+  double-hold, and a free-only-thread bin trim did not meet the fast-path
+  gate.** r8rss inferred that an rseq free-slowpath miss pushes frees into the
+  classic cc_lock per-CPU layer so both per-CPU layers accumulate stock (~54 %
+  of metal RSS). Direct counting (two counters under the existing
+  `-DUMEM_RSEQ_ARM_DEBUG`, compiled out of the default library) refutes it: in
+  8 s of prodcons only **17** frees reached the cc_lock body against **153**
+  free-slowpath empty-magazine misses -- the consumer's frees go through the
+  inlined PTC path to the depot, never `_umem_cache_free`. No fix was needed
+  (F1-b dropped). A trim that flushed a free-only thread's full PTC bin on the
+  magazine-overflow slow path (F1-a) was attempted and **reverted**: it added
+  +0.63 % (x86) instructions/pair at `s=512 N=128 t=1` -- a balanced
+  alloc-N-free-N loop with N above bin capacity refills the bin to full, so the
+  overflow-path check runs every iteration (`hotpath_ab.sh` caught it outside
+  its null) -- and its RSS effect was regime-dependent (**-24.9 %** at t=64,
+  the free-only-consumer regime, but **+5.1 %** at t=32, because the flush
+  churns objects into the depot which stays committed while the bin refills).
+  The free/alloc fast paths are byte-identical to before. Free-only PTC bin
+  retention stays a documented open footprint; the upgrade path is an
+  off-fast-path reaper, not an inline overflow check.
+  `test_ptc_freeonly_trim` (SKIPs without the trim), `docs/results/r8f1/`.
+- **Test hardening (library byte-identical): `test_findleaks_rseq` no longer
+  flakes on cross-process noise.** Its rseq-attribution check compared
+  `cached_skipped` across two independent processes, a delta noisy enough to
+  flake (band -401..+828). It now (1) asserts a deterministic single-process
+  correctness bound -- after freeing every churned buffer the default build's
+  outstanding `total_buffers` stays far below the churn volume, proving
+  findleaks subtracts cached (incl. rseq) buffers -- and (2) takes the rseq
+  delta as a robust median-of-5 floor above the noise, documented as a bound.
+  `test/integration/test_findleaks_rseq.{c,sh}`, `docs/results/r8f1/`.
   now frees the umem API arm with the size the ring already carries, skipping
   the 16-byte size header (O5).** The umem API arm wraps each allocation with a
   `umem_size_header_t` so its sizeless `free()` can recover the size; in
