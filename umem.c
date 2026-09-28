@@ -2693,6 +2693,21 @@ umem_ptc_probe_shell_free(umem_magazine_t *mp, int rounds)
 #endif
 
 /*
+ * F1-a trim probe (COMPILED OUT unless -DUMEM_PTC_TRIM_PROBE).  Counts the
+ * free-only-thread bin flushes the overflow-slow-path trim performs, so
+ * test_ptc_freeonly_trim can assert the trim fires (0 pre-fix, >0 post-fix)
+ * without depending on the instantaneous bin count, which a continuous freer
+ * refills.  The default library build is byte-identical (macro is a no-op).
+ */
+#ifdef UMEM_PTC_TRIM_PROBE
+volatile long umem_ptc_trim_events = 0;
+#define	UMEM_PTC_TRIM_PROBE_COUNT()	\
+	(void) atomic_add_64((uint64_t *)&umem_ptc_trim_events, 1)
+#else
+#define	UMEM_PTC_TRIM_PROBE_COUNT()	((void)0)
+#endif
+
+/*
  * Debug check for the invariant P1.3b broke: every magazine a PTC thread
  * holds is described by the capacity of THAT magazine, and its round count
  * is within that capacity.
@@ -4849,6 +4864,7 @@ _umem_free(void *buf, size_t size)
 							    &ptc->fork_busy, 0,
 							    __ATOMIC_RELEASE);
 							mag->idle_overflows = 0;
+							UMEM_PTC_TRIM_PROBE_COUNT();
 						}
 					} else {
 						mag->idle_overflows = 0;

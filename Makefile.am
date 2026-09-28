@@ -560,7 +560,7 @@ test_stress_repro_ptc_resize_capacity_CPPFLAGS = -I$(srcdir)
 
 noinst_LTLIBRARIES = libumem_ptcprobe.la
 libumem_ptcprobe_la_SOURCES = $(libumem_la_SOURCES)
-libumem_ptcprobe_la_CPPFLAGS = $(AM_CPPFLAGS) -DUMEM_PTC_RESIZE_PROBE
+libumem_ptcprobe_la_CPPFLAGS = $(AM_CPPFLAGS) -DUMEM_PTC_RESIZE_PROBE -DUMEM_PTC_TRIM_PROBE
 libumem_ptcprobe_la_CFLAGS = $(AM_CFLAGS)
 libumem_ptcprobe_la_LDFLAGS = $(libumem_la_LDFLAGS)
 
@@ -1174,9 +1174,9 @@ test_integration_test_ptc_footprint_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_RESIZE_PRO
 
 noinst_PROGRAMS += test/integration/test_ptc_freeonly_trim
 test_integration_test_ptc_freeonly_trim_SOURCES = test/integration/test_ptc_freeonly_trim.c
-test_integration_test_ptc_freeonly_trim_LDADD = libumem.la
+test_integration_test_ptc_freeonly_trim_LDADD = libumem_ptcprobe.la
 test_integration_test_ptc_freeonly_trim_LDFLAGS = -pthread
-test_integration_test_ptc_freeonly_trim_CPPFLAGS = -I$(srcdir)
+test_integration_test_ptc_freeonly_trim_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_TRIM_PROBE
 
 # P8.6: the per-thread magazines behind the PTC bins must hold objects.  The
 # probe build counts depot trylock attempts from the PTC paths; unprimed, that

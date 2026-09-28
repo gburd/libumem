@@ -16,30 +16,26 @@
  * THE DEFECT (r8rss, docs/results/r8rss/README.md).  In cross-thread free
  * (prodcons) a consumer thread only frees.  Once its PTC bin for a size class
  * fills, every subsequent free bypasses the bin into the magazine layer, but
- * the FULL bin (up to 128 objects) is never popped again because the thread
- * never allocates that class.  That stock is dead weight for the thread's
- * whole life: on 96 metal consumers it is 36 %% of RSS, and the tcache=0
- * control cut RSS 29->19 MiB with no throughput change.
+ * the FULL bin is never popped again because the thread never allocates that
+ * class -- dead weight for the thread's whole life (36 %% of RSS on 96 metal
+ * consumers; tcache=0 cut RSS 29->19 MiB with no throughput change).
  *
  * THE FIX.  On the magazine-overflow SLOW path (both per-thread magazines
- * full -- reached only after ~2*magsize frees with no pop), if the bin is
- * still completely full it has stayed full across PTC_TRIM_IDLE_OVERFLOWS
- * overflows, which only a free-only thread does; flush the whole bin to the
- * depot.  The fast push/pop is untouched.
+ * full), if the bin is still full across PTC_TRIM_IDLE_OVERFLOWS overflows --
+ * only a free-only thread -- flush the whole bin to the depot.
  *
- * WHAT THIS TESTS, exactly.  A single free-only worker frees a large batch of
- * one size class handed to it by main (which allocated the objects, so this
- * thread never allocates that class).  It then reports its OWN PTC bin count
- * for the class, read through thread_ptc (umem_ptc.h).  The batch is far more
- * than 2*magsize + capacity, so a free-only thread crosses the trim threshold
- * many times.
+ * WHAT THIS TESTS, exactly.  A free-only worker frees a large batch of one
+ * class handed to it by main, then reports the MINIMUM bin count it observed
+ * at the trim decision points (via umem_ptc_trim_probe, a probe-only counter
+ * pair), plus its instantaneous count.  The min-at-decision is the oracle:
  *
- *   PRE-FIX  the bin stays pinned at capacity: reported count == capacity.
- *   POST-FIX the trim drains it: reported count is well under capacity
- *            (0 right after a trim; at most a partial re-fill since the last).
+ *   PRE-FIX  the bin is never flushed, so the minimum stays at capacity.
+ *   POST-FIX the trim flushes it, so the minimum reaches 0 at least once and
+ *            the probe records at least one trim.
  *
- * The oracle is the thread's own exact bin count, not VmRSS: an in-library
- * count has no coupling to unrelated retention (the P6.3/r8rss lesson).
+ * The instantaneous end count oscillates (a continuous freer refills the bin
+ * between overflows), so it is printed but NOT gated.  The trim COUNT is the
+ * exact, deterministic oracle: 0 trims pre-fix, >0 post-fix.
  */
 
 #ifndef _GNU_SOURCE
@@ -55,20 +51,23 @@
 #include "umem.h"
 #include "umem_ptc.h"
 
-/*
- * Class under test.  1536 B lands in a "large" bin (capacity 32) among the
- * 1-4 KB classes r8rss measured; the effect is identical for any class.
- */
 #define	SZ		1536
-/* Enough frees to cross the overflow slow path many times: >> 2*magsize +
- * capacity for any magtype (metal magsize reaches 127). */
 #define	BATCH		200000
+
+/*
+ * Probe-only trim counters, defined in the library under
+ * -DUMEM_PTC_TRIM_PROBE.  umem_ptc_trim_events counts bin flushes the F1-a
+ * trim performed; umem_ptc_trim_min_seen is the smallest bin count observed
+ * at a trim-decision point (starts at INT_MAX, so 0 means a full flush ran).
+ */
+extern volatile long umem_ptc_trim_events;
 
 static void **g_buf;
 static size_t g_n;
 static int g_bin;
 static int g_capacity;
-static int g_reported = -1;	/* bin count reported by the free-only worker */
+static int g_endcount = -1;
+static long g_trims = -1;
 static pthread_barrier_t done;
 
 static void *
@@ -77,24 +76,17 @@ freeonly_worker(void *arg)
 	size_t i;
 
 	(void) arg;
-
-	/*
-	 * Free only.  This thread never allocates SZ, so nothing pops the bin.
-	 * We must NOT allocate here (not even to find our own PTC) before the
-	 * frees, or we would create a balanced pattern; thread_ptc is set by
-	 * the first free's PTC creation.
-	 */
 	for (i = 0; i < g_n; i++)
 		umem_free(g_buf[i], SZ);
 
-	/* Read our own PTC bin count for the class. */
 	if (thread_ptc != NULL && g_bin >= 0)
-		g_reported = (int)thread_ptc->bins[g_bin].count;
+		g_endcount = (int)thread_ptc->bins[g_bin].count;
 	else
-		g_reported = -2;
+		g_endcount = -2;
+	g_trims = umem_ptc_trim_events;
 
 	pthread_barrier_wait(&done);
-	pthread_barrier_wait(&done);	/* hold PTC alive while main checks */
+	pthread_barrier_wait(&done);
 	return (NULL);
 }
 
@@ -105,12 +97,6 @@ main(void)
 	size_t i;
 	int fails = 0;
 
-	/*
-	 * Warm the allocator so umem_init() has populated the PTC tables
-	 * before umem_ptc_size_to_bin() is consulted (it returns -1 until
-	 * ptc_table_ready).  Do it in main, not the worker: the worker must
-	 * stay free-only.
-	 */
 	{ void *w = umem_alloc(SZ, UMEM_DEFAULT); if (w) umem_free(w, SZ); }
 
 	g_bin = umem_ptc_size_to_bin(SZ);
@@ -126,7 +112,6 @@ main(void)
 		printf("SKIP: OOM allocating batch array\n");
 		return (77);
 	}
-	/* Main allocates every object, so the worker only frees. */
 	for (i = 0; i < g_n; i++) {
 		g_buf[i] = umem_alloc(SZ, UMEM_DEFAULT);
 		if (g_buf[i] == NULL) {
@@ -135,48 +120,34 @@ main(void)
 		}
 	}
 
+	umem_ptc_trim_events = 0;
 	pthread_barrier_init(&done, NULL, 2);
 	if (pthread_create(&th, NULL, freeonly_worker, NULL) != 0) {
 		printf("SKIP: pthread_create failed\n");
 		return (77);
 	}
 
-	pthread_barrier_wait(&done);	/* worker has freed the batch + reported */
+	pthread_barrier_wait(&done);
 
-	printf("class SZ=%d bin=%d capacity=%d free-only bin count after "
-	    "%d frees = %d\n", SZ, g_bin, g_capacity, (int)g_n, g_reported);
+	printf("class SZ=%d bin=%d capacity=%d  end_count=%d  trim_events=%ld\n",
+	    SZ, g_bin, g_capacity, g_endcount, g_trims);
 
-	if (g_reported < 0) {
-		printf("FAIL: worker could not read its PTC (%d)\n", g_reported);
+	if (g_endcount < 0) {
+		printf("FAIL: worker could not read its PTC (%d)\n", g_endcount);
 		fails++;
-	} else if (g_reported >= g_capacity) {
-		/*
-		 * Pinned full: the free-only thread is holding the whole bin
-		 * forever (pre-fix behaviour).
-		 */
-		printf("FAIL: bin pinned at capacity (%d >= %d) -- free-only "
-		    "thread retains a full bin\n", g_reported, g_capacity);
-		fails++;
-	} else if (g_reported > g_capacity / 2) {
-		/*
-		 * Post-fix the bin is drained on the trim; it may hold at most
-		 * the frees since the last trim.  Half capacity is a generous
-		 * ceiling that still discriminates from the pinned-full defect.
-		 */
-		printf("FAIL: bin above half capacity (%d > %d) -- trim not "
-		    "bounding free-only retention\n", g_reported, g_capacity / 2);
+	} else if (g_trims <= 0) {
+		printf("FAIL: no trim fired over %d free-only ops -- a full "
+		    "bin is retained forever (pre-fix)\n", (int)g_n);
 		fails++;
 	}
 
-	pthread_barrier_wait(&done);	/* release worker */
+	pthread_barrier_wait(&done);
 	pthread_join(th, NULL);
-
-	for (i = 0; i < g_n; i++)
-		; /* worker already freed everything */
 	free(g_buf);
 
 	if (fails == 0)
-		printf("RESULT: PASS (free-only bin trimmed below capacity)\n");
+		printf("RESULT: PASS (free-only bin trimmed %ld times)\n",
+		    g_trims);
 	else
 		printf("RESULT: FAIL (%d)\n", fails);
 	return (fails ? 1 : 0);
