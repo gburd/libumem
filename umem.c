@@ -962,7 +962,8 @@ umem_cache_applyall(void (*func)(umem_cache_t *))
  * concurrently inherits it in umem_cache_create, under the same lock).
  * Hooks on: every non-internal cache's CPU caches get UMF_HOOKED in cc_flags
  * and umem_ptc_bin_table is filled with -1, so _umem_alloc/_umem_free skip
- * the PTC and fire the hook on their slow tails.  Hooks off: reversed.
+ * the PTC and, on their bin < 0 arm only, divert to umem_alloc_hooked /
+ * umem_free_hooked (cold).  Hooks off: reversed.
  * Idempotent: callers change umem_hooks, then call this; it re-reads.
  * The fast paths read cc_flags and the bin table with plain loads; the
  * writes here are single aligned int / int8_t atomic stores, so a reader
@@ -4348,6 +4349,44 @@ retry:
 	return (buf);
 }
 
+/*
+ * _umem_alloc with T1/T8 hooks on.  Invariant: hooks on => umem_hooks_sync()
+ * has filled umem_ptc_bin_table with -1, so _umem_alloc tests the hooks only
+ * on its bin < 0 arm and before vmem_alloc; bin >= 0 (and the PTC-miss fall
+ * through to the magazine layer) implies hooks off and carries no test.  A
+ * thread that read a real bin just before the switch completes that one
+ * operation unreported.  Allocates with no hook (the umem_alloc_* caches are
+ * UMC_INTERNAL, so _umem_cache_alloc does not report), then reports once with
+ * the REQUEST size.
+ */
+static __attribute__((noinline, cold)) void *
+umem_alloc_hooked(size_t size, int umflag)
+{
+	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
+	umem_cache_t *cp = NULL;
+	void *buf;
+
+retry:
+	if (index < UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) {
+		cp = umem_alloc_table[index];
+		buf = _umem_cache_alloc(cp, umflag);
+		if (unlikely(cp->cache_flags & UMF_BUFTAG) && buf != NULL) {
+			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
+			((uint8_t *)buf)[size] = UMEM_REDZONE_BYTE;
+			((uint32_t *)btp)[1] = UMEM_SIZE_ENCODE(size);
+		}
+	} else {	/* oversize; _umem_alloc ran umem_init first */
+		buf = vmem_alloc(umem_oversize_arena, size,
+		    UMEM_VMFLAGS(umflag));
+		if (buf == NULL)
+			umem_log_event(umem_failure_log, NULL, NULL,
+			    (void *)size);
+	}
+	if (buf == NULL && umem_alloc_retry(cp, umflag))
+		goto retry;
+	return (umem_hook_alloc(buf, size, cp));
+}
+
 #ifndef NO_WEAK_SYMBOLS
 #pragma weak umem_alloc = _umem_alloc
 #endif
@@ -4519,6 +4558,9 @@ umem_alloc_retry:
 					}
 					}
 				}
+			} else if (UMEM_HOOKS_ON()) {
+				/* T1/T8: see umem_alloc_hooked */
+				return (umem_alloc_hooked(size, umflag));
 			}
 		}
 
@@ -4530,14 +4572,6 @@ umem_alloc_retry:
 		}
 		if (buf == NULL && umem_alloc_retry(cp, umflag))
 			goto umem_alloc_retry;
-		/*
-		 * T1/T8 hook, with the REQUEST size.  Hooks-on sends every
-		 * size here: umem_hooks_sync() fills umem_ptc_bin_table with
-		 * -1, so the PTC block above is skipped.  cp is UMC_INTERNAL
-		 * and does not report again from _umem_cache_alloc.
-		 */
-		if (UMEM_HOOKS_ON())
-			return (umem_hook_alloc(buf, size, cp));
 		return (buf);
 	}
 	if (size == 0)
@@ -4548,14 +4582,14 @@ umem_alloc_retry:
 		else
 			return (NULL);
 	}
+	if (UMEM_HOOKS_ON())			/* T1/T8, oversize */
+		return (umem_alloc_hooked(size, umflag));
 	buf = vmem_alloc(umem_oversize_arena, size, UMEM_VMFLAGS(umflag));
 	if (unlikely(buf == NULL)) {
 		umem_log_event(umem_failure_log, NULL, NULL, (void *)size);
 		if (umem_alloc_retry(NULL, umflag))
 			goto umem_alloc_retry;
 	}
-	if (UMEM_HOOKS_ON())			/* T1/T8, oversize */
-		return (umem_hook_alloc(buf, size, NULL));
 	return (buf);
 }
 
@@ -4593,10 +4627,47 @@ umem_alloc_align_retry:
 	return (buf);
 }
 
-/* _umem_free's slow tail with hooks on (T1/T8): report, then free. */
+/*
+ * _umem_free's buftag check for a UMF_BUFTAG cache: 1 if buf's redzone and
+ * encoded size are good (and marks it freed), else reports and returns 0.
+ */
+static inline __attribute__((always_inline)) int
+umem_free_redzone_ok(umem_cache_t *cp, void *buf, size_t size)
+{
+	umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
+	uint32_t *ip = (uint32_t *)btp;
+	if (ip[1] != UMEM_SIZE_ENCODE(size)) {
+		if (*(uint64_t *)buf == UMEM_FREE_PATTERN) {
+			umem_error(UMERR_DUPFREE, cp, buf);
+			return (0);
+		}
+		if (UMEM_SIZE_VALID(ip[1])) {
+			ip[0] = UMEM_SIZE_ENCODE(size);
+			umem_error(UMERR_BADSIZE, cp, buf);
+		} else {
+			umem_error(UMERR_REDZONE, cp, buf);
+		}
+		return (0);
+	}
+	if (((uint8_t *)buf)[size] != UMEM_REDZONE_BYTE) {
+		umem_error(UMERR_REDZONE, cp, buf);
+		return (0);
+	}
+	btp->bt_redzone = UMEM_REDZONE_PATTERN;
+	return (1);
+}
+
+/*
+ * _umem_free with T1/T8 hooks on, reached from its bin < 0 arm and its
+ * oversize arm only (same invariant as umem_alloc_hooked): check, report,
+ * then free.
+ */
 static __attribute__((noinline, cold)) void
 umem_free_hooked(umem_cache_t *cp, void *buf, size_t size)
 {
+	if (cp != NULL && (cp->cache_flags & UMF_BUFTAG) &&
+	    !umem_free_redzone_ok(cp, buf, size))
+		return;
 	umem_hook_free(buf, size, cp);
 	if (cp != NULL)
 		_umem_cache_free(cp, buf);
@@ -4802,40 +4873,17 @@ _umem_free(void *buf, size_t size)
 					}
 					}
 				}
+			} else if (UMEM_HOOKS_ON()) {
+				/* T1: see umem_free_hooked */
+				umem_free_hooked(cp, buf, size);
+				return;
 			}
 		}
 
-		if (unlikely(cp->cache_flags & UMF_BUFTAG)) {
-			umem_buftag_t *btp = UMEM_BUFTAG(cp, buf);
-			uint32_t *ip = (uint32_t *)btp;
-			if (ip[1] != UMEM_SIZE_ENCODE(size)) {
-				if (*(uint64_t *)buf == UMEM_FREE_PATTERN) {
-					umem_error(UMERR_DUPFREE, cp, buf);
-					return;
-				}
-				if (UMEM_SIZE_VALID(ip[1])) {
-					ip[0] = UMEM_SIZE_ENCODE(size);
-					umem_error(UMERR_BADSIZE, cp, buf);
-				} else {
-					umem_error(UMERR_REDZONE, cp, buf);
-				}
-				return;
-			}
-			if (((uint8_t *)buf)[size] != UMEM_REDZONE_BYTE) {
-				umem_error(UMERR_REDZONE, cp, buf);
-				return;
-			}
-			btp->bt_redzone = UMEM_REDZONE_PATTERN;
-		}
-
-		/*
-		 * T1, request size; PTC skipped while hooked (see _umem_alloc).
-		 * A tail call, so nothing stays live across the hook.
-		 */
-		if (UMEM_HOOKS_ON()) {
-			umem_free_hooked(cp, buf, size);
+		if (unlikely(cp->cache_flags & UMF_BUFTAG) &&
+		    !umem_free_redzone_ok(cp, buf, size))
 			return;
-		}
+
 		_umem_cache_free(cp, buf);
 	} else {
 		if (UMEM_HOOKS_ON()) {

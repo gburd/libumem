@@ -59,8 +59,9 @@ extern int umem_ready;
  * then calls umem_hooks_sync() (umem.c), which diverts traffic off the fast
  * paths so the fast paths never test or call anything new:
  *  - umem_ptc_bin_table becomes all -1: _umem_alloc/_umem_free skip the PTC
- *    (and the rseq layer it feeds) and fire the hook on their slow tails,
- *    which already had calls, with the REQUEST size.
+ *    (and the rseq layer it feeds); their bin < 0 arm alone tests
+ *    umem_hooks and diverts to a cold path that reports the REQUEST size.
+ *    bin >= 0 implies hooks off, so the PTC and magazine paths test nothing.
  *  - UMF_HOOKED goes into cc_flags of every non-internal cache, next to
  *    UMF_BUFTAG in the mask the magazine/rseq pop already tests, so
  *    umem_cache_alloc/free report from every layer.
