@@ -5,7 +5,7 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v3.3.2): the Linux heap ceiling is gone, the
+> **Status (v3.3.3): the Linux heap ceiling is gone, the
 > maintenance thread runs, the per-CPU caches are used, the drop-in path
 > scales, and the freelist- and ownership-integrity gaps that left libumem
 > behind the size-class allocators are closed — per-thread cache bin slots AND
@@ -32,8 +32,10 @@ FreeBSD, and macOS.
 > an rseq abort; that was found by a 100-run oracle rate test, not by the
 > gates it had passed, and is fixed with a regression that failed on every
 > pre-fix run. v3.3.2 recorded that several advertised debugging-tool
-> features did not work; all of them are fixed since, each with a regression
-> test (see "Known limits" under the tools section).
+> features did not work; v3.3.3 fixes all of them, each with a regression
+> test (see "Known limits" under the tools section), and replaces the v3.3.2
+> 192-thread comparison, which had measured the benchmark harness's own
+> contention, with a 3 x 15-minute-per-allocator run on both architectures.
 > Where a first diagnosis was wrong
 > — the heap ceiling (fixed in two halves), the 1k:4k collapse (the CPU hint,
 > not the per-thread cache), the P6.3b drain, the P5.10 bootstrap check, the
@@ -896,7 +898,7 @@ umemctl $(pgrep myapp) break leaked --set leaks.set     # phase 2 (broken, above
 # GDB / LLDB (same umem(1) commands, in-debugger)
 (gdb) source /usr/share/umem/debugger/gdb/umem_gdb.py
 (gdb) umem findleaks
-(gdb) umem break alloc -s 1048576           # never fires in v3.3.2 (above)
+(gdb) umem break alloc -s 1048576           # break on allocations >= 1 MiB
 ```
 
 Detailed walkthrough: [tools/DEBUGGING.md](tools/DEBUGGING.md) and

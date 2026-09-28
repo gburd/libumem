@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-09-28
+
+Makes the live-heap debugging tools do what they advertise. gdb/lldb
+`umem break` and `umem events`, `umem_inspect_set_event_cb()` and `umemctl
+break` now fire on every allocation path (T1/T8); audit stacks reach the
+caller on aarch64 and on x86_64 with the new `--enable-frame-pointers` (T9);
+every finding of the 2026-09-26 tool review is fixed or documented, and
+`XFAIL_TESTS` is empty. The disarmed hooks add no instructions to the fast
+path; the four hot entry points are now 64-byte aligned, which costs -1.43 %
+at one x86 point and removes a -7.3 % layout swing (tables below). Also fixes
+a slab-membership bound that accepted addresses past a slab's last buffer.
+The benchmark harness is corrected: it had measured its own shared-counter and
+ring contention, timed every operation, and silently dropped allocators that
+failed to load. With those fixed, the README's 192-thread comparison is
+replaced by a 3 x 15-minute-per-allocator run on both architectures.
+
 ### Fixed
 
 - **gdb/lldb `umem break` and `umem events`, `umem_inspect_set_event_cb()`, and
