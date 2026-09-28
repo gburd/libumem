@@ -4819,6 +4819,40 @@ _umem_free(void *buf, size_t size)
 					 * to depot, get empty magazine.
 					 * Uses trylock to avoid blocking.
 					 */
+					/*
+					 * F1-a: free-only-thread bin trim.
+					 * We reached the overflow slow path,
+					 * so the bin is full (b->count ==
+					 * capacity).  If it has stayed full
+					 * across PTC_TRIM_IDLE_OVERFLOWS
+					 * overflows -- ~2*magsize frees with
+					 * no pop -- this thread only frees
+					 * this class, so the bin's whole stock
+					 * is dead weight (tcache=0 control:
+					 * -35 %% RSS, +-0 throughput).  Flush
+					 * it to the depot.  Slow path only:
+					 * the fast push/pop above is untouched
+					 * and a balanced thread's pop clears
+					 * the count.  Fork-safe: flush drains
+					 * to _umem_cache_free/batch under the
+					 * cache's own locks, and the child
+					 * drains bins anyway (P1.3d).
+					 */
+					if (b->count >=
+					    ptc_bin_capacity((int)bin)) {
+						if (++mag->idle_overflows >=
+						    PTC_TRIM_IDLE_OVERFLOWS) {
+							ptc->fork_busy = 1;
+							umem_ptc_bin_flush_all(b,
+							    size);
+							__atomic_store_n(
+							    &ptc->fork_busy, 0,
+							    __ATOMIC_RELEASE);
+							mag->idle_overflows = 0;
+						}
+					} else {
+						mag->idle_overflows = 0;
+					}
 #ifdef UMEM_RSEQ_AVAILABLE
 					/*
 					 * P8.5b-arch: push THROUGH the rseq

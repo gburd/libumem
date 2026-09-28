@@ -80,6 +80,15 @@ extern "C" {
 #define PTC_BIN_XLARGE    28   /* first bin for xlarge sizes (2049-8192B) */
 
 /*
+ * F1-a: after this many consecutive overflow-slow-path visits with the bin
+ * still completely full (no intervening pop), flush the whole bin.  2 means
+ * ~2*magsize frees to the class with the bin pinned at capacity throughout --
+ * a free-only thread.  A balanced thread pops the bin between overflows, which
+ * resets the count, so its bin is never flushed by this path.
+ */
+#define PTC_TRIM_IDLE_OVERFLOWS  2
+
+/*
  * PTC_NBINS bounds size_to_bin_table (indexed by size / 8, so it must reach
  * the largest class / 8) and umem_ptc_maxsize's default, both in umem_ptc.c.
  * The bins through 8192 exist for P8.2b: above the old 2048 ceiling every
@@ -135,6 +144,19 @@ typedef struct umem_ptc_mag {
 	int magsize;                    /* capacity of loaded */
 	int pmagsize;                   /* capacity of previous */
 	struct umem_cache *cache;       /* owning cache (set on first use) */
+	/*
+	 * F1-a (round 8): free-only-thread bin trim.  Counts consecutive
+	 * magazine-overflow slow-path visits at which this class's PTC BIN was
+	 * also completely full -- i.e. this thread freed ~2*magsize objects to
+	 * the class without popping the bin below capacity even once, which
+	 * only a thread that frees and does not allocate this class does.
+	 * Written ONLY on the overflow slow path in _umem_free (never the fast
+	 * path); at PTC_TRIM_IDLE_OVERFLOWS it triggers a full-bin flush so a
+	 * free-only thread's ~208-object permanent bin footprint is reclaimed
+	 * (r8rss F1: 36 %% of metal prodcons RSS).  Reset to 0 the moment the
+	 * bin is seen NOT full at overflow (a pop happened -> balanced thread).
+	 */
+	uint8_t idle_overflows;
 } umem_ptc_mag_t;
 
 /*
