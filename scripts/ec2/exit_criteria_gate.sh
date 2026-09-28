@@ -72,6 +72,17 @@ rc=$?; echo "external_compile_rc=$rc"; [ $rc -ne 0 ] && { note_fail "external co
 LD_LIBRARY_PATH="$LIB" /tmp/ext; rc=$?; echo "external_run_rc=$rc"; [ $rc -ne 0 ] && note_fail "external run"
 rm -rf -f /tmp/ext /tmp/ext.c 2>/dev/null
 
+r "6b. timing regressions, standalone (quiet box, 77 is a FAIL here)"
+# repro_interpose_free_ratio SKIPs (77) inside make -j check, because its quiet-
+# rig gate needs a null min >= 0.88 and a loaded 8-vCPU box never gets there
+# (docs/results/r7qg/).  So make check passing says nothing about P8.3.  Run
+# it here, after make check has finished and nothing else is running, and
+# treat 77 as a failure: a gate that cannot resolve is not a pass.
+PRE=.libs/libumem_malloc.so
+LD_LIBRARY_PATH=.libs LD_PRELOAD=$PRE ./test/stress/.libs/repro_interpose_free_ratio >/tmp/ir.log 2>&1
+rc=$?; tail -1 /tmp/ir.log; echo "interpose_ratio_rc=$rc"
+[ $rc -ne 0 ] && note_fail "P8.3 interpose ratio (rc=$rc; 77 = rig never quiet)"
+
 r "7. RELEASE configuration: -O3 -DNDEBUG, the binary that actually ships"
 # .forgejo/workflows/release.yml builds the tarball with CFLAGS='-O3 -g -DNDEBUG'
 # and ran NO tests on it.  Under NDEBUG every ASSERT() is compiled out
