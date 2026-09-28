@@ -71,6 +71,8 @@
 #define ROUNDS		2000
 #define PAIRS		9
 #define RATIO_MIN	0.48
+#define QUIET_MIN	0.88	/* the null spread the bar was derived from */
+#define RETRIES		4
 
 static int
 interposed(void)
@@ -189,6 +191,33 @@ main(void)
 	    "preload/API median %.3f min %.3f; bar %.2f\n",
 	    NTHREADS, PAIRS, null_med, null_min, med, min, bar);
 
+	/*
+	 * QUIET-RIG GATE.  Under `make -j check` on an 8-vCPU box this test's 8
+	 * threads share the CPUs with the rest of the suite, and the null
+	 * control shows it: the two FAILs seen (0.476, round 7, and 0.419,
+	 * r7jet, library code identical to the 0.55-0.63 re-runs) both had
+	 * null min 0.63 / 0.81, against 0.95-0.99 on every clean re-run.  A
+	 * rig that moves identical code by >10 % cannot judge a bar derived
+	 * from a 0.88 null.  So require null min >= QUIET_MIN and retry up to
+	 * RETRIES times; if the rig never goes quiet, SKIP (77), not a verdict.
+	 */
+	for (int attempt = 1; null_min < QUIET_MIN && attempt < RETRIES;
+	    attempt++) {
+		printf("  noisy rig (null min %.3f < %.2f); retry %d/%d\n",
+		    null_min, QUIET_MIN, attempt, RETRIES - 1);
+		(void) sleep(2);
+		null_med = paired_ratio(0, 0, &null_min);
+		med = paired_ratio(0, 1, &min);
+		printf("t=%d %d pairs: null API/API median %.3f min %.3f; "
+		    "preload/API median %.3f min %.3f; bar %.2f\n",
+		    NTHREADS, PAIRS, null_med, null_min, med, min, bar);
+	}
+	if (null_min < QUIET_MIN) {
+		printf("SKIP: the rig never went quiet (null min %.3f < %.2f "
+		    "after %d attempts); no verdict\n", null_min, QUIET_MIN,
+		    RETRIES);
+		return (77);
+	}
 	if (null_min < bar) {
 		printf("SKIP: the null control alone falls below the bar "
 		    "(%.3f < %.2f); this rig cannot resolve the question\n",
