@@ -72,6 +72,14 @@
 #define PAIRS		9
 #define RATIO_MIN	0.48
 #define QUIET_MIN	0.88	/* the null spread the bar was derived from */
+/*
+ * Quiet = identical code measures alike in BOTH directions.  The first
+ * version tested only the minimum, and r7rel's --disable-rseq make -j check
+ * passed it with null min 1.008 but median 1.486 (identical code 49 % apart)
+ * and then FAILed the bar at 0.440.  A skew that large up is as disqualifying
+ * as one down.
+ */
+#define QUIET(nmin, nmed)	((nmin) >= QUIET_MIN && (nmed) <= 1.0 / QUIET_MIN)
 #define RETRIES		4
 
 static int
@@ -201,10 +209,11 @@ main(void)
 	 * from a 0.88 null.  So require null min >= QUIET_MIN and retry up to
 	 * RETRIES times; if the rig never goes quiet, SKIP (77), not a verdict.
 	 */
-	for (int attempt = 1; null_min < QUIET_MIN && attempt < RETRIES;
+	for (int attempt = 1; !QUIET(null_min, null_med) && attempt < RETRIES;
 	    attempt++) {
-		printf("  noisy rig (null min %.3f < %.2f); retry %d/%d\n",
-		    null_min, QUIET_MIN, attempt, RETRIES - 1);
+		printf("  noisy rig (null min %.3f, median %.3f; need min >= "
+		    "%.2f and median <= %.3f); retry %d/%d\n", null_min,
+		    null_med, QUIET_MIN, 1.0 / QUIET_MIN, attempt, RETRIES - 1);
 		(void) sleep(2);
 		null_med = paired_ratio(0, 0, &null_min);
 		med = paired_ratio(0, 1, &min);
@@ -212,9 +221,9 @@ main(void)
 		    "preload/API median %.3f min %.3f; bar %.2f\n",
 		    NTHREADS, PAIRS, null_med, null_min, med, min, bar);
 	}
-	if (null_min < QUIET_MIN) {
-		printf("SKIP: the rig never went quiet (null min %.3f < %.2f "
-		    "after %d attempts); no verdict\n", null_min, QUIET_MIN,
+	if (!QUIET(null_min, null_med)) {
+		printf("SKIP: the rig never went quiet (null min %.3f, median "
+		    "%.3f after %d attempts); no verdict\n", null_min, null_med,
 		    RETRIES);
 		return (77);
 	}
