@@ -1,0 +1,415 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 35K of event 'cycles:P'
+# Event count (approx.): 26037886465
+#
+# Overhead  Symbol                                         IPC   [IPC Coverage]
+# ........  .............................................  ....................
+#
+    32.14%  [.] producer_thread                            -      -            
+            |
+            ---start_thread
+
+    17.58%  [.] ring_pop                                   -      -            
+            |
+            ---start_thread
+
+     6.61%  [.] umem_rseq_free_fastpath                    -      -            
+            |          
+             --6.60%--_umem_free
+                       consumer_thread
+                       start_thread
+
+     4.36%  [.] umem_rseq_alloc_fastpath                   -      -            
+            |          
+             --4.34%--_umem_alloc
+                       umem_alloc_wrapper
+                       producer_thread
+                       start_thread
+
+     2.88%  [k] entry_SYSCALL_64                           -      -            
+            |          
+             --2.88%--__sched_yield
+                       start_thread
+
+     2.46%  [.] __vdso_clock_gettime                       -      -            
+            |          
+             --2.44%--clock_gettime@@GLIBC_2.17
+                       start_thread
+
+     2.32%  [.] _umem_free                                 -      -            
+            |          
+             --2.22%--consumer_thread
+                       start_thread
+
+     2.22%  [.] __memset_avx512_unaligned_erms             -      -            
+            |
+            ---start_thread
+
+     2.12%  [k] pvclock_clocksource_read_nowd              -      -            
+            |
+            ---kvm_sched_clock_read
+               sched_clock
+               sched_clock_cpu
+               update_rq_clock
+               __schedule
+               schedule
+               |          
+                --2.12%--__x64_sys_sched_yield
+                          do_syscall_64
+                          entry_SYSCALL_64_after_hwframe
+                          __sched_yield
+                          start_thread
+
+     1.62%  [k] arch_exit_to_user_mode_prepare.isra.0      -      -            
+            |
+            ---syscall_exit_to_user_mode
+               do_syscall_64
+               entry_SYSCALL_64_after_hwframe
+               |          
+                --1.61%--__sched_yield
+                          start_thread
+
+     1.53%  [.] _umem_alloc                                -      -            
+            |          
+             --1.43%--umem_alloc_wrapper
+                       producer_thread
+                       start_thread
+
+     1.51%  [k] _raw_spin_lock                             -      -            
+            |          
+            |--0.84%--raw_spin_rq_lock_nested
+            |          do_sched_yield
+            |          __x64_sys_sched_yield
+            |          do_syscall_64
+            |          entry_SYSCALL_64_after_hwframe
+            |          __sched_yield
+            |          start_thread
+            |          
+             --0.66%--__schedule
+                       schedule
+                       __x64_sys_sched_yield
+                       do_syscall_64
+                       entry_SYSCALL_64_after_hwframe
+                       __sched_yield
+                       start_thread
+
+     1.50%  [.] td_qsort                                   -      -            
+            |          
+             --1.22%--td_qsort
+                       |          
+                        --0.95%--td_qsort
+                                  |          
+                                   --0.66%--td_qsort
+
+     1.25%  [k] __schedule                                 -      -            
+            |
+            ---schedule
+               __x64_sys_sched_yield
+               do_syscall_64
+               entry_SYSCALL_64_after_hwframe
+               __sched_yield
+               start_thread
+
+     1.22%  [.] __sched_yield                              -      -            
+            |
+            ---start_thread
+
+     1.19%  [k] pick_task_fair                             -      -            
+            |
+            ---pick_next_task_fair
+               __schedule
+               schedule
+               |          
+                --1.18%--__x64_sys_sched_yield
+                          do_syscall_64
+                          entry_SYSCALL_64_after_hwframe
+                          __sched_yield
+                          start_thread
+
+     1.03%  [.] umem_alloc_wrapper                         -      -            
+            |          
+             --0.87%--producer_thread
+                       start_thread
+
+     0.99%  [.] consumer_thread                            -      -            
+            |
+            ---start_thread
+
+     0.94%  [k] __calc_delta.constprop.0                   -      -            
+            |
+            ---update_curr
+               |          
+                --0.94%--pick_task_fair
+                          pick_next_task_fair
+                          __schedule
+                          schedule
+                          __x64_sys_sched_yield
+                          do_syscall_64
+                          entry_SYSCALL_64_after_hwframe
+                          __sched_yield
+                          start_thread
+
+     0.85%  [k] update_curr                                -      -            
+            |          
+             --0.84%--pick_task_fair
+                       pick_next_task_fair
+                       __schedule
+                       schedule
+                       __x64_sys_sched_yield
+                       do_syscall_64
+                       entry_SYSCALL_64_after_hwframe
+                       __sched_yield
+                       start_thread
+
+     0.80%  [.] __tls_get_addr                             -      -            
+     0.66%  [k] pick_eevdf                                 -      -            
+            |
+            ---pick_task_fair
+               pick_next_task_fair
+               __schedule
+               schedule
+               __x64_sys_sched_yield
+               do_syscall_64
+               entry_SYSCALL_64_after_hwframe
+               __sched_yield
+               start_thread
+
+     0.66%  [k] update_curr_se                             -      -            
+            |
+            ---update_curr
+               pick_task_fair
+               pick_next_task_fair
+               __schedule
+               schedule
+               __x64_sys_sched_yield
+               do_syscall_64
+               entry_SYSCALL_64_after_hwframe
+               __sched_yield
+               start_thread
+
+     0.58%  [k] update_deadline                            -      -            
+            |
+            ---update_curr
+               |          
+                --0.58%--pick_task_fair
+                          pick_next_task_fair
+                          __schedule
+                          schedule
+                          __x64_sys_sched_yield
+                          do_syscall_64
+                          entry_SYSCALL_64_after_hwframe
+                          __sched_yield
+                          start_thread
+
+     0.57%  [k] syscall_return_via_sysret                  -      -            
+            |
+            ---__sched_yield
+               start_thread
+
+     0.56%  [k] update_rq_clock                            -      -            
+            |
+            ---__schedule
+               schedule
+               __x64_sys_sched_yield
+               do_syscall_64
+               entry_SYSCALL_64_after_hwframe
+               __sched_yield
+               start_thread
+
+     0.53%  [k] do_syscall_64                              -      -            
+            |
+            ---entry_SYSCALL_64_after_hwframe
+               __sched_yield
+               start_thread
+
+     0.48%  [.] umem_depot_pop_trylock                     -      -            
+     0.47%  [k] entry_SYSCALL_64_safe_stack                -      -            
+     0.46%  [.] __tls_get_addr@plt                         -      -            
+     0.42%  [k] cpuacct_charge                             -      -            
+     0.40%  [.] __ieee754_log_fma                          -      -            
+     0.38%  [.] pthread_mutex_lock@@GLIBC_2.2.5            -      -            
+     0.36%  [k] do_sched_yield                             -      -            
+     0.35%  [.] td_add                                     -      -            
+     0.35%  [.] umem_depot_alloc                           -      -            
+     0.34%  [.] td_compress                                -      -            
+     0.31%  [k] entry_SYSCALL_64_after_hwframe             -      -            
+     0.29%  [.] umem_alloc@plt                             -      -            
+     0.27%  [k] rcu_note_context_switch                    -      -            
+     0.27%  [.] rand_r                                     -      -            
+     0.26%  [k] syscall_exit_to_user_mode                  -      -            
+     0.23%  [.] __GI___pthread_mutex_unlock_usercnt        -      -            
+     0.22%  [k] schedule                                   -      -            
+     0.21%  [.] umem_rseq_get_ncpus@plt                    -      -            
+     0.20%  [k] __cgroup_account_cputime                   -      -            
+     0.19%  [.] umem_depot_pop                             -      -            
+     0.14%  [k] x64_sys_call                               -      -            
+     0.13%  [k] pick_next_task_fair                        -      -            
+     0.13%  [.] memset@plt                                 -      -            
+     0.13%  [k] _raw_spin_unlock                           -      -            
+     0.12%  [k] fpregs_assert_state_consistent             -      -            
+     0.11%  [k] syscall_exit_to_user_mode_prepare          -      -            
+     0.11%  [.] umem_rseq_alloc_fastpath@plt               -      -            
+     0.11%  [.] rand_r@plt                                 -      -            
+     0.10%  [k] update_curr_dl_se                          -      -            
+     0.10%  [.] umem_free_sized_wrapper                    -      -            
+     0.09%  [k] raw_spin_rq_lock_nested                    -      -            
+     0.07%  [k] cgroup_rstat_updated                       -      -            
+     0.07%  [.] umem_slab_alloc                            -      -            
+     0.07%  [k] entry_SYSRETQ_unsafe_stack                 -      -            
+     0.07%  [.] pthread_mutex_trylock@@GLIBC_2.34          -      -            
+     0.07%  [.] umem_rseq_free_fastpath@plt                -      -            
+     0.06%  [k] sched_clock_cpu                            -      -            
+     0.05%  [k] dl_server_update                           -      -            
+     0.05%  [.] sched_yield@plt                            -      -            
+     0.05%  [k] yield_task_fair                            -      -            
+     0.04%  [.] _umem_cache_alloc                          -      -            
+     0.04%  [k] kvm_sched_clock_read                       -      -            
+     0.04%  [k] rwsem_spin_on_owner                        -      -            
+     0.04%  [k] osq_lock                                   -      -            
+     0.04%  [k] native_queued_spin_lock_slowpath           -      -            
+     0.03%  [.] clock_gettime@@GLIBC_2.17                  -      -            
+     0.03%  [k] sched_clock                                -      -            
+     0.03%  [.] __memset_avx512_unaligned                  -      -            
+     0.03%  [.] umem_ptc_mag_return                        -      -            
+     0.03%  [k] arch_scale_cpu_capacity                    -      -            
+     0.03%  [k] __x64_sys_sched_yield                      -      -            
+     0.02%  [k] native_write_msr                           -      -            
+     0.02%  [k] raw_spin_rq_unlock                         -      -            
+     0.02%  [.] clock_gettime@plt                          -      -            
+     0.02%  [.] log@plt                                    -      -            
+     0.02%  [.] umem_free@plt                              -      -            
+     0.02%  [.] umem_rseq_reload                           -      -            
+     0.02%  [k] native_read_msr                            -      -            
+     0.02%  [k] sched_clock_noinstr                        -      -            
+     0.02%  [.] umem_rseq_get_ncpus                        -      -            
+     0.02%  [k] __raw_callee_save___kvm_vcpu_is_preempted  -      -            
+     0.01%  [.] umem_depot_free                            -      -            
+     0.01%  [.] _dl_lookup_symbol_x                        -      -            
+     0.01%  [k] unmap_page_range                           -      -            
+     0.01%  [k] asm_sysvec_apic_timer_interrupt            -      -            
+     0.01%  [k] update_load_avg                            -      -            
+     0.01%  [.] vmem_span_create                           -      -            
+     0.01%  [k] get_mem_cgroup_from_mm                     -      -            
+     0.01%  [k] mas_wr_node_store                          -      -            
+     0.01%  [.] umem_rseq_reload_attach                    -      -            
+     0.01%  [.] umem_rseq_reload_detach@plt                -      -            
+     0.01%  [.] log@@GLIBC_2.29                            -      -            
+     0.01%  [k] sync_regs                                  -      -            
+     0.01%  [k] mas_walk                                   -      -            
+     0.01%  [k] _raw_spin_lock_irqsave                     -      -            
+     0.01%  [k] vma_prepare                                -      -            
+     0.01%  [.] do_lookup_x                                -      -            
+     0.01%  [k] mas_store_gfp                              -      -            
+     0.01%  [k] lock_vma_under_rcu                         -      -            
+     0.01%  [k] lru_add                                    -      -            
+     0.01%  [k] mas_find                                   -      -            
+     0.01%  [k] down_write_killable                        -      -            
+     0.01%  [.] pthread_mutex_unlock@plt                   -      -            
+     0.00%  [.] __GI___lll_lock_wait                       -      -            
+     0.00%  [k] clear_page_erms                            -      -            
+     0.00%  [k] vm_mmap_pgoff                              -      -            
+     0.00%  [k] mas_destroy                                -      -            
+     0.00%  [k] mas_prev_slot                              -      -            
+     0.00%  [k] asm_exc_page_fault                         -      -            
+     0.00%  [k] futex_wake                                 -      -            
+     0.00%  [k] up_read                                    -      -            
+     0.00%  [k] futex_q_lock                               -      -            
+     0.00%  [k] __rcu_read_unlock                          -      -            
+     0.00%  [k] rcu_segcblist_enqueue                      -      -            
+     0.00%  [.] _dl_relocate_object_no_relro               -      -            
+     0.00%  [.] __mmap                                     -      -            
+     0.00%  [k] do_anonymous_page                          -      -            
+     0.00%  [k] rwsem_down_read_slowpath                   -      -            
+     0.00%  [.] umem_rseq_reload_attach@plt                -      -            
+     0.00%  [k] available_idle_cpu                         -      -            
+     0.00%  [k] __cgroup_account_cputime_field             -      -            
+     0.00%  [k] update_cfs_group                           -      -            
+     0.00%  [k] ktime_get_update_offsets_now               -      -            
+     0.00%  [k] sched_tick                                 -      -            
+     0.00%  [k] handle_mm_fault                            -      -            
+     0.00%  [k] sched_balance_update_blocked_averages      -      -            
+     0.00%  [k] rcu_core                                   -      -            
+     0.00%  [k] task_tick_fair                             -      -            
+     0.00%  [k] arch_scale_freq_tick                       -      -            
+     0.00%  [k] timerqueue_add                             -      -            
+     0.00%  [k] lapic_next_deadline                        -      -            
+     0.00%  [k] vms_clear_ptes                             -      -            
+     0.00%  [k] __irq_exit_rcu                             -      -            
+     0.00%  [.] umem_rseq_reload_detach                    -      -            
+     0.00%  [k] mas_data_end                               -      -            
+     0.00%  [k] init_file                                  -      -            
+     0.00%  [k] vms_clean_up_area                          -      -            
+     0.00%  [k] account_user_time                          -      -            
+     0.00%  [k] __count_memcg_events                       -      -            
+     0.00%  [k] mas_leaf_max_gap                           -      -            
+     0.00%  [.] vmem_alloc                                 -      -            
+     0.00%  [k] __update_load_avg_se                       -      -            
+     0.00%  [k] perf_iterate_ctx                           -      -            
+     0.00%  [k] ena_timer_service                          -      -            
+     0.00%  [k] __memcg_slab_post_alloc_hook               -      -            
+     0.00%  [k] bpf_lsm_mmap_file                          -      -            
+     0.00%  [k] folio_mapping                              -      -            
+     0.00%  [.] _dl_fixup                                  -      -            
+     0.00%  [.] umem_depot_alloc_trylock                   -      -            
+     0.00%  [k] __split_vma                                -      -            
+     0.00%  [k] error_entry                                -      -            
+     0.00%  [.] umem_slab_create                           -      -            
+     0.00%  [.] vmem_hash_insert                           -      -            
+     0.00%  [.] memmove                                    -      -            
+     0.00%  [k] wake_q_add                                 -      -            
+     0.00%  [k] down_read_trylock                          -      -            
+     0.00%  [k] get_page_from_freelist                     -      -            
+     0.00%  [k] lru_gen_add_folio                          -      -            
+     0.00%  [k] access_error                               -      -            
+     0.00%  [k] __call_rcu_common                          -      -            
+     0.00%  [k] mas_store_prealloc                         -      -            
+     0.00%  [k] tlb_finish_mmu                             -      -            
+     0.00%  [k] vma_alloc_folio_noprof                     -      -            
+     0.00%  [k] vms_complete_munmap_vmas                   -      -            
+     0.00%  [k] page_counter_uncharge                      -      -            
+     0.00%  [k] vms_gather_munmap_vmas                     -      -            
+     0.00%  [k] get_vma_policy                             -      -            
+     0.00%  [k] __list_del_entry_valid_or_report           -      -            
+     0.00%  [.] __GI_____strtoull_l_internal               -      -            
+     0.00%  [k] call_function_single_prep_ipi              -      -            
+     0.00%  [k] sched_balance_trigger                      -      -            
+     0.00%  [k] mas_prev_range                             -      -            
+     0.00%  [.] vmem_populate                              -      -            
+     0.00%  [k] folio_put                                  -      -            
+     0.00%  [.] __printf_buffer_write                      -      -            
+     0.00%  [k] do_mmap                                    -      -            
+     0.00%  [.] __memmove_avx512_unaligned_erms            -      -            
+     0.00%  [k] ext4_xattr_get                             -      -            
+     0.00%  [.] pthread_mutex_lock@plt                     -      -            
+     0.00%  [k] __perf_event_task_sched_out                -      -            
+     0.00%  [k] __mmap_region                              -      -            
+     0.00%  [.] _IO_file_doallocate                        -      -            
+     0.00%  [k] __bpf_tramp_enter                          -      -            
+     0.00%  [k] strlen                                     -      -            
+     0.00%  [k] __get_user_nocheck_4                       -      -            
+     0.00%  [k] rwsem_down_write_slowpath                  -      -            
+     0.00%  [.] umem_ptc_get                               -      -            
+     0.00%  [k] __update_load_avg_cfs_rq                   -      -            
+     0.00%  [k] smp_call_function_many_cond                -      -            
+     0.00%  [k] futex_q_unlock                             -      -            
+     0.00%  [.] _vmem_extend_alloc                         -      -            
+     0.00%  [k] nr_iowait_cpu                              -      -            
+     0.00%  [k] mas_empty_area_rev                         -      -            
+     0.00%  [.] __strlen_evex                              -      -            
+     0.00%  [.] _int_malloc                                -      -            
+     0.00%  [k] commit_merge                               -      -            
+     0.00%  [k] mas_update_gap.part.0                      -      -            
+     0.00%  [k] native_flush_tlb_one_user                  -      -            
+     0.00%  [k] page_counter_try_charge                    -      -            
+     0.00%  [k] pgd_none                                   -      -            
+     0.00%  [.] umem_reap                                  -      -            
+     0.00%  [k] unlink_anon_vmas                           -      -            
+
+
+#
+# (Tip: To set sampling period of individual events use perf record -e cpu/cpu-cycles,period=100001/,cpu/branches,period=10001/ ...)
+#

@@ -1,0 +1,34 @@
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'
+bench_main: skipping unavailable allocator 'jemalloc (not available)'
+bench_main: skipping unavailable allocator 'tcmalloc (not available)'
+bench_main: skipping unavailable allocator 'mimalloc (not available)'
+bench_main: skipping unavailable allocator 'snmalloc (not available)'
+bench_main: skipping unavailable allocator 'scudo (not available)'
+bench_main: skipping unavailable allocator 'rpmalloc (not available)'
+
+========================================
+Allocator: umem
+Workload:  producer-consumer
+Threads:   8
+========================================
+Throughput: 40438839.62 ops/sec (0.99 s total)
+Operations: 40000000 total across 8 threads
+
+Latency (ns), sampled 1/16: 2500000 timed ops of 40000000:
+  min:  32
+  p50:  79
+  p90:  177
+  p99:  348
+  p999: 769
+  max:  2983989
+  mean: 110
+
+Memory:
+  RSS:          18.88 MB
+  Allocated:    9.68 GB (cumulative traffic)
+  Fragmentation: n/a (this workload holds no live set; a ratio against cumulative traffic is meaningless)
+
+CPU:
+  User: 5896.0 ms
+  Sys:  1745.9 ms
+========================================

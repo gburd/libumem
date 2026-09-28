@@ -1,0 +1,19 @@
+########## build v4.0.0 ##########
+########## build 744f639 ##########
+==== libumem ====
+v4.0.0 file: /home/admin/abi_v400/.libs/libumem.so.2.0.0  soname: libumem.so.2
+744f639 file: /home/admin/abi_v410/.libs/libumem.so.2.0.0  soname: libumem.so.2
+v4.0.0 defined-export count: 285
+744f639 defined-export count: 285
+-- exports ONLY in v4.0.0 (removed) --
+-- exports ONLY in 744f639 (added)  --
+-- diff count: 0 --
+==== libumem_malloc ====
+v4.0.0 file: /home/admin/abi_v400/.libs/libumem_malloc.so.1.0.0  soname: libumem_malloc.so.1
+744f639 file: /home/admin/abi_v410/.libs/libumem_malloc.so.1.0.0  soname: libumem_malloc.so.1
+v4.0.0 defined-export count: 12
+744f639 defined-export count: 12
+-- exports ONLY in v4.0.0 (removed) --
+-- exports ONLY in 744f639 (added)  --
+-- diff count: 0 --
+########## ABI DONE ##########

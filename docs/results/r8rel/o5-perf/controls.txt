@@ -1,0 +1,12 @@
+O5 control allocators (system libjemalloc.so.2, glibc), x86 lo (c7i.2xlarge, Debian 13), prodcons t=8 n=20M
+jemalloc (GLIBC_TUNABLES=glibc.rtld.optional_static_tls=2000000):
+  pre  run1 53361825  run2 54594399
+  post run1 51319846  run2 48754783   -> unchanged within run-to-run spread (same system lib)
+libc:
+  pre  run1 7813605   run2 7867630
+  post run1 7439913   run2 8600298    -> unchanged within run-to-run spread
+umem API arm free-wrapper self%:
+  pre  umem_free_wrapper       13.71%
+  post umem_free_sized_wrapper  0.10%
+umem throughput:
+  pre  41045209  post 40438839  (within spread; wrapper self-time removed, throughput bounded by producer/ring)

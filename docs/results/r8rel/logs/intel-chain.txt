@@ -1,0 +1,191 @@
+ABI_DONE rc=0
+########## build v4.0.0 ##########
+########## build 744f639 ##########
+==== libumem ====
+v4.0.0 file: /home/admin/abi_v400/.libs/libumem.so.2.0.0  soname: libumem.so.2
+744f639 file: /home/admin/abi_v410/.libs/libumem.so.2.0.0  soname: libumem.so.2
+v4.0.0 defined-export count: 285
+744f639 defined-export count: 285
+-- exports ONLY in v4.0.0 (removed) --
+-- exports ONLY in 744f639 (added)  --
+-- diff count: 0 --
+==== libumem_malloc ====
+v4.0.0 file: /home/admin/abi_v400/.libs/libumem_malloc.so.1.0.0  soname: libumem_malloc.so.1
+744f639 file: /home/admin/abi_v410/.libs/libumem_malloc.so.1.0.0  soname: libumem_malloc.so.1
+v4.0.0 defined-export count: 12
+744f639 defined-export count: 12
+-- exports ONLY in v4.0.0 (removed) --
+-- exports ONLY in 744f639 (added)  --
+-- diff count: 0 --
+########## ABI DONE ##########
+=========O5==========
+########## BUILD PRE (8c70e66) ##########
+########## BUILD POST (744f639) ##########
+########## PRE perf (umem, umem_free_wrapper) ##########
+=== pre_umem (umem) ===
+Throughput: 41045209.49 ops/sec (0.97 s total)
+bench pid(s):     13.24%   205642:bench_main
+    13.18%   205640:bench_main
+    13.13%   205639:bench_main
+    13.06%   205638:bench_main
+    12.64%   205637:bench_main
+    12.48%   205641:bench_main
+    12.16%   205635:bench_main
+    10.04%   205636:bench_main
+     0.06%   205634:bench_main
+     0.01%   205643:bench_main
+-- top self symbols (pre_umem) --
+    28.61%  [.] producer_thread                            -      -            
+            |
+            ---start_thread
+    13.71%  [.] umem_free_wrapper                          -      -            
+            |
+            ---start_thread
+    10.15%  [.] ring_pop                                   -      -            
+            |
+            ---start_thread
+     5.83%  [.] umem_rseq_alloc_fastpath                   -      -            
+            |          
+             --5.82%--_umem_alloc
+                       umem_alloc_wrapper
+                       producer_thread
+                       start_thread
+-- free-wrapper self% (umem_free_wrapper) --
+    13.71%  [.] umem_free_wrapper                          -      -            
+########## POST perf (umem, umem_free_sized_wrapper) ##########
+=== post_umem (umem) ===
+Throughput: 40438839.62 ops/sec (0.99 s total)
+bench pid(s):     13.06%   205677:bench_main
+    13.06%   205679:bench_main
+    13.06%   205678:bench_main
+    13.05%   205680:bench_main
+    12.92%   205674:bench_main
+    12.75%   205675:bench_main
+    12.53%   205676:bench_main
+     9.52%   205673:bench_main
+     0.05%   205672:bench_main
+     0.00%   205681:bench_main
+-- top self symbols (post_umem) --
+    32.14%  [.] producer_thread                            -      -            
+            |
+            ---start_thread
+    17.58%  [.] ring_pop                                   -      -            
+            |
+            ---start_thread
+     6.61%  [.] umem_rseq_free_fastpath                    -      -            
+            |          
+             --6.60%--_umem_free
+                       consumer_thread
+                       start_thread
+     4.36%  [.] umem_rseq_alloc_fastpath                   -      -            
+            |          
+             --4.34%--_umem_alloc
+                       umem_alloc_wrapper
+-- free-wrapper self% (umem_free_sized_wrapper) --
+     0.10%  [.] umem_free_sized_wrapper                    -      -            
+########## libc control (pre vs post) ##########
+=== pre_libc (libc) ===
+Throughput: 7401391.00 ops/sec (5.40 s total)
+bench pid(s):     18.83%   205720:bench_main
+    18.32%   205718:bench_main
+    17.67%   205721:bench_main
+    13.61%   205719:bench_main
+    11.01%   205723:bench_main
+     7.02%   205725:bench_main
+     6.98%   205722:bench_main
+     6.52%   205724:bench_main
+     0.03%   205717:bench_main
+-- top self symbols (pre_libc) --
+    15.86%  [k] native_queued_spin_lock_slowpath           -      -            
+            |
+            ---_raw_spin_lock
+               |          
+               |--15.30%--__task_rq_lock
+               |          try_to_wake_up
+               |          wake_up_q
+               |          futex_wake
+               |          do_futex
+               |          __x64_sys_futex
+               |          do_syscall_64
+               |          entry_SYSCALL_64_after_hwframe
+               |          __lll_lock_wake_private
+               |          |          
+               |          |--7.84%--0x1
+-- free-wrapper self% (libc_free) --
+     0.06%  [.] libc_free                                  -      -            
+=== post_libc (libc) ===
+Throughput: 8557906.83 ops/sec (4.67 s total)
+bench pid(s):     18.35%   205758:bench_main
+    17.88%   205759:bench_main
+    16.33%   205757:bench_main
+    12.02%   205760:bench_main
+    11.88%   205756:bench_main
+     8.78%   205761:bench_main
+     7.81%   205763:bench_main
+     6.92%   205762:bench_main
+     0.02%   205755:bench_main
+-- top self symbols (post_libc) --
+    15.10%  [k] native_queued_spin_lock_slowpath           -      -            
+            |          
+             --15.10%--_raw_spin_lock
+                       |          
+                       |--14.32%--__task_rq_lock
+                       |          try_to_wake_up
+                       |          wake_up_q
+                       |          |          
+                       |           --14.32%--futex_wake
+                       |                     do_futex
+                       |                     __x64_sys_futex
+                       |                     do_syscall_64
+                       |                     entry_SYSCALL_64_after_hwframe
+                       |                     __lll_lock_wake_private
+                       |                     |          
+-- free-wrapper self% (libc_free) --
+     0.05%  [.] libc_free                                  -      -            
+########## jemalloc control (pre vs post) ##########
+=== pre_jemalloc (jemalloc) ===
+bench pid(s):    100.00%   205783:bench_main
+-- top self symbols (pre_jemalloc) --
+    32.54%  [.] do_lookup_x                    -      -            
+            |          
+            |--13.73%--0x561a8d23b768
+            |          0xc
+            |          0x7fda5ce19890
+            |          0x7fda5ce58bc8
+            |          0
+            |          
+            |--6.48%--0x561a8d23aa58
+            |          0xc
+            |          0x7fda5ce19890
+            |          0x7fda5ce58bc8
+            |          0
+            |          
+             --5.97%--0x561a8d23a4f8
+-- free-wrapper self% (je_) --
+=== post_jemalloc (jemalloc) ===
+bench pid(s):    100.00%   205803:bench_main
+-- top self symbols (post_jemalloc) --
+    21.94%  [.] do_lookup_x                     -      -            
+            |          
+             --12.41%--0x55789fbd6a58
+                       0xc
+                       0x7f915e03d890
+                       0x7f915e07cbc8
+                       0
+    18.66%  [.] _dl_lookup_symbol_x             -      -            
+            |          
+            |--13.18%--0x7f915ca7cbe8
+            |          |          
+            |          |--6.67%--0x15da20
+            |          |          
+            |           --6.51%--0x255f38
+            |          
+-- free-wrapper self% (je_) --
+########## SUMMARY: Throughput lines ##########
+[pre_umem] Throughput: 41045209.49 ops/sec (0.97 s total)
+[post_umem] Throughput: 40438839.62 ops/sec (0.99 s total)
+[pre_libc] Throughput: 7401391.00 ops/sec (5.40 s total)
+[post_libc] Throughput: 8557906.83 ops/sec (4.67 s total)
+[pre_jemalloc] 
+[post_jemalloc] 
+########## O5 PERF DONE ##########

@@ -1,0 +1,45 @@
+########## arm check2 ##########
+PASS: test/debugger/test_tool_T10_walk_log.sh
+PASS: test/debugger/test_tool_T12_rearm.sh
+PASS: test/debugger/test_tool_T13_gdb_error_code.sh
+PASS: test/debugger/test_tool_T14_lldb_status.sh
+PASS: test/debugger/test_tool_T1_event_cb.sh
+PASS: test/debugger/test_tool_T1_gdb_break.sh
+PASS: test/debugger/test_tool_T8_break_ptc.sh
+PASS: test/debugger/test_tool_T9_leak_stack.sh
+PASS: test/integration/test_cpu_hint_spread
+PASS: test/integration/test_findleaks_rseq.sh
+PASS: test/integration/test_first_alloc_small_stack.sh
+PASS: test/integration/test_ptc_exit_full_mag
+PASS: test/unit/test_slab_interior_free
+SKIP: test/integration/test_ptc_freeonly_trim
+########## arm check3 ##########
+PASS: test/debugger/test_tool_T10_walk_log.sh
+PASS: test/debugger/test_tool_T13_gdb_error_code.sh
+PASS: test/debugger/test_tool_T14_lldb_status.sh
+PASS: test/debugger/test_tool_T1_event_cb.sh
+PASS: test/debugger/test_tool_T1_gdb_break.sh
+PASS: test/integration/test_cpu_hint_spread
+PASS: test/integration/test_first_alloc_small_stack.sh
+PASS: test/integration/test_ptc_exit_full_mag
+PASS: test/unit/test_slab_interior_free
+SKIP: test/debugger/test_tool_T12_rearm.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+SKIP: test/integration/test_findleaks_rseq.sh
+SKIP: test/integration/test_ptc_freeonly_trim
+########## arm check5 ##########
+PASS: test/debugger/test_tool_T10_walk_log.sh
+PASS: test/debugger/test_tool_T13_gdb_error_code.sh
+PASS: test/debugger/test_tool_T14_lldb_status.sh
+PASS: test/debugger/test_tool_T1_event_cb.sh
+PASS: test/debugger/test_tool_T1_gdb_break.sh
+PASS: test/integration/test_cpu_hint_spread
+PASS: test/integration/test_findleaks_rseq.sh
+PASS: test/integration/test_first_alloc_small_stack.sh
+PASS: test/integration/test_ptc_exit_full_mag
+PASS: test/unit/test_slab_interior_free
+SKIP: test/debugger/test_tool_T12_rearm.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+SKIP: test/integration/test_ptc_freeonly_trim
