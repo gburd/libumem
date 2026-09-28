@@ -32,6 +32,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_debug_features \
 		  test/integration/test_threading_stress \
 		  test/integration/test_fork_mt_load \
+		  test/integration/test_findleaks_rseq \
 		  test/integration/test_update_thread_startup \
 		  test/stress/stress_main \
 		  test/stress/stress_concurrency_oracle \
@@ -581,6 +582,33 @@ test_integration_test_ptc_resize_no_loss_probe_LDADD = libumem_ptcprobe.la
 test_integration_test_ptc_resize_no_loss_probe_LDFLAGS = -pthread
 test_integration_test_ptc_resize_no_loss_probe_CPPFLAGS = \
 	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
+
+# O9: findleaks must not report rseq-resident buffers as outstanding.  The
+# default program (positive arm) asserts the subtraction fires; the norseqsub
+# variant (negative arm) is the SAME source linked against a library built
+# with only the rseq subtraction block compiled out
+# (-DUMEM_FINDLEAKS_NO_RSEQ_SUBTRACT), which isolates that block from the
+# depot/per-CPU subtraction present in both builds.  The default library is
+# byte-identical; the knob touches nothing else.
+test_integration_test_findleaks_rseq_SOURCES = \
+	test/integration/test_findleaks_rseq.c
+test_integration_test_findleaks_rseq_LDADD = libumem.la
+test_integration_test_findleaks_rseq_LDFLAGS = -pthread
+test_integration_test_findleaks_rseq_CPPFLAGS = -I$(srcdir)
+
+noinst_LTLIBRARIES += libumem_norseqsub.la
+libumem_norseqsub_la_SOURCES = $(libumem_la_SOURCES)
+libumem_norseqsub_la_CPPFLAGS = $(AM_CPPFLAGS) -DUMEM_FINDLEAKS_NO_RSEQ_SUBTRACT
+libumem_norseqsub_la_CFLAGS = $(AM_CFLAGS)
+libumem_norseqsub_la_LDFLAGS = $(libumem_la_LDFLAGS)
+
+noinst_PROGRAMS += test/integration/test_findleaks_rseq_norseqsub
+test_integration_test_findleaks_rseq_norseqsub_SOURCES = \
+	test/integration/test_findleaks_rseq.c
+test_integration_test_findleaks_rseq_norseqsub_LDADD = libumem_norseqsub.la
+test_integration_test_findleaks_rseq_norseqsub_LDFLAGS = -pthread
+test_integration_test_findleaks_rseq_norseqsub_CPPFLAGS = \
+	-I$(srcdir) -DUMEM_FINDLEAKS_NO_RSEQ_SUBTRACT
 
 # P1.6 regression: update-thread startup handshake.  -rdynamic so the
 # executable's pthread_cond_wait interposer preempts libc's for calls made

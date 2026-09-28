@@ -1016,11 +1016,17 @@ cached_set_build_cache(struct cached_set *cs, umem_cache_t *cp)
 		}
 	}
 
-#ifdef UMEM_RSEQ_AVAILABLE
+#if defined(UMEM_RSEQ_AVAILABLE) && !defined(UMEM_FINDLEAKS_NO_RSEQ_SUBTRACT)
 	/*
 	 * rseq per-CPU magazines.  These were previously NOT subtracted, so in
 	 * a default (rseq-enabled) build every buffer parked in an rseq
 	 * magazine was reported as an outstanding allocation.
+	 *
+	 * UMEM_FINDLEAKS_NO_RSEQ_SUBTRACT (test-only, off in every shipped
+	 * build) compiles out ONLY this block, so test/integration/
+	 * test_findleaks_rseq.c can measure that this subtraction -- and not
+	 * the depot/per-CPU subtraction that exists in both builds -- is what
+	 * keeps rseq-resident buffers out of the outstanding count (O9).
 	 */
 	if (cp->cache_rseq != NULL && umem_rseq_enabled) {
 		int n = umem_rseq_get_ncpus();
