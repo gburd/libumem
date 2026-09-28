@@ -1,0 +1,1 @@
+cd ~/libumem-iso-prefix-c27a0a607df5 && { ./scripts/ec2/clean-regen.sh && make -j$(nproc) test/bench/test_bench_accounting && ./test/bench/test_bench_accounting; echo TEST_RC=$? ; }

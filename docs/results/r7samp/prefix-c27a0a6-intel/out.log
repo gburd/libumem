@@ -1,0 +1,105 @@
+REGEN_OK
+depbase=`echo test/bench/test_bench_accounting.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I.  -DSPARSEMAP_PREFIX=umem_  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/bench/test_bench_accounting.o -MD -MP -MF $depbase.Tpo -c -o test/bench/test_bench_accounting.o test/bench/test_bench_accounting.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo test/bench/bench_framework.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I.  -DSPARSEMAP_PREFIX=umem_  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/bench/bench_framework.o -MD -MP -MF $depbase.Tpo -c -o test/bench/bench_framework.o test/bench/bench_framework.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo test/tdigest.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I.  -DSPARSEMAP_PREFIX=umem_  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/tdigest.o -MD -MP -MF $depbase.Tpo -c -o test/tdigest.o test/tdigest.c &&\
+mv -f $depbase.Tpo $depbase.Po
+/bin/bash ./libtool  --tag=CC   --mode=link gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -pthread -lm  -o test/bench/test_bench_accounting test/bench/test_bench_accounting.o test/bench/bench_framework.o test/tdigest.o  -ldl  -ldw
+libtool: link: gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -o test/bench/test_bench_accounting test/bench/test_bench_accounting.o test/bench/bench_framework.o test/tdigest.o  -lm -ldl -ldw -pthread
+=== bench harness accounting regressions (P2.1, P2.2) ===
+P2.1 operation_count is a total across threads (n=800000)
+   t=1 total_ops=800000  t=2 800000  t=4 800000
+P2.1 minimum per-thread work floor
+   requested 1000 total over 8 threads -> total_ops=800000 floor_raised=1
+P2.2 fragmentation live-byte accounting
+   threads=2 live_at_peak=205925789 ceiling=409600000 cumulative=821816606
+   alloc_failures=0
+   rss_at_live_peak/vmhwm = 0.9991 (kernel RSS counters are batched per-thread; exact ordering is not guaranteed)
+   samples=14 live_median=204337077 vmhwm=211931136 frag_median=1.0388
+   frag=1.0283 peak_rss=211750912 -> rss/live=1.0283
+frag live total = sum of per-worker slots
+   t=1 live_at_peak=103135216 true_peak=103135216 end_live=0
+   t=4 live_at_peak=374466141 true_peak=374488735
+prodcons: independent rings, frees cross-thread
+   threads=8 frees=400000 same-thread=0 max consumers per producer=1
+frag runs sizes above 4096
+   asked 16:8192 -> largest request 8192
+interval-mode frag live set follows the -L budget
+   -L 16 at 8192 B, t=2 -> sampled live peak 13869056 (budget 16777216)
+worker contexts are cache-line aligned
+   thread_context_t size=128 align=64
+   pc_context_t     size=128 align=64
+   frag_context_t   size=192 align=64
+P2.2 workloads with no live set report no ratio
+   single-thread      has_fragmentation=0 frag=0.0000
+   multi-thread       has_fragmentation=0 frag=0.0000
+   producer-consumer  has_fragmentation=0 frag=0.0000
+interval mode: 3 x 0.3 s, one process
+   producer-consumer  interval 0: 0.300 s ops=1162888 p50=420 rss=3940352 samples=0
+   producer-consumer  interval 1: 0.300 s ops=1185968 p50=413 rss=3944448 samples=0
+   producer-consumer  interval 2: 0.300 s ops=1186481 p50=413 rss=3944448 samples=0
+   fragmentation      interval 0: 0.300 s ops=1668783 p50=295 rss=323121152 samples=3
+   fragmentation      interval 1: 0.300 s ops=1634325 p50=294 rss=636047360 samples=3
+   fragmentation      interval 2: 0.300 s ops=1579580 p50=294 rss=938598400 samples=3
+interval mode: one 0.7 s operation in 0.3 s intervals
+   interval 0: 0.300 s ops=1327930 rss=860524544 samples=3
+   interval 1: 0.300 s ops=1328408 rss=860524544 samples=3
+   interval 2: 0.300 s ops=1336803 rss=959442944 samples=3
+   interval 3: 0.300 s ops=1332516 rss=1129193472 samples=3
+   interval 4: 0.300 s ops=1540543 rss=1184866304 samples=3
+latency sampled 1 op in 16; every op still counted
+   single   -T 1: ops=100000 clock=200002 samples=0 | -T 16: ops=100000 clock=200002 samples=0 every=0
+  FAIL: single: 200002 clock reads at -T 16 vs 200002 at -T 1 (want ~1/16)
+        (test/bench/test_bench_accounting.c:793: c16 * 16 >= c1 * 9 / 10 - 64 * 16 && c16 * 16 <= c1 * 11 / 10 + 64 * 16)
+  FAIL: single: sampling rate not reported (0, 0)
+        (test/bench/test_bench_accounting.c:797: b.lat_sample_every == 16 && a.lat_sample_every == 1)
+  FAIL: single: 0 digest inserts at -T 16 vs 0 at -T 1
+        (test/bench/test_bench_accounting.c:800: a.latency_samples > 0 && b.latency_samples * 16 >= a.latency_samples * 9 / 10 && b.latency_samples * 16 <= a.latency_samples * 11 / 10 + 64)
+   multi    -T 1: ops=200000 clock=400002 samples=0 | -T 16: ops=200000 clock=400002 samples=0 every=0
+  FAIL: multi: 400002 clock reads at -T 16 vs 400002 at -T 1 (want ~1/16)
+        (test/bench/test_bench_accounting.c:793: c16 * 16 >= c1 * 9 / 10 - 64 * 16 && c16 * 16 <= c1 * 11 / 10 + 64 * 16)
+  FAIL: multi: sampling rate not reported (0, 0)
+        (test/bench/test_bench_accounting.c:797: b.lat_sample_every == 16 && a.lat_sample_every == 1)
+  FAIL: multi: 0 digest inserts at -T 16 vs 0 at -T 1
+        (test/bench/test_bench_accounting.c:800: a.latency_samples > 0 && b.latency_samples * 16 >= a.latency_samples * 9 / 10 && b.latency_samples * 16 <= a.latency_samples * 11 / 10 + 64)
+  FAIL: multi -T 1 must time every op (0 of 200000)
+        (test/bench/test_bench_accounting.c:807: a.latency_samples == a.total_operations)
+   prodcons -T 1: ops=400000 clock=800002 samples=0 | -T 16: ops=400000 clock=800002 samples=0 every=0
+  FAIL: prodcons: 800002 clock reads at -T 16 vs 800002 at -T 1 (want ~1/16)
+        (test/bench/test_bench_accounting.c:793: c16 * 16 >= c1 * 9 / 10 - 64 * 16 && c16 * 16 <= c1 * 11 / 10 + 64 * 16)
+  FAIL: prodcons: sampling rate not reported (0, 0)
+        (test/bench/test_bench_accounting.c:797: b.lat_sample_every == 16 && a.lat_sample_every == 1)
+  FAIL: prodcons: 0 digest inserts at -T 16 vs 0 at -T 1
+        (test/bench/test_bench_accounting.c:800: a.latency_samples > 0 && b.latency_samples * 16 >= a.latency_samples * 9 / 10 && b.latency_samples * 16 <= a.latency_samples * 11 / 10 + 64)
+   frag     -T 1: ops=381079 clock=762160 samples=0 | -T 16: ops=381079 clock=762160 samples=0 every=0
+  FAIL: frag: 762160 clock reads at -T 16 vs 762160 at -T 1 (want ~1/16)
+        (test/bench/test_bench_accounting.c:793: c16 * 16 >= c1 * 9 / 10 - 64 * 16 && c16 * 16 <= c1 * 11 / 10 + 64 * 16)
+  FAIL: frag: sampling rate not reported (0, 0)
+        (test/bench/test_bench_accounting.c:797: b.lat_sample_every == 16 && a.lat_sample_every == 1)
+  FAIL: frag: 0 digest inserts at -T 16 vs 0 at -T 1
+        (test/bench/test_bench_accounting.c:800: a.latency_samples > 0 && b.latency_samples * 16 >= a.latency_samples * 9 / 10 && b.latency_samples * 16 <= a.latency_samples * 11 / 10 + 64)
+  FAIL: prodcons -D interval 0: rate 0 not reported
+        (test/bench/test_bench_accounting.c:826: iv[k].lat_sample_every == 16)
+  FAIL: prodcons -D interval 1: rate 0 not reported
+        (test/bench/test_bench_accounting.c:826: iv[k].lat_sample_every == 16)
+   prodcons -D -T 16: ops=1286938 clock=2573894 samples=0
+  FAIL: prodcons -D: 2573894 clock reads for 1286938 ops (want ~ops/8)
+        (test/bench/test_bench_accounting.c:834: ops > 0 && c <= ops / 8 * 13 / 10 + 20000)
+  FAIL: prodcons -D: 0 digest inserts for 1286938 ops (want ~ops/16)
+        (test/bench/test_bench_accounting.c:837: smp * 16 >= ops / 2 && smp * 16 <= ops * 3 / 2)
+  FAIL: frag -D interval 0: rate 0 not reported
+        (test/bench/test_bench_accounting.c:826: iv[k].lat_sample_every == 16)
+  FAIL: frag -D interval 1: rate 0 not reported
+        (test/bench/test_bench_accounting.c:826: iv[k].lat_sample_every == 16)
+   frag -D     -T 16: ops=1779240 clock=3558498 samples=0
+  FAIL: frag -D: 3558498 clock reads for 1779240 ops (want ~ops/8)
+        (test/bench/test_bench_accounting.c:834: ops > 0 && c <= ops / 8 * 13 / 10 + 20000)
+  FAIL: frag -D: 0 digest inserts for 1779240 ops (want ~ops/16)
+        (test/bench/test_bench_accounting.c:837: smp * 16 >= ops / 2 && smp * 16 <= ops * 3 / 2)
+
+Result: FAIL (21 failures)
+TEST_RC=1
