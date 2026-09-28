@@ -105,6 +105,14 @@ main(void)
 	size_t i;
 	int fails = 0;
 
+	/*
+	 * Warm the allocator so umem_init() has populated the PTC tables
+	 * before umem_ptc_size_to_bin() is consulted (it returns -1 until
+	 * ptc_table_ready).  Do it in main, not the worker: the worker must
+	 * stay free-only.
+	 */
+	{ void *w = umem_alloc(SZ, UMEM_DEFAULT); if (w) umem_free(w, SZ); }
+
 	g_bin = umem_ptc_size_to_bin(SZ);
 	if (g_bin < 0) {
 		printf("SKIP: size %d not PTC-eligible\n", SZ);
