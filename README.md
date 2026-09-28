@@ -31,8 +31,9 @@ FreeBSD, and macOS.
 > roughly halves RSS against `norseq` in short (17-43 s) windows. Its first version aliased buffers under
 > an rseq abort; that was found by a 100-run oracle rate test, not by the
 > gates it had passed, and is fixed with a regression that failed on every
-> pre-fix run. v3.3.2 also records that several advertised debugging-tool
-> features do not work (see "Known broken" under the tools section).
+> pre-fix run. v3.3.2 recorded that several advertised debugging-tool
+> features did not work; all of them are fixed since, each with a regression
+> test (see "Known limits" under the tools section).
 > Where a first diagnosis was wrong
 > — the heap ceiling (fixed in two halves), the 1k:4k collapse (the CPU hint,
 > not the per-thread cache), the P6.3b drain, the P5.10 bootstrap check, the
@@ -859,30 +860,22 @@ libumem ships runtime introspection equivalent to Solaris `mdb`'s
   (stop the allocating thread so a debugger catches the exact stack).
   Zero hot-path cost when off. See [`docs/UMEMCTL.md`](docs/UMEMCTL.md).
 
-> **Known broken as of v3.3.2** (found by the 2026-09-26 tool review,
-> [`docs/reviews/2026-09-26-tool-review.md`](docs/reviews/2026-09-26-tool-review.md);
-> not fixed in this release):
-> - gdb and lldb `umem break alloc|free|error` and `umem events`, and the
->   `umem_inspect_set_event_cb()` C API, never fire. Nothing in the
->   allocator calls the event hook they rely on.
-> - The `record --learn-leaks` / `break leaked` workflow cannot find a leak:
->   x86_64 audit stacks are one frame deep and inside libumem, and the
->   learned size is the cache size rather than the requested size.
-> - `umemctl break size=|cache=` never parks a thread for allocations served
->   by the per-thread cache or for oversize allocations.
+> **Known limits** (the 2026-09-26 tool review,
+> [`docs/reviews/2026-09-26-tool-review.md`](docs/reviews/2026-09-26-tool-review.md)):
 > - `umemctl whatis` and `findleaks` count a buffer freed into a per-thread
 >   cache bin as held: those bins are thread-local and cannot be read safely
 >   from another thread (a documented limit, not scheduled).
+> - On x86_64, full audit stacks (and so `record --learn-leaks` /
+>   `break leaked`) need `./configure --enable-frame-pointers`; a default
+>   build records one frame and the tools say so.  aarch64 works by default.
+> - Event hooks and `umemctl break` do not see buffers that were already in a
+>   thread's per-thread cache when they were armed.
 >
-> Fixed since v3.3.2 (T2, T3, T6, T7, T10, T12, T13, T14): `monitor`'s held
-> count, `whatis` on oversize, magazine-cached and page-boundary addresses,
-> `record --learn-leaks` after a refusal, `walk log` without a log, `break`
-> re-arm, gdb `umem break error -c`, and lldb `umem status`.
-> `umem findleaks|status|log|walk|whatis|snapshot` and umemctl
-> `stats|caches|cache|whatis|monitor` work as documented. The event-hook
-> finding has a regression test that runs in `make check` as an expected
-> failure (`XFAIL_TESTS`); it passes, and must be removed from that list,
-> once the finding is fixed.
+> Every finding in that review (T1-T14) is fixed or documented, each with a
+> regression test; `XFAIL_TESTS` is empty.  The gdb/lldb `umem break` and
+> `umem events`, `umem_inspect_set_event_cb()`, and `umemctl break size=|cache=`
+> now fire for every allocation path, at no fast-path cost while disarmed
+> beyond the 64-byte entry-point alignment recorded in the CHANGELOG.
 
 ```bash
 # umem(1): live pid / offline snapshot / CI leak-finding

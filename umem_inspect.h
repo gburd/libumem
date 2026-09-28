@@ -214,9 +214,21 @@ size_t umem_walk_dump(FILE *out, const char *kind,
  *   (gdb) break umem_event_error
  *   (gdb) break umem_event_free  if buf == 0x7fff12340000
  *
- * ~1 cycle overhead per alloc/free when no breakpoint is set because
- * gcc cannot inline-optimize the extern call without LTO, but the call
- * is unconditional.  Gated on UMEM_INSPECT_EVENTS=1 in the env.
+ * COST.  Events off (the default): the allocation fast paths contain no
+ * event call and no events test.  Turning events on (UMEM_INSPECT_EVENTS=1
+ * at start, or umem_inspect_enable_events(1)) sends every allocation and
+ * free through the slow path, where the event fires with the REQUEST size.
+ * Allocation is slower while events are on; that is the price of seeing
+ * every operation.
+ *
+ * COVERAGE while events are on: every umem_alloc/zalloc/free, every
+ * umem_cache_alloc/free (and the batch calls), and oversize (> 128 KiB)
+ * allocations.  Allocator-internal caches do not report.  Not seen:
+ * buffers that were already sitting in a thread's per-thread cache when
+ * events were switched on stay there until events go off or the thread
+ * exits (nothing leaks and nothing is issued twice), and a thread that
+ * read its cache table just before the switch finishes that one operation
+ * unreported.  Turn events on before the workload of interest.
  * ------------------------------------------------------------------------ */
 
 /* Called from allocator hot path when events are enabled. */
@@ -225,8 +237,8 @@ extern void umem_event_free(void *buf, size_t size, void *cache);
 extern void umem_event_error(int code, void *buf, void *cache);
 
 /* Enable/disable events.  Also set via UMEM_INSPECT_EVENTS=1 at process
- * start.  Must be set before the first allocation to take full effect,
- * but can be toggled later (existing buffers just won't have been seen). */
+ * start.  Can be toggled at any time; see COVERAGE above for what a
+ * mid-run switch does not see. */
 void umem_inspect_enable_events(int on);
 
 /* ------------------------------------------------------------------------

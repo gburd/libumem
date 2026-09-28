@@ -504,3 +504,10 @@ Measured on Debian 13, c7i.2xlarge + c7g.2xlarge. Logs are in `docs/results/r7ho
   PTC/magazine miss paths only and keep `_umem_free` shrink-wrappable)
   and re-measure.
 - EC2: intel-lo@r7hook and arm-lo@r7hook terminated at stop.
+
+## Status: T1 / T8 FIXED (2026-09-28, user chose option (a))
+
+Shipped on master as the r7h5 series cherry-picked onto e06a24a: `a5d4910`
+(UMEM_HOT_ALIGN), `265f53e`, `0c15cf5`, `7d7d717` (T1/T8). The library tree is
+identical to the measured r7h5 tip 1f044a3. XFAIL_TESTS is empty. The cost
+tables are in the CHANGELOG [Unreleased] entry and in `docs/results/r7h5/`.

@@ -15,15 +15,19 @@ runtime:
 
 1. **Compile time:** build libumem with `./configure --enable-introspect`.
    Without it, `umem_introspect_break_check` and the socket server are compiled
-   out entirely — the disassembly of `_umem_alloc`/`_umem_free` is
-   byte-identical to a build without the feature.
+   out entirely.
 2. **Runtime:** run the target process with `UMEM_OPTIONS=introspect=1`. This
    lazily starts a background thread that opens a per-process Unix domain
    socket.
 
-The break hot-path hook fires *only* when a break predicate is armed
-(`umem_introspect_break_armed != 0`); with introspection enabled but no break
-set, the steady-state alloc/free path is unaffected.
+With no break armed, the alloc/free fast paths carry no break test and no
+call.  Arming a break sends every allocation and free through the slow path
+(the same diversion the gdb/lldb event hooks use; see `tools/DEBUGGING.md`
+"Known caveats"), so `size=`, `cache=` and `seq=` see `umem_alloc`,
+`umem_zalloc`, `umem_cache_alloc` and oversize allocations with the size the
+caller asked for.  Allocation is slower while a break is armed.  Buffers
+already in a thread's per-thread cache when the break is armed are served
+from there unobserved until the break is disarmed or the thread exits.
 
 ```bash
 ./configure --enable-introspect && make -j$(nproc)

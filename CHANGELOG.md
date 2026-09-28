@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **gdb/lldb `umem break` and `umem events`, `umem_inspect_set_event_cb()`, and
+  `umemctl break` never fired, or fired only on one path (T1, T8).** Nothing in
+  the allocator called the event hook, and the umemctl break check sat only in
+  `_umem_alloc` after the cache call, so `umem_zalloc`, `umem_cache_alloc` (and
+  its `cache=` predicate) and oversize allocations were never seen.  Now arming
+  any of them (`umem_hooks_sync()`, under `umem_cache_lock`) fills the
+  per-thread cache bin table with -1 and sets `UMF_HOOKED` on every
+  non-internal cache, so all traffic takes the slow paths, where the hook fires
+  with the request size.  Disarmed, the fast path carries no hook test and no
+  call: the bin-table load it already does proves hooks are off, and
+  `UMF_HOOKED` joins the existing `UMF_BUFTAG` mask test in the magazine layer.
+  Limits (in `umem_inspect.h` and `tools/DEBUGGING.md`): buffers already in a
+  thread's per-thread cache when hooks are armed stay there unobserved until
+  disarm or thread exit (no leak, no double issue).  `test_tool_T1_event_cb`,
+  `test_tool_T1_gdb_break` and `test_tool_T8_break_ptc` exited 1 before the fix
+  on both arches and 0 after; `XFAIL_TESTS` is now empty.  Commits `265f53e`,
+  `0c15cf5`, `7d7d717`; evidence `docs/results/r7h3/`, `r7h4/`, `r7h5/`.
+
+  **Cost, hooks disarmed** (`hotpath_ab.sh`, bench_pairs, 9 alternating pairs,
+  null first, Debian 13 gcc 14, c7i.2xlarge / c7g.2xlarge), master -> this
+  release: insn/pair +0.00 % at every point on both arches.  Throughput: every
+  point inside its null or faster, except **x86 512 B N=128 t=1 -1.43 %** (null
+  -0.10..+0.13) and one arm point 0.01 % outside.  That point's -1.43 % is the
+  alignment pin below, not the hook: with the pin in place the hook measures
+  +0.05 % there.  Without the pin the same hook measured -7.3 % at that point
+  at identical instructions (front-end uops not delivered +74 %,
+  `docs/results/r7h4/`), which is why the pin ships with it.
+
+### Changed
+
+- **The four hot entry points are 64-byte aligned** (`UMEM_HOT_ALIGN`,
+  `umem_impl.h`; `a5d4910`): `_umem_alloc`, `_umem_free`, `_umem_cache_alloc`,
+  `_umem_cache_free`.  Their start no longer moves when unrelated code earlier
+  in `umem.c` changes, which is what turned a zero-instruction change into
+  -7.3 % above.  Alone, against master: x86 512 B N=128 t=1 -1.57 %,
+  16:64 N=1 t=1 -1.07 %, every other point inside its null; arm every point
+  inside its null or faster; insn/pair 0.00..+0.07 %.  It pins function starts
+  only, not loops inside them (`ponytail:` note at the macro).
+
 - **x86_64 audit stacks were one frame deep, inside libumem; `learn` recorded the
   cache bufsize (T9).** Leading libumem frames are now dropped by text range
   (`427d63c`), and `learn` records the request size from the buftag (`3210ab9`).

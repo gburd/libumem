@@ -270,16 +270,28 @@ size_t n = umem_walk_allocated(my_cb, NULL);
    `whatis` in umem(1)/gdb/lldb do not see them (`whatis`: "not in any umem
    cache").  `umemctl whatis` does look them up in the vmem arena.
 
-4. **`umem_findleaks` filters allocator-internal caches by default.**
+4. **Event hooks and `umemctl break` divert traffic while armed.**
+   `umem events on`, `umem break ...`, `umem_inspect_set_event_cb()` and an
+   armed `umemctl break` send every allocation and free through the slow
+   path, so they see `umem_alloc`, `umem_zalloc`, `umem_cache_alloc` (the
+   `cache=` predicate works), oversize allocations, and the frees, all with
+   the size the caller asked for.  Allocation is slower while they are
+   armed.  Off, they cost nothing on the fast path.  Not seen: buffers
+   already in a thread's per-thread cache when the hook is armed stay there
+   until it is disarmed or the thread exits (no leak, no double issue), and
+   a thread that read its cache table just before arming finishes that one
+   operation unreported.  Arm before the workload you want to watch.
+
+5. **`umem_findleaks` filters allocator-internal caches by default.**
    Use `umem_walk_allocated()` directly (without the wrapper) to see
    them.  Internal caches almost never contain user leaks; they're
    slab metadata, magazine shells, and bufctl records.
 
-5. **The transaction log is a fixed-size ring buffer.**  Records older
+6. **The transaction log is a fixed-size ring buffer.**  Records older
    than the log can hold are lost.  Increase `UMEM_LOGGING=transaction=N`
    if you need more history.
 
-6. **`gdb` requires `set auto-load safe-path /` (or specific allowlists)**
+7. **`gdb` requires `set auto-load safe-path /` (or specific allowlists)**
    to load the Python extension.  `umem` sets this internally.
 
 ## Files
