@@ -385,7 +385,7 @@ record_row() {
     # 15 vmhwm_bytes 16 allocated_bytes 17 live_bytes_at_peak
     # 18 live_bytes_median 19 frag 20 frag_median 21 frag_samples
     # 22/23 cpu 24 ops_cov 25 runs 26 unstable 27 ops_floor_raised
-    # 28 alloc_failures
+    # 28 alloc_failures 29 lat_sample_every 30 lat_samples
     {
         echo ""
         echo "[[window]]"
@@ -420,6 +420,9 @@ record_row() {
         fi
         echo "ops_floor_raised = $([[ "${f[27]:-0}" == "1" ]] && echo true || echo false)"
         echo "alloc_failures = ${f[28]:-0}"
+        # Latency columns are sampled: 1 op in lat_sample_every per thread (-T).
+        echo "lat_sample_every = ${f[29]:-1}"
+        echo "lat_samples = ${f[30]:-0}"
     } >> "$OUT"
     printf '  %-12s %-18s w=%-2s ops=%-9s mops=%8.3f p99=%9s p999=%10s rss@peak=%s%s\n' \
         "${f[0]}" "$label" "$widx" "${f[3]}" \

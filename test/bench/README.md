@@ -260,6 +260,18 @@ fragmentation" was single-threaded.
 
 ### Latency
 
+Latency is **sampled**: each worker times one operation in N (`bench_main -T N`,
+default 16) with its own counter, so no shared state and no RNG are involved.
+Throughput still counts every operation. Timing every operation cost two
+`clock_gettime` calls and a t-digest insert per op. On metal at t=192 that was
+46 % (`clock_gettime`) + 30 % (`td_qsort`) of jemalloc frag samples, which
+squeezed the ratios between allocators toward 1. `-T 1` restores per-op timing.
+The CSV records the rate and the number of timed ops (`lat_sample_every`,
+`lat_samples`, the last two columns), and matrix.sh and sustained_load.sh copy
+both into their TOML output. The text output labels the block "sampled 1/N".
+A p999 from 1-in-16 sampling rests on 1/16 as many points, so treat it as an
+estimate. Compare tails only between runs taken at the same `-T`.
+
 All latency measurements in nanoseconds:
 
 - **min/max**: Minimum and maximum observed latencies
@@ -313,7 +325,7 @@ Workload:  single-thread
 Throughput: 5423156.32 ops/sec (1.84 s total)
 Operations: 10000000 total across 1 thread
 
-Latency (ns):
+Latency (ns), sampled 1/16: 625000 timed ops of 10000000:
   min:  42
   p50:  156
   p90:  189

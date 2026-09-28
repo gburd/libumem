@@ -64,6 +64,10 @@ static void print_usage(const char *prog) {
     printf("                threads (default %d).  Pool per thread =\n",
            BENCH_FRAG_LIVE_MIB_DEFAULT);
     printf("                MIB / threads / mean(MIN,MAX), at least 64 objects.\n");
+    printf("  -T N          Time 1 operation in N per thread (default %d; 1 = every\n",
+           BENCH_LAT_SAMPLE_DEFAULT);
+    printf("                op).  Throughput counts every op; the latency columns\n");
+    printf("                are a sampled estimate (CSV lat_sample_every, lat_samples).\n");
     printf("  -c            Output CSV format\n");
     printf("  -H            Print CSV header only and exit\n");
     printf("  --compare     Compare results against historical data\n");
@@ -96,6 +100,7 @@ int main(int argc, char *argv[]) {
     int iv_count = 0;
     double iv_sec = 0;
     size_t frag_live_mib = 0;
+    uint32_t lat_every = BENCH_LAT_SAMPLE_DEFAULT;
 
     /* Handle long options manually before getopt */
     for (int i = 1; i < argc; i++) {
@@ -113,7 +118,7 @@ int main(int argc, char *argv[]) {
 
     int opt;
     optind = 1;
-    while ((opt = getopt(argc, argv, "a:w:t:n:s:r:W:D:L:AcHh?")) != -1) {
+    while ((opt = getopt(argc, argv, "a:w:t:n:s:r:W:D:L:T:AcHh?")) != -1) {
         switch (opt) {
         case 'a':
             allocator_name = optarg;
@@ -162,6 +167,15 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             break;
+        case 'T': {
+            long v = strtol(optarg, NULL, 10);
+            if (v < 1 || v > 1000000) {
+                fprintf(stderr, "-T needs 1..1000000\n");
+                return 1;
+            }
+            lat_every = (uint32_t)v;
+            break;
+        }
         case 'c':
             csv_output = true;
             break;
@@ -225,6 +239,7 @@ int main(int argc, char *argv[]) {
             .min_size = min_size,
             .max_size = max_size,
             .custom_data = NULL
+            , .lat_sample_every = lat_every
         },
         {
             .name = "multi-thread",
@@ -234,6 +249,7 @@ int main(int argc, char *argv[]) {
             .min_size = min_size,
             .max_size = max_size,
             .custom_data = NULL
+            , .lat_sample_every = lat_every
         },
         {
             .name = "producer-consumer",
@@ -243,6 +259,7 @@ int main(int argc, char *argv[]) {
             .min_size = min_size,
             .max_size = max_size,
             .custom_data = NULL
+            , .lat_sample_every = lat_every
         },
         {
             /* Honours -t: it used to hard-code 1 and report threads=1 while
@@ -254,6 +271,7 @@ int main(int argc, char *argv[]) {
             .min_size = min_size,
             .max_size = max_size,
             .custom_data = NULL
+            , .lat_sample_every = lat_every
         }
     };
     int num_workloads = sizeof(workloads) / sizeof(workloads[0]);

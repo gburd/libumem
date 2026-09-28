@@ -150,7 +150,9 @@ void bench_print_stats(const bench_stats_t *stats) {
                stats->ops_cov * 100.0, stats->runs_measured,
                stats->unstable ? "  [UNSTABLE - do not gate]" : "");
     }
-    printf("\nLatency (ns):\n");
+    printf("\nLatency (ns), sampled 1/%u: %llu timed ops of %llu:\n",
+           stats->lat_sample_every, (unsigned long long)stats->latency_samples,
+           (unsigned long long)stats->total_operations);
     printf("  min:  %.0f\n", stats->latency_min);
     printf("  p50:  %.0f\n", stats->latency_p50);
     printf("  p90:  %.0f\n", stats->latency_p90);
@@ -210,6 +212,9 @@ void bench_print_stats(const bench_stats_t *stats) {
  *                    COMPLETED LESS WORK THAN REQUESTED, so its throughput is
  *                    not comparable to a run with zero.  Never inferred from
  *                    total_ops alone.
+ *   lat_sample_every N: each worker timed 1 op in N (bench_main -T), so the
+ *                    lat_* columns are SAMPLED estimates; 1 = every op
+ *   lat_samples      timed operations behind the lat_* columns
  */
 void bench_print_csv_header(void) {
     printf("allocator,workload,threads,total_ops,ops_per_thread,elapsed_sec,ops_per_sec,");
@@ -217,7 +222,7 @@ void bench_print_csv_header(void) {
     printf("rss_at_live_peak,vmhwm_bytes,allocated_bytes,live_bytes_at_peak,");
     printf("live_bytes_median,frag,frag_median,frag_samples,");
     printf("cpu_user_ms,cpu_sys_ms,ops_cov,runs,unstable,ops_floor_raised,");
-    printf("alloc_failures\n");
+    printf("alloc_failures,lat_sample_every,lat_samples\n");
 }
 
 void bench_print_csv_row(const bench_stats_t *stats) {
@@ -242,11 +247,13 @@ void bench_print_csv_row(const bench_stats_t *stats) {
                stats->frag_ratio_median, stats->frag_samples);
     else
         printf(",,%zu,", stats->frag_samples);
-    printf("%.1f,%.1f,%.4f,%d,%d,%d,%llu\n",
+    printf("%.1f,%.1f,%.4f,%d,%d,%d,%llu,%u,%llu\n",
            stats->cpu_usage.user_ms, stats->cpu_usage.sys_ms,
            stats->ops_cov, stats->runs_measured, stats->unstable,
            stats->ops_floor_raised,
-           (unsigned long long)stats->alloc_failures);
+           (unsigned long long)stats->alloc_failures,
+           stats->lat_sample_every,
+           (unsigned long long)stats->latency_samples);
 }
 
 /*
@@ -319,6 +326,24 @@ static void bench_barrier_shrink(pthread_barrier_t *b, int expected, int have) {
     free(fill);
 }
 
+/*
+ * 1-in-N latency sampling.  Each worker owns a down-counter (no shared state,
+ * no RNG) and times only the operation on which it reaches zero: two
+ * bench_get_ns() calls and one td_add per N operations instead of per
+ * operation.  Every operation is still counted for throughput.  N is
+ * workload_config_t.lat_sample_every (bench_main -T); 0 and 1 both mean "time
+ * every op".  A worker's first operation is always timed.  Per-op timing cost
+ * 46 % (clock_gettime) + 30 % (td_qsort) of jemalloc frag at t=192.
+ */
+static inline uint32_t lat_every(const workload_config_t *cfg) {
+    return cfg->lat_sample_every > 1 ? cfg->lat_sample_every : 1;
+}
+static inline int lat_take(uint32_t *tick, uint32_t every) {
+    if (--*tick != 0) return 0;
+    *tick = every;
+    return 1;
+}
+
 /* Single-threaded workload: allocate, use, free in loop.
  * operation_count is the total budget; this workload runs one thread, so the
  * per-thread count equals it (subject to the work floor). */
@@ -339,6 +364,7 @@ void workload_single_thread(allocator_ops_t *ops, bench_stats_t *stats, void *co
     uint64_t start = bench_get_ns();
     size_t total_allocated = 0;
     uint64_t completed = 0;
+    uint32_t every = lat_every(cfg), lat_tick = 1;
 
     for (uint64_t i = 0; i < nops; i++) {
         size_t size = cfg->min_size;
@@ -346,9 +372,10 @@ void workload_single_thread(allocator_ops_t *ops, bench_stats_t *stats, void *co
             size = cfg->min_size + (rand() % (cfg->max_size - cfg->min_size));
         }
 
-        uint64_t alloc_start = bench_get_ns();
+        int timed = lat_take(&lat_tick, every);
+        uint64_t alloc_start = timed ? bench_get_ns() : 0;
         void *ptr = ops->alloc(size);
-        uint64_t alloc_end = bench_get_ns();
+        uint64_t alloc_end = timed ? bench_get_ns() : 0;
 
         if (!ptr) {
             stats->alloc_failures++;
@@ -359,7 +386,7 @@ void workload_single_thread(allocator_ops_t *ops, bench_stats_t *stats, void *co
             completed++;
 
             double latency = (double)(alloc_end - alloc_start);
-            td_add(hist, latency, 1);
+            if (timed) td_add(hist, latency, 1);
 
             ops->free(ptr);
         }
@@ -383,6 +410,7 @@ void workload_single_thread(allocator_ops_t *ops, bench_stats_t *stats, void *co
     stats->latency_p90 = td_quantile(hist, 0.90);
     stats->latency_p99 = td_quantile(hist, 0.99);
     stats->latency_p999 = td_quantile(hist, 0.999);
+    stats->latency_samples = (uint64_t)td_size(hist);
 
     /* Mean from total/count */
     long long total_samples = td_size(hist);
@@ -426,6 +454,7 @@ static void* mt_worker_thread(void *arg) {
      * seed so we measure the allocator, not glibc's rand lock.
      */
     unsigned int seed = 0x9e3779b9u ^ ((unsigned int)ctx->thread_id * 2654435761u);
+    uint32_t every = lat_every(cfg), lat_tick = 1;
 
     for (uint64_t i = 0; i < ctx->ops_target; i++) {
         size_t size = cfg->min_size;
@@ -434,9 +463,10 @@ static void* mt_worker_thread(void *arg) {
                    ((size_t)rand_r(&seed) % (cfg->max_size - cfg->min_size));
         }
 
-        uint64_t alloc_start = bench_get_ns();
+        int timed = lat_take(&lat_tick, every);
+        uint64_t alloc_start = timed ? bench_get_ns() : 0;
         void *ptr = ops->alloc(size);
-        uint64_t alloc_end = bench_get_ns();
+        uint64_t alloc_end = timed ? bench_get_ns() : 0;
 
         if (!ptr) {
             ctx->failures++;
@@ -446,7 +476,7 @@ static void* mt_worker_thread(void *arg) {
             ctx->operations++;
 
             double latency = (double)(alloc_end - alloc_start);
-            td_add(ctx->latency_hist, latency, 1);
+            if (timed) td_add(ctx->latency_hist, latency, 1);
 
             ops->free(ptr);
             ctx->bytes_freed += size;
@@ -568,6 +598,7 @@ void workload_multi_thread(allocator_ops_t *ops, bench_stats_t *stats, void *con
     stats->latency_p90 = td_quantile(combined_hist, 0.90);
     stats->latency_p99 = td_quantile(combined_hist, 0.99);
     stats->latency_p999 = td_quantile(combined_hist, 0.999);
+    stats->latency_samples = (uint64_t)td_size(combined_hist);
 
     long long total_samples = td_size(combined_hist);
     double sum = 0;
@@ -836,6 +867,7 @@ static void *producer_thread(void *arg) {
     allocator_ops_t *ops = ctx->ops;
     workload_config_t *cfg = ctx->config;
     unsigned int seed = (unsigned int)(ctx->thread_id + 1);
+    uint32_t every = lat_every(cfg), lat_tick = 1;
 
     pthread_barrier_wait(ctx->start_barrier);
 
@@ -848,14 +880,15 @@ static void *producer_thread(void *arg) {
                    ((size_t)rand_r(&seed) % (cfg->max_size - cfg->min_size));
         }
 
-        uint64_t t0 = bench_get_ns();
+        int timed = lat_take(&lat_tick, every);
+        uint64_t t0 = timed ? bench_get_ns() : 0;
         void *ptr = ops->alloc(size);
-        uint64_t t1 = bench_get_ns();
+        uint64_t t1 = timed ? bench_get_ns() : 0;
 
         if (!ptr) { ctx->failures++; continue; }
         memset(ptr, 0x42, size);
 
-        td_add(ctx->latency_hist, (double)(t1 - t0), 1);
+        if (timed) td_add(ctx->latency_hist, (double)(t1 - t0), 1);
         ctx->bytes_allocated += size;
         ctx->operations++;
 
@@ -873,6 +906,7 @@ static void *producer_thread(void *arg) {
 static void *consumer_thread(void *arg) {
     pc_context_t *ctx = (pc_context_t *)arg;
     allocator_ops_t *ops = ctx->ops;
+    uint32_t every = lat_every(ctx->config), lat_tick = 1;
 
     pthread_barrier_wait(ctx->start_barrier);
 
@@ -891,10 +925,11 @@ static void *consumer_thread(void *arg) {
             continue;
         }
         if (ring_pop(ctx->ring, &ptr, &sz)) {
-            uint64_t t0 = bench_get_ns();
+            int timed = lat_take(&lat_tick, every);
+            uint64_t t0 = timed ? bench_get_ns() : 0;
             ops->free(ptr);
-            uint64_t t1 = bench_get_ns();
-            td_add(ctx->latency_hist, (double)(t1 - t0), 1);
+            uint64_t t1 = timed ? bench_get_ns() : 0;
+            if (timed) td_add(ctx->latency_hist, (double)(t1 - t0), 1);
             ctx->operations++;
         } else if (atomic_load(&ctx->ring->done)) {
             /* Drain remaining */
@@ -1064,6 +1099,7 @@ void workload_producer_consumer(allocator_ops_t *ops,
     stats->latency_p90 = td_quantile(combined, 0.90);
     stats->latency_p99 = td_quantile(combined, 0.99);
     stats->latency_p999 = td_quantile(combined, 0.999);
+    stats->latency_samples = (uint64_t)td_size(combined);
 
     long long total_samples = td_size(combined);
     double sum = 0;
@@ -1257,6 +1293,7 @@ static void *frag_worker(void *arg) {
     size_t pool_count = 0;
     size_t held = 0;                  /* this thread's live bytes */
     unsigned int seed = 42u ^ ((unsigned int)ctx->thread_id * 2654435761u);
+    uint32_t every = lat_every(cfg), lat_tick = 1;
 
     if (ctx->start_barrier) pthread_barrier_wait(ctx->start_barrier);
 
@@ -1281,9 +1318,10 @@ static void *frag_worker(void *arg) {
             size_t sz = min_sz +
                 ((size_t)rand_r(&seed) % (max_sz - min_sz + 1));
 
-            uint64_t t0 = bench_get_ns();
+            int timed = lat_take(&lat_tick, every);
+            uint64_t t0 = timed ? bench_get_ns() : 0;
             void *ptr = ops->alloc(sz);
-            uint64_t t1 = bench_get_ns();
+            uint64_t t1 = timed ? bench_get_ns() : 0;
 
             if (!ptr) {
                 /* Not an operation, and not live bytes.  Counted, because a
@@ -1293,7 +1331,7 @@ static void *frag_worker(void *arg) {
                 continue;
             }
             memset(ptr, 0xAB, sz);
-            td_add(ctx->hist, (double)(t1 - t0), 1);
+            if (timed) td_add(ctx->hist, (double)(t1 - t0), 1);
             ctx->operations++;
             ctx->bytes_allocated += sz;
 
@@ -1325,10 +1363,11 @@ static void *frag_worker(void *arg) {
             if (ctx->iv.clock && !FRAG_POLL(ctx))
                 goto stop;
             if (rand_r(&seed) % 2 == 0) {
-                uint64_t t0 = bench_get_ns();
+                int timed = lat_take(&lat_tick, every);
+                uint64_t t0 = timed ? bench_get_ns() : 0;
                 ops->free(pool[i]);
-                uint64_t t1 = bench_get_ns();
-                td_add(ctx->hist, (double)(t1 - t0), 1);
+                uint64_t t1 = timed ? bench_get_ns() : 0;
+                if (timed) td_add(ctx->hist, (double)(t1 - t0), 1);
                 ctx->operations++;
 
                 held -= pool_sz[i];
@@ -1530,6 +1569,7 @@ void workload_fragmentation(allocator_ops_t *ops,
         stats->latency_p90 = td_quantile(combined, 0.90);
         stats->latency_p99 = td_quantile(combined, 0.99);
         stats->latency_p999 = td_quantile(combined, 0.999);
+        stats->latency_samples = (uint64_t)td_size(combined);
 
         long long total_samples = td_size(combined);
         double sum = 0;
@@ -1662,6 +1702,7 @@ static void iv_finish(const workload_config_t *cfg, int k,
     st->workload_name = cfg->name;
     st->thread_count = nstarted;
     st->runs_measured = 1;
+    st->lat_sample_every = lat_every(cfg);
     st->ops_per_second = st->elapsed_seconds > 0 ?
         (double)st->total_operations / st->elapsed_seconds : 0;
     st->bytes_freed = st->bytes_allocated;
@@ -1672,6 +1713,7 @@ static void iv_finish(const workload_config_t *cfg, int k,
         st->latency_p90 = td_quantile(comb, 0.90);
         st->latency_p99 = td_quantile(comb, 0.99);
         st->latency_p999 = td_quantile(comb, 0.999);
+        st->latency_samples = (uint64_t)td_size(comb);
         double sum = 0;
         td_compress(comb);
         for (int i = 0; i < td_centroid_count(comb); i++)
@@ -1793,6 +1835,7 @@ int bench_run(allocator_ops_t *ops, workload_config_t *workload,
 
     bench_cpu_usage_t cpu_before = bench_get_cpu_usage();
 
+    stats->lat_sample_every = lat_every(workload);
     workload->fn(ops, stats, workload);
 
     bench_cpu_usage_t cpu_after = bench_get_cpu_usage();
@@ -1943,6 +1986,7 @@ int bench_append_history(const bench_stats_t *stats,
     fprintf(f, "workload = \"%s\"\n", stats->workload_name);
     fprintf(f, "ops_per_sec = %.0f\n", stats->ops_per_second);
     fprintf(f, "p99_ns = %.0f\n", stats->latency_p99);
+    fprintf(f, "lat_sample_every = %u\n", stats->lat_sample_every);
     fprintf(f, "peak_rss_mb = %.1f\n",
             stats->peak_rss_bytes / (1024.0 * 1024.0));
     fprintf(f, "cpu_user_ms = %.0f\n", stats->cpu_usage.user_ms);
