@@ -2271,24 +2271,6 @@ umem_cache_alloc_debug(umem_cache_t *cp, void *buf, int umflag)
 	return (0);
 }
 
-/*
- * Magazine/rseq-pop tail of _umem_cache_alloc, reached only when the CPU
- * cache's cc_flags has UMF_BUFTAG or UMF_HOOKED -- the same single mask test
- * the debug check always had, so a hooks-off pop pays nothing new (T1/T8).
- * Called with no umem lock held: a umemctl break may park the thread here.
- */
-static __attribute__((noinline)) int
-umem_cache_alloc_tail(umem_cache_t *cp, umem_cpu_cache_t *ccp, void *buf,
-    int umflag)
-{
-	if ((ccp->cc_flags & UMF_BUFTAG) &&
-	    umem_cache_alloc_debug(cp, buf, umflag) == -1)
-		return (-1);
-	if (ccp->cc_flags & UMF_HOOKED)
-		umem_hook_alloc(buf, cp->cache_bufsize, cp);
-	return (0);
-}
-
 static int
 umem_cache_free_debug(umem_cache_t *cp, void *buf)
 {
@@ -3812,13 +3794,22 @@ retry:
 						buf = umem_rseq_alloc_fastpath(rc, cpu);
 					}
 					if (buf != NULL) {
+						/* one mask test, as before T1/T8 */
 						if (unlikely(ccp->cc_flags &
-						    (UMF_BUFTAG | UMF_HOOKED)) &&
-						    umem_cache_alloc_tail(cp, ccp,
-						    buf, umflag) == -1) {
-							if (umem_alloc_retry(cp, umflag))
-								goto retry;
-							return (NULL);
+						    (UMF_BUFTAG | UMF_HOOKED))) {
+							if ((ccp->cc_flags &
+							    UMF_BUFTAG) &&
+							    umem_cache_alloc_debug(
+							    cp, buf, umflag) == -1) {
+								if (umem_alloc_retry(
+								    cp, umflag))
+									goto retry;
+								return (NULL);
+							}
+							if (ccp->cc_flags & UMF_HOOKED)
+								return (umem_hook_alloc(
+								    buf, cp->cache_bufsize,
+								    cp));
 						}
 						return (buf);
 					}
@@ -3845,14 +3836,19 @@ retry:
 			    ccp->cc_loaded->mag_round[rounds - 1]);
 			ccp->cc_alloc++;
 			(void) mutex_unlock(&ccp->cc_lock);
+			/* one mask test, as before T1/T8 */
 			if (unlikely(ccp->cc_flags &
-			    (UMF_BUFTAG | UMF_HOOKED)) &&
-			    umem_cache_alloc_tail(cp, ccp, buf, umflag) == -1) {
-				if (umem_alloc_retry(cp, umflag)) {
-					goto retry;
+			    (UMF_BUFTAG | UMF_HOOKED))) {
+				if ((ccp->cc_flags & UMF_BUFTAG) &&
+				    umem_cache_alloc_debug(cp, buf,
+				    umflag) == -1) {
+					if (umem_alloc_retry(cp, umflag))
+						goto retry;
+					return (NULL);
 				}
-
-				return (NULL);
+				if (ccp->cc_flags & UMF_HOOKED)	/* T1/T8 */
+					return (umem_hook_alloc(buf,
+					    cp->cache_bufsize, cp));
 			}
 			return (buf);
 		}
@@ -4070,7 +4066,7 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	if (unlikely(buf == NULL))
 		return;
 
-	/* Same single mask test as before; see umem_cache_alloc_tail. */
+	/* One mask test, as before T1/T8; hooked part only when set. */
 	if (unlikely(ccp->cc_flags & (UMF_BUFTAG | UMF_HOOKED))) {
 		if ((ccp->cc_flags & UMF_BUFTAG) &&
 		    umem_cache_free_debug(cp, buf) == -1)
