@@ -1,0 +1,5 @@
+v4     +24 busy: distinct=[ 6 5 6 6 4 4 5 5 4 4 7 6 5 4 4 6 6 4 5 5 ] fails(<4)=0/20
+v3.3.3 +24 busy: distinct=[ 5 5 5 6 6 5 4 5 6 5 5 5 5 6 5 5 6 7 6 5 ] fails(<4)=0/20
+v4     +64 busy: distinct=[ 6 5 5 5 5 5 5 6 6 7 5 5 6 6 6 6 5 8 7 6 ] fails(<4)=0/20
+v3.3.3 +64 busy: distinct=[ 6 5 4 3 3 3 5 6 5 6 6 6 6 6 6 6 6 5 5 6 ] fails(<4)=3/20
+done

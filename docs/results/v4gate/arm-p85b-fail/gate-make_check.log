@@ -1,0 +1,89 @@
+make  check-TESTS
+make[1]: Entering directory '/home/admin/libumem-iso-v4gate-b8e0e02438df'
+make[2]: Entering directory '/home/admin/libumem-iso-v4gate-b8e0e02438df'
+PASS: test/unit/test_aligned_contracts
+PASS: test/unit/test_hash_partition
+SKIP: test/debugger/test_introspect_contracts.sh
+PASS: test/bench/test_bench_missing_alloc.sh
+PASS: test/stress/test_norseq.sh
+PASS: test/stress/oracle_control.sh
+PASS: test/integration/test_fork_ptc_drain_probe
+PASS: test/bench/check_budget.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/stress/oracle_fast.sh
+PASS: test/integration/test_ptc_footprint
+PASS: test/integration/test_ptc_mag_primed
+PASS: test/integration/test_depot_empty_scan
+PASS: test/integration/test_oversize_vma.sh
+PASS: test/integration/test_first_alloc_small_stack.sh
+PASS: test/security/test_no_path_exec.sh
+PASS: test/security/test_secure_env_gate.sh
+PASS: test/security/test_writer_nofollow.sh
+PASS: test/integration/test_ptc_thread_exit_drain_probe
+PASS: test/security/test_errlog_signal.sh
+PASS: test/security/test_abort_option.sh
+PASS: test/security/test_stack_bounds.sh
+SKIP: test/security/test_introspect_sock_path.sh
+PASS: test/debugger/test_tool_T1_event_cb.sh
+SKIP: test/debugger/test_tool_T2_monitor.sh
+SKIP: test/debugger/test_tool_T7_learn_noaudit.sh
+PASS: test/debugger/test_tool_T10_walk_log.sh
+SKIP: test/debugger/test_tool_T12_rearm.sh
+PASS: test/stress/interpose_regress.sh
+PASS: test/integration/test_reclaim_returns.sh
+SKIP: test/debugger/test_tool_T3_whatis_oversize.sh
+SKIP: test/debugger/test_tool_T6_whatis_colour.sh
+PASS: test/debugger/test_tool_T14_lldb_status.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/unit/test_overflow_contracts
+PASS: test/unit/test_free_null
+PASS: test/integration/test_fork_child_reclaim.sh
+PASS: test/unit/test_slab_floor
+PASS: test/unit/test_slab_member
+PASS: test/debugger/test_tool_T1_gdb_break.sh
+PASS: test/unit/test_lifecycle_churn
+PASS: test/unit/test_freelist_mangle
+PASS: test/unit/test_hook_contracts
+PASS: test/security/test_reap_interval_zero.sh
+FAIL: test/integration/test_cpu_hint_spread
+PASS: test/integration/test_cache_footprint
+PASS: test/security/test_errno_preserved
+PASS: test/security/test_free_errno
+PASS: test/security/test_forged_free
+PASS: test/security/test_forged_span_gap
+PASS: test/security/test_forged_bootstrap
+PASS: test/security/test_ptc_slot_mangle
+PASS: test/security/test_ptc_adjacency
+PASS: test/security/test_mag_round_mangle
+SKIP: test/security/test_introspect_peer_uid
+PASS: test/bench/test_bench_accounting
+PASS: test/unit/test_inspect_contracts
+PASS: test/debugger/test_tool_T13_gdb_error_code.sh
+PASS: test/integration/test_heap_ceiling_512.sh
+PASS: test/integration/test_ptc_resize_no_loss_probe
+PASS: test/integration/test_heap_ceiling
+============================================================================
+Testsuite summary for umem 4.0.0
+============================================================================
+# TOTAL: 68
+# PASS:  57
+# SKIP:  10
+# XFAIL: 0
+# FAIL:  1
+# XPASS: 0
+# ERROR: 0
+============================================================================
+See ./test-suite.log for debugging.
+============================================================================
+make[2]: *** [Makefile:7027: test-suite.log] Error 1
+make[2]: Leaving directory '/home/admin/libumem-iso-v4gate-b8e0e02438df'
+make[1]: *** [Makefile:7162: check-TESTS] Error 2
+make[1]: Leaving directory '/home/admin/libumem-iso-v4gate-b8e0e02438df'
+make: *** [Makefile:7602: check-am] Error 2

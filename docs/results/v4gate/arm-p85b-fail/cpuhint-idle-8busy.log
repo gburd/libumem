@@ -1,0 +1,6 @@
+nproc=8 6.12.107+deb13-cloud-arm64
+v4    idle: distinct=[ 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 ] fails(<4)=0/20
+v3.3.3 idle: distinct=[ 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 8 ] fails(<4)=0/20
+v4    +8 busy loops: distinct=[ 7 8 7 7 7 7 7 8 6 7 8 7 8 7 7 7 8 7 7 7 ] fails(<4)=0/20
+v3.3.3 +8 busy loops: distinct=[ 8 7 7 7 7 7 7 7 7 7 7 8 8 7 8 7 7 7 8 7 ] fails(<4)=0/20
+done

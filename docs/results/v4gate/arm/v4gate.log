@@ -1,0 +1,60 @@
+
+=== 1. default build + make check ===
+build_rc=0
+check_rc=0
+# TOTAL: 68
+# PASS:  56
+# SKIP:  12
+# FAIL:  0
+# ERROR: 0
+
+=== 2. comprehensive unit suite ===
+test_main_rc=0
+==================
+All tests passed!
+
+=== 3. property tests (each rc captured immediately) ===
+prop_alloc_free2 rc=0
+prop_cache rc=0
+prop_fragmentation rc=0
+prop_ownership rc=0
+
+=== 4. concurrency oracle ===
+allocs_ok=273755188 alloc_failures=0
+Result: PASS (no aliasing or corruption; 273755188 successful allocations, 0 failures)
+oracle_rc=0
+
+=== 5. clean source tarball ===
+dist_rc=0
+tarball=umem-4.0.0.tar.gz
+tarball_rc=0
+# TOTAL: 68
+# PASS:  56
+# FAIL:  0
+
+=== 6. installed prefix ===
+install_rc=0
+external_compile_rc=0
+external_run_rc=0
+
+=== 6b. timing regressions, standalone (quiet box, 77 is a FAIL here) ===
+RESULT: PASS (preload/API 0.508 >= 0.48, null min 0.979)
+interpose_ratio_rc=0
+
+=== 7. RELEASE configuration: -O3 -DNDEBUG, the binary that actually ships ===
+ndebug_build_rc=0
+ndebug_check_rc=0
+# TOTAL: 68
+# PASS:  56
+# SKIP:  12
+# FAIL:  0
+# ERROR: 0
+ndebug_test_main_rc=0
+==================
+All tests passed!
+Result: PASS (no aliasing or corruption; 305455095 successful allocations, 0 failures)
+ndebug_oracle_rc=0
+
+=== GATE RESULT ===
+gate_failures=0
+GATE: PASS

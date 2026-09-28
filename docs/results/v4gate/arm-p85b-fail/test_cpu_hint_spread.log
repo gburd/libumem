@@ -1,0 +1,4 @@
+cache=umem_alloc_10240  per-cpu caches=8  threads=8  cc_alloc: 0 0 0 62468 0 0 199999 510834
+distinct per-cpu caches used: 3 (need >= 4)
+RESULT: FAIL (8 threads collapsed onto 3 per-CPU cache(s): the CPU hint does not spread threads -- every magazine-layer operation serialises on one cc_lock)
+FAIL test/integration/test_cpu_hint_spread (exit status: 1)

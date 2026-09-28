@@ -1,0 +1,103 @@
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+gcc (Debian 14.2.0-19) 14.2.0
+
+=== 0. build ===
+build_rc=0
+libtool: link: gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -o test/security/.libs/test_forged_span_gap test/security/test_forged_span_gap-test_forged_span_gap.o  ./.libs/libumem.so ./.libs/libumem_malloc.so -ldl -ldw
+libtool: link: gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -o test/security/.libs/test_forged_bootstrap test/security/test_forged_bootstrap-test_forged_bootstrap.o  ./.libs/libumem.so ./.libs/libumem_malloc.so -ldl -ldw
+make[1]: Leaving directory '/home/admin/libumem-iso-v4gate-b8e0e02438df'
+
+=== 1. sonames ===
+.libs/libumem.so -> libumem.so.2.0.0 SONAME=libumem.so.2
+.libs/libumem_malloc.so -> libumem_malloc.so.1.0.0 SONAME=libumem_malloc.so.1
+libumem_malloc NEEDED: libumem.so.2 libc.so.6 
+
+=== 2. no umem_sm_ / sm_ exports ===
+umem_sm_ exports: 0
+any sm_ symbol at all: 0
+libumem.so defined_exports=285
+libumem_malloc.so defined_exports=12
+
+=== 3. baseline v3.3.3 exports ===
+v333_build_rc=0
+v3.3.3 libumem.so defined_exports=371 umem_sm_=85
+removed (v3.3.3 -> v4): 86, of which umem_sm_: 85
+removed non-sm: umem_sparsemap 
+added: 
+libumem_malloc exports: identical to v3.3.3
+
+=== 4. LD_PRELOAD via the .so.1 drop-in still works ===
+preload_ls_rc=0
+8
+
+=== 5. exit_criteria_gate ===
+gate_rc=0
+=== 1. default build + make check ===
+build_rc=0
+check_rc=0
+# TOTAL: 68
+# PASS:  56
+# SKIP:  12
+# FAIL:  0
+# ERROR: 0
+=== 2. comprehensive unit suite ===
+test_main_rc=0
+=== 3. property tests (each rc captured immediately) ===
+prop_alloc_free2 rc=0
+prop_cache rc=0
+prop_fragmentation rc=0
+prop_ownership rc=0
+=== 4. concurrency oracle ===
+oracle_rc=0
+=== 5. clean source tarball ===
+dist_rc=0
+tarball=umem-4.0.0.tar.gz
+tarball_rc=0
+# TOTAL: 68
+# PASS:  56
+# FAIL:  0
+=== 6. installed prefix ===
+install_rc=0
+external_compile_rc=0
+external_run_rc=0
+=== 6b. timing regressions, standalone (quiet box, 77 is a FAIL here) ===
+RESULT: PASS (preload/API 0.508 >= 0.48, null min 0.979)
+interpose_ratio_rc=0
+=== 7. RELEASE configuration: -O3 -DNDEBUG, the binary that actually ships ===
+ndebug_build_rc=0
+ndebug_check_rc=0
+# TOTAL: 68
+# PASS:  56
+# SKIP:  12
+# FAIL:  0
+# ERROR: 0
+ndebug_test_main_rc=0
+ndebug_oracle_rc=0
+=== GATE RESULT ===
+GATE: PASS
+
+=== 6. --enable-introspect make check ===
+introspect_rc=0
+# TOTAL: 68
+# PASS:  66
+# SKIP:  2
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+
+=== 7. P8.5b regressions ===
+p85b_rc=1
+GATE make_check FAIL rc=2
+GATE rseq_fastpath_6bug PASS
+GATE trailing_store PASS
+GATE commit_safe PASS
+GATE resize_leak_16 PASS
+GATE resize_leak_32 PASS
+GATE alias_e2e PASS
+GATE commit_abort PASS fails=0/30
+GATE oracle_small PASS
+GATE oracle_mag PASS
+GATE oracle_mixed PASS
+GATE oracle_large PASS
+=== v4gate done
