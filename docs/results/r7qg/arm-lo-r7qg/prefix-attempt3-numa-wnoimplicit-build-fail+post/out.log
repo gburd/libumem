@@ -1,0 +1,242 @@
+######## PART A: PRE-FIX
+base=6705310 (6705310994e8a52c58949f54daad1560f2e97402)
+overlay=test/stress/repro_interpose_free_ratio.c from 3816199 blob cd93d73cd625ea5997908d9491db2a79b6574c38
+role=arm-lo@r7qg
+REGEN_OK
+1
+#define HAVE_LIBNUMA 1
+      |                         ^
+umem.c:779:25: note: (near initialization for 'umem_null_cache.cache_mag_total')
+umem.c:780:25: warning: excess elements in scalar initializer
+  780 |                         0,                      /* cc_magsize */
+      |                         ^
+umem.c:780:25: note: (near initialization for 'umem_null_cache.cache_mag_total')
+umem.c:781:25: warning: excess elements in scalar initializer
+  781 |                         0                       /* cc_flags */
+      |                         ^
+umem.c:781:25: note: (near initialization for 'umem_null_cache.cache_mag_total')
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-umem_introspect.lo -MD -MP -MF .deps/libumem_ptcprobe_la-umem_introspect.Tpo -c umem_introspect.c  -fPIC -DPIC -o .libs/libumem_ptcprobe_la-umem_introspect.o
+umem.c: In function 'umem_init':
+umem.c:6046:21: warning: implicit declaration of function 'numa_available' [-Wimplicit-function-declaration]
+ 6046 |                 if (numa_available() >= 0) {
+      |                     ^~~~~~~~~~~~~~
+umem.c:6047:42: warning: implicit declaration of function 'numa_max_node' [-Wimplicit-function-declaration]
+ 6047 |                         umem_num_nodes = numa_max_node() + 1;
+      |                                          ^~~~~~~~~~~~~
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-umem_audit.lo -MD -MP -MF .deps/libumem_ptcprobe_la-umem_audit.Tpo -c umem_audit.c -o libumem_ptcprobe_la-umem_audit.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-umem_introspect.lo -MD -MP -MF .deps/libumem_ptcprobe_la-umem_introspect.Tpo -c umem_introspect.c -o libumem_ptcprobe_la-umem_introspect.o >/dev/null 2>&1
+umem.c:6049:44: warning: implicit declaration of function 'numa_node_of_cpu' [-Wimplicit-function-declaration]
+ 6049 |                                 int node = numa_node_of_cpu((int)ci);
+      |                                            ^~~~~~~~~~~~~~~~
+mv -f .deps/libumem_ptcprobe_la-umem_introspect.Tpo .deps/libumem_ptcprobe_la-umem_introspect.Plo
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.  -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free  -D_UMEM_INTERNAL       -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-umem_hooks.lo -MD -MP -MF .deps/libumem_ptcprobe_la-umem_hooks.Tpo -c -o libumem_ptcprobe_la-umem_hooks.lo `test -f 'umem_hooks.c' || echo './'`umem_hooks.c
+make[1]: *** [Makefile:4103: libumem_ptcprobe_la-umem.lo] Error 1
+make[1]: *** Waiting for unfinished jobs....
+mv -f .deps/libumem_ptcprobe_la-malloc.Tpo .deps/libumem_ptcprobe_la-malloc.Plo
+mv -f .deps/libumem_ptcprobe_la-umem_audit.Tpo .deps/libumem_ptcprobe_la-umem_audit.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-umem_hooks.lo -MD -MP -MF .deps/libumem_ptcprobe_la-umem_hooks.Tpo -c umem_hooks.c  -fPIC -DPIC -o .libs/libumem_ptcprobe_la-umem_hooks.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-umem_hooks.lo -MD -MP -MF .deps/libumem_ptcprobe_la-umem_hooks.Tpo -c umem_hooks.c -o libumem_ptcprobe_la-umem_hooks.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-vmem.lo -MD -MP -MF .deps/libumem_ptcprobe_la-vmem.Tpo -c vmem.c -o libumem_ptcprobe_la-vmem.o >/dev/null 2>&1
+mv -f .deps/libumem_ptcprobe_la-umem_hooks.Tpo .deps/libumem_ptcprobe_la-umem_hooks.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-umem_inspect.lo -MD -MP -MF .deps/libumem_ptcprobe_la-umem_inspect.Tpo -c umem_inspect.c -o libumem_ptcprobe_la-umem_inspect.o >/dev/null 2>&1
+mv -f .deps/libumem_ptcprobe_la-vmem.Tpo .deps/libumem_ptcprobe_la-vmem.Plo
+mv -f .deps/libumem_ptcprobe_la-umem_inspect.Tpo .deps/libumem_ptcprobe_la-umem_inspect.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -DUMEM_PTC_RESIZE_PROBE -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -Wno-error=implicit-function-declaration -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT libumem_ptcprobe_la-sm.lo -MD -MP -MF .deps/libumem_ptcprobe_la-sm.Tpo -c sm.c -o libumem_ptcprobe_la-sm.o >/dev/null 2>&1
+mv -f .deps/libumem_ptcprobe_la-sm.Tpo .deps/libumem_ptcprobe_la-sm.Plo
+make[1]: Leaving directory '/home/admin/libumem-r7qg-prefix'
+make: *** [Makefile:2734: all] Error 2
+PART_A_RC=2
+######## PART B: POST 3816199
+ref=3816199
+sha=381619938465bc0ce6ad348567caf069185bef41
+role=arm-lo@r7qg
+isolated=yes (git archive)
+REGEN_OK
+BUILD_OK
+aarch64
+7430c16bccfd073126726a85f6a87fbb12e8ac4f24ade2307d50650e584b0dcb  test/stress/repro_interpose_free_ratio.c
+12e3c867ac5926355d09aae305105077dddf9b9dab81e2bf678659fd065672df  .libs/libumem_malloc.so
+=== POST interpose_regress run 1 01:48:54
+ 01:48:54 up 8 min,  1 user,  load average: 1.88, 0.76, 0.31
+== calloc race (control, no preload) ==
+calloc-interpose-race: threads=16 iters=2000
+  allocs=32000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== calloc race (LD_PRELOAD interposer) ==
+calloc-interpose-race: threads=16 iters=20000
+  allocs=320000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== aligned contracts (control, no preload) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [control]
+  info: system aligned_alloc(3,16)=NULL, (0,16)=NULL (C11 leaves this undefined; not required of the control allocator)
+PASS (0 failures)
+== aligned contracts (LD_PRELOAD interposer) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [strict]
+PASS (0 failures)
+== free() thread scaling (LD_PRELOAD interposer) ==
+aggregate ops/s: t=1 36.24M  t=8 275.19M  ratio=7.59x
+RESULT: PASS (free() scales; no global serialization on the hot path)
+== free() per-call cost vs API (LD_PRELOAD interposer) ==
+t=8 9 pairs: null API/API median 0.992 min 0.977; preload/API median 0.503 min 0.499; bar 0.48
+RESULT: PASS (preload/API 0.503 >= 0.48, null min 0.977)
+PASS: interposer regressions
+RC POST interpose_regress run 1 = 0
+=== POST interpose_regress run 2 01:48:54
+ 01:48:54 up 8 min,  1 user,  load average: 1.88, 0.76, 0.31
+== calloc race (control, no preload) ==
+calloc-interpose-race: threads=16 iters=2000
+  allocs=32000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== calloc race (LD_PRELOAD interposer) ==
+calloc-interpose-race: threads=16 iters=20000
+  allocs=320000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== aligned contracts (control, no preload) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [control]
+  info: system aligned_alloc(3,16)=NULL, (0,16)=NULL (C11 leaves this undefined; not required of the control allocator)
+PASS (0 failures)
+== aligned contracts (LD_PRELOAD interposer) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [strict]
+PASS (0 failures)
+== free() thread scaling (LD_PRELOAD interposer) ==
+aggregate ops/s: t=1 36.07M  t=8 278.10M  ratio=7.71x
+RESULT: PASS (free() scales; no global serialization on the hot path)
+== free() per-call cost vs API (LD_PRELOAD interposer) ==
+t=8 9 pairs: null API/API median 0.998 min 0.914; preload/API median 0.505 min 0.499; bar 0.48
+RESULT: PASS (preload/API 0.505 >= 0.48, null min 0.914)
+PASS: interposer regressions
+RC POST interpose_regress run 2 = 0
+=== POST interpose_regress run 3 01:48:55
+ 01:48:55 up 8 min,  1 user,  load average: 1.97, 0.80, 0.32
+== calloc race (control, no preload) ==
+calloc-interpose-race: threads=16 iters=2000
+  allocs=32000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== calloc race (LD_PRELOAD interposer) ==
+calloc-interpose-race: threads=16 iters=20000
+  allocs=320000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== aligned contracts (control, no preload) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [control]
+  info: system aligned_alloc(3,16)=NULL, (0,16)=NULL (C11 leaves this undefined; not required of the control allocator)
+PASS (0 failures)
+== aligned contracts (LD_PRELOAD interposer) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [strict]
+PASS (0 failures)
+== free() thread scaling (LD_PRELOAD interposer) ==
+aggregate ops/s: t=1 36.35M  t=8 275.65M  ratio=7.58x
+RESULT: PASS (free() scales; no global serialization on the hot path)
+== free() per-call cost vs API (LD_PRELOAD interposer) ==
+t=8 9 pairs: null API/API median 0.995 min 0.976; preload/API median 0.506 min 0.491; bar 0.48
+RESULT: PASS (preload/API 0.506 >= 0.48, null min 0.976)
+PASS: interposer regressions
+RC POST interpose_regress run 3 = 0
+POST interpose_regress exiting 0: 3/3
+=== make check -j8 01:49:01
+ 01:49:01 up 8 min,  1 user,  load average: 1.81, 0.79, 0.32
+make  check-TESTS
+make[1]: Entering directory '/home/admin/libumem-r7qg-post'
+make[2]: Entering directory '/home/admin/libumem-r7qg-post'
+PASS: test/unit/test_aligned_contracts
+PASS: test/unit/test_hash_partition
+SKIP: test/debugger/test_introspect_contracts.sh
+PASS: test/bench/test_bench_missing_alloc.sh
+PASS: test/stress/test_norseq.sh
+PASS: test/stress/oracle_control.sh
+PASS: test/integration/test_fork_ptc_drain_probe
+PASS: test/bench/check_budget.sh
+SKIP: test/integration/test_heap_ceiling_512.sh
+PASS: test/debugger/test_lldb_e2e.sh
+PASS: test/debugger/test_inspect_e2e.sh
+PASS: test/integration/test_ptc_footprint
+PASS: test/integration/test_ptc_mag_primed
+PASS: test/stress/oracle_fast.sh
+PASS: test/integration/test_oversize_vma.sh
+PASS: test/integration/test_first_alloc_small_stack.sh
+PASS: test/security/test_no_path_exec.sh
+PASS: test/security/test_secure_env_gate.sh
+PASS: test/security/test_writer_nofollow.sh
+PASS: test/integration/test_depot_empty_scan
+PASS: test/security/test_errlog_signal.sh
+PASS: test/security/test_abort_option.sh
+PASS: test/security/test_stack_bounds.sh
+SKIP: test/security/test_introspect_sock_path.sh
+XFAIL: test/debugger/test_tool_T1_event_cb.sh
+SKIP: test/debugger/test_tool_T2_monitor.sh
+SKIP: test/debugger/test_tool_T7_learn_noaudit.sh
+PASS: test/integration/test_ptc_thread_exit_drain_probe
+SKIP: test/debugger/test_tool_T12_rearm.sh
+PASS: test/debugger/test_tool_T10_walk_log.sh
+PASS: test/debugger/test_tool_T14_lldb_status.sh
+SKIP: test/debugger/test_tool_T3_whatis_oversize.sh
+SKIP: test/debugger/test_tool_T6_whatis_colour.sh
+PASS: test/integration/test_reclaim_returns.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+PASS: umem_test
+PASS: umem_test2
+PASS: umem_test3
+PASS: umem_ptc_fork_test
+PASS: test/test_debug
+PASS: test/unit/test_overflow_contracts
+PASS: test/unit/test_free_null
+PASS: test/unit/test_slab_floor
+PASS: test/unit/test_slab_member
+PASS: test/security/test_reap_interval_zero.sh
+PASS: test/unit/test_hook_contracts
+PASS: test/unit/test_lifecycle_churn
+PASS: test/stress/interpose_regress.sh
+PASS: test/unit/test_freelist_mangle
+SKIP: test/integration/test_heap_ceiling
+PASS: test/integration/test_cpu_hint_spread
+PASS: test/integration/test_fork_child_reclaim.sh
+PASS: test/integration/test_cache_footprint
+PASS: test/security/test_free_errno
+PASS: test/security/test_errno_preserved
+PASS: test/security/test_forged_free
+PASS: test/security/test_forged_span_gap
+PASS: test/security/test_forged_bootstrap
+PASS: test/security/test_ptc_slot_mangle
+PASS: test/security/test_mag_round_mangle
+SKIP: test/security/test_introspect_peer_uid
+PASS: test/security/test_ptc_adjacency
+PASS: test/bench/test_bench_accounting
+PASS: test/unit/test_inspect_contracts
+PASS: test/debugger/test_tool_T13_gdb_error_code.sh
+PASS: test/integration/test_ptc_resize_no_loss_probe
+XFAIL: test/debugger/test_tool_T1_gdb_break.sh
+============================================================================
+Testsuite summary for umem 3.3.2
+============================================================================
+# TOTAL: 68
+# PASS:  54
+# SKIP:  12
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+============================================================================
+make[2]: Leaving directory '/home/admin/libumem-r7qg-post'
+make[1]: Leaving directory '/home/admin/libumem-r7qg-post'
+RC make check = 0
+==================================
+   umem 3.3.2: ./test-suite.log
+==================================
+
+# TOTAL: 68
+# PASS:  54
+# SKIP:  12
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+
+System information (uname -a): Linux 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64
+Distribution information (/etc/os-release):
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=13.7
+PART_B_RC=0

@@ -1,0 +1,130 @@
+==================================
+   umem 3.3.2: ./test-suite.log
+==================================
+
+# TOTAL: 68
+# PASS:  54
+# SKIP:  12
+# XFAIL: 2
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+
+System information (uname -a): Linux 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64
+Distribution information (/etc/os-release):
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=13.7
+ID=debian
+HOME_URL="https://www.debian.org/"
+
+.. contents:: :depth: 2
+
+SKIP: test/debugger/test_introspect_contracts
+=============================================
+
+SKIP: built without --enable-introspect (no channel to test)
+SKIP test/debugger/test_introspect_contracts.sh (exit status: 77)
+
+SKIP: test/integration/test_heap_ceiling
+========================================
+
+SKIP: vm.max_map_count is 1048576 (raised well above the 65530 default), so this check cannot distinguish the fix from a permissive kernel
+SKIP test/integration/test_heap_ceiling (exit status: 77)
+
+SKIP: test/integration/test_heap_ceiling_512
+============================================
+
+SKIP: vm.max_map_count is 1048576 (raised well above the 65530 default), so this check cannot distinguish the fix from a permissive kernel
+SKIP test/integration/test_heap_ceiling_512.sh (exit status: 77)
+
+SKIP: test/security/test_introspect_sock_path
+=============================================
+
+SKIP: built without --enable-introspect (no channel to test)
+SKIP test/security/test_introspect_sock_path.sh (exit status: 77)
+
+SKIP: test/security/test_introspect_peer_uid
+============================================
+
+SKIP: built without --enable-introspect (no control channel, no peer check)
+SKIP test/security/test_introspect_peer_uid (exit status: 77)
+
+XFAIL: test/debugger/test_tool_T1_event_cb
+==========================================
+
+event callback hits: alloc=0 free=0 (1800 allocations made)
+FAIL: T1 umem_inspect_set_event_cb() callback never ran for alloc/free with events enabled
+T1 REPRODUCES: 1800 allocations, alloc callbacks=0 free=0
+XFAIL test/debugger/test_tool_T1_event_cb.sh (exit status: 1)
+
+SKIP: test/debugger/test_tool_T2_monitor
+========================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T2_monitor.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T7_learn_noaudit
+==============================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T7_learn_noaudit.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T12_rearm
+=======================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T12_rearm.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T3_whatis_oversize
+================================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T3_whatis_oversize.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T6_whatis_colour
+==============================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T6_whatis_colour.sh (exit status: 77)
+
+XFAIL: test/debugger/test_tool_T1_gdb_break
+===========================================
+
+--- gdb control
+Breakpoint 1 at 0x7fd50de81480: file umem.c, line 4267.
+Thread 2 "tool_target" hit Breakpoint 1, _umem_alloc (size=size@entry=70000, umflag=umflag@entry=0) at umem.c:4267
+#0  _umem_alloc (size=size@entry=70000, umflag=umflag@entry=0) at umem.c:4267
+#1  0x0000559851a55923 in churn (arg=<optimized out>) at test/debugger/tool_target.c:123
+#2  0x00007fd50dc9e8bb in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:448
+--- gdb alloc
+Breakpoint 1 at 0x7fd50de88fd0: file umem_inspect.c, line 87.
+Thread 1 "tool_target" received signal SIGUSR2, User defined signal 2.
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fd50dc9b388 in __internal_syscall_cancel (a1=a1@entry=0, a2=a2@entry=0, a3=a3@entry=140723370224704, a4=a4@entry=140723370224704, a5=a5@entry=0, a6=a6@entry=0, nr=230) at ./nptl/cancellation.c:49
+#2  0x00007fd50dce7cfa in __GI___clock_nanosleep (clock_id=<optimized out>, clock_id@entry=0, flags=flags@entry=0, req=req@entry=0x7ffcb67e6c40, rem=rem@entry=0x7ffcb67e6c40) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:48
+--- gdb free
+Breakpoint 1 at 0x7fd50de88fe0: file umem_inspect.c, line 95.
+Thread 1 "tool_target" received signal SIGUSR2, User defined signal 2.
+#0  __syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/x86_64/syscall_cancel.S:56
+#1  0x00007fd50dc9b388 in __internal_syscall_cancel (a1=a1@entry=0, a2=a2@entry=0, a3=a3@entry=140723370224704, a4=a4@entry=140723370224704, a5=a5@entry=0, a6=a6@entry=0, nr=230) at ./nptl/cancellation.c:49
+#2  0x00007fd50dce7cfa in __GI___clock_nanosleep (clock_id=<optimized out>, clock_id@entry=0, flags=flags@entry=0, req=req@entry=0x7ffcb67e6c40, rem=rem@entry=0x7ffcb67e6c40) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:48
+T1 REPRODUCES: umem break alloc never stopped
+T1 REPRODUCES: umem break free never stopped
+XFAIL test/debugger/test_tool_T1_gdb_break.sh (exit status: 1)
+
+SKIP: test/debugger/test_tool_T8_break_ptc
+==========================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T8_break_ptc.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T9_leak_stack
+===========================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)
+

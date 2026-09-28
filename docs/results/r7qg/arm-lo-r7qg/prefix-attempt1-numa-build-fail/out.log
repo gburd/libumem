@@ -1,0 +1,44 @@
+base=6705310 (6705310994e8a52c58949f54daad1560f2e97402)
+overlay=test/stress/repro_interpose_free_ratio.c from 3816199 blob cd93d73cd625ea5997908d9491db2a79b6574c38
+role=arm-lo@r7qg
+REGEN_OK
+      |                         ^
+umem.c:780:25: note: (near initialization for 'umem_null_cache.cache_mag_total')
+umem.c:781:25: warning: excess elements in scalar initializer
+  781 |                         0                       /* cc_flags */
+      |                         ^
+umem.c:781:25: note: (near initialization for 'umem_null_cache.cache_mag_total')
+umem.c: In function 'umem_init':
+umem.c:6046:21: error: implicit declaration of function 'numa_available' [-Wimplicit-function-declaration]
+ 6046 |                 if (numa_available() >= 0) {
+      |                     ^~~~~~~~~~~~~~
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_introspect.lo -MD -MP -MF .deps/umem_introspect.Tpo -c umem_introspect.c  -fPIC -DPIC -o .libs/umem_introspect.o
+umem.c:6047:42: error: implicit declaration of function 'numa_max_node' [-Wimplicit-function-declaration]
+ 6047 |                         umem_num_nodes = numa_max_node() + 1;
+      |                                          ^~~~~~~~~~~~~
+umem.c:6049:44: error: implicit declaration of function 'numa_node_of_cpu' [-Wimplicit-function-declaration]
+ 6049 |                                 int node = numa_node_of_cpu((int)ci);
+      |                                            ^~~~~~~~~~~~~~~~
+depbase=`echo umem_hooks.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.  -DSPARSEMAP_PREFIX=umem_  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free  -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hooks.lo -MD -MP -MF $depbase.Tpo -c -o umem_hooks.lo umem_hooks.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_ptc.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.  -DSPARSEMAP_PREFIX=umem_  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free  -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_ptc.lo -MD -MP -MF $depbase.Tpo -c -o umem_ptc.lo umem_ptc.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_introspect.lo -MD -MP -MF .deps/umem_introspect.Tpo -c umem_introspect.c -o umem_introspect.o >/dev/null 2>&1
+depbase=`echo umem_profile.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.  -DSPARSEMAP_PREFIX=umem_  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free  -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_profile.lo -MD -MP -MF $depbase.Tpo -c -o umem_profile.lo umem_profile.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+make[1]: *** [Makefile:4004: umem.lo] Error 1
+make[1]: *** Waiting for unfinished jobs....
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hooks.lo -MD -MP -MF .deps/umem_hooks.Tpo -c umem_hooks.c  -fPIC -DPIC -o .libs/umem_hooks.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_ptc.lo -MD -MP -MF .deps/umem_ptc.Tpo -c umem_ptc.c  -fPIC -DPIC -o .libs/umem_ptc.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_profile.lo -MD -MP -MF .deps/umem_profile.Tpo -c umem_profile.c  -fPIC -DPIC -o .libs/umem_profile.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hooks.lo -MD -MP -MF .deps/umem_hooks.Tpo -c umem_hooks.c -o umem_hooks.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_ptc.lo -MD -MP -MF .deps/umem_ptc.Tpo -c umem_ptc.c -o umem_ptc.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem.lo -MD -MP -MF .deps/vmem.Tpo -c vmem.c -o vmem.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_profile.lo -MD -MP -MF .deps/umem_profile.Tpo -c umem_profile.c -o umem_profile.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_inspect.lo -MD -MP -MF .deps/umem_inspect.Tpo -c umem_inspect.c -o umem_inspect.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DSPARSEMAP_PREFIX=umem_ -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT sm.lo -MD -MP -MF .deps/sm.Tpo -c sm.c -o sm.o >/dev/null 2>&1
+make[1]: Leaving directory '/home/admin/libumem-r7qg-prefix'
+make: *** [Makefile:2734: all] Error 2

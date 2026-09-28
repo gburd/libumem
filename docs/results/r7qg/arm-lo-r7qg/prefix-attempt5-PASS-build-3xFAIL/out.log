@@ -1,0 +1,40 @@
+base=6705310 (6705310994e8a52c58949f54daad1560f2e97402)
+overlay=test/stress/repro_interpose_free_ratio.c from 3816199 blob cd93d73cd625ea5997908d9491db2a79b6574c38
+role=arm-lo@r7qg
+REGEN_OK
+1
+/* #undef HAVE_LIBNUMA */
+BUILD_OK
+aarch64
+8
+7430c16bccfd073126726a85f6a87fbb12e8ac4f24ade2307d50650e584b0dcb  test/stress/repro_interpose_free_ratio.c
+1fa8b3d5c0e4e2bc11f5715bc341b8428f0afd4d87f15abc9e0d5c2a0698875f  .libs/libumem_malloc.so
+bin=test/stress/.libs/repro_interpose_free_ratio
+=== PRE run 1 01:53:03
+ 01:53:03 up 12 min,  1 user,  load average: 0.38, 0.67, 0.40
+%CPU     PID COMMAND
+ 0.1       1 systemd
+ 0.0      16 ksoftirqd/0
+ 0.0      29 ksoftirqd/2
+t=8 9 pairs: null API/API median 1.002 min 0.982; preload/API median 0.390 min 0.383; bar 0.48
+RESULT: FAIL (preload/API 0.390 < 0.48 at t=8; the interposer's per-call cost is back)
+RC PRE run 1 = 1
+=== PRE run 2 01:53:03
+ 01:53:03 up 12 min,  1 user,  load average: 0.38, 0.67, 0.40
+%CPU     PID COMMAND
+ 0.1       1 systemd
+ 0.0      16 ksoftirqd/0
+ 0.0      29 ksoftirqd/2
+t=8 9 pairs: null API/API median 0.993 min 0.934; preload/API median 0.392 min 0.388; bar 0.48
+RESULT: FAIL (preload/API 0.392 < 0.48 at t=8; the interposer's per-call cost is back)
+RC PRE run 2 = 1
+=== PRE run 3 01:53:03
+ 01:53:03 up 12 min,  1 user,  load average: 0.38, 0.67, 0.40
+%CPU     PID COMMAND
+ 0.1       1 systemd
+ 0.0      16 ksoftirqd/0
+ 0.0      29 ksoftirqd/2
+t=8 9 pairs: null API/API median 1.010 min 0.973; preload/API median 0.391 min 0.386; bar 0.48
+RESULT: FAIL (preload/API 0.391 < 0.48 at t=8; the interposer's per-call cost is back)
+RC PRE run 3 = 1
+PRE runs exiting 1: 3/3

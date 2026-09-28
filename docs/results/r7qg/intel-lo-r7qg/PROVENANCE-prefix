@@ -1,0 +1,3 @@
+base=6705310 (6705310994e8a52c58949f54daad1560f2e97402)
+overlay=test/stress/repro_interpose_free_ratio.c from 3816199 blob cd93d73cd625ea5997908d9491db2a79b6574c38
+role=intel-lo@r7qg
