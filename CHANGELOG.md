@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **First allocation no longer eagerly warms the stacktrace resolver, cutting
+  arm64's first-alloc stack use below a 4 KiB stack (O7).** `umem_init()`
+  called `umem_stacktrace_init()` unconditionally, warming `backtrace(3)` (a
+  libgcc_s unwind load) and setting up libdw's dwfl -- ~4.7-5.1 KB of stack --
+  for services (symbolized error reports, `umem_findleaks`) that no allocation
+  path uses. The eager call is removed; the resolver already warms lazily
+  (`resolver_tier` defaults to `RESOLVE_DLADDR` and `umem_backtrace_warmed` to
+  0, a correct dladdr-only degradation read only in `umem_stacktrace.c` and
+  `getpcstack.c`; `umem_stacktrace_init()` is idempotent and each
+  `umem_inspect.c` tool entry -- `umem_findleaks`, `umem_walk`,
+  `umem_log_dump`, `umem_whatis` -- calls it on its own request path).
+  Symbolization is unaffected: the T9 leak-stack test (caller pc in the target
+  executable) still PASSes on both arches. Measured on Debian 13, first
+  `umem_alloc()` peak stack: **arm64 5.36 KB -> 3.57 KB** -- now survives a
+  4 KiB stack where it SEGV'd before; **x86_64 unchanged at ~5.2 KB**, because
+  the x86 first-alloc floor is `dlopen(NULL)` (~3.4 KB) + ncpus/numa probing
+  (~3.5 KB) + `umem_init`'s own frames, not the stacktrace warm-up O7 removed.
+  Only arm64 meets the 4 KiB target; moving `dlopen(NULL)`/numa probing off
+  the first-alloc path to lower the x86 floor is a separate follow-up, not
+  done here. The regression `test_first_alloc_small_stack` (in `TESTS`) now
+  enforces a per-arch depth cap (arm64 3800 B, x86_64 5400 B) plus an
+  arm64-only 4 KiB survival arm: the tight arm SEGV'd pre-fix and PASSes
+  post-fix on both arches, and on arm64 the 4 KiB survival arm went SEGV ->
+  PASS. Hot path unchanged (the eager call was init-only, never on the alloc
+  fast path). docs/results/r8stack/.
+
 - **Thread exit no longer breaks up a full per-thread magazine one object at
   a time (O6).** `umem_ptc_mag_flush_all` passed `cache_empty`, so each
   exactly-full PTC magazine a thread exited with was drained with one
