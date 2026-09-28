@@ -956,6 +956,58 @@ umem_cache_applyall(void (*func)(umem_cache_t *))
 }
 
 /*
+ * T1/T8 debug hooks: make the hooks-on state take effect (umem_base.h).
+ *
+ * umem_hooks_applied is protected by umem_cache_lock (so a cache created
+ * concurrently inherits it in umem_cache_create, under the same lock).
+ * Hooks on: every non-internal cache's CPU caches get UMF_HOOKED in cc_flags
+ * and umem_ptc_bin_table is filled with -1, so _umem_alloc/_umem_free skip
+ * the PTC and fire the hook on their slow tails.  Hooks off: reversed.
+ * Idempotent: callers change umem_hooks, then call this; it re-reads.
+ * The fast paths read cc_flags and the bin table with plain loads; the
+ * writes here are single aligned int / int8_t atomic stores, so a reader
+ * sees the old or the new value, and either is safe (umem_ptc_bin_publish).
+ */
+static int umem_hooks_applied;
+
+static void
+umem_cache_hook_mark(umem_cache_t *cp, int on)
+{
+	uint32_t cpu;
+
+	if (cp->cache_cflags & (UMC_INTERNAL | UMC_QCACHE))
+		return;
+	for (cpu = 0; cpu < umem_max_ncpus; cpu++) {
+		if (on)
+			(void) __atomic_fetch_or(&cp->cache_cpu[cpu].cc_flags,
+			    UMF_HOOKED, __ATOMIC_RELEASE);
+		else
+			(void) __atomic_fetch_and(&cp->cache_cpu[cpu].cc_flags,
+			    ~UMF_HOOKED, __ATOMIC_RELEASE);
+	}
+}
+
+void
+umem_hooks_sync(void)
+{
+	umem_cache_t *cp;
+	int on;
+
+	(void) mutex_lock(&umem_cache_lock);
+	on = __atomic_load_n(&umem_hooks, __ATOMIC_ACQUIRE) != 0;
+#ifndef UMEM_STANDALONE
+	umem_ptc_bin_publish(on);
+#endif
+	if (on != umem_hooks_applied) {
+		for (cp = umem_null_cache.cache_next; cp != &umem_null_cache;
+		    cp = cp->cache_next)
+			umem_cache_hook_mark(cp, on);
+		umem_hooks_applied = on;
+	}
+	(void) mutex_unlock(&umem_cache_lock);
+}
+
+/*
  * umem_dump_contention - dump already-tracked contention counters (D1).
  *
  * Walks the cache list and prints, per active cache: depot reload counts
@@ -2215,6 +2267,24 @@ umem_cache_alloc_debug(umem_cache_t *cp, void *buf, int umflag)
 		UMEM_AUDIT(umem_transaction_log, cp, bcp);
 	}
 
+	return (0);
+}
+
+/*
+ * Magazine/rseq-pop tail of _umem_cache_alloc, reached only when the CPU
+ * cache's cc_flags has UMF_BUFTAG or UMF_HOOKED -- the same single mask test
+ * the debug check always had, so a hooks-off pop pays nothing new (T1/T8).
+ * Called with no umem lock held: a umemctl break may park the thread here.
+ */
+static __attribute__((noinline)) int
+umem_cache_alloc_tail(umem_cache_t *cp, umem_cpu_cache_t *ccp, void *buf,
+    int umflag)
+{
+	if ((ccp->cc_flags & UMF_BUFTAG) &&
+	    umem_cache_alloc_debug(cp, buf, umflag) == -1)
+		return (-1);
+	if (ccp->cc_flags & UMF_HOOKED)
+		umem_hook_alloc(buf, cp->cache_bufsize, cp);
 	return (0);
 }
 
@@ -3741,9 +3811,10 @@ retry:
 						buf = umem_rseq_alloc_fastpath(rc, cpu);
 					}
 					if (buf != NULL) {
-						if (unlikely(ccp->cc_flags & UMF_BUFTAG) &&
-						    umem_cache_alloc_debug(cp, buf,
-						    umflag) == -1) {
+						if (unlikely(ccp->cc_flags &
+						    (UMF_BUFTAG | UMF_HOOKED)) &&
+						    umem_cache_alloc_tail(cp, ccp,
+						    buf, umflag) == -1) {
 							if (umem_alloc_retry(cp, umflag))
 								goto retry;
 							return (NULL);
@@ -3773,8 +3844,9 @@ retry:
 			    ccp->cc_loaded->mag_round[rounds - 1]);
 			ccp->cc_alloc++;
 			(void) mutex_unlock(&ccp->cc_lock);
-			if (unlikely(ccp->cc_flags & UMF_BUFTAG) &&
-			    umem_cache_alloc_debug(cp, buf, umflag) == -1) {
+			if (unlikely(ccp->cc_flags &
+			    (UMF_BUFTAG | UMF_HOOKED)) &&
+			    umem_cache_alloc_tail(cp, ccp, buf, umflag) == -1) {
 				if (umem_alloc_retry(cp, umflag)) {
 					goto retry;
 				}
@@ -3861,6 +3933,8 @@ retry:
 			}
 			return (NULL);
 		}
+		if (unlikely(cp->cache_cpu[0].cc_flags & UMF_HOOKED))
+			return (umem_hook_alloc(buf, cp->cache_bufsize, cp));
 		return (buf);
 	}
 
@@ -3880,6 +3954,9 @@ retry:
 		return (NULL);
 	}
 
+	/* T1/T8; cc_flags of CPU 0, all CPUs agree (umem_cache_hook_mark) */
+	if (unlikely(cp->cache_cpu[0].cc_flags & UMF_HOOKED))
+		return (umem_hook_alloc(buf, cp->cache_bufsize, cp));
 	return (buf);
 }
 
@@ -3963,6 +4040,9 @@ umem_cache_alloc_batch(umem_cache_t *cp, void **bufs, int count, int umflag)
 		bufs[got++] = buf;
 	}
 
+	if (unlikely(ccp->cc_flags & UMF_HOOKED))	/* T1/T8 */
+		for (int h = 0; h < got; h++)
+			umem_hook_alloc(bufs[h], cp->cache_bufsize, cp);
 	return (got);
 }
 
@@ -3989,9 +4069,14 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	if (unlikely(buf == NULL))
 		return;
 
-	if (unlikely(ccp->cc_flags & UMF_BUFTAG))
-		if (umem_cache_free_debug(cp, buf) == -1)
+	/* Same single mask test as before; see umem_cache_alloc_tail. */
+	if (unlikely(ccp->cc_flags & (UMF_BUFTAG | UMF_HOOKED))) {
+		if ((ccp->cc_flags & UMF_BUFTAG) &&
+		    umem_cache_free_debug(cp, buf) == -1)
 			return;
+		if (ccp->cc_flags & UMF_HOOKED)
+			umem_hook_free(buf, cp->cache_bufsize, cp); /* T1 */
+	}
 
 #ifdef UMEM_RSEQ_AVAILABLE
 	if (likely(umem_rseq_enabled) && cp->cache_rseq != NULL) {
@@ -4151,6 +4236,9 @@ umem_cache_free_batch(umem_cache_t *cp, void **bufs, int count)
 		return (0);
 
 	ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
+	if (unlikely(ccp->cc_flags & UMF_HOOKED))	/* T1 */
+		for (int h = 0; h < count; h++)
+			umem_hook_free(bufs[h], cp->cache_bufsize, cp);
 
 	(void) mutex_lock(&ccp->cc_lock);
 	while (freed < count) {
@@ -4248,6 +4336,8 @@ retry:
 				((uint32_t *)btp)[1] = UMEM_SIZE_ENCODE(size);
 			}
 			bzero(buf, size);
+			if (UMEM_HOOKS_ON())		/* T1/T8 */
+				umem_hook_alloc(buf, size, cp);
 		} else if (umem_alloc_retry(cp, umflag))
 			goto retry;
 	} else {
@@ -4283,8 +4373,8 @@ umem_alloc_retry:
 		 */
 		{
 			int8_t bin = umem_ptc_bin_table[index];
-			if (likely(bin >= 0) &&
-			    likely(!umem_introspect_break_armed)) {
+			/* -1 also while T1/T8 hooks are on (umem_hooks_sync). */
+			if (likely(bin >= 0)) {
 				umem_ptc_t *ptc = thread_ptc;
 				if (unlikely(ptc == NULL) &&
 				    !ptc_initializing) {
@@ -4440,10 +4530,14 @@ umem_alloc_retry:
 		}
 		if (buf == NULL && umem_alloc_retry(cp, umflag))
 			goto umem_alloc_retry;
-#ifdef UMEM_INTROSPECT
-		if (unlikely(umem_introspect_break_armed) && buf != NULL)
-			umem_introspect_break_check(buf, size, cp);
-#endif
+		/*
+		 * T1/T8 hook, with the REQUEST size.  Hooks-on sends every
+		 * size here: umem_hooks_sync() fills umem_ptc_bin_table with
+		 * -1, so the PTC block above is skipped.  cp is UMC_INTERNAL
+		 * and does not report again from _umem_cache_alloc.
+		 */
+		if (UMEM_HOOKS_ON())
+			return (umem_hook_alloc(buf, size, cp));
 		return (buf);
 	}
 	if (size == 0)
@@ -4460,6 +4554,8 @@ umem_alloc_retry:
 		if (umem_alloc_retry(NULL, umflag))
 			goto umem_alloc_retry;
 	}
+	if (UMEM_HOOKS_ON())			/* T1/T8, oversize */
+		return (umem_hook_alloc(buf, size, NULL));
 	return (buf);
 }
 
@@ -4492,7 +4588,20 @@ umem_alloc_align_retry:
 		if (umem_alloc_retry(NULL, umflag))
 			goto umem_alloc_align_retry;
 	}
+	if (UMEM_HOOKS_ON())			/* T1/T8 */
+		return (umem_hook_alloc(buf, size, NULL));
 	return (buf);
+}
+
+/* _umem_free's slow tail with hooks on (T1/T8): report, then free. */
+static __attribute__((noinline, cold)) void
+umem_free_hooked(umem_cache_t *cp, void *buf, size_t size)
+{
+	umem_hook_free(buf, size, cp);
+	if (cp != NULL)
+		_umem_cache_free(cp, buf);
+	else
+		vmem_free(umem_oversize_arena, buf, size);
 }
 
 #ifndef NO_WEAK_SYMBOLS
@@ -4719,8 +4828,20 @@ _umem_free(void *buf, size_t size)
 			btp->bt_redzone = UMEM_REDZONE_PATTERN;
 		}
 
+		/*
+		 * T1, request size; PTC skipped while hooked (see _umem_alloc).
+		 * A tail call, so nothing stays live across the hook.
+		 */
+		if (UMEM_HOOKS_ON()) {
+			umem_free_hooked(cp, buf, size);
+			return;
+		}
 		_umem_cache_free(cp, buf);
 	} else {
+		if (UMEM_HOOKS_ON()) {
+			umem_free_hooked(NULL, buf, size);
+			return;
+		}
 		vmem_free(umem_oversize_arena, buf, size);
 	}
 }
@@ -4734,6 +4855,8 @@ _umem_free_align(void *buf, size_t size)
 	/* Same contract as umem_free (P1.8).  Before: umem_panic "bad free". */
 	if (buf == NULL)
 		return;
+	if (UMEM_HOOKS_ON())
+		umem_hook_free(buf, size, NULL);
 	vmem_xfree(umem_memalign_arena, buf, size);
 }
 
@@ -5942,6 +6065,8 @@ umem_cache_create(
 	 * to umem_update(), so the cache must be ready for business.
 	 */
 	(void) mutex_lock(&umem_cache_lock);
+	if (umem_hooks_applied)			/* T1/T8, see umem_hooks_sync */
+		umem_cache_hook_mark(cp, 1);
 	cp->cache_next = cnext = &umem_null_cache;
 	cp->cache_prev = cprev = umem_null_cache.cache_prev;
 	cnext->cache_prev = cp;
@@ -6676,6 +6801,7 @@ umem_init(void)
 	 */
 	umem_ptc_init();
 #endif
+	umem_hooks_sync();	/* publishes the PTC bin table (T1/T8) */
 
 	umem_stacktrace_init();
 

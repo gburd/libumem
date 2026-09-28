@@ -28,11 +28,10 @@
  * records, streams a log-like event feed, records it, and drives a
  * break-before-return engine (condvar spin) useful under gdb.
  *
- * COST WHEN DISABLED: when introspect=0 (default) this file's thread is
- * never started and umem_introspect_break_armed stays 0, so the cost on
- * the allocation path is one predictable load of that global per
- * _umem_alloc (umem.c, two sites) and nothing is called in here.  (This
- * used to say "ZERO-COST"; a load is not zero.)
+ * COST WHEN DISABLED: nothing on the PTC fast path.  Arming a break sets
+ * UMEM_HOOK_BREAK in umem_hooks and calls umem_hooks_sync(), which diverts
+ * allocations to the slow paths; only those call umem_hook_alloc(), and
+ * only while hooks are on (umem_base.h).
  * When the whole feature is compiled out (no UMEM_INTROSPECT), this file is
  * empty and the hook is a no-op inline (see umem_introspect.h).
  */
@@ -153,9 +152,18 @@ break_publish_locked(int armed)
 {
 	if (armed) {
 		umem_introspect_break_armed = 1;
+		(void) __atomic_fetch_or(&umem_hooks, UMEM_HOOK_BREAK,
+		    __ATOMIC_RELEASE);
 	} else {
+		(void) __atomic_fetch_and(&umem_hooks, ~UMEM_HOOK_BREAK,
+		    __ATOMIC_RELEASE);
 		umem_introspect_break_armed = 0;
 	}
+	/*
+	 * The caller runs umem_hooks_sync() AFTER dropping brk_lock: sync takes
+	 * umem_cache_lock, and a hook reached with umem_cache_lock held (an
+	 * inspect-walk callback that allocates) takes brk_lock.
+	 */
 }
 
 /* ================= introspection walks (C mirror of umem_inspect.py) =====
@@ -698,6 +706,7 @@ cmd_break(FILE *out, char *arg)
 	/* Published last (B2). */
 	break_publish_locked(1);
 	(void) pthread_mutex_unlock(&brk_lock);
+	umem_hooks_sync();
 
 	fprintf(out, "ok armed\n.\n");
 }
@@ -749,6 +758,7 @@ cmd_continue(FILE *out)
 	break_disarm_locked();
 	(void) pthread_cond_broadcast(&brk_cv);
 	(void) pthread_mutex_unlock(&brk_lock);
+	umem_hooks_sync();
 	fprintf(out, "ok continue\n.\n");
 }
 
@@ -850,6 +860,7 @@ umem_introspect_fork_child(void)
 	(void) pthread_cond_init(&brk_cv, NULL);
 
 	break_disarm_locked();	/* single-threaded here; no lock needed */
+	umem_hooks_sync();	/* umem_fork.c released umem_cache_lock */
 	brk_generation = 0;
 	brk_seq_counter = 0;
 	brk_stopped = 0;

@@ -51,6 +51,36 @@ extern vmem_t		*umem_memalign_arena;
 extern vmem_t		*umem_oversize_arena;
 
 extern int umem_ready;
+
+/*
+ * Debug hooks (review T1/T8).  umem_hooks is 0 unless a debugger or tool
+ * asked for events (UMEM_HOOK_EVENTS, umem_inspect_enable_events) or armed
+ * a umemctl break (UMEM_HOOK_BREAK, umem_introspect.c).  Whoever changes it
+ * then calls umem_hooks_sync() (umem.c), which diverts traffic off the fast
+ * paths so the fast paths never test or call anything new:
+ *  - umem_ptc_bin_table becomes all -1: _umem_alloc/_umem_free skip the PTC
+ *    (and the rseq layer it feeds) and fire the hook on their slow tails,
+ *    which already had calls, with the REQUEST size.
+ *  - UMF_HOOKED goes into cc_flags of every non-internal cache, next to
+ *    UMF_BUFTAG in the mask the magazine/rseq pop already tests, so
+ *    umem_cache_alloc/free report from every layer.
+ * Internal (UMC_INTERNAL, UMC_QCACHE) caches never report, so umem_alloc()
+ * through umem_alloc_<n> reports once.  Objects already in a thread's PTC
+ * bins or PTC magazines stay there, untouched, while hooks are on: not
+ * issued, not leaked (thread exit or hooks-off returns them to use).
+ */
+#define	UMEM_HOOK_EVENTS	0x1
+#define	UMEM_HOOK_BREAK		0x2
+extern int umem_hooks __attribute__((visibility("hidden")));
+#define	UMEM_HOOKS_ON()	\
+	__builtin_expect(__atomic_load_n(&umem_hooks, __ATOMIC_RELAXED) != 0, 0)
+struct umem_cache;
+/* Returns buf, so a caller can tail-call it. */
+__attribute__((visibility("hidden"))) void *umem_hook_alloc(void *buf,
+    size_t size, struct umem_cache *cp);
+__attribute__((visibility("hidden"))) void umem_hook_free(void *buf,
+    size_t size, struct umem_cache *cp);
+__attribute__((visibility("hidden"))) void umem_hooks_sync(void);
 extern thread_t umem_init_thr;		/* the thread doing the init */
 
 extern int umem_init(void);		/* do umem's initialization */
