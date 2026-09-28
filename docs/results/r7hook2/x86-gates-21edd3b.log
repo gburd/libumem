@@ -1,0 +1,46 @@
+REGEN_OK
+INTROSPECT_CHECK rc=0
+# TOTAL: 67
+# PASS:  64
+# SKIP:  2
+# XFAIL: 1
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+PASS: test/debugger/test_tool_T1_event_cb.sh
+PASS: test/debugger/test_tool_T12_rearm.sh
+PASS: test/debugger/test_tool_T10_walk_log.sh
+PASS: test/debugger/test_tool_T14_lldb_status.sh
+PASS: test/debugger/test_tool_T1_gdb_break.sh
+PASS: test/debugger/test_tool_T8_break_ptc.sh
+PASS: test/debugger/test_tool_T13_gdb_error_code.sh
+GATE make_check PASS
+# TOTAL: 67
+# PASS:  57
+# SKIP:  10
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+SKIP: test/debugger/test_introspect_contracts.sh
+SKIP: test/security/test_introspect_sock_path.sh
+SKIP: test/debugger/test_tool_T2_monitor.sh
+SKIP: test/debugger/test_tool_T7_learn_noaudit.sh
+SKIP: test/debugger/test_tool_T12_rearm.sh
+SKIP: test/debugger/test_tool_T3_whatis_oversize.sh
+SKIP: test/debugger/test_tool_T6_whatis_colour.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+SKIP: test/security/test_introspect_peer_uid
+GATE rseq_fastpath_6bug PASS
+GATE trailing_store PASS
+GATE commit_safe PASS
+GATE resize_leak_16 PASS
+GATE resize_leak_32 PASS
+GATE alias_e2e PASS
+GATE commit_abort PASS fails=0/30
+GATE oracle_small PASS
+GATE oracle_mag PASS
+GATE oracle_mixed PASS
+GATE oracle_large PASS
+LO_GATE rc=0
