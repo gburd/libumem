@@ -202,22 +202,35 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - If you break the shared build, fix it or report it immediately. Everyone
   else is blocked until you do.
 
-## 10. Current state: v3.0.0, with a security phase open
+## 10. Current state: v4.0.0
 
 The correctness work is done: the ten reachable defects the 2026-09-21 review
 found in default paths are fixed, each with a demonstrated pre-fix failure on
 both architectures, and the measurement machinery that hid them is repaired.
+The Linux ~5 GB heap ceiling is fixed (v3.2.0, both halves: UMEM_MIN_SLAB_*
+and UMEM_MIN_QCACHE_SLAB). The 2026-09-26 tool review (T1-T14) is closed:
+the live-heap debugging tools -- gdb/lldb `umem break`/`umem events`,
+`umem_inspect_set_event_cb()`, `umemctl break` -- fire on every allocation
+path with no fast-path cost while disarmed (v3.3.3). The vendored sparsemap
+is gone and the soname is `libumem.so.2` (v4.0.0); `libumem_malloc.so.1` is
+unchanged.
 
-**What is NOT done is security hardening.** The 2026-09-22 audit of `v3.0.0`
-found one Critical and three High issues, including a `PATH`-resolved
-`execlp("addr2line")` on the unconditional init path with no privilege gate.
-See Phase 5 in `docs/plans/2026-09-21-production-readiness.md`.
+**Phase 5 security hardening is complete.** The 2026-09-22 audit's Critical
+and three High issues, the 2026-09-24 audit of the v3.2.0 delta, and the two
+v3.3.1 follow-ups are all fixed, each with a regression that demonstrates the
+pre-fix exposure and passes after, on x86_64 and aarch64. See the Phase 5
+status table in `docs/plans/2026-09-21-production-readiness.md`; every row is
+FIXED and the exit criteria are met.
 
-Until Phase 5's exit criteria are met:
+- Performance work is allowed. Every change still needs its before/after A/B
+  (`hotpath_ab.sh`) with the fast path inside the null, or the cost recorded
+  and justified. Soundness is not traded for a number (AGENTS.md 7).
+- The README's honest framing stays: this was a hardening pass, not a security
+  proof. It is `malloc`, so the surface is broad. Keep saying what has been
+  shown and what has not.
+- A privileged (setuid/root) or network-facing deployment is now defensible on
+  the specific exposures the audits found, but that is not the same as proven
+  safe against an unaudited class. Do not overstate it.
 
-- libumem is **not** for privileged (setuid/root) or network-facing use.
-- Do not soften the README's status banner.
-- Do not add performance features.
-
-The known ~5 GB Linux heap ceiling also remains open, with an honest record of
-a failed fix attempt.
+Open work is tracked in the round plans (`docs/plans/2026-09-28-round8.md` and
+earlier), not here.
