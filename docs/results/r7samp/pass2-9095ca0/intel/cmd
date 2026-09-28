@@ -1,0 +1,1 @@
+cd ~/libumem-iso-proof2-9095ca01b4c3 && { SKIP_TEST=1 bash docs/results/r7samp/run.sh ; }

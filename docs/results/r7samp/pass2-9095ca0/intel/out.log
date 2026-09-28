@@ -1,0 +1,167 @@
+REGEN_OK
+=== provenance ===
+ref=9095ca0
+sha=9095ca01b4c3d779ee383b4a525ac09329e2f27e
+role=intel-lo@r7samp
+job=proof2
+isolated=yes
+x86_64
+8
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+ii  libjemalloc2:amd64 5.3.0-3      amd64        general-purpose scalable concurrent malloc(3) implementation
+perf version 6.12.107
+=== test_bench_accounting ===
+=== jemalloc dlopen control ===
+  TLS            0x09c980 0x000000000009d980 0x000000000009d980 0x000040 0x0010b4 R   0x20
+  TLS            0x0c7500 0x00000000000c8500 0x00000000000c8500 0x000a48 0x000a48 R   0x8
+default:  
+tunable:  jemalloc,single-thread,1,100000,100000,0.004243,23569513.21,25,30,31,57,84,6395,31,5980160,5980160,51923274,0,0,,,0,4.3,0.0,0.0000,1,0,0,0,16,6250
+=== perf jemalloc-frag-T1: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+jemalloc,fragmentation/interval=1,8,184031237,23003904,10.000182,18402789.53,26,88,411,2096,5282,1530671,201,1322172416,1337962496,189183016393,926526428,803320399,1.4270,1.6282,100,79951.7,32.1,0.0000,1,0,0,0,1,184031237
+rc=0 GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.293 MB /tmp/jemalloc-frag-T1.data (80101 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T1 clock_gettime+vdso=18.46 td_*=17.88
+--- top 20 symbols ---
+    17.05%  [.] __vdso_clock_gettime
+             --16.19%--clock_gettime@@GLIBC_2.17
+    13.30%  [.] __memset_avx512_unaligned_erms
+    12.07%  [.] td_qsort
+            |--10.03%--0x403b000000000000
+             --1.96%--0x403c000000000000
+     7.32%  [.] frag_worker
+     6.90%  [.] free
+     5.29%  [.] malloc
+     3.54%  [.] td_add
+     3.11%  [.] __ieee754_log_fma
+     2.27%  [.] td_compress
+             --0.54%--0x1
+     2.04%  [.] iv_poll
+             --0.58%--0
+     1.32%  [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.97%  [.] clock_gettime@@GLIBC_2.17
+     0.94%  [.] __GI___pthread_mutex_unlock_usercnt
+     0.90%  [.] rand_r
+     0.78%  [.] 0x00000000000832a4
+--- dso ---
+    32.50%  libjemalloc.so.2    
+            |--6.90%--free
+            |--5.29%--malloc
+            |--0.78%--0x7ff15d2972a4
+            |--0.66%--0x7ff15d296834
+             --0.58%--0x7ff15d296823
+    28.65%  bench_main          
+            |--12.07%--td_qsort
+=== perf jemalloc-frag-T16: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+jemalloc,fragmentation/interval=1,8,238486003,29810750,10.000181,23848169.03,27,164,572,2198,5817,898579,290,1280212992,1336881152,245142054139,907190331,805352999,1.4112,1.6124,100,79948.6,32.1,0.0000,1,0,0,0,16,14905375
+rc=0 GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.197 MB /tmp/jemalloc-frag-T16.data (80095 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T16 clock_gettime+vdso=4.45 td_*=2.14
+--- top 20 symbols ---
+    26.03%  [.] __memset_avx512_unaligned_erms
+    10.43%  [.] malloc
+     8.74%  [.] frag_worker
+     7.34%  [.] free
+     3.66%  [.] __vdso_clock_gettime
+             --3.56%--clock_gettime@@GLIBC_2.17
+     3.16%  [.] iv_poll
+             --0.78%--0
+     2.05%  [.] pthread_mutex_trylock@@GLIBC_2.34
+     1.53%  [.] rand_r
+     1.37%  [.] __GI___pthread_mutex_unlock_usercnt
+     1.05%  [.] 0x00000000000832a4
+     1.04%  [.] td_qsort
+     0.98%  [.] 0x0000000000082834
+     0.92%  [.] td_add
+     0.79%  [.] 0x0000000000082823
+     0.75%  [.] 0x0000000000083293
+     0.74%  [.] clock_gettime@@GLIBC_2.17
+     0.65%  [.] 0x00000000000869a6
+     0.58%  [.] 0x00000000000360d2
+--- dso ---
+    47.83%  libjemalloc.so.2         
+            |--10.43%--malloc
+            |--7.34%--free
+            |--1.05%--0x7fbc6ae972a4
+            |--0.98%--0x7fbc6ae96834
+            |--0.79%--0x7fbc6ae96823
+            |--0.75%--0x7fbc6ae97293
+            |--0.65%--0x7fbc6ae9a9a6
+=== perf umem-frag-T1: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+umem,fragmentation/interval=1,8,154218692,19277336,10.000174,15421601.58,31,267,497,755,1487,7321333,311,1211117568,1211179008,158506295288,911697973,793662209,1.3284,1.5274,100,79929.5,40.4,0.0000,1,0,0,0,1,154218692
+rc=0 GLIBC_TUNABLES=
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.289 MB /tmp/umem-frag-T1.data (79805 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T1 clock_gettime+vdso=21.20 td_*=15.61
+--- top 20 symbols ---
+    20.16%  [.] __vdso_clock_gettime
+             --19.79%--clock_gettime@@GLIBC_2.17
+    19.11%  [.] umem_free_wrapper
+    10.09%  [.] td_qsort
+            |--3.80%--0x4041000000000000
+            |--3.68%--0x4040800000000000
+            |--1.67%--0x4041800000000000
+             --0.60%--0x4042000000000000
+     8.69%  [.] umem_rseq_alloc_fastpath
+             --8.58%--_umem_alloc
+     6.55%  [.] _umem_alloc
+     6.35%  [.] umem_alloc_wrapper
+     6.18%  [.] frag_worker
+     3.65%  [.] td_add
+     3.58%  [.] __memset_avx512_unaligned_erms
+     2.58%  [.] __ieee754_log_fma
+     2.02%  [.] umem_rseq_free_fastpath
+             --2.02%--_umem_free
+     2.02%  [.] _umem_free
+     1.87%  [.] td_compress
+--- dso ---
+    49.95%  bench_main          
+            |--19.11%--umem_free_wrapper
+            |--10.09%--td_qsort
+            |          |--3.80%--0x4041000000000000
+            |          |--3.68%--0x4040800000000000
+            |          |--1.67%--0x4041800000000000
+            |           --0.60%--0x4042000000000000
+            |--6.35%--umem_alloc_wrapper
+=== perf umem-frag-T16: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+umem,fragmentation/interval=1,8,207346451,25918306,10.000177,20734278.68,33,306,581,879,1516,2218030,358,1220263936,1220317184,213166001164,907473682,803836414,1.3447,1.5190,100,79875.6,68.0,0.0000,1,0,0,0,16,12959155
+rc=0 GLIBC_TUNABLES=
+[ perf record: Woken up 17 times to write data ]
+[ perf record: Captured and wrote 5.145 MB /tmp/umem-frag-T16.data (79749 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T16 clock_gettime+vdso=3.55 td_*=1.97
+--- top 20 symbols ---
+    25.72%  [.] umem_free_wrapper
+    15.98%  [.] _umem_alloc
+    13.25%  [.] umem_alloc_wrapper
+    10.15%  [.] __memset_avx512_unaligned_erms
+     9.38%  [.] umem_rseq_alloc_fastpath
+             --9.11%--_umem_alloc
+     5.63%  [.] frag_worker
+     2.98%  [.] __vdso_clock_gettime
+             --2.88%--clock_gettime@@GLIBC_2.17
+     2.97%  [.] _umem_free
+     2.42%  [.] iv_poll
+             --0.77%--0
+     2.34%  [.] umem_rseq_free_fastpath
+             --2.34%--_umem_free
+     1.38%  [.] rand_r
+     0.92%  [.] td_add
+     0.87%  [.] td_qsort
+     0.73%  [.] umem_alloc@plt
+     0.61%  [.] __ieee754_log_fma
+     0.55%  [.] clock_gettime@@GLIBC_2.17
+--- dso ---
+    50.06%  bench_main          
+            |--25.72%--umem_free_wrapper
+            |--13.25%--umem_alloc_wrapper
+            |--5.63%--frag_worker
+            |--2.42%--iv_poll
+            |           --0.77%--0
+            |--0.92%--td_add
+            |--0.87%--td_qsort

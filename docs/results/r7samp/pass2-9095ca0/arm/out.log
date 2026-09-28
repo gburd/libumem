@@ -1,0 +1,167 @@
+REGEN_OK
+=== provenance ===
+ref=9095ca0
+sha=9095ca01b4c3d779ee383b4a525ac09329e2f27e
+role=arm-lo@r7samp
+job=proof2
+isolated=yes
+aarch64
+8
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+ii  libjemalloc2:arm64 5.3.0-3      arm64        general-purpose scalable concurrent malloc(3) implementation
+perf version 6.12.107
+=== test_bench_accounting ===
+=== jemalloc dlopen control ===
+  TLS            0x09f9e0 0x00000000000af9e0 0x00000000000af9e0 0x000040 0x0010b4 R   0x20
+  TLS            0x08a6e8 0x000000000009a6e8 0x000000000009a6e8 0x000a88 0x000a88 R   0x8
+default:  
+tunable:  jemalloc,single-thread,1,100000,100000,0.005212,19186853.47,29,32,34,56,83,5965,34,5382144,5382144,51923274,0,0,,,0,5.3,0.0,0.0000,1,0,0,0,16,6250
+=== perf jemalloc-frag-T1: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+jemalloc,fragmentation/interval=1,8,316557704,39569713,10.000192,31655163.40,29,33,68,554,1069,297908,54,1239732224,1242828800,325484298858,878272288,810796184,1.4116,1.5320,100,79976.8,12.0,0.0000,1,0,0,0,1,316557704
+rc=0 GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536
+[ perf record: Woken up 33 times to write data ]
+[ perf record: Captured and wrote 8.411 MB /tmp/jemalloc-frag-T1.data (79806 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T1 clock_gettime+vdso=26.02 td_*=31.93
+--- top 20 symbols ---
+    27.38%  [.] __memset_sve_zva64
+    24.86%  [.] __kernel_clock_gettime
+                --24.85%--frag_worker
+    21.79%  [.] td_qsort
+            |--18.88%--td_qsort
+            |          |--13.18%--td_qsort
+            |          |          |--6.60%--td_qsort
+            |          |          |          |--4.03%--td_compress
+            |          |          |           --2.57%--td_qsort
+            |          |          |                     |--1.71%--td_compress
+            |          |          |                      --0.86%--td_qsort
+            |          |          |                                 --0.60%--td_compress
+            |          |           --6.58%--td_compress
+            |           --5.70%--td_compress
+             --2.91%--td_compress
+     5.98%  [.] td_add
+             --5.97%--frag_worker
+     4.16%  [.] td_compress
+             --4.16%--td_add
+     3.47%  [.] frag_worker
+--- dso ---
+    36.22%  bench_main           
+            |--21.79%--td_qsort
+            |          |--18.88%--td_qsort
+            |          |          |--13.18%--td_qsort
+            |          |          |          |--6.60%--td_qsort
+            |          |          |          |          |--4.03%--td_compress
+            |          |          |          |           --2.57%--td_qsort
+            |          |          |          |                     |--1.71%--td_compress
+=== perf jemalloc-frag-T16: bench_main -a jemalloc -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+jemalloc,fragmentation/interval=1,8,615228448,76903556,10.000193,61521658.40,29,33,62,564,1064,178407,56,1243762688,1245499392,632470403241,918074977,797988885,1.3548,1.5584,100,79952.6,35.9,0.0000,1,0,0,0,16,38451776
+rc=0 GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536
+[ perf record: Woken up 26 times to write data ]
+[ perf record: Captured and wrote 7.799 MB /tmp/jemalloc-frag-T16.data (79768 samples) ]
+--- summary (self %) ---
+SUMMARY jemalloc-frag-T16 clock_gettime+vdso=3.69 td_*=3.85
+--- top 20 symbols ---
+    58.45%  [.] __memset_sve_zva64
+     7.08%  [.] frag_worker
+     3.39%  [.] malloc
+     3.25%  [.] __kernel_clock_gettime
+                --3.24%--frag_worker
+     3.19%  [.] free
+     2.90%  [.] __aarch64_cas4_acq
+                --2.78%--0xffff8ec64058
+     2.46%  [.] td_qsort
+             --2.14%--td_qsort
+                       |--1.50%--td_qsort
+                       |          |--0.76%--td_qsort
+                       |           --0.74%--td_compress
+                        --0.63%--td_compress
+     1.43%  [.] 0x00000000000718b8
+             --1.33%--0xffff8ecb19c7
+     1.08%  [.] iv_poll
+     0.92%  [.] rand_r
+     0.89%  [.] td_add
+             --0.88%--frag_worker
+--- dso ---
+    63.79%  libc.so.6        
+            |--58.45%--__memset_sve_zva64
+            |--2.90%--__aarch64_cas4_acq
+            |           --2.78%--0xffff8ec64058
+             --0.92%--rand_r
+    19.70%  libjemalloc.so.2 
+            |--3.39%--malloc
+            |--3.19%--free
+=== perf umem-frag-T1: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 1 ===
+umem,fragmentation/interval=1,8,227114066,28389258,10.000159,22711045.96,30,163,263,418,714,6196250,169,1213988864,1214582784,233442513375,1009936315,813183542,1.2020,1.5041,100,79922.6,47.5,0.0000,1,0,0,0,1,227114066
+rc=0 GLIBC_TUNABLES=
+[ perf record: Woken up 34 times to write data ]
+[ perf record: Captured and wrote 8.129 MB /tmp/umem-frag-T1.data (79161 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T1 clock_gettime+vdso=19.37 td_*=19.45
+--- top 20 symbols ---
+    22.70%  [.] umem_free_wrapper
+    18.70%  [.] __kernel_clock_gettime
+                --18.70%--frag_worker
+    18.47%  [.] __memset_sve_zva64
+    11.93%  [.] td_qsort
+            |--9.67%--td_qsort
+            |          |--7.41%--td_qsort
+            |          |          |--5.19%--td_qsort
+            |          |          |          |--3.32%--td_qsort
+            |          |          |          |          |--1.82%--td_qsort
+            |          |          |          |          |          |--0.93%--td_qsort
+            |          |          |          |          |          |           --0.53%--td_compress
+            |          |          |          |          |           --0.89%--td_compress
+            |          |          |          |           --1.50%--td_compress
+            |          |          |           --1.87%--td_compress
+            |          |           --2.22%--td_compress
+            |           --2.26%--td_compress
+             --2.25%--td_compress
+     9.22%  [.] umem_alloc_wrapper
+             --9.20%--frag_worker
+--- dso ---
+    54.49%  bench_main               
+            |--22.70%--umem_free_wrapper
+            |--11.93%--td_qsort
+            |          |--9.67%--td_qsort
+            |          |          |--7.41%--td_qsort
+            |          |          |          |--5.19%--td_qsort
+            |          |          |          |          |--3.32%--td_qsort
+            |          |          |          |          |          |--1.82%--td_qsort
+=== perf umem-frag-T16: bench_main -a umem -c -w frag -t 8 -n 800000 -s 16:4096 -D 10:2 -W 1 -T 16 ===
+umem,fragmentation/interval=1,8,362135409,45266926,10.000178,36212894.88,31,150,248,409,693,1254842,160,1211330560,1212547072,372414337173,988103288,803984419,1.2259,1.5081,100,79856.6,87.8,0.0000,1,0,0,0,16,22633461
+rc=0 GLIBC_TUNABLES=
+[ perf record: Woken up 25 times to write data ]
+[ perf record: Captured and wrote 7.739 MB /tmp/umem-frag-T16.data (79171 samples) ]
+--- summary (self %) ---
+SUMMARY umem-frag-T16 clock_gettime+vdso=2.45 td_*=1.97
+--- top 20 symbols ---
+    36.05%  [.] umem_free_wrapper
+    28.03%  [.] __memset_sve_zva64
+    13.44%  [.] umem_alloc_wrapper
+             --13.28%--frag_worker
+     4.03%  [.] frag_worker
+     3.22%  [.] _umem_alloc
+             --3.20%--umem_alloc_wrapper
+     2.89%  [.] _umem_free
+             --2.87%--frag_worker
+     2.58%  [.] umem_rseq_alloc_fastpath
+             --2.55%--_umem_alloc
+     2.19%  [.] __kernel_clock_gettime
+     1.19%  [.] td_qsort
+             --0.93%--td_qsort
+                        --0.70%--td_qsort
+     1.15%  [.] umem_rseq_free_fastpath
+             --1.13%--_umem_free
+     0.61%  [.] iv_poll
+     0.48%  [.] td_add
+     0.43%  [.] __aarch64_cas4_acq
+--- dso ---
+    56.41%  bench_main           
+            |--36.05%--umem_free_wrapper
+            |--13.44%--umem_alloc_wrapper
+            |           --13.28%--frag_worker
+            |--4.03%--frag_worker
+            |--1.19%--td_qsort
+            |           --0.93%--td_qsort
+            |                      --0.70%--td_qsort
