@@ -971,6 +971,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_cpu_hint_spread \
 	test/integration/test_ptc_footprint \
+	test/integration/test_ptc_freeonly_trim \
 	test/integration/test_ptc_mag_primed \
 	test/integration/test_depot_empty_scan \
 	test/integration/test_cache_footprint \
@@ -1170,6 +1171,12 @@ test_integration_test_ptc_footprint_SOURCES = test/integration/test_ptc_footprin
 test_integration_test_ptc_footprint_LDADD = libumem_ptcprobe.la
 test_integration_test_ptc_footprint_LDFLAGS = -pthread
 test_integration_test_ptc_footprint_CPPFLAGS = -I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
+
+noinst_PROGRAMS += test/integration/test_ptc_freeonly_trim
+test_integration_test_ptc_freeonly_trim_SOURCES = test/integration/test_ptc_freeonly_trim.c
+test_integration_test_ptc_freeonly_trim_LDADD = libumem.la
+test_integration_test_ptc_freeonly_trim_LDFLAGS = -pthread
+test_integration_test_ptc_freeonly_trim_CPPFLAGS = -I$(srcdir)
 
 # P8.6: the per-thread magazines behind the PTC bins must hold objects.  The
 # probe build counts depot trylock attempts from the PTC paths; unprimed, that
