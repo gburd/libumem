@@ -4532,8 +4532,17 @@ umem_alloc_retry:
 					 * feeds-ptc.md).
 					 */
 					buf = umem_rseq_ptc_alloc(cp);
-					if (buf != NULL)
+					if (buf != NULL) {
+						/*
+						 * F1-a: served by an ALLOC through
+						 * the rseq layer -> not free-only
+						 * for this class; clear the trim
+						 * counter (slow path, off the
+						 * inlined bin pop).
+						 */
+						mag->idle_overflows = 0;
 						return (buf);
+					}
 #endif
 					{
 					umem_magazine_t *fmp;
@@ -4576,6 +4585,17 @@ umem_alloc_retry:
 					    mag->magsize =
 						umem_mag_capacity(fmp);
 					    mag->rounds = mag->magsize;
+					    /*
+					     * F1-a: this thread just refilled a
+					     * magazine by ALLOCATING, so it is
+					     * not free-only for this class.
+					     * Clear the free-only trim counter.
+					     * Reached only on an alloc depot
+					     * refill (a free-only thread never
+					     * gets here), so it cannot fire the
+					     * trim on a balanced thread.
+					     */
+					    mag->idle_overflows = 0;
 					    __atomic_store_n(&ptc->fork_busy, 0,
 						__ATOMIC_RELEASE);
 					    UMEM_PTC_PROBE_OBSERVE(fmp,
