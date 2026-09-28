@@ -309,6 +309,7 @@ void umem_ptc_destroy(umem_ptc_t *ptc);
  * Initialize ptc subsystem (called during umem initialization)
  */
 void umem_ptc_init(void);
+void umem_ptc_bin_publish(int hooked);	/* umem_hooks_sync() only */
 
 /*
  * Flush all per-thread magazines back to depot (called at thread exit)
