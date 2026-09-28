@@ -774,6 +774,13 @@ noinst_PROGRAMS += test/unit/test_slab_member
 test_unit_test_slab_member_SOURCES = test/unit/test_slab_member.c
 test_unit_test_slab_member_LDADD = libumem.la
 test_unit_test_slab_member_CPPFLAGS = -I$(srcdir)
+
+# The consequence of the same bound on the free path: an interior free was
+# accepted, so a live buffer could be handed out twice (080ef6f).
+noinst_PROGRAMS += test/unit/test_slab_interior_free
+test_unit_test_slab_interior_free_SOURCES = test/unit/test_slab_interior_free.c
+test_unit_test_slab_interior_free_LDADD = libumem.la
+test_unit_test_slab_interior_free_CPPFLAGS = -I$(srcdir)
 test_unit_test_hash_partition_LDFLAGS = -lm
 
 # P2.2/P2.5 diagnostic: why does umem_alloc return NULL under the 192-thread
@@ -904,6 +911,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_hash_partition \
 	test/unit/test_slab_floor \
 	test/unit/test_slab_member \
+	test/unit/test_slab_interior_free \
 	test/unit/test_hook_contracts \
 	test/unit/test_inspect_contracts \
 	test/stress/interpose_regress.sh \
