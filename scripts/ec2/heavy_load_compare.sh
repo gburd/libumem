@@ -48,6 +48,8 @@ export SUSTAINED_SEC="${SUSTAINED_SEC:-60}"
 export SUSTAINED_WARMUPS="${SUSTAINED_WARMUPS:-5}"    # 5 x 60s = first 5 min dropped
 export SUSTAINED_WINDOWS="${SUSTAINED_WINDOWS:-10}"   # 10 x 60s = 10 min measured
 export SUSTAINED_FRAG_SIZES="${SUSTAINED_FRAG_SIZES:-64:256}"
+export SUSTAINED_PRODCONS_SIZES="${SUSTAINED_PRODCONS_SIZES:-64:256}"
+export SUSTAINED_WORKLOADS="${SUSTAINED_WORKLOADS:-prodcons frag}"
 # 3 GiB peak live set, total across threads (bench_main -L): what the old
 # 100,000 objects/thread gave at 64:256 and t=192, heavy and far below these
 # boxes' 384 GB.  It is now the same total at every thread count and size
@@ -56,15 +58,16 @@ export SUSTAINED_FRAG_LIVE_MIB="${SUSTAINED_FRAG_LIVE_MIB:-3072}"
 export SUSTAINED_OUT="${SUSTAINED_OUT:-heavy-load-compare-t${THREADS}.toml}"
 
 nallocs=$(echo "$ALLOCS" | tr ',' '\n' | grep -c .)
+nwork=$(echo $SUSTAINED_WORKLOADS | wc -w)
 per_run=$(( (SUSTAINED_WARMUPS + SUSTAINED_WINDOWS) * SUSTAINED_SEC ))
 echo "=== heavy-load comparison ==="
 echo "allocators   : $ALLOCS"
-echo "workloads    : prodcons 64:256, frag $SUSTAINED_FRAG_SIZES"
+echo "workloads    : $SUSTAINED_WORKLOADS (prodcons $SUSTAINED_PRODCONS_SIZES, frag $SUSTAINED_FRAG_SIZES)"
 echo "threads      : $THREADS  (box has $(nproc) online)"
 echo "numa policy  : ${SUSTAINED_NUMA_PREFIX:-kernel default} (every arm)"
 echo "per run      : $SUSTAINED_WARMUPS + $SUSTAINED_WINDOWS intervals x ${SUSTAINED_SEC}s in ONE process"
 echo "             = $(( per_run / 60 )) min, first $(( SUSTAINED_WARMUPS * SUSTAINED_SEC / 60 )) min dropped"
-echo "total        : $(( 2 * nallocs )) runs = ~$(( 2 * nallocs * per_run / 60 )) min"
+echo "total        : $(( nwork * nallocs )) runs = ~$(( nwork * nallocs * per_run / 60 )) min"
 echo "numa         :"
 numactl -H 2>/dev/null | sed 's/^/  /' || echo "  (numactl unavailable)"
 
@@ -85,7 +88,9 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:}$PWD/.libs"
 export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=65536}"
 for a in $(echo "$ALLOCS" | tr ',' ' '); do
 	b="${a%%@*}"
-	for w in prodcons frag; do
+	# Loadability check only, so 64:256 whatever the cell's sizes: a
+	# non-interval frag at 16-64 KB would size its pool from -n (~190 GB).
+	for w in $SUSTAINED_WORKLOADS; do
 		# shellcheck disable=SC2086
 		if ! $SUSTAINED_NUMA_PREFIX test/bench/.libs/bench_main -a "$b" -w "$w" -t "$THREADS" -n $((THREADS * 100000)) \
 			-s 64:256 -c 2>/dev/null | grep -q "^$b,"; then
@@ -94,6 +99,6 @@ for a in $(echo "$ALLOCS" | tr ',' ' '); do
 		fi
 	done
 done
-echo "preflight    : every arm loads and runs prodcons + frag at t=$THREADS"
+echo "preflight    : every arm loads and runs $SUSTAINED_WORKLOADS at t=$THREADS"
 
 exec ./scripts/ec2/sustained_load.sh "$ALLOCS" "$SUSTAINED_SEC" "$THREADS"

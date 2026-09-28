@@ -51,6 +51,15 @@ WINDOWS="${SUSTAINED_WINDOWS:-6}"
 # heap ceiling -- so every umem window measured the ceiling (39% alloc
 # failures, 2026-09-22), not fragmentation.  The comparison run sets 64:256.
 IFS=: read -r FRAG_MIN FRAG_MAX <<< "${SUSTAINED_FRAG_SIZES:-16:4096}"
+# prodcons size range, both modes.  Default 64:256 (what every earlier run
+# used); the comparison's >256 B tier sets 1024:4096.
+IFS=: read -r PC_MIN PC_MAX <<< "${SUSTAINED_PRODCONS_SIZES:-64:256}"
+# continuous mode only: workloads to run, in order (the second walks the
+# allocators reversed).  "frag" alone is a frag-only cell.
+WORKLOADS="${SUSTAINED_WORKLOADS:-prodcons frag}"
+for w in $WORKLOADS; do
+    [[ $w == prodcons || $w == frag ]] || { echo "FATAL: SUSTAINED_WORKLOADS: unknown '$w'" >&2; exit 1; }
+done
 WARMUPS="${SUSTAINED_WARMUPS:-1}"
 # MODE=windows (default): every window is its own bench_main process with a
 # calibrated, matched op budget, interleaved A,B,A,B.  Its warm-up windows are
@@ -259,9 +268,10 @@ GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || e
         echo "intervals_per_run = $(( WARMUPS + WINDOWS ))"
         echo "frag_live_mib = $FRAG_LIVE_MIB"
         echo "numa_policy = \"${NUMA_PREFIX:-kernel default (none)}\""
+        echo "workloads = \"$WORKLOADS\""
     fi
     echo "frag_sizes = \"$FRAG_MIN:$FRAG_MAX\""
-    echo "prodcons_sizes = \"64:256\""
+    echo "prodcons_sizes = \"$PC_MIN:$PC_MAX\""
     echo "allocators = [$(printf '"%s",' "${ALLOCS[@]}" | sed 's/,$//')]"
     echo "order = \"interleaved\""
     echo "git_sha = \"$GIT_SHA\""
@@ -469,9 +479,9 @@ if [[ $MODE == continuous ]]; then
     # Each workload walks ALLOCS in the given order; the next workload walks
     # it REVERSED, so no arm is always first (or last) on the box.
     rev=0
-    for w in prodcons frag; do
+    for w in $WORKLOADS; do
         case "$w" in
-            prodcons) mn=64; mx=256 ;;
+            prodcons) mn=$PC_MIN; mx=$PC_MAX ;;
             frag)     mn=$FRAG_MIN; mx=$FRAG_MAX ;;
         esac
         order=("${ALLOCS[@]}")
@@ -493,7 +503,7 @@ echo "  sha=$GIT_SHA ($SHA_SRC) -> $OUT"
 # slowest allocator's.  Every allocator then does identical work.
 for w in prodcons frag; do
     case "$w" in
-        prodcons) mn=64; mx=256 ;;
+        prodcons) mn=$PC_MIN; mx=$PC_MAX ;;
         frag)     mn=$FRAG_MIN; mx=$FRAG_MAX ;;
     esac
     best=0
@@ -515,7 +525,7 @@ for (( wu = 0; wu < WARMUPS; wu++ )); do
         echo "  warmup window $wu: $a0 (discarded)"
         pre="$(preload_of "$a" || true)"
         LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w prodcons -t "$THREADS" \
-            -n "${TARGET_N["prodcons"]}" -s 64:256 -c >/dev/null 2>>"$LOG" || true
+            -n "${TARGET_N["prodcons"]}" -s "$PC_MIN:$PC_MAX" -c >/dev/null 2>>"$LOG" || true
         LD_PRELOAD="${pre:-}" "$BENCH_BIN" -a "$a" -w frag -t "$THREADS" \
             -n "${TARGET_N["frag"]}" -s "$FRAG_MIN:$FRAG_MAX" -c >/dev/null 2>>"$LOG" || true
     done
@@ -524,7 +534,7 @@ done
 # Interleaved measured windows.
 for (( WINDOW_INDEX = 0; WINDOW_INDEX < WINDOWS; WINDOW_INDEX++ )); do
     for a in "${ALLOCS[@]}"; do
-        emit_windows "$a" prodcons 64 256 "prodcons-sustained"
+        emit_windows "$a" prodcons "$PC_MIN" "$PC_MAX" "prodcons-sustained"
         emit_windows "$a" frag "$FRAG_MIN" "$FRAG_MAX" "frag-sustained"
     done
 done
