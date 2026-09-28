@@ -913,6 +913,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_lifecycle_churn \
 	test/unit/test_freelist_mangle \
 	test/bench/test_bench_accounting \
+	test/bench/test_bench_missing_alloc.sh \
 	test/bench/check_budget.sh \
 	test/integration/test_ptc_thread_exit_drain_probe \
 	test/integration/test_fork_ptc_drain_probe \
@@ -1270,6 +1271,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_oversize_vma.sh \
 	test/integration/test_first_alloc_small_stack.sh \
+	test/bench/test_bench_missing_alloc.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh \
