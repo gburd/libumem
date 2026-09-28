@@ -1,0 +1,1 @@
+cd ~/libumem-iso-r8hpre-5026cda18509 && { cat /proc/sys/vm/max_map_count; ./scripts/ec2/clean-regen.sh CFLAGS="-g -O2 -Wno-error=implicit-function-declaration" >/tmp/pre-regen.log 2>&1 && make -j$(nproc) >/tmp/pre-build.log 2>&1; echo pre_build_rc=$?; grep -c "error:" /tmp/pre-build.log; ./cpuhint_runs.sh PRE-a7bcdc4 old_test_cpu_hint_spread.c ; }

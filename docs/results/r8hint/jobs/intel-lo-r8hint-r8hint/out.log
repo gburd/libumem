@@ -1,0 +1,184 @@
++ cd pre
++ ./scripts/ec2/clean-regen.sh
+++ nproc
++ make -j8
++ echo pre_build_rc=2
+pre_build_rc=2
++ cp ../ISOLATED_PROVENANCE .
++ ./cpuhint_runs.sh PRE-a7bcdc4 old_test_cpu_hint_spread.c
+ref=535d38a852844c6807e0d92b59c2c9b3b8fe1f95
+sha=535d38a852844c6807e0d92b59c2c9b3b8fe1f95
+role=intel-lo@r8hint
+job=r8hint
+isolated=yes
+8
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+x86_64
+/usr/bin/ld: cannot find .libs/libumem.so: No such file or directory
+collect2: error: ld returned 1 exit status
+old test build failed
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+./cpuhint_runs.sh: line 16: test/integration/.libs/test_cpu_hint_spread: No such file or directory
+SUMMARY PRE-a7bcdc4 idle test_cpu_hint_spread: PASS 0 FAIL 20 SKIP 0 /20
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+  rc=127 
+SUMMARY PRE-a7bcdc4 +64busy test_cpu_hint_spread: PASS 0 FAIL 20 SKIP 0 /20
+done
++ ./scripts/ec2/clean-regen.sh
+++ nproc
++ make -j8
++ echo post_build_rc=0
+post_build_rc=0
++ ./cpuhint_runs.sh POST-a0584d3 old_test_cpu_hint_spread.c
+ref=535d38a852844c6807e0d92b59c2c9b3b8fe1f95
+sha=535d38a852844c6807e0d92b59c2c9b3b8fe1f95
+role=intel-lo@r8hint
+job=r8hint
+isolated=yes
+8
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+x86_64
+  rc=0 cc_alloc: 200000 199999 199999 91 199999 13057 261 7495 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 81 23 513 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 487 190 199999 199999 341 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 550 199999 368 200000 199999 14509 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 10397 199999 659 199999 10284 199999 391 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 141 393 124 199999 199999 176 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 535 199999 199999 199999 411 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 200000 199999 199999 199999 10777 199999 64 10695 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 219 199999 199999 68 410 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 200000 2946 199999 15613 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 82 200000 199999 199999 199999 583 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 35 199999 200000 199999 281 199999 227 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 200000 13758 199999 265 199999 13653 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 200000 705 199999 410 199999 110 278 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 1106 199999 1858 199999 1095 199999 48 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 200000 199999 199999 199999 199999 183 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 14449 21318 15 199999 770 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 23490 199999 282 199999 199999 87 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 200000 199999 209 199999 756 199999 200 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 212 199999 78 199999 199999 41 144 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+cache=umem_alloc_10240  per-cpu caches=8  threads=8  allowed cpus=8
+pinned (cpu/ran_on): 0/0 1/1 2/2 3/3 4/4 5/5 6/6 7/7
+cc_alloc: 212 199999 78 199999 199999 41 144 199999
+distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty
+RESULT: PASS (every pinned worker used its own CPU's cache; 8 caches)
+SUMMARY POST-a0584d3 idle test_cpu_hint_spread: PASS 20 FAIL 0 SKIP 0 /20
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 7 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 8 (need >= 4) 
+SUMMARY POST-a0584d3 idle oldch: PASS 20 FAIL 0 SKIP 0 /20
+  rc=0 cc_alloc: 199999 199999 199999 199999 200000 199999 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 200000 52 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 200000 199999 199999 199999 199999 199999 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 112 199999 199999 199999 200000 199999 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 200000 63 34 199999 199999 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 200000 199999 199999 199999 152 22 166 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 199999 199999 200000 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 128 199999 199999 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 200000 199999 125 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 24 199999 199999 199999 40 199999 199999 200000 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 53 199999 200000 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 199999 200000 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 199999 200000 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 199999 200000 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 199999 200000 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 199999 200000 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 199999 199999 199999 94 84 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 7 199999 57 199999 199999 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 15 199999 199999 199999 199999 200000 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+  rc=0 cc_alloc: 199999 199999 199999 36 199999 199999 200000 199999 distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty 
+SUMMARY POST-a0584d3 +64busy test_cpu_hint_spread: PASS 20 FAIL 0 SKIP 0 /20
+  rc=0 distinct per-cpu caches used: 7 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 7 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 6 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 5 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 7 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 3 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 4 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 4 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 4 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 4 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 3 (need >= 4) 
+  rc=0 distinct per-cpu caches used: 4 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 2 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 3 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 2 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 2 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 2 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 2 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 2 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 2 (need >= 4) 
+SUMMARY POST-a0584d3 +64busy oldch: PASS 10 FAIL 10 SKIP 0 /20
+done
+++ nproc
++ make check -j8
++ echo make_check_rc=0
+make_check_rc=0
++ grep -E '^# (TOTAL|PASS|SKIP|FAIL|ERROR)' /tmp/ck.log
+# TOTAL: 70
+# PASS:  58
+# SKIP:  12
+# FAIL:  0
+# ERROR: 0
++ cat test/integration/test_cpu_hint_spread.log
+cache=umem_alloc_10240  per-cpu caches=8  threads=8  allowed cpus=8
+pinned (cpu/ran_on): 0/0 1/1 2/2 3/3 4/4 5/5 6/6 7/7
+cc_alloc: 199999 199999 33729 38184 65 199999 45 199999
+distinct per-cpu caches used: 8; pinned workers map to 8, 0 of those empty
+RESULT: PASS (every pinned worker used its own CPU's cache; 8 caches)
+PASS test/integration/test_cpu_hint_spread (exit status: 0)

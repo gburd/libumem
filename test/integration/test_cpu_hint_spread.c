@@ -34,9 +34,15 @@
  * per-CPU cache its CPU maps to (cpu & cache_cpu_mask).
  *
  *   PASS: every pinned worker's cache has cc_alloc != 0 -- the cache
- *         follows the CPU the thread runs on.
- *   FAIL: some worker's cache is empty.  Pre-fix: 1 or 2 caches used in
- *         total, so 6+ of the 8 are empty, at any load.
+ *         follows the CPU the thread runs on.  With rseq on, the per-CPU
+ *         rseq slot serves most operations and cc_alloc counts only its
+ *         refills from the magazine layer, so a worker's count can be as low
+ *         as 2 (r8hint, 80 runs); it is never 0 because the slot starts
+ *         empty and its first refill goes through the hint.
+ *   FAIL: some worker's cache is empty.  Pre-fix, pinned: 1-5 caches used,
+ *         3-7 of the 8 empty, 80/80 FAIL idle and loaded, both arches.  The
+ *         old half bar (>= 4) would have passed the pre-fix runs that used
+ *         4 or 5 (4 of 80); an exact bar does not.
  *   SKIP: fewer than 2 allowed CPUs, fewer than 2 distinct caches to map
  *         to, pinning refused (restricted cpuset), or no affinity API.
  *

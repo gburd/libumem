@@ -1,0 +1,101 @@
+1048576
+pre_build_rc=0
+0
+ref=5026cda185098b082a0b54f3e7bd61a688a6f816
+sha=5026cda185098b082a0b54f3e7bd61a688a6f816
+role=arm-lo@r8hint
+job=r8hpre
+isolated=yes
+8
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+aarch64
+  rc=1 cc_alloc: 1200119 199930 0 0 0 0 0 199943 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200270 0 0 0 0 0 199824 199898 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200351 0 199877 199764 0 0 0 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200236 0 199867 0 0 199889 0 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1400102 0 0 199891 0 0 0 0 distinct per-cpu caches used: 2; pinned workers map to 8, 6 of those empty 
+  rc=1 cc_alloc: 1200249 0 0 199850 0 0 199893 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1400167 0 199826 0 0 0 0 0 distinct per-cpu caches used: 2; pinned workers map to 8, 6 of those empty 
+  rc=1 cc_alloc: 1200436 0 0 199738 0 0 199818 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200158 199877 0 0 0 0 0 199957 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200312 199808 0 199872 0 0 0 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200186 199889 0 0 0 0 0 199917 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200347 199738 0 199907 0 0 0 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1000702 0 199631 199771 0 0 199887 0 distinct per-cpu caches used: 4; pinned workers map to 8, 4 of those empty 
+  rc=1 cc_alloc: 1200440 199780 199772 0 0 0 0 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200360 0 199755 0 0 199877 0 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1400184 0 0 0 0 0 0 199809 distinct per-cpu caches used: 2; pinned workers map to 8, 6 of those empty 
+  rc=1 cc_alloc: 800508 199851 0 0 199880 199871 199880 0 distinct per-cpu caches used: 5; pinned workers map to 8, 3 of those empty 
+  rc=1 cc_alloc: 1200149 0 199908 199935 0 0 0 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200144 0 199912 0 0 0 199936 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+  rc=1 cc_alloc: 1200347 0 199805 0 0 0 199840 0 distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty 
+cache=umem_alloc_10240  per-cpu caches=8  threads=8  allowed cpus=8
+pinned (cpu/ran_on): 0/0 1/1 2/2 3/3 4/4 5/5 6/6 7/7
+cc_alloc: 1200347 0 199805 0 0 0 199840 0
+distinct per-cpu caches used: 3; pinned workers map to 8, 5 of those empty
+RESULT: FAIL (5 of the 8 caches the pinned workers run on were never used: the CPU hint does not follow the CPU -- magazine-layer operations collapse onto 3 cc_lock(s))
+SUMMARY PRE-a7bcdc4 idle test_cpu_hint_spread: PASS 0 FAIL 20 SKIP 0 ERROR 0 /20
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+SUMMARY PRE-a7bcdc4 idle oldch: PASS 0 FAIL 20 SKIP 0 ERROR 0 /20
+  rc=1 cc_alloc: 1599994 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599996 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599995 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599997 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599997 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599994 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1488972 0 0 0 0 0 111020 0 distinct per-cpu caches used: 2; pinned workers map to 8, 6 of those empty 
+  rc=1 cc_alloc: 1599995 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599996 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599996 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599994 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599995 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599995 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599995 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1554718 0 0 0 45274 0 0 0 distinct per-cpu caches used: 2; pinned workers map to 8, 6 of those empty 
+  rc=1 cc_alloc: 1599996 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599996 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1457266 0 142726 0 0 0 0 0 distinct per-cpu caches used: 2; pinned workers map to 8, 6 of those empty 
+  rc=1 cc_alloc: 1599996 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+  rc=1 cc_alloc: 1599995 0 0 0 0 0 0 0 distinct per-cpu caches used: 1; pinned workers map to 8, 7 of those empty 
+SUMMARY PRE-a7bcdc4 +64busy test_cpu_hint_spread: PASS 0 FAIL 20 SKIP 0 ERROR 0 /20
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+  rc=1 distinct per-cpu caches used: 1 (need >= 4) 
+SUMMARY PRE-a7bcdc4 +64busy oldch: PASS 0 FAIL 20 SKIP 0 ERROR 0 /20
+done

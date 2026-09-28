@@ -1,0 +1,51 @@
+build_rc=0
+=== max_map_count=1048576
+make_check_rc=0
+# TOTAL: 68
+# PASS:  55
+# SKIP:  13
+# FAIL:  0
+# ERROR: 0
+./docs/results/r7verify/arm-lo-r7verify-r7v/arm-default/test/debugger/test_tool_T9_leak_stack.trs
+./docs/results/r7verify/intel-lo-r7verify-r7v/x86-default/test/debugger/test_tool_T9_leak_stack.trs
+./docs/results/r7verify/intel-lo-r7verify-r7v/x86-introspect/test/debugger/test_tool_T9_leak_stack.trs
+./test/debugger/test_introspect_contracts.trs
+./test/debugger/test_tool_T12_rearm.trs
+./test/debugger/test_tool_T2_monitor.trs
+./test/debugger/test_tool_T3_whatis_oversize.trs
+./test/debugger/test_tool_T6_whatis_colour.trs
+./test/debugger/test_tool_T7_learn_noaudit.trs
+./test/debugger/test_tool_T8_break_ptc.trs
+./test/debugger/test_tool_T9_leak_stack.trs
+./test/integration/test_heap_ceiling.trs
+./test/integration/test_heap_ceiling_512.trs
+./test/security/test_introspect_peer_uid.trs
+./test/security/test_introspect_sock_path.trs
+./test/stress/test_norseq.trs
+test/integration/test_heap_ceiling.log:SKIP: vm.max_map_count is 1048576 (raised well above the 65530 default), so this check cannot distinguish the fix from a permissive kernel
+test/integration/test_heap_ceiling.log:SKIP test/integration/test_heap_ceiling (exit status: 77)
+test/integration/test_heap_ceiling_512.log:SKIP: vm.max_map_count is 1048576 (raised well above the 65530 default), so this check cannot distinguish the fix from a permissive kernel
+test/integration/test_heap_ceiling_512.log:SKIP test/integration/test_heap_ceiling_512.sh (exit status: 77)
+=== max_map_count=65530
+make_check_rc=0
+# TOTAL: 68
+# PASS:  57
+# SKIP:  11
+# FAIL:  0
+# ERROR: 0
+./docs/results/r7verify/arm-lo-r7verify-r7v/arm-default/test/debugger/test_tool_T9_leak_stack.trs
+./docs/results/r7verify/intel-lo-r7verify-r7v/x86-default/test/debugger/test_tool_T9_leak_stack.trs
+./docs/results/r7verify/intel-lo-r7verify-r7v/x86-introspect/test/debugger/test_tool_T9_leak_stack.trs
+./test/debugger/test_introspect_contracts.trs
+./test/debugger/test_tool_T12_rearm.trs
+./test/debugger/test_tool_T2_monitor.trs
+./test/debugger/test_tool_T3_whatis_oversize.trs
+./test/debugger/test_tool_T6_whatis_colour.trs
+./test/debugger/test_tool_T7_learn_noaudit.trs
+./test/debugger/test_tool_T8_break_ptc.trs
+./test/debugger/test_tool_T9_leak_stack.trs
+./test/security/test_introspect_peer_uid.trs
+./test/security/test_introspect_sock_path.trs
+./test/stress/test_norseq.trs
+test/integration/test_heap_ceiling.log:RESULT: PASS (9216MB allocated with 78 VMAs, 0.1% of the 65530 limit)
+test/integration/test_heap_ceiling_512.log:RESULT: PASS (9216MB allocated with 998 VMAs, 1.5% of the 65530 limit)
