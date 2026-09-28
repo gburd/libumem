@@ -11,14 +11,19 @@ if [ -n "${2:-}" ]; then
 	    .libs/libumem.so -o /tmp/oldch && O=/tmp/oldch || echo "old test build failed"
 fi
 run() { # tag load binary
-	local p=0 f=0 s=0 rc i
+	local p=0 f=0 s=0 e=0 rc i
+	[ -x "$3" ] || { echo "SUMMARY $1 $2 $3: NOT BUILT (no verdict)"; return; }
 	for i in $(seq 20); do
 		"$3" >/tmp/ch.$$ 2>&1; rc=$?
-		case $rc in 0) p=$((p+1));; 77) s=$((s+1));; *) f=$((f+1));; esac
+		# Only the test's own FAIL verdict counts as FAIL; a crash or a
+		# missing binary (127) is ERROR, not evidence of the defect.
+		case $rc in 0) p=$((p+1));; 77) s=$((s+1));;
+		1) if grep -q '^RESULT: FAIL' /tmp/ch.$$; then f=$((f+1)); else e=$((e+1)); fi;;
+		*) e=$((e+1));; esac
 		echo "  rc=$rc $(grep -E '^(cc_alloc|distinct)' /tmp/ch.$$ | tr '\n' ' ')"
 	done
 	[ -n "$S" ] || { S=1; cat /tmp/ch.$$; }
-	echo "SUMMARY $1 $2 $(basename "$3"): PASS $p FAIL $f SKIP $s /20"
+	echo "SUMMARY $1 $2 $(basename "$3"): PASS $p FAIL $f SKIP $s ERROR $e /20"
 }
 S=
 for load in idle +64busy; do
