@@ -29,6 +29,15 @@
  * after its TLS and guard (7.7 KB measured).  glibc and jemalloc first calls
  * fit in it with room to spare.  An x86 16 KiB thread gets less than the
  * budget, so there under() is skipped and the thread's own size is the test.
+ *
+ * A second, TIGHTER budget is selectable with a numeric third argument
+ * (bytes), e.g. "api 4096": a first umem_alloc() with only ~4 KiB of usable
+ * stack below the alloc frame.  glibc survives 4 KiB; umem's first call at
+ * v3.x cost 5.2-5.4 KB (docs/results/2026-09-27-arm-dlopen-stack-crash.md
+ * "Residual"), so this arm SEGVs on umem before O7 (the eager
+ * umem_stacktrace_init in umem_init) and passes after.  If the platform's
+ * pthread stack floor plus TLS/guard leaves less than the budget usable,
+ * under() is skipped and the arm SKIPs (77) rather than falsely failing.
  */
 #include <pthread.h>
 #include <stdint.h>
@@ -41,6 +50,7 @@
 #define	FIRST_ALLOC_BUDGET	8192
 #define	SMALL_STACK		(16 * 1024)
 
+static size_t budget = FIRST_ALLOC_BUDGET;
 static int use_malloc;
 static void *result;
 static size_t usable;
@@ -89,9 +99,17 @@ thr(void *arg)
 	usable = (size_t)(sp - (unsigned char *)lo);
 
 	/* 512 B: this frame, under()'s frame, and the call. */
-	if (usable > FIRST_ALLOC_BUDGET + 512)
-		under(usable - FIRST_ALLOC_BUDGET - 512);
-	else
+	if (usable > budget + 512)
+		under(usable - budget - 512);
+	else if (budget < FIRST_ALLOC_BUDGET) {
+		/*
+		 * A tight budget the platform floor cannot honour (arm64's
+		 * 128 KiB min thread still leaves > budget usable, so this
+		 * only bites if TLS/guard eat the difference): SKIP rather
+		 * than run the alloc with more stack than the arm intends.
+		 */
+		usable = 0;
+	} else
 		first_alloc();
 	return (NULL);
 }
@@ -105,6 +123,11 @@ main(int argc, char **argv)
 	int rc;
 
 	use_malloc = argc > 1 && strcmp(argv[1], "malloc") == 0;
+	if (argc > 2) {
+		unsigned long b = strtoul(argv[2], NULL, 0);
+		if (b >= 512)
+			budget = (size_t)b;
+	}
 	if (stk < (size_t)PTHREAD_STACK_MIN)
 		stk = (size_t)PTHREAD_STACK_MIN;
 
@@ -120,12 +143,14 @@ main(int argc, char **argv)
 	(void) pthread_join(t, NULL);
 
 	if (usable == 0) {
-		printf("SKIP: pthread_getattr_np gave no stack bounds\n");
+		printf("SKIP: no stack bounds, or tight budget below platform "
+		    "floor (usable stack could not be burned to %zu B)\n",
+		    budget);
 		return (77);
 	}
-	printf("%s: first %s() on a %zu B thread with %d B budget "
+	printf("%s: first %s() on a %zu B thread with %zu B budget "
 	    "(usable %zu): %s; umem_init %s\n", result != NULL ? "PASS" : "FAIL",
-	    use_malloc ? "malloc" : "umem_alloc", stk, FIRST_ALLOC_BUDGET,
+	    use_malloc ? "malloc" : "umem_alloc", stk, budget,
 	    usable, result != NULL ? "ok" : "NULL",
 	    ready_before == 1 ? (umem_ready == 1 ? "never ran (not umem's malloc)"
 	    : "ran on this thread") : "had already run before this thread");

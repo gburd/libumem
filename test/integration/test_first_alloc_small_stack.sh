@@ -8,6 +8,11 @@
 #      then reaches log_message() (misc.c), whose 4 KiB stack buffer alone
 #      still SEGVs a 16 KiB x86 thread once init_lib.c's 64 KiB one is gone
 #      (docs/results/2026-09-27-arm-dlopen-stack-crash.md section 9)
+#   5. TIGHT budget (4 KiB usable below the alloc): umem_alloc() API. glibc
+#      survives 4 KiB; umem's first call cost 5.2-5.4 KB before O7 (the eager
+#      umem_stacktrace_init in umem_init), so this SEGVs on master and passes
+#      after the fix.  SKIPs if the platform floor won't leave 4 KiB usable.
+#   6. TIGHT budget glibc control -- must pass in both.
 # Each case prints where umem_init ran.  Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -31,6 +36,8 @@ ARGS=(malloc); run "glibc malloc (control)"    X_=1
 ARGS=(malloc); run "libumem_malloc.so preload" LD_PRELOAD="$PRELOAD"
 ARGS=(api);    run "umem_alloc API, bad UMEM_OPTIONS item" \
 	UMEM_OPTIONS=first_alloc_small_stack_bogus_item
+ARGS=(api 4096);    run "umem_alloc API, 4 KiB budget"          X_=1
+ARGS=(malloc 4096); run "glibc malloc, 4 KiB budget (control)" X_=1
 [[ $rc -eq 0 ]] && echo "PASS: first allocation on a small stack" \
 	|| echo "FAIL: first allocation on a small stack"
 exit $rc
