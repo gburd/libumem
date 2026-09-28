@@ -3689,7 +3689,7 @@ umem_cpu_reload(umem_cpu_cache_t *ccp, umem_magazine_t *mp, int rounds)
 #ifndef NO_WEAK_SYMBOLS
 #pragma weak umem_cache_alloc = _umem_cache_alloc
 #endif
-void *
+UMEM_HOT_ALIGN void *
 _umem_cache_alloc(umem_cache_t *cp, int umflag)
 {
 	umem_cpu_cache_t *ccp;
@@ -3972,7 +3972,7 @@ umem_cache_alloc_batch(umem_cache_t *cp, void **bufs, int count, int umflag)
 #ifndef NO_WEAK_SYMBOLS
 #pragma weak umem_cache_free = _umem_cache_free
 #endif
-void
+UMEM_HOT_ALIGN void
 _umem_cache_free(umem_cache_t *cp, void *buf)
 {
 	umem_cpu_cache_t *ccp = UMEM_CPU_CACHE(cp, CPU_CACHED(cp->cache_cpu_mask));
@@ -4261,7 +4261,7 @@ retry:
 #ifndef NO_WEAK_SYMBOLS
 #pragma weak umem_alloc = _umem_alloc
 #endif
-void *
+UMEM_HOT_ALIGN void *
 _umem_alloc(size_t size, int umflag)
 {
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
@@ -4498,7 +4498,7 @@ umem_alloc_align_retry:
 #ifndef NO_WEAK_SYMBOLS
 #pragma weak umem_free = _umem_free
 #endif
-void
+UMEM_HOT_ALIGN void
 _umem_free(void *buf, size_t size)
 {
 	size_t index = (size - 1) >> UMEM_ALIGN_SHIFT;
