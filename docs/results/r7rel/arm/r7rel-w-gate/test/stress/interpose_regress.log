@@ -1,0 +1,23 @@
+== calloc race (control, no preload) ==
+calloc-interpose-race: threads=16 iters=2000
+  allocs=32000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== calloc race (LD_PRELOAD interposer) ==
+calloc-interpose-race: threads=16 iters=20000
+  allocs=320000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== aligned contracts (control, no preload) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [control]
+  info: system aligned_alloc(3,16)=NULL, (0,16)=NULL (C11 leaves this undefined; not required of the control allocator)
+PASS (0 failures)
+== aligned contracts (LD_PRELOAD interposer) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [strict]
+PASS (0 failures)
+== free() thread scaling (LD_PRELOAD interposer) ==
+aggregate ops/s: t=1 36.15M  t=8 280.61M  ratio=7.76x
+RESULT: PASS (free() scales; no global serialization on the hot path)
+== free() per-call cost vs API (LD_PRELOAD interposer) ==
+t=8 9 pairs: null API/API median 1.000 min 0.931; preload/API median 0.511 min 0.504; bar 0.48
+RESULT: PASS (preload/API 0.511 >= 0.48, null min 0.931)
+PASS: interposer regressions
+PASS test/stress/interpose_regress.sh (exit status: 0)

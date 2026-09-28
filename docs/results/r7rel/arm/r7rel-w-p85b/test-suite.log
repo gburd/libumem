@@ -1,0 +1,85 @@
+==================================
+   umem 3.3.3: ./test-suite.log
+==================================
+
+# TOTAL: 68
+# PASS:  58
+# SKIP:  10
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+
+System information (uname -a): Linux 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64
+Distribution information (/etc/os-release):
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=13.7
+ID=debian
+HOME_URL="https://www.debian.org/"
+
+.. contents:: :depth: 2
+
+SKIP: test/debugger/test_introspect_contracts
+=============================================
+
+SKIP: built without --enable-introspect (no channel to test)
+SKIP test/debugger/test_introspect_contracts.sh (exit status: 77)
+
+SKIP: test/security/test_introspect_sock_path
+=============================================
+
+SKIP: built without --enable-introspect (no channel to test)
+SKIP test/security/test_introspect_sock_path.sh (exit status: 77)
+
+SKIP: test/security/test_introspect_peer_uid
+============================================
+
+SKIP: built without --enable-introspect (no control channel, no peer check)
+SKIP test/security/test_introspect_peer_uid (exit status: 77)
+
+SKIP: test/debugger/test_tool_T2_monitor
+========================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T2_monitor.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T7_learn_noaudit
+==============================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T7_learn_noaudit.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T12_rearm
+=======================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T12_rearm.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T3_whatis_oversize
+================================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T3_whatis_oversize.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T6_whatis_colour
+==============================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T6_whatis_colour.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T8_break_ptc
+==========================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T8_break_ptc.sh (exit status: 77)
+
+SKIP: test/debugger/test_tool_T9_leak_stack
+===========================================
+
+SKIP: built without --enable-introspect
+SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)
+

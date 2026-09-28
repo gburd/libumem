@@ -1,0 +1,26 @@
+norseq make_check_rc=0
+# TOTAL: 68
+# PASS:  57
+# SKIP:  11
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+RESULT: PASS (free() scales; no global serialization on the hot path)
+t=8 9 pairs: null API/API median 0.841 min 0.421; preload/API median 0.673 min 0.366; bar 0.48
+  noisy rig (null min 0.421, median 0.841; need min >= 0.88 and median <= 1.136); retry 1/3
+t=8 9 pairs: null API/API median 1.011 min 0.589; preload/API median 0.565 min 0.286; bar 0.48
+  noisy rig (null min 0.589, median 1.011; need min >= 0.88 and median <= 1.136); retry 2/3
+t=8 9 pairs: null API/API median 1.146 min 0.630; preload/API median 0.530 min 0.339; bar 0.48
+  noisy rig (null min 0.630, median 1.146; need min >= 0.88 and median <= 1.136); retry 3/3
+t=8 9 pairs: null API/API median 1.008 min 0.601; preload/API median 0.514 min 0.339; bar 0.48
+SKIP: the rig never went quiet (null min 0.601, median 1.008 after 4 attempts); no verdict
+t=8 9 pairs: null API/API median 0.989 min 0.906; preload/API median 0.572 min 0.553; bar 0.48
+RESULT: PASS (preload/API 0.572 >= 0.48, null min 0.906)
+standalone_1 rc=0
+t=8 9 pairs: null API/API median 1.014 min 0.950; preload/API median 0.569 min 0.538; bar 0.48
+RESULT: PASS (preload/API 0.569 >= 0.48, null min 0.950)
+standalone_2 rc=0
+t=8 9 pairs: null API/API median 0.995 min 0.959; preload/API median 0.558 min 0.539; bar 0.48
+RESULT: PASS (preload/API 0.558 >= 0.48, null min 0.959)
+standalone_3 rc=0

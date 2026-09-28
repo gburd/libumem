@@ -1,0 +1,164 @@
+ref=96b0d3c
+sha=96b0d3c801255a8809eab2a0827c8a788286e1c6
+role=intel-lo@r7rel
+job=r7rel
+isolated=yes
+Linux ip-172-31-23-88 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64 GNU/Linux
+8
+gcc (Debian 14.2.0-19) 14.2.0
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+=== 1. exit_criteria_gate
+gate_rc=0
+=== 1. default build + make check ===
+build_rc=0
+check_rc=0
+# TOTAL: 68
+# PASS:  56
+# SKIP:  12
+# FAIL:  0
+# ERROR: 0
+=== 2. comprehensive unit suite ===
+test_main_rc=0
+=== 3. property tests (each rc captured immediately) ===
+prop_alloc_free2 rc=0
+prop_cache rc=0
+prop_fragmentation rc=0
+prop_ownership rc=0
+=== 4. concurrency oracle ===
+oracle_rc=0
+=== 5. clean source tarball ===
+dist_rc=0
+tarball=umem-3.3.3.tar.gz
+tarball_rc=0
+# TOTAL: 68
+# PASS:  56
+# FAIL:  0
+=== 6. installed prefix ===
+install_rc=0
+external_compile_rc=0
+external_run_rc=0
+=== 6b. timing regressions, standalone (quiet box, 77 is a FAIL here) ===
+RESULT: PASS (preload/API 0.555 >= 0.48, null min 0.897)
+interpose_ratio_rc=0
+=== 7. RELEASE configuration: -O3 -DNDEBUG, the binary that actually ships ===
+ndebug_build_rc=0
+ndebug_check_rc=0
+# TOTAL: 68
+# PASS:  56
+# SKIP:  12
+# FAIL:  0
+# ERROR: 0
+ndebug_test_main_rc=0
+ndebug_oracle_rc=0
+=== GATE RESULT ===
+GATE: PASS
+gate NONPASS ./docs/results/r7verify/intel-lo-r7verify-r7v/x86-default/test/stress/interpose_regress.trs
+=== introspect: ./configure --enable-introspect
+introspect make_check_rc=0
+introspect # TOTAL: 68
+introspect # PASS:  65
+introspect # SKIP:  3
+introspect # XFAIL: 0
+introspect # FAIL:  0
+introspect # XPASS: 0
+introspect # ERROR: 0
+introspect NONPASS ./docs/results/r7verify/intel-lo-r7verify-r7v/x86-default/test/stress/interpose_regress.trs
+introspect test_tool_T8_break_ptc: :test-result: PASS | PASS test/debugger/test_tool_T8_break_ptc.sh (exit status: 0)
+introspect test_tool_T1_event_cb: :test-result: PASS | PASS test/debugger/test_tool_T1_event_cb.sh (exit status: 0)
+introspect test_tool_T1_gdb_break: :test-result: PASS | PASS test/debugger/test_tool_T1_gdb_break.sh (exit status: 0)
+introspect test_tool_T9_leak_stack: :test-result: SKIP | SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)
+=== introspect-fp: ./configure --enable-introspect --enable-frame-pointers
+introspect-fp make_check_rc=0
+introspect-fp # TOTAL: 68
+introspect-fp # PASS:  66
+introspect-fp # SKIP:  2
+introspect-fp # XFAIL: 0
+introspect-fp # FAIL:  0
+introspect-fp # XPASS: 0
+introspect-fp # ERROR: 0
+introspect-fp NONPASS ./docs/results/r7verify/intel-lo-r7verify-r7v/x86-default/test/stress/interpose_regress.trs
+introspect-fp test_tool_T8_break_ptc: :test-result: PASS | PASS test/debugger/test_tool_T8_break_ptc.sh (exit status: 0)
+introspect-fp test_tool_T1_event_cb: :test-result: PASS | PASS test/debugger/test_tool_T1_event_cb.sh (exit status: 0)
+introspect-fp test_tool_T1_gdb_break: :test-result: PASS | PASS test/debugger/test_tool_T1_gdb_break.sh (exit status: 0)
+introspect-fp test_tool_T9_leak_stack: :test-result: PASS | PASS test/debugger/test_tool_T9_leak_stack.sh (exit status: 0)
+=== norseq: ./configure --disable-rseq
+norseq make_check_rc=2
+norseq # TOTAL: 68
+norseq # PASS:  54
+norseq # SKIP:  13
+norseq # XFAIL: 0
+norseq # FAIL:  1
+norseq # XPASS: 0
+norseq # ERROR: 0
+norseq NONPASS ./docs/results/r7verify/intel-lo-r7verify-r7v/x86-default/test/stress/interpose_regress.trs
+norseq NONPASS ./test/stress/interpose_regress.trs
+norseq test_tool_T8_break_ptc: :test-result: SKIP | SKIP test/debugger/test_tool_T8_break_ptc.sh (exit status: 77)
+norseq test_tool_T1_event_cb: :test-result: PASS | PASS test/debugger/test_tool_T1_event_cb.sh (exit status: 0)
+norseq test_tool_T1_gdb_break: :test-result: PASS | PASS test/debugger/test_tool_T1_gdb_break.sh (exit status: 0)
+norseq test_tool_T9_leak_stack: :test-result: SKIP | SKIP test/debugger/test_tool_T9_leak_stack.sh (exit status: 77)
+=== 4. ABI (default config, installed headers) vs v3.3.2
+new sizeof(umem_hook_t)=120
+new libumem.so -> libumem.so.1.0.0 [libumem.so.1]
+new libumem.so defined_exports=371
+new libumem_malloc.so -> libumem_malloc.so.1.0.0 [libumem_malloc.so.1]
+new libumem_malloc.so defined_exports=12
+v332 sizeof(umem_hook_t)=120
+v332 libumem.so -> libumem.so.1.0.0 [libumem.so.1]
+v332 libumem.so defined_exports=368
+v332 libumem_malloc.so -> libumem_malloc.so.1.0.0 [libumem_malloc.so.1]
+v332 libumem_malloc.so defined_exports=12
+exports libumem.so diff (v332 -> new):
+147a148
+> umem_oversize_arena
+154a156
+> umem_pcstack_internal
+171a174
+> umem_ptc_bin_publish
+abidiff libumem.so rc=4
+Functions changes summary: 0 Removed, 0 Changed, 2 Added functions
+Variables changes summary: 0 Removed, 0 Changed, 1 Added variable
+
+2 Added functions:
+
+  [A] 'function void umem_pcstack_internal(void*)'    {umem_pcstack_internal}
+  [A] 'function void umem_ptc_bin_publish(int)'    {umem_ptc_bin_publish}
+
+1 Added variable:
+
+  [A] 'vmem_t* umem_oversize_arena'    {umem_oversize_arena}
+
+exports libumem_malloc.so diff (v332 -> new):
+  identical
+abidiff libumem_malloc.so rc=0
+=== 5. P8.5b regressions (p85b_fix_lo_gate.sh 30)
+p85b_rc=0
+GATE make_check PASS
+# TOTAL: 68
+# PASS:  58
+# SKIP:  10
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+SKIP: test/debugger/test_introspect_contracts.sh
+SKIP: test/security/test_introspect_sock_path.sh
+SKIP: test/debugger/test_tool_T2_monitor.sh
+SKIP: test/debugger/test_tool_T7_learn_noaudit.sh
+SKIP: test/debugger/test_tool_T12_rearm.sh
+SKIP: test/debugger/test_tool_T3_whatis_oversize.sh
+SKIP: test/debugger/test_tool_T6_whatis_colour.sh
+SKIP: test/debugger/test_tool_T8_break_ptc.sh
+SKIP: test/debugger/test_tool_T9_leak_stack.sh
+SKIP: test/security/test_introspect_peer_uid
+GATE rseq_fastpath_6bug PASS
+GATE trailing_store PASS
+GATE commit_safe PASS
+GATE resize_leak_16 PASS
+GATE resize_leak_32 PASS
+GATE alias_e2e PASS
+GATE commit_abort PASS fails=0/30
+GATE oracle_small PASS
+GATE oracle_mag PASS
+GATE oracle_mixed PASS
+GATE oracle_large PASS
+=== r7rel_run done

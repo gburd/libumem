@@ -1,0 +1,30 @@
+== calloc race (control, no preload) ==
+calloc-interpose-race: threads=16 iters=2000
+  allocs=32000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== calloc race (LD_PRELOAD interposer) ==
+calloc-interpose-race: threads=16 iters=20000
+  allocs=320000 overlaps=0 clobbered=0 not-zeroed=0 alloc-failures=0 registry-full=0
+PASS
+== aligned contracts (control, no preload) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [control]
+  info: system aligned_alloc(3,16)=NULL, (0,16)=NULL (C11 leaves this undefined; not required of the control allocator)
+PASS (0 failures)
+== aligned contracts (LD_PRELOAD interposer) ==
+aligned-contracts: posix_memalign, aligned_alloc, realloc ownership, churn [strict]
+PASS (0 failures)
+== free() thread scaling (LD_PRELOAD interposer) ==
+aggregate ops/s: t=1 27.50M  t=8 80.28M  ratio=2.92x
+RESULT: PASS (free() scales; no global serialization on the hot path)
+== free() per-call cost vs API (LD_PRELOAD interposer) ==
+t=8 9 pairs: null API/API median 0.784 min 0.433; preload/API median 0.701 min 0.373; bar 0.48
+  noisy rig (null min 0.433 < 0.88); retry 1/3
+t=8 9 pairs: null API/API median 0.944 min 0.518; preload/API median 0.528 min 0.302; bar 0.48
+  noisy rig (null min 0.518 < 0.88); retry 2/3
+t=8 9 pairs: null API/API median 1.001 min 0.655; preload/API median 0.571 min 0.350; bar 0.48
+  noisy rig (null min 0.655 < 0.88); retry 3/3
+t=8 9 pairs: null API/API median 1.007 min 0.627; preload/API median 0.678 min 0.526; bar 0.48
+SKIP: the rig never went quiet (null min 0.627 < 0.88 after 4 attempts); no verdict
+SKIP: free() per-call cost vs API (LD_PRELOAD interposer) (77: the binary could not resolve the question)
+PASS: interposer regressions
+PASS test/stress/interpose_regress.sh (exit status: 0)
