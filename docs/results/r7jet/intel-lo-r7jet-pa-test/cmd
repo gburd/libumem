@@ -1,0 +1,1 @@
+cd ~/libumem-iso-pa-test-a536bd251b9a && { ./scripts/ec2/clean-regen.sh && make -j$(nproc) test/bench/bench_main && bash test/bench/test_bench_missing_alloc.sh; echo "TEST_EXIT=$?" ; }

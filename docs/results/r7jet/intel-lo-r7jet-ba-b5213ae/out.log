@@ -1,0 +1,7 @@
+REGEN_OK
+
+To analyze results:
+  - View CSV: cat /tmp/ba-42050/bench_20260928_013345.csv
+  - Import to Excel/LibreOffice/R/Python for detailed analysis
+jemalloc rows: 0
+bench_main: allocator 'jemalloc' is not available (library missing or dlopen failed; see stderr above; for static-TLS failures set GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536 or LD_PRELOAD it)

@@ -1,0 +1,19 @@
+== sha256 (r7harness lo-t8 provenance: libumem.so db5a76d8..., bench_main 4df46913...)
+884f580ee0a43e9e6558d54e95a5dd5b32cac8e5094ae633d8f308e7721e3601  .libs/libumem.so
+97cd6d40ab9c19e26c96ccc03648daff733ca5078f8ffeb7e0f66b2df1e28eb8  test/bench/.libs/bench_main
+== control: plain program, no libumem, no tunable
+dlopen jemalloc: /lib/x86_64-linux-gnu/libjemalloc.so.2: cannot allocate memory in static TLS block
+rc=1
+== same, with tunable
+dlopen jemalloc: OK
+rc=0
+== linked to libumem
+dlopen jemalloc: /lib/x86_64-linux-gnu/libjemalloc.so.2: cannot allocate memory in static TLS block
+rc=1
+== under perf record, no tunable, r7harness-style frag -t 8
+rc=0
+== libtool wrapper test/bench/bench_main, no tunable
+rc=0
+== LD_PRELOAD libjemalloc, no tunable
+jemalloc,single-thread,1,100000,100000,0.022700,4405216.29,28,30,31,32,40,12591,30,5771264,5771264,1600000,0,0,,,0,22.7,0.0,0.0000,1,0,1,0
+rc=0

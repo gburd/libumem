@@ -1,0 +1,1 @@
+cd ~/libumem-iso-pa-fix-b5213aef994b && { ./scripts/ec2/clean-regen.sh && make -j$(nproc) test/bench/bench_main && { bash test/bench/test_bench_missing_alloc.sh; echo "TEST_EXIT=$?"; } && make -j$(nproc) && make check -j$(nproc); echo "CHECK_EXIT=$?"; grep -E "^# (TOTAL|PASS|SKIP|XFAIL|FAIL|XPASS|ERROR)" test-suite.log ; }

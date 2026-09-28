@@ -1,0 +1,7 @@
+REGEN_OK
+
+To analyze results:
+  - View CSV: cat /tmp/ba-44410/bench_20260928_013352.csv
+  - Import to Excel/LibreOffice/R/Python for detailed analysis
+jemalloc rows: 2
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'

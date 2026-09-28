@@ -1,0 +1,36 @@
+== env GLIBC_TUNABLES=[unset] LD_PRELOAD=[unset]
+no GLIBC_TUNABLES in /etc/environment, profile.d, ~/.bashrc, ~/.profile
+REGEN_OK
+== readelf PT_TLS
+-- .libs/libumem.so.1
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x09c980 0x000000000009d980 0x000000000009d980 0x000040 0x0010b4 R   0x20
+-- test/bench/.libs/bench_main
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x00eb78 0x000000000000fb78 0x000000000000fb78 0x000000 0x000004 R   0x4
+-- /usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x0c7500 0x00000000000c8500 0x00000000000c8500 0x000a48 0x000a48 R   0x8
+== STATIC_TLS flag
+ 0x000000000000001e (FLAGS)              STATIC_TLS
+== no tunable
+bench_main: allocator 'jemalloc' is not available (library missing or dlopen failed; see stderr above; for static-TLS failures set GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536 or LD_PRELOAD it)
+rc=2
+== LD_DEBUG=libs (no tunable)
+     41949:	test/bench/.libs/bench_main: error: symbol lookup error: undefined symbol: umem_interpose_lockup (fatal)
+     41949:	test/bench/.libs/bench_main: error: symbol lookup error: undefined symbol: mallctl (fatal)
+     41949:	find library=libjemalloc.so.2 [0]; searching
+     41949:	  trying file=/home/admin/libumem-iso-pb-b5213ae-b5213aef994b/.libs/libjemalloc.so.2
+     41949:	  trying file=/lib/x86_64-linux-gnu/libjemalloc.so.2
+     41949:	find library=libjemalloc.so [0]; searching
+     41949:	  trying file=/home/admin/libumem-iso-pb-b5213ae-b5213aef994b/.libs/libjemalloc.so
+     41949:	  trying file=/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v4/libjemalloc.so
+== with tunable
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'
+bench_main: skipping unavailable allocator 'tcmalloc (not available)'
+bench_main: skipping unavailable allocator 'mimalloc (not available)'
+bench_main: skipping unavailable allocator 'snmalloc (not available)'
+bench_main: skipping unavailable allocator 'scudo (not available)'
+bench_main: skipping unavailable allocator 'rpmalloc (not available)'
+jemalloc,single-thread,1,100000,100000,0.002049,48804128.05,29,31,31,32,34,6847,32,5996544,5996544,1600000,0,0,,,0,2.1,0.0,0.0000,1,0,1,0,16,6250
+rc=0

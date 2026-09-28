@@ -1,0 +1,29 @@
+== env GLIBC_TUNABLES=[unset] LD_PRELOAD=[unset]
+no GLIBC_TUNABLES in /etc/environment, profile.d, ~/.bashrc, ~/.profile
+REGEN_OK
+== readelf PT_TLS
+-- .libs/libumem.so.1
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x09c980 0x000000000009d980 0x000000000009d980 0x000040 0x0010b4 R   0x20
+-- test/bench/.libs/bench_main
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x00eb78 0x000000000000fb78 0x000000000000fb78 0x000000 0x000004 R   0x4
+-- /usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  TLS            0x0c7500 0x00000000000c8500 0x00000000000c8500 0x000a48 0x000a48 R   0x8
+== STATIC_TLS flag
+ 0x000000000000001e (FLAGS)              STATIC_TLS
+== no tunable
+rc=0
+== LD_DEBUG=libs (no tunable)
+     37539:	test/bench/.libs/bench_main: error: symbol lookup error: undefined symbol: umem_interpose_lockup (fatal)
+     37539:	test/bench/.libs/bench_main: error: symbol lookup error: undefined symbol: mallctl (fatal)
+     37539:	find library=libjemalloc.so.2 [0]; searching
+     37539:	  trying file=/home/admin/libumem-iso-pb-2e88c21-2e88c219ef72/.libs/libjemalloc.so.2
+     37539:	  trying file=/lib/x86_64-linux-gnu/libjemalloc.so.2
+     37539:	find library=libjemalloc.so [0]; searching
+     37539:	  trying file=/home/admin/libumem-iso-pb-2e88c21-2e88c219ef72/.libs/libjemalloc.so
+     37539:	  trying file=/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v4/libjemalloc.so
+== with tunable
+jemalloc,single-thread,1,100000,100000,0.023347,4283218.03,28,30,30,33,42,3411,30,5885952,5885952,1600000,0,0,,,0,23.5,0.0,0.0000,1,0,1,0
+rc=0
