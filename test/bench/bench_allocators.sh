@@ -117,6 +117,13 @@ if [[ ${#ALLOCATORS[@]} -eq 0 ]]; then
     ALLOCATORS=("all")
 fi
 
+# libjemalloc.so.2 has a 0xa48-byte initial-exec TLS segment. glibc's default
+# static-TLS surplus cannot hold it once libumem is loaded, and on Debian 13
+# glibc 2.41 it fails even in a program without libumem, so without this the
+# dlopen fails and "all" drops jemalloc (docs/results/r7jet/).  Same value as
+# matrix.sh, allocator_comparison.sh, sustained_load.sh.
+export GLIBC_TUNABLES="${GLIBC_TUNABLES:-glibc.rtld.optional_static_tls=65536}"
+
 # --- pinning setup ----------------------------------------------------------
 # When --pin is given: (1) require the performance governor on all CPUs
 # (an untuned box gives invalid numbers -- see the plan's Global Constraints),
