@@ -265,6 +265,33 @@ static int ptc_table_ready;
 int8_t umem_ptc_bin_table[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT] = { [0 ... (UMEM_MAXBUF >> UMEM_ALIGN_SHIFT) - 1] = -1 };
 
 /*
+ * The table umem_ptc_init() computes.  umem_ptc_bin_table is a published
+ * copy of it, or all -1 while T1/T8 debug hooks are on, which sends every
+ * _umem_alloc/_umem_free to the slow path where the hooks fire.  Only
+ * umem_ptc_bin_publish() copies it, under umem_cache_lock (umem_hooks_sync).
+ */
+static int8_t umem_ptc_bin_real[UMEM_MAXBUF >> UMEM_ALIGN_SHIFT];
+
+/*
+ * Each entry is one byte, so a racing fast-path reader sees the old or the
+ * new value, both safe: -1 takes the slow path, a real bin the PTC.  A
+ * thread that read a real bin just before hooks went on finishes that one
+ * PTC operation unreported.
+ */
+void
+umem_ptc_bin_publish(int hooked)
+{
+	size_t i;
+
+	if (!ptc_table_ready)
+		return;		/* static all -1 stands until init */
+	for (i = 0; i < sizeof (umem_ptc_bin_real); i++)
+		__atomic_store_n(&umem_ptc_bin_table[i],
+		    hooked ? (int8_t)-1 : umem_ptc_bin_real[i],
+		    __ATOMIC_RELAXED);
+}
+
+/*
  * Size classes we cache: the umem_alloc_sizes entries up to 8192.  Bin
  * index also selects a capacity tier (ptc_bin_capacity: PTC_BIN_MEDIUM /
  * LARGE / XLARGE thresholds).  On LP64 the three 0 entries after 2048 are
@@ -402,7 +429,7 @@ umem_ptc_init(void)
 			size_t bin_idx;
 
 			if (alloc_size > umem_ptc_maxsize) {
-				umem_ptc_bin_table[idx] = -1;
+				umem_ptc_bin_real[idx] = -1;
 				continue;
 			}
 
@@ -415,15 +442,15 @@ umem_ptc_init(void)
 			    ((alloc_size + 7) & ~(size_t)7);
 
 			if (obj_size > umem_ptc_maxsize) {
-				umem_ptc_bin_table[idx] = -1;
+				umem_ptc_bin_real[idx] = -1;
 				continue;
 			}
 
 			bin_idx = obj_size / 8;
 			if (bin_idx >= sizeof(size_to_bin_table)) {
-				umem_ptc_bin_table[idx] = -1;
+				umem_ptc_bin_real[idx] = -1;
 			} else {
-				umem_ptc_bin_table[idx] =
+				umem_ptc_bin_real[idx] =
 				    size_to_bin_table[bin_idx];
 			}
 		}
@@ -441,7 +468,9 @@ umem_ptc_init(void)
 	 * the final value: entries are int8_t, written once, and -1 means
 	 * "not PTC" which sends the call to the ordinary path.  The flag
 	 * only guards umem_ptc_size_to_bin() and umem_sbo_enabled(), the
-	 * out-of-line callers.
+	 * out-of-line callers.  The fast paths read umem_ptc_bin_table, which
+	 * umem_init() fills from umem_ptc_bin_real via umem_hooks_sync() right
+	 * after this returns, still before umem_ready is published.
 	 */
 	ptc_table_ready = 1;
 }

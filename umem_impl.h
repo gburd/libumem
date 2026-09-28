@@ -108,6 +108,8 @@ extern "C" {
 #define	UMF_PTC		0x00000800	/* cache has per-thread caching */
 
 #define	UMF_CHECKNULL	0x00001000	/* heap exhaustion checking */
+/* cc_flags only, set/cleared by umem_hooks_sync() (umem.c): T1/T8 hooks on */
+#define	UMF_HOOKED	0x00002000
 
 #define	UMF_BUFTAG	(UMF_DEADBEEF | UMF_REDZONE)
 #define	UMF_TOUCH	(UMF_BUFTAG | UMF_LITE | UMF_CONTENTS)

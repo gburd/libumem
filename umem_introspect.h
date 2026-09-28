@@ -61,8 +61,8 @@ extern int umem_introspect_enabled;
 void umem_introspect_start(void);
 
 /*
- * Hot-path hook: called just before _umem_alloc returns a buffer, ONLY when
- * umem_introspect_break_armed != 0. Evaluates armed predicates and, on match,
+ * Called from umem_hook_alloc() (umem_inspect.c) on the allocator's slow
+ * paths, ONLY while a break is armed (umem_base.h, T1/T8). Evaluates armed predicates and, on match,
  * spin-waits on a condvar until a client sends "continue".
  */
 void umem_introspect_break_check(void *buf, size_t size,
