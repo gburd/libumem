@@ -98,10 +98,9 @@ typedef struct umem_hook {
 	 * would write past the end of their struct.  Measured: adding two
 	 * naturally-aligned 32-bit fields took it 120 -> 128.
 	 *
-	 * If a future change genuinely needs more space here, that is a soname
-	 * bump (libumem.so.1 -> .so.2), which also invalidates the documented
-	 * illumos `LD_PRELOAD=.../libumem_malloc.so.1` recipes in README.md.
-	 * Prefer packing. */
+	 * If a future change genuinely needs more space here, that is a
+	 * libumem soname bump (libumem.so.2 -> .so.3; v4.0.0 made the last
+	 * one).  Prefer packing. */
 	struct umem_hook *hook_next;	/* Next in hook list */
 	struct umem_hook *hook_prev;	/* Previous in hook list */
 	uint8_t hook_active;		/* Hook is active (0/1) */

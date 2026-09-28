@@ -79,7 +79,11 @@ log "## builds"
 build_into pre  "$PWD/pre"  || exit 1
 build_into post "$PWD/post" || exit 1
 build_into pre2 "$PWD/pre2" || exit 1
-cmp -s /tmp/p74_pre/libumem.so.1 /tmp/p74_post/libumem.so.1 && { log "FATAL: pre/post libumem.so byte-identical"; exit 1; }
+# One bench binary (from post) serves every arm, so all arms must share a
+# soname: across the v4.0.0 bump (libumem.so.1 -> .so.2) pre would silently
+# load nothing, or a system copy.  Refuse rather than mis-measure.
+[ "$(ls /tmp/p74_pre)" = "$(ls /tmp/p74_post)" ] || { log "FATAL: pre/post sonames differ ($(ls /tmp/p74_pre) vs $(ls /tmp/p74_post)); A/B across a soname bump is not supported"; exit 1; }
+cmp -s /tmp/p74_pre/libumem.so.[0-9]* /tmp/p74_post/libumem.so.[0-9]* && { log "FATAL: pre/post libumem.so byte-identical"; exit 1; }
 cp "$PWD/post/test/bench/.libs/bench_pairs" "$BP"
 cp "$PWD/post/test/bench/.libs/bench_foreign_free" "$BF"
 log "  bench_pairs sha256=$(sha256sum "$BP" | cut -c1-16)  bench_foreign_free sha256=$(sha256sum "$BF" | cut -c1-16)"

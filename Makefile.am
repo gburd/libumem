@@ -64,7 +64,12 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/security/test_introspect_peer_uid \
 		  tools/umem_profile_dump
 
-libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS) $(SOLARIS_SOCKET_LIBS) -version-info 1:0:0
+# -version-info 2:0:0 (soname libumem.so.2): v4.0.0 removed the 86 umem_sm_*
+# exports of the vendored sparsemap, which no libumem code called.  Removing
+# interfaces is current+1, age 0.  libumem_malloc.so keeps 1:0:0 below: its
+# 12 exports (malloc/free and friends) are unchanged, so every
+# LD_PRELOAD=.../libumem_malloc.so.1 recipe still resolves.
+libumem_la_LDFLAGS = -lpthread -lm $(NUMA_LIBS) $(SOLARIS_SOCKET_LIBS) -version-info 2:0:0
 
 # Conditionally include stub_stand.c for Solaris/Illumos
 if SOLARIS_BUILD
@@ -130,8 +135,6 @@ AM_CCASFLAGS =
 
 libumem_la_SOURCES = init_lib.c \
 			atomic.h \
-			sm.c \
-			sm.h \
 			umem_agent_support.c \
 			umem_fail.c \
 			umem_stacktrace.c \
@@ -200,11 +203,7 @@ libumem_malloc_la_LIBADD = libumem.la
 # configure.ac).  AM_CFLAGS precedes $(CFLAGS), so the user's CFLAGS win.
 AM_CFLAGS = -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc \
 	-fno-builtin-free $(FP_CFLAGS) $(SIMD_CFLAGS) -D_UMEM_INTERNAL
-# Namespace the vendored sparsemap (sm.c/sm.h, upstream v5.5.0) so its public
-# symbols become umem_sm_* and cannot collide with an application that also
-# links its own copy of sparsemap.  Only sm.c/sm.h consult this macro.
-# v5.6.0 is deliberately not taken: docs/reviews/2026-09-27-sparsemap-5.6.0-review.md.
-AM_CPPFLAGS = -DSPARSEMAP_PREFIX=umem_
+AM_CPPFLAGS =
 AM_LDFLAGS =
 
 # Add coverage flags if enabled
@@ -844,7 +843,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	attic/README.md \
 	test/install/external_consumer.c \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
-	test/tdigest.c test/tdigest.h test/common.c test/common.h \
+	test/tdigest.c test/tdigest.h \
 	test/bench/bench_framework.c test/bench/bench_framework.h test/bench/allocators.c \
 	test/bench/test_bench_accounting.c \
 	test/bench/bench_profile_test.c test/bench/expected_profile.txt \

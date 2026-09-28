@@ -5,7 +5,7 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v3.3.3): the Linux heap ceiling is gone, the
+> **Status (v4.0.0): the Linux heap ceiling is gone, the
 > maintenance thread runs, the per-CPU caches are used, the drop-in path
 > scales, and the freelist- and ownership-integrity gaps that left libumem
 > behind the size-class allocators are closed — per-thread cache bin slots AND
@@ -186,10 +186,9 @@ This fork is **not** a cosmetic refresh.  The substantive changes:
 
 ### Quality
 
-- Test coverage: 71.2% line coverage (core sources, excluding the
-  vendored third-party `sm.c`/`sm.h` sparsemap dependency) as of
-  2026-09-06 at commit `ecd5fa0`; 50.3% across the whole repo
-  including `sm.c`. Re-measured against current code — see
+- Test coverage: 71.2% line coverage of core sources as of
+  2026-09-06 at commit `ecd5fa0` (then excluding the vendored
+  sparsemap, removed in v4.0.0). Re-measured against current code — see
   `docs/results/2026-09-06-coverage-verification.md` for the full
   breakdown and how to reproduce (`scripts/generate-coverage.sh` or
   `scripts/ec2/run-remote.sh <role> '... lcov ...'`). This replaces

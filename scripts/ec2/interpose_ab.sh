@@ -93,7 +93,7 @@ build_into nullB "$PWD/pre2"  || exit 1
 cmp -s /tmp/ab_pre/libumem_malloc.so /tmp/ab_post/libumem_malloc.so && { log "FATAL: pre and post libumem_malloc.so are byte-identical"; exit 1; }
 log "  pre vs post libumem_malloc.so differ: yes (required)"
 log "  pre vs nullB libumem_malloc.so differ: $(cmp -s /tmp/ab_pre/libumem_malloc.so /tmp/ab_nullB/libumem_malloc.so && echo 'no (bit-identical rebuild)' || echo 'yes (layout-only)')"
-log "  pre vs post libumem.so differ: $(cmp -s /tmp/ab_pre/libumem.so.1 /tmp/ab_post/libumem.so.1 && echo 'no (allocator identical, as expected)' || echo 'yes')"
+log "  pre vs post libumem.so differ: $(cmp -s /tmp/ab_pre/libumem.so.[0-9]* /tmp/ab_post/libumem.so.[0-9]* && echo 'no (allocator identical, as expected)' || echo 'yes')"
 for a in pre post nullB; do
 	log "  $a preload resolves: $(LD_LIBRARY_PATH=/tmp/ab_$a LD_PRELOAD=/tmp/ab_$a/libumem_malloc.so ldd /tmp/ab_$a/bench_main | grep umem | tr -s ' ' | tr '\n' ';')"
 done

@@ -55,7 +55,7 @@ cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 
 LIB=""
-for cand in "$ROOT/.libs/libumem.so.1" "$ROOT/.libs/libumem.so" "$ROOT/.libs/libumem.so.1.0.0"; do
+for cand in "$ROOT/.libs/libumem.so" "$ROOT"/.libs/libumem.so.[0-9]*; do
 	[[ -f $cand ]] && { LIB=$cand; break; }
 done
 if [[ -z $LIB ]]; then

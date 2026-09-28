@@ -85,8 +85,12 @@ log "## builds"
 build_into pre  "$PWD/pre"  || exit 1
 build_into post "$PWD/post" || exit 1
 build_into pre2 "$PWD/pre2" || exit 1
-cmp -s /tmp/iab_pre/libumem_malloc.so /tmp/iab_post/libumem_malloc.so && cmp -s /tmp/iab_pre/libumem.so.1 /tmp/iab_post/libumem.so.1 && { log "FATAL: pre and post byte-identical"; exit 1; }
-log "  pre vs post libumem.so differ: $(cmp -s /tmp/iab_pre/libumem.so.1 /tmp/iab_post/libumem.so.1 && echo no || echo yes)"
+# One bench binary (from post) serves every arm, so all arms must share a
+# soname: across the v4.0.0 bump (libumem.so.1 -> .so.2) pre would silently
+# load nothing, or a system copy.  Refuse rather than mis-measure.
+[ "$(ls /tmp/iab_pre)" = "$(ls /tmp/iab_post)" ] || { log "FATAL: pre/post sonames differ ($(ls /tmp/iab_pre) vs $(ls /tmp/iab_post)); A/B across a soname bump is not supported"; exit 1; }
+cmp -s /tmp/iab_pre/libumem_malloc.so /tmp/iab_post/libumem_malloc.so && cmp -s /tmp/iab_pre/libumem.so.[0-9]* /tmp/iab_post/libumem.so.[0-9]* && { log "FATAL: pre and post byte-identical"; exit 1; }
+log "  pre vs post libumem.so differ: $(cmp -s /tmp/iab_pre/libumem.so.[0-9]* /tmp/iab_post/libumem.so.[0-9]* && echo no || echo yes)"
 log "  pre vs post libumem_malloc.so differ: $(cmp -s /tmp/iab_pre/libumem_malloc.so /tmp/iab_post/libumem_malloc.so && echo no || echo yes)"
 cp "$PWD/post/test/bench/.libs/bench_pairs" "$BENCH"
 log "  bench_pairs (one binary, from post): sha256=$(sha256sum "$BENCH" | cut -c1-16)"

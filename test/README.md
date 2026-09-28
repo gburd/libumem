@@ -77,9 +77,8 @@ runs.
 
 ## Coverage
 
-Last measured: **71.2% line coverage** of core sources (excluding the
-vendored `sm.c`/`sm.h` sparsemap), **50.3%** across the whole repo including
-`sm.c`, on 2026-09-06 at commit `ecd5fa0`. Method and reproduction:
+Last measured: **71.2% line coverage** of core sources on 2026-09-06 at
+commit `ecd5fa0` (then excluding the vendored sparsemap, removed in v4.0.0). Method and reproduction:
 [`../docs/results/2026-09-06-coverage-verification.md`](../docs/results/2026-09-06-coverage-verification.md).
 
 This file previously claimed ">90% code coverage" and a ">90% Overall" target

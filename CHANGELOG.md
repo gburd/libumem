@@ -5,7 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [3.3.3] - 2026-09-28
+## [4.0.0] - 2026-09-28
+
+**Soname change: `libumem.so.1` -> `libumem.so.2`.** Programs linked against
+libumem must be relinked. `libumem_malloc.so.1` (the `LD_PRELOAD` drop-in) is
+unchanged: its exports are identical, so `LD_PRELOAD=.../libumem_malloc.so.1`
+recipes keep working, and it now pulls in `libumem.so.2`.
+
+### Removed
+
+- **The vendored sparsemap (`sm.c`, `sm.h`, upstream v5.5.0) and the 86
+  `umem_sm_*` exports it added to every process.** No libumem code called it.
+  It had been namespaced (`-DSPARSEMAP_PREFIX=umem_`) so it could not collide
+  with an application's own copy, but it still shipped ~290 KB of source, 86
+  dynamic symbols and a third-party review burden (the 5.6.0 and 5.7.0 reviews
+  in `docs/reviews/` found regressions in both). Removing exported symbols is
+  an ABI break, so it is a major release on its own. `test/common.[ch]`,
+  sparsemap-era test helpers that nothing built, go with it.
+
 
 Makes the live-heap debugging tools do what they advertise. gdb/lldb
 `umem break` and `umem events`, `umem_inspect_set_event_cb()` and `umemctl

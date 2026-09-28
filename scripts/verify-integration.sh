@@ -56,8 +56,6 @@ check_file "test/munit.h"
 check_file "test/qc.c"
 check_file "test/qc.h"
 check_file "test/tdigest.c"
-check_file "test/common.c"
-check_file "test/common.h"
 echo
 
 echo "Checking test suites..."
