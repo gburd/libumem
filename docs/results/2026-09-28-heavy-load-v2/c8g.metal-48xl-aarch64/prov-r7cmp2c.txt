@@ -1,0 +1,4 @@
+  $ ./configure
+6.12.107+deb13-cloud-arm64
+2.41-12+deb13u4
+5.3.0-3
