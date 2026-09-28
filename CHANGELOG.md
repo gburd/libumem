@@ -15,10 +15,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   passes `cache_full`, and `umem_ptc_mag_return` routes by count. Nothing
   was ever lost. New regression `test_ptc_exit_full_mag` (in `TESTS`) FAILs
   20/20 before the fix and PASSes 20/20 after, on x86_64 and aarch64. The
-  t=8 exit-storm time is inside its null on both arches (-2.9 % / -3.4 %
-  medians, null range about ±6 %), so no speedup is claimed. The hot path
-  is unchanged (bench_pairs within ±0.22 %, instructions per pair +0.00 %).
-  docs/results/r8exit/.
+  exit-storm A/B was run on arm metal (c8g.metal-48xl, 192 vCPU) at t=192
+  and t=384, 300 rounds, 9 alternating pairs, null (pre/pre2) first: every
+  post delta is inside the null's spread (t=192 exit +0.46% [+0.34,+2.75]
+  vs null +0.21% [-2.58,+1.98], total +0.76% inside null +1.12%; t=384 exit
+  -0.01%, total -1.11%, both inside the null), matching t=8. A perf record
+  at t=192 shows why: the profile is dominated by kernel thread-teardown
+  (`tlb_flush` ~20%, `wake_up_new_task`, `__pi_clear_page`), and the drain
+  path the fix touches (`_umem_cache_free`, `umem_ptc_mag_flush_all`,
+  `umem_ptc_mag_return`) is 0.00-0.01% self time in both pre and post. So
+  the change is correctness/scalability (886,721 fewer per-object depot
+  frees), NOT a measurable exit-time speedup at these thread counts; no
+  speedup is claimed. The hot path is unchanged (bench_pairs within
+  ±0.22 %, instructions per pair +0.00 %). docs/results/r8exit/.
 
 ## [4.0.0] - 2026-09-28
 
