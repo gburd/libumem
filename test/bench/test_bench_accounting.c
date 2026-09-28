@@ -71,6 +71,7 @@
 #include <string.h>
 #include <stdatomic.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 static int failures;
 
@@ -723,6 +724,123 @@ test_interval_straggler(void)
 	}
 }
 
+/*
+ * 1-in-N latency sampling (bench_main -T N).  Two clock_gettime calls and a
+ * t-digest insert on EVERY operation were 46 % + 30 % of jemalloc frag at
+ * t=192, which squeezed allocator throughput ratios toward 1.  With
+ * lat_sample_every = 16 each worker must time ~1 op in 16 while
+ * total_operations still counts every op.
+ *
+ * Counted independently of the harness's own report: this executable defines
+ * clock_gettime, which the bench_get_ns() calls in bench_framework.c bind to,
+ * and counts every call (forwarded to the kernel with syscall(2)).  Pre-fix
+ * the count is ~2 per op at N=16 exactly as at N=1.
+ */
+static atomic_ulong clock_calls;
+int clock_gettime(clockid_t id, struct timespec *ts)
+{
+	atomic_fetch_add_explicit(&clock_calls, 1, memory_order_relaxed);
+	return ((int)syscall(SYS_clock_gettime, id, ts));
+}
+
+static bench_stats_t
+run_sampled(workload_fn fn, int threads, uint32_t every, bench_stats_t *iv,
+    int niv, unsigned long *calls)
+{
+	workload_config_t cfg = {
+		.name = "sampled", .fn = fn, .thread_count = threads,
+		.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD * threads,
+		.min_size = 64, .max_size = 256,
+		.lat_sample_every = every,
+		.intervals = niv, .interval_sec = 0.3, .interval_out = iv,
+		.frag_live_mib = 16
+	};
+	bench_stats_t st;
+	atomic_store(&clock_calls, 0);
+	bench_run(&mock, &cfg, &st);
+	*calls = atomic_load(&clock_calls);
+	return (st);
+}
+
+static void
+test_lat_sampling(void)
+{
+	printf("latency sampled 1 op in 16; every op still counted\n");
+	struct { const char *name; workload_fn fn; int t; } cases[] = {
+		{ "single", workload_single_thread, 1 },
+		{ "multi", workload_multi_thread, 2 },
+		{ "prodcons", workload_producer_consumer, 2 },
+		{ "frag", workload_fragmentation, 2 },
+	};
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		unsigned long c1, c16;
+		bench_stats_t a = run_sampled(cases[i].fn, cases[i].t, 1,
+		    NULL, 0, &c1);
+		bench_stats_t b = run_sampled(cases[i].fn, cases[i].t, 16,
+		    NULL, 0, &c16);
+		printf("   %-8s -T 1: ops=%llu clock=%lu samples=%llu | "
+		    "-T 16: ops=%llu clock=%lu samples=%llu every=%u\n",
+		    cases[i].name, (unsigned long long)a.total_operations, c1,
+		    (unsigned long long)a.latency_samples,
+		    (unsigned long long)b.total_operations, c16,
+		    (unsigned long long)b.latency_samples, b.lat_sample_every);
+		CHECK(a.total_operations == b.total_operations,
+		    "%s: op count changed with sampling (%llu vs %llu)",
+		    cases[i].name, (unsigned long long)a.total_operations,
+		    (unsigned long long)b.total_operations);
+		/* Per-thread stride: ceil(timed/16) per thread, +-64 for the
+		 * driver's own reads and rounding. */
+		CHECK(c16 * 16 >= c1 * 9 / 10 - 64 * 16 &&
+		    c16 * 16 <= c1 * 11 / 10 + 64 * 16,
+		    "%s: %lu clock reads at -T 16 vs %lu at -T 1 (want ~1/16)",
+		    cases[i].name, c16, c1);
+		CHECK(b.lat_sample_every == 16 && a.lat_sample_every == 1,
+		    "%s: sampling rate not reported (%u, %u)", cases[i].name,
+		    a.lat_sample_every, b.lat_sample_every);
+		CHECK(a.latency_samples > 0 && b.latency_samples * 16 >=
+		    a.latency_samples * 9 / 10 && b.latency_samples * 16 <=
+		    a.latency_samples * 11 / 10 + 64,
+		    "%s: %llu digest inserts at -T 16 vs %llu at -T 1",
+		    cases[i].name, (unsigned long long)b.latency_samples,
+		    (unsigned long long)a.latency_samples);
+		if (cases[i].fn == workload_multi_thread)
+			CHECK(a.latency_samples == a.total_operations,
+			    "multi -T 1 must time every op (%llu of %llu)",
+			    (unsigned long long)a.latency_samples,
+			    (unsigned long long)a.total_operations);
+	}
+	/* -D interval mode: time-bounded, so compare against its own ops. */
+	struct { const char *name; workload_fn fn; } ivc[] = {
+		{ "prodcons -D", workload_producer_consumer },
+		{ "frag -D", workload_fragmentation },
+	};
+	for (size_t i = 0; i < 2; i++) {
+		bench_stats_t iv[2];
+		unsigned long c;
+		memset(iv, 0, sizeof(iv));
+		(void)run_sampled(ivc[i].fn, 2, 16, iv, 2, &c);
+		uint64_t ops = 0, smp = 0;
+		for (int k = 0; k < 2; k++) {
+			ops += iv[k].total_operations;
+			smp += iv[k].latency_samples;
+			CHECK(iv[k].lat_sample_every == 16,
+			    "%s interval %d: rate %u not reported", ivc[i].name,
+			    k, iv[k].lat_sample_every);
+		}
+		printf("   %-11s -T 16: ops=%llu clock=%lu samples=%llu\n",
+		    ivc[i].name, (unsigned long long)ops, c,
+		    (unsigned long long)smp);
+		/* ~2 reads per 16 ops; the driver's timer adds a few thousand. */
+		CHECK(ops > 0 && c <= ops / 8 * 13 / 10 + 20000,
+		    "%s: %lu clock reads for %llu ops (want ~ops/8)",
+		    ivc[i].name, c, (unsigned long long)ops);
+		CHECK(smp * 16 >= ops / 2 && smp * 16 <= ops * 3 / 2,
+		    "%s: %llu digest inserts for %llu ops (want ~ops/16)",
+		    ivc[i].name, (unsigned long long)smp,
+		    (unsigned long long)ops);
+	}
+}
+
 int
 main(void)
 {
@@ -738,6 +856,7 @@ main(void)
 	test_no_bogus_fragmentation();
 	test_interval_mode();
 	test_interval_straggler();
+	test_lat_sampling();
 
 	printf("\nResult: %s (%d failure%s)\n", failures ? "FAIL" : "PASS",
 	    failures, failures == 1 ? "" : "s");

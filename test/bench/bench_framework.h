@@ -48,6 +48,12 @@ typedef struct bench_stats {
     double latency_min;
     double latency_max;
     double latency_mean;
+    /* Latency is sampled: each worker times one operation in
+     * lat_sample_every (its own counter), so the percentiles above are
+     * estimates from latency_samples timed operations, not from every one.
+     * Throughput (total_operations) still counts every operation. */
+    uint32_t lat_sample_every;
+    uint64_t latency_samples;
 
     /* Memory.
      *
@@ -175,6 +181,11 @@ typedef struct workload_config {
      * to be operation_count / threads / 4 with the 100k-op per-thread floor,
      * i.e. >= 25k objects per thread: ~196 GB live at 16-64 KB and t=192. */
     size_t frag_live_mib;
+    /* Time 1 operation in N per worker (bench_main -T N, default
+     * BENCH_LAT_SAMPLE_DEFAULT).  0 or 1 => time every operation.  Two
+     * clock_gettime calls and a t-digest insert per op were 46 % + 30 % of
+     * jemalloc frag at t=192 and squeezed allocator ratios toward 1. */
+    uint32_t lat_sample_every;
     struct bench_stats *interval_out;
     /* Optional: called by the driver thread as each interval completes, with
      * that interval's filled stats and index, so a long run's rows are out
@@ -183,6 +194,7 @@ typedef struct workload_config {
 } workload_config_t;
 
 #define BENCH_FRAG_LIVE_MIB_DEFAULT 1024
+#define BENCH_LAT_SAMPLE_DEFAULT 16
 
 /* Test hook: size and alignment of the multi, prodcons and frag per-worker
  * context types (each must be one or more whole cache lines). */
