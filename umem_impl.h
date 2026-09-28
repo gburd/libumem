@@ -134,6 +134,27 @@ extern "C" {
 #endif
 #define	UMEM_CACHE_ALIGNED	__attribute__((aligned(UMEM_CACHE_LINE_SIZE)))
 
+/*
+ * UMEM_HOT_ALIGN: function alignment for the four public entry points
+ * (_umem_alloc, _umem_free, _umem_cache_alloc, _umem_cache_free).
+ *
+ * Invariant: each of these starts on a 64-byte boundary, whatever code
+ * precedes it in umem.c.  Their placement then no longer shifts when an
+ * unrelated function earlier in the file grows or shrinks.  64 is the
+ * x86 fetch/uop-cache window and the arm64 I-cache line.  It does not
+ * follow UMEM_CACHE_LINE_SIZE, which is about data coherence.
+ *
+ * Evidence (docs/results/r7h4): with no pin, a T1/T8 change of +0
+ * instructions/pair measured -7.3 % at x86 512 B N=128 t=1.  All of it
+ * was undelivered front-end uops (idq_uops_not_delivered +74 %).  With
+ * -falign-functions=64 on both arms, the same change measured +1.43 %.
+ *
+ * ponytail: function starts only.  Hot loops inside these functions are
+ * not pinned; add -falign-loops (or per-loop alignment) if an A/B shows
+ * a placement swing at equal insn/pair again.
+ */
+#define	UMEM_HOT_ALIGN	__attribute__((aligned(64)))
+
 #define	UMEM_PREFETCH_READ(addr)	__builtin_prefetch((addr), 0, 3)
 #define	UMEM_PREFETCH_WRITE(addr)	__builtin_prefetch((addr), 1, 3)
 #define	UMEM_PREFETCH_BATCH(base, stride, count) \
