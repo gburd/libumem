@@ -19,6 +19,19 @@ r() { printf '\n=== %s ===\n' "$*"; }
 fails=0
 note_fail() { fails=$((fails+1)); echo "GATE-FAIL: $*"; }
 
+# The heap-ceiling regression (test_heap_ceiling{,_512}) returns 77 (SKIP) when
+# vm.max_map_count is above 200000, because a raised cap makes its assertion
+# vacuous.  Debian 13 ships 1048576, so on Debian `make check` here has never
+# actually run it (O10, docs/results/r8hint/).  Lower it to the 65530 default
+# so the gate exercises the ceiling; restore whatever was there on exit.
+ORIG_MMC=$(cat /proc/sys/vm/max_map_count 2>/dev/null || echo)
+if [ -n "$ORIG_MMC" ] && [ "$ORIG_MMC" -gt 200000 ] 2>/dev/null; then
+  sudo sysctl -w vm.max_map_count=65530 >/dev/null 2>&1 \
+    && echo "lowered vm.max_map_count $ORIG_MMC -> 65530 for the ceiling test" \
+    || echo "WARNING: could not lower vm.max_map_count ($ORIG_MMC); heap-ceiling test will SKIP"
+  trap '[ -n "$ORIG_MMC" ] && sudo sysctl -w vm.max_map_count=$ORIG_MMC >/dev/null 2>&1' EXIT
+fi
+
 r "1. default build + make check"
 ./scripts/ec2/clean-regen.sh >/dev/null 2>&1 && make -j$(nproc) >/dev/null 2>&1
 rc=$?; echo "build_rc=$rc"; [ $rc -ne 0 ] && note_fail "build"
