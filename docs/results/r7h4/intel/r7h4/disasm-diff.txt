@@ -1,0 +1,568 @@
+=== _umem_cache_alloc pre->dc
+11c11
+< mov    X(%rip),%rax        # <umem_cpus@@Base-0x21ec0>
+---
+> mov    X(%rip),%rax        # <umem_cpus@@Base-0x21eb8>
+21,22c21,22
+< mov    (%r15,%rax,8),%ecx
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    (%r15,%rax,8),%r8d
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+24c24
+< lea    (%rbx,%rcx,1),%r13
+---
+> lea    (%rbx,%r8,1),%r13
+45c45
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+55c55
+< mov    %rax,%rcx
+---
+> mov    %rax,%r8
+58c58
+< testb  $0x6,0x44(%r13)
+---
+> testw  $0x2006,0x44(%r13)
+61c61
+< mov    %rcx,%rax
+---
+> mov    %r8,%rax
+77c77
+< mov    %rax,%rcx
+---
+> mov    %rax,%r8
+80c80
+< nopl   0x0(%rax,%rax,1)
+---
+> nopl   (%rax)
+92,94c92,94
+< mov    0x40(%r13),%esi
+< lea    (%r15,%rdx,1),%edi
+< cmp    %esi,%edi
+---
+> mov    0x40(%r13),%ecx
+> lea    (%r15,%rdx,1),%esi
+> cmp    %ecx,%esi
+96c96
+< test   %esi,%esi
+---
+> test   %ecx,%ecx
+113c113
+< mov    0x8(%r14,%rax,8),%rdx
+---
+> mov    0x8(%r14,%rax,8),%r9
+116c116
+< xor    X(%rip),%rdx        # <umem_link_cookie>
+---
+> xor    X(%rip),%r9        # <umem_link_cookie>
+118,120c118,119
+< mov    %rdx,%rcx
+=== _umem_cache_alloc pre->post
+11c11
+< mov    X(%rip),%rax        # <umem_cpus@@Base-0x21ec0>
+---
+> mov    X(%rip),%rax        # <umem_cpus@@Base-0x21eb8>
+22c22
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+45c45
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+58c58,59
+< testb  $0x6,0x44(%r13)
+---
+> mov    0x44(%r13),%eax
+> test   $0x2006,%eax
+80c81
+< nopl   0x0(%rax,%rax,1)
+---
+> nop
+122c123
+< testb  $0x6,0x44(%r13)
+---
+> mov    0x44(%r13),%eax
+123a125,127
+> test   $0x2006,%eax
+> je     <_umem_cache_alloc>
+> test   $0x6,%al
+132c136,149
+< jmp    <_umem_cache_alloc>
+---
+> mov    0x44(%r13),%eax
+> test   $0x20,%ah
+> je     <_umem_cache_alloc>
+> mov    0x80(%rbx),%rsi
+> add    $0x18,%rsp
+> mov    %rbx,%rdx
+> mov    %rcx,%rdi
+> pop    %rbx
+> pop    %rbp
+> pop    %r12
+> pop    %r13
+> pop    %r14
+> pop    %r15
+> jmp    <umem_hook_alloc>
+166c183
+< mov    $0xe52,%edx
+---
+> mov    $0xe87,%edx
+178c195
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+246a264,277
+> mov    %ebp,%edx
+> mov    %rax,%rsi
+> mov    %rbx,%rdi
+> mov    %rax,0x8(%rsp)
+> call   <umem_cache_alloc_debug>
+> mov    0x8(%rsp),%rcx
+> cmp    $0xffffffff,%eax
+> je     <_umem_cache_alloc>
+> testb  $0x20,0x3c5(%rbx)
+> je     <_umem_cache_alloc>
+> jmp    <_umem_cache_alloc>
+> nopl   0x0(%rax,%rax,1)
+> test   $0x6,%al
+> je     <_umem_cache_alloc>
+254c285
+< cmp    X(%rip),%rbx        # <umem_null_cache@@Base-0x21c68>
+---
+> cmp    X(%rip),%rbx        # <umem_null_cache@@Base-0x21c60>
+258c289
+< mov    $0xe54,%edx
+---
+> mov    $0xe89,%edx
+262c293
+< data16 cs nopw 0x0(%rax,%rax,1)
+---
+=== _umem_cache_free pre->dc
+5a6
+> mov    %rdi,%r12
+7d7
+< mov    %rdi,%rbp
+10,11c10,11
+< mov    X(%rip),%rax        # <umem_cpus@@Base-0x21ec0>
+< mov    (%rax),%r12
+---
+> mov    X(%rip),%rax        # <umem_cpus@@Base-0x21eb8>
+> mov    (%rax),%rbp
+19,21c19,21
+< and    0xe8(%rbp),%eax
+< mov    (%r12,%rax,8),%ebx
+< add    %rbp,%rbx
+---
+> and    0xe8(%r12),%eax
+> mov    0x0(%rbp,%rax,8),%ebx
+> add    %r12,%rbx
+24c24,25
+< testb  $0x6,0x44(%rbx)
+---
+> mov    0x44(%rbx),%eax
+> test   $0x2006,%eax
+26c27
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+30c31
+< cmpq   $0x0,0x348(%rbp)
+---
+> cmpq   $0x0,0x348(%r12)
+42,43c43,44
+< mov    (%rax),%r12d
+< test   %r12d,%r12d
+---
+> mov    (%rax),%ebp
+> test   %ebp,%ebp
+47c48
+< movslq 0x28(%rbx),%r12
+---
+> movslq 0x28(%rbx),%rbp
+49c50
+< cmp    %eax,%r12d
+---
+> cmp    %eax,%ebp
+51c52
+< lea    0x280(%rbp),%r14
+---
+> lea    0x280(%r12),%r14
+58c59
+< mov    %rbp,%rdi
+---
+> mov    %r12,%rdi
+60c61
+< mov    %rax,%r12
+---
+> mov    %rax,%rbp
+66,67c67,68
+< lea    0x200(%rbp),%rsi
+< mov    %rbp,%rdi
+=== _umem_cache_free pre->post
+5a6
+> mov    %rdi,%r12
+7d7
+< mov    %rdi,%rbp
+10,11c10,11
+< mov    X(%rip),%rax        # <umem_cpus@@Base-0x21ec0>
+< mov    (%rax),%r12
+---
+> mov    X(%rip),%rax        # <umem_cpus@@Base-0x21eb8>
+> mov    (%rax),%rbp
+19,21c19,21
+< and    0xe8(%rbp),%eax
+< mov    (%r12,%rax,8),%ebx
+< add    %rbp,%rbx
+---
+> and    0xe8(%r12),%eax
+> mov    0x0(%rbp,%rax,8),%ebx
+> add    %r12,%rbx
+24c24,25
+< testb  $0x6,0x44(%rbx)
+---
+> mov    0x44(%rbx),%eax
+> test   $0x2006,%eax
+26c27
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+30c31
+< cmpq   $0x0,0x348(%rbp)
+---
+> cmpq   $0x0,0x348(%r12)
+42,43c43,44
+< mov    (%rax),%r12d
+< test   %r12d,%r12d
+---
+> mov    (%rax),%ebp
+> test   %ebp,%ebp
+47c48
+< movslq 0x28(%rbx),%r12
+---
+> movslq 0x28(%rbx),%rbp
+49c50
+< cmp    %eax,%r12d
+---
+> cmp    %eax,%ebp
+51c52
+< lea    0x280(%rbp),%r14
+---
+> lea    0x280(%r12),%r14
+58c59
+< mov    %rbp,%rdi
+---
+> mov    %r12,%rdi
+60c61
+< mov    %rax,%r12
+---
+> mov    %rax,%rbp
+66,67c67,68
+< lea    0x200(%rbp),%rsi
+< mov    %rbp,%rdi
+---
+> lea    0x200(%r12),%rsi
+> mov    %r12,%rdi
+69c70
+< movq   %r12,%xmm0
+---
+> movq   %rbp,%xmm0
+88c89
+< xor    %r12d,%r12d
+---
+> xor    %ebp,%ebp
+90c91
+< lea    0x1(%r12),%eax
+---
+> lea    0x1(%rbp),%eax
+95c96
+< lea    0x8(%rdx,%r12,8),%rax
+---
+> lea    0x8(%rdx,%rbp,8),%rax
+98c99
+=== _umem_alloc pre->dc
+17,19c17,18
+< mov    X(%rip),%r12        # <umem_oversize_arena@@Base-0x36620>
+< mov    (%r12),%rdi
+< test   %rdi,%rdi
+---
+> mov    X(%rip),%r12        # <umem_oversize_arena@@Base-0x36618>
+> cmpq   $0x0,(%r12)
+20a20,23
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> jne    <_umem_alloc.cold>
+> mov    (%r12),%rdi
+35,39c38,40
+< lea    X(%rip),%rdi        # <_DYNAMIC>
+< call   <__tls_get_addr@plt>
+< mov    0x5c(%rax),%esi
+< test   %esi,%esi
+< je     <_umem_alloc>
+---
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> jne    <_umem_alloc.cold>
+52,53c53,54
+< nopl   0x0(%rax)
+< mov    X(%rip),%rax        # <umem_alloc_table@@Base-0x1a50>
+---
+> nopl   (%rax)
+> mov    X(%rip),%rax        # <umem_alloc_table@@Base-0x1a48>
+55c56
+< mov    X(%rip),%rax        # <umem_ptc_bin_table@@Base-0x21f80>
+---
+> mov    X(%rip),%rax        # <umem_ptc_bin_table@@Base-0x21f78>
+87a89,103
+> lea    X(%rip),%rdi        # <_DYNAMIC>
+> call   <__tls_get_addr@plt>
+> mov    0x5c(%rax),%esi
+> test   %esi,%esi
+> jne    <_umem_alloc>
+> movl   $0x1,0x5c(%rax)
+> mov    %rax,(%rsp)
+> call   <umem_ptc_get@plt>
+> mov    (%rsp),%rcx
+> mov    %rax,%r14
+> movl   $0x0,0x5c(%rcx)
+> test   %rax,%rax
+> jne    <_umem_alloc>
+> jmp    <_umem_alloc>
+> nopl   0x0(%rax)
+99c115
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+103c119
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+175c191
+< mov    X(%rip),%rsi        # <pagesize@@Base-0x365e0>
+---
+> mov    X(%rip),%rsi        # <pagesize@@Base-0x365d8>
+=== _umem_alloc pre->post
+17,19c17,18
+< mov    X(%rip),%r12        # <umem_oversize_arena@@Base-0x36620>
+< mov    (%r12),%rdi
+< test   %rdi,%rdi
+---
+> mov    X(%rip),%r12        # <umem_oversize_arena@@Base-0x36618>
+> cmpq   $0x0,(%r12)
+20a20,23
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> jne    <_umem_alloc.cold>
+> mov    (%r12),%rdi
+35,39c38,40
+< lea    X(%rip),%rdi        # <_DYNAMIC>
+< call   <__tls_get_addr@plt>
+< mov    0x5c(%rax),%esi
+< test   %esi,%esi
+< je     <_umem_alloc>
+---
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> jne    <_umem_alloc.cold>
+52,53c53,54
+< nopl   0x0(%rax)
+< mov    X(%rip),%rax        # <umem_alloc_table@@Base-0x1a50>
+---
+> nopl   (%rax)
+> mov    X(%rip),%rax        # <umem_alloc_table@@Base-0x1a48>
+55c56
+< mov    X(%rip),%rax        # <umem_ptc_bin_table@@Base-0x21f80>
+---
+> mov    X(%rip),%rax        # <umem_ptc_bin_table@@Base-0x21f78>
+87a89,103
+> lea    X(%rip),%rdi        # <_DYNAMIC>
+> call   <__tls_get_addr@plt>
+> mov    0x5c(%rax),%esi
+> test   %esi,%esi
+> jne    <_umem_alloc>
+> movl   $0x1,0x5c(%rax)
+> mov    %rax,(%rsp)
+> call   <umem_ptc_get@plt>
+> mov    (%rsp),%rcx
+> mov    %rax,%r14
+> movl   $0x0,0x5c(%rcx)
+> test   %rax,%rax
+> jne    <_umem_alloc>
+> jmp    <_umem_alloc>
+> nopl   0x0(%rax)
+99c115
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+103c119
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+175c191
+< mov    X(%rip),%rsi        # <pagesize@@Base-0x365e0>
+---
+> mov    X(%rip),%rsi        # <pagesize@@Base-0x365d8>
+250,251c266
+< mov    (%r12),%rdi
+< test   %rdi,%rdi
+---
+> cmpq   $0x0,(%r12)
+253c268
+< mov    $0x1165,%edx
+---
+> mov    $0x11e1,%edx
+257,258c272,273
+< xchg   %ax,%ax
+< mov    X(%rip),%rax        # <umem_failure_log@@Base-0x36670>
+---
+> nopl   0x0(%rax)
+> mov    X(%rip),%rax        # <umem_failure_log@@Base-0x36668>
+272,281d286
+< nopw   0x0(%rax,%rax,1)
+< movl   $0x1,0x5c(%rax)
+< mov    %rax,(%rsp)
+< call   <umem_ptc_get@plt>
+=== _umem_free pre->dc
+16c16
+< mov    X(%rip),%rdx        # <umem_alloc_table@@Base-0x1a50>
+---
+> mov    X(%rip),%rdx        # <umem_alloc_table@@Base-0x1a48>
+18c18
+< mov    X(%rip),%rdx        # <umem_ptc_bin_table@@Base-0x21f80>
+---
+> mov    X(%rip),%rdx        # <umem_ptc_bin_table@@Base-0x21f78>
+63c63,66
+< mov    X(%rip),%rax        # <umem_oversize_arena@@Base-0x36620>
+---
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> jne    <_umem_free.cold>
+> mov    X(%rip),%rax        # <umem_oversize_arena@@Base-0x36618>
+75c78
+< nopl   0x0(%rax,%rax,1)
+---
+> nopl   0x0(%rax)
+121c124
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+125c128
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+206c209
+< mov    X(%rip),%rdi        # <pagesize@@Base-0x365e0>
+---
+> mov    X(%rip),%rdi        # <pagesize@@Base-0x365d8>
+279a283,287
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> je     <_umem_free>
+> jmp    <_umem_free.cold>
+> nopl   0x0(%rax,%rax,1)
+295c303
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+299c307
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+342a351
+> add    $0x28,%rsp
+346d354
+< add    $0x28,%rsp
+376c384
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+380c388
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+400c408,415
+< jmp    <_umem_free>
+---
+=== _umem_free pre->post
+16c16
+< mov    X(%rip),%rdx        # <umem_alloc_table@@Base-0x1a50>
+---
+> mov    X(%rip),%rdx        # <umem_alloc_table@@Base-0x1a48>
+18c18
+< mov    X(%rip),%rdx        # <umem_ptc_bin_table@@Base-0x21f80>
+---
+> mov    X(%rip),%rdx        # <umem_ptc_bin_table@@Base-0x21f78>
+63c63,66
+< mov    X(%rip),%rax        # <umem_oversize_arena@@Base-0x36620>
+---
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> jne    <_umem_free.cold>
+> mov    X(%rip),%rax        # <umem_oversize_arena@@Base-0x36618>
+75c78
+< nopl   0x0(%rax,%rax,1)
+---
+> nopl   0x0(%rax)
+121c124
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+125c128
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+206c209
+< mov    X(%rip),%rdi        # <pagesize@@Base-0x365e0>
+---
+> mov    X(%rip),%rdi        # <pagesize@@Base-0x365d8>
+279a283,287
+> mov    X(%rip),%eax        # <umem_hooks>
+> test   %eax,%eax
+> je     <_umem_free>
+> jmp    <_umem_free.cold>
+> nopl   0x0(%rax,%rax,1)
+295c303
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+299c307
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+342a351
+> add    $0x28,%rsp
+346d354
+< add    $0x28,%rsp
+376c384
+< mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc98ac8>
+---
+> mov    X(%rip),%rax        # <umem_rseq_enabled@@Base-0xc9cae0>
+380c388
+< mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc98b5c>
+---
+> mov    X(%rip),%rax        # <umem_rseq_asm_safe@@Base-0xc9cb74>
+400c408,415
+< jmp    <_umem_free>
+---
+> add    $0x28,%rsp
+> pop    %rbx
+> pop    %rbp
+> pop    %r12
+> pop    %r13
+> pop    %r14
+> pop    %r15
+> jmp    <umem_error>
+402a418
+> add    $0x28,%rsp
+406c422,439
+< jmp    <_umem_free>
+---
+> pop    %rbx
+> pop    %rbp
+> pop    %r12
+> pop    %r13
+> pop    %r14
+> pop    %r15
+> jmp    <umem_error>

@@ -1,0 +1,568 @@
+=== _umem_cache_alloc pre->dc
+9c9
+< ldr	x22, [x22, #3848]
+---
+> ldr	x22, [x22, #3856]
+14c14
+< ldr	x25, [x25, #3720]
+---
+> ldr	x25, [x25, #3728]
+19,20c19,20
+< ldr	x1, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x1, [x0, #2056]
+> add	x0, x0, #0x808
+28c28
+< ldr	x2, [x26, #3472]
+---
+> ldr	x2, [x26, #3480]
+38,39c38,39
+< ldr	x1, [x0, #2008]
+< add	x0, x0, #0x7d8
+---
+> ldr	x1, [x0, #2024]
+> add	x0, x0, #0x7e8
+44,45c44,45
+< ldr	x1, [x0, #2024]
+< add	x0, x0, #0x7e8
+---
+> ldr	x1, [x0, #2040]
+> add	x0, x0, #0x7f8
+56c56
+< ldr	x0, [x0, #4016]
+---
+> ldr	x0, [x0, #4024]
+83c83
+< add	w5, w2, w4
+---
+> add	w5, w4, w2
+94,95c94,95
+< ldr	x4, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x4, [x0, #2056]
+> add	x0, x0, #0x808
+105c105
+< ldr	x5, [x24, #144]
+---
+> ldr	x5, [x24, #152]
+113,114c113,115
+< ldr	w0, [x19, #76]
+< tst	w0, #0x6
+---
+> ldr	w1, [x19, #76]
+> mov	w0, #0x2006                	// #8198
+> tst	w1, w0
+153c154
+< mov	w2, #0xe52                 	// #3666
+---
+> mov	w2, #0xe99                 	// #3737
+163c164
+=== _umem_cache_alloc pre->post
+9c9
+< ldr	x22, [x22, #3848]
+---
+> ldr	x22, [x22, #3856]
+14c14
+< ldr	x25, [x25, #3720]
+---
+> ldr	x25, [x25, #3728]
+19,20c19,20
+< ldr	x1, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x1, [x0, #2056]
+> add	x0, x0, #0x808
+28c28
+< ldr	x2, [x26, #3472]
+---
+> ldr	x2, [x26, #3480]
+38,39c38,39
+< ldr	x1, [x0, #2008]
+< add	x0, x0, #0x7d8
+---
+> ldr	x1, [x0, #2024]
+> add	x0, x0, #0x7e8
+44,45c44,45
+< ldr	x1, [x0, #2024]
+< add	x0, x0, #0x7e8
+---
+> ldr	x1, [x0, #2040]
+> add	x0, x0, #0x7f8
+56c56
+< ldr	x0, [x0, #4016]
+---
+> ldr	x0, [x0, #4024]
+94,95c94,95
+< ldr	x4, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x4, [x0, #2056]
+> add	x0, x0, #0x808
+105c105
+< ldr	x5, [x24, #144]
+---
+> ldr	x5, [x24, #152]
+114c114,115
+< tst	w0, #0x6
+---
+> mov	w1, #0x2006                	// #8198
+> tst	w0, w1
+153c154
+< mov	w2, #0xe52                 	// #3666
+---
+> mov	w2, #0xe87                 	// #3719
+163c164
+< mov	w2, #0xe52                 	// #3666
+---
+> mov	w2, #0xe87                 	// #3719
+192a194
+> mov	x1, x0
+194d195
+< mov	x1, x20
+199,200c200,212
+< b	<_umem_cache_alloc>
+< ldr	x0, [x26, #3472]
+---
+> ldr	w0, [x27, #972]
+> tbz	w0, #13, <_umem_cache_alloc>
+> mov	x2, x27
+> mov	x0, x20
+> ldp	x19, x20, [sp, #16]
+> ldp	x21, x22, [sp, #32]
+> ldp	x23, x24, [sp, #48]
+> ldp	x25, x26, [sp, #64]
+> ldp	x27, x28, [sp, #80]
+> ldr	x1, [x2, #128]
+> ldp	x29, x30, [sp], #112
+> b	<umem_hook_alloc>
+> ldr	x0, [x26, #3480]
+204,205c216,217
+< ldr	x1, [x0, #2008]
+=== _umem_cache_free pre->dc
+9,10c9,10
+< ldr	x3, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x3, [x0, #2056]
+> add	x0, x0, #0x808
+12c12
+< ldr	x2, [x2, #3848]
+---
+> ldr	x2, [x2, #3856]
+28c28,29
+< tst	w0, #0x6
+---
+> mov	w1, #0x2006                	// #8198
+> tst	w0, w1
+31c32
+< ldr	x0, [x0, #3472]
+---
+> ldr	x0, [x0, #3480]
+37,38c38,39
+< ldr	x1, [x0, #2008]
+< add	x0, x0, #0x7d8
+---
+> ldr	x1, [x0, #2024]
+> add	x0, x0, #0x7e8
+43,44c44,45
+< ldr	x1, [x0, #2024]
+< add	x0, x0, #0x7e8
+---
+> ldr	x1, [x0, #2040]
+> add	x0, x0, #0x7f8
+76,77c77,78
+< ldr	x7, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x7, [x0, #2056]
+> add	x0, x0, #0x808
+111,112c112,113
+< ldr	x4, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x4, [x0, #2056]
+> add	x0, x0, #0x808
+118c119
+< ldr	x4, [x0, #456]
+---
+> ldr	x4, [x0, #464]
+144c145
+< mov	w2, #0xe52                 	// #3666
+---
+> mov	w2, #0xe99                 	// #3737
+214c215
+< ldr	x0, [x0, #4016]
+---
+> ldr	x0, [x0, #4024]
+243,244c244,255
+< bl	<umem_rseq_register_thread@plt>
+< b	<_umem_cache_free>
+---
+> mov	w2, w20
+=== _umem_cache_free pre->post
+9,10c9,10
+< ldr	x3, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x3, [x0, #2056]
+> add	x0, x0, #0x808
+12c12
+< ldr	x2, [x2, #3848]
+---
+> ldr	x2, [x2, #3856]
+28c28,29
+< tst	w0, #0x6
+---
+> mov	w1, #0x2006                	// #8198
+> tst	w0, w1
+31c32
+< ldr	x0, [x0, #3472]
+---
+> ldr	x0, [x0, #3480]
+37,38c38,39
+< ldr	x1, [x0, #2008]
+< add	x0, x0, #0x7d8
+---
+> ldr	x1, [x0, #2024]
+> add	x0, x0, #0x7e8
+43,44c44,45
+< ldr	x1, [x0, #2024]
+< add	x0, x0, #0x7e8
+---
+> ldr	x1, [x0, #2040]
+> add	x0, x0, #0x7f8
+76,77c77,78
+< ldr	x7, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x7, [x0, #2056]
+> add	x0, x0, #0x808
+111,112c112,113
+< ldr	x4, [x0, #2040]
+< add	x0, x0, #0x7f8
+---
+> ldr	x4, [x0, #2056]
+> add	x0, x0, #0x808
+118c119
+< ldr	x4, [x0, #456]
+---
+> ldr	x4, [x0, #464]
+144c145
+< mov	w2, #0xe52                 	// #3666
+---
+> mov	w2, #0xe87                 	// #3719
+214c215
+< ldr	x0, [x0, #4016]
+---
+> ldr	x0, [x0, #4024]
+243,244c244,255
+< bl	<umem_rseq_register_thread@plt>
+< b	<_umem_cache_free>
+---
+> mov	w2, w20
+> mov	x0, x23
+> mov	x1, x24
+> bl	<umem_rseq_free_fastpath@plt>
+> ldp	x25, x26, [sp, #64]
+> cbnz	w0, <_umem_cache_free>
+> ldp	x19, x20, [sp, #16]
+> ldp	x21, x22, [sp, #32]
+> ldp	x23, x24, [sp, #48]
+> ldp	x27, x28, [sp, #80]
+> ldp	x29, x30, [sp], #112
+> ret
+246c257
+< ldr	x0, [x0, #3472]
+---
+> ldr	x0, [x0, #3480]
+250,251c261,262
+< ldr	x1, [x0, #2008]
+< add	x0, x0, #0x7d8
+---
+> ldr	x1, [x0, #2024]
+=== _umem_alloc pre->dc
+2a3,5
+> stp	x25, x26, [sp, #64]
+> adrp	x25, <__FRAME_END__>
+> ldr	x26, [x25, #3344]
+4,5c7,10
+< adrp	x19, <__FRAME_END__>
+< mov	w20, w1
+---
+> sub	x19, x0, #0x1
+> adrp	x20, <bootstrap_ptrs>
+> lsr	x19, x19, #3
+> add	x20, x20, #0xe38
+7c12
+< adrp	x21, <__FRAME_END__>
+---
+> mov	w21, w1
+9d13
+< ldr	x19, [x19, #3336]
+11,16c15,16
+< sub	x23, x0, #0x1
+< lsr	x23, x23, #3
+< ldr	x21, [x21, #3984]
+< stp	x25, x26, [sp, #64]
+< mov	x25, x0
+< cmp	x23, x22
+---
+> mov	x23, x0
+> cmp	x19, x22
+18,24c18,23
+< adrp	x4, <__FRAME_END__>
+< adrp	x2, <__FRAME_END__>
+< ldr	x4, [x4, #3808]
+< stp	x27, x28, [sp, #80]
+< ldr	x2, [x2, #3520]
+< ldrsb	x24, [x4, x23]
+< ldr	x28, [x2, x23, lsl #3]
+---
+> adrp	x1, <__FRAME_END__>
+> adrp	x0, <__FRAME_END__>
+> ldr	x1, [x1, #3816]
+> ldr	x0, [x0, #3528]
+> ldrsb	x24, [x1, x19]
+> ldr	x4, [x0, x19, lsl #3]
+26d24
+< mrs	x26, tpidr_el0
+28c26
+< ldr	x0, [x0, #3896]
+---
+> ldr	x0, [x0, #3904]
+31,32c29,32
+< ldr	x27, [x26, x0]
+< cbz	x27, <_umem_alloc>
+---
+> stp	x27, x28, [sp, #80]
+> mrs	x27, tpidr_el0
+> ldr	x28, [x27, x0]
+> cbz	x28, <_umem_alloc>
+34c34
+< add	x2, x27, x2
+---
+=== _umem_alloc pre->post
+2a3,5
+> stp	x25, x26, [sp, #64]
+> adrp	x25, <__FRAME_END__>
+> ldr	x26, [x25, #3344]
+4,5c7,10
+< adrp	x19, <__FRAME_END__>
+< mov	w20, w1
+---
+> sub	x19, x0, #0x1
+> adrp	x20, <bootstrap_ptrs>
+> lsr	x19, x19, #3
+> add	x20, x20, #0xe38
+7c12
+< adrp	x21, <__FRAME_END__>
+---
+> mov	w21, w1
+9d13
+< ldr	x19, [x19, #3336]
+11,16c15,16
+< sub	x23, x0, #0x1
+< lsr	x23, x23, #3
+< ldr	x21, [x21, #3984]
+< stp	x25, x26, [sp, #64]
+< mov	x25, x0
+< cmp	x23, x22
+---
+> mov	x23, x0
+> cmp	x19, x22
+18,24c18,23
+< adrp	x4, <__FRAME_END__>
+< adrp	x2, <__FRAME_END__>
+< ldr	x4, [x4, #3808]
+< stp	x27, x28, [sp, #80]
+< ldr	x2, [x2, #3520]
+< ldrsb	x24, [x4, x23]
+< ldr	x28, [x2, x23, lsl #3]
+---
+> adrp	x1, <__FRAME_END__>
+> adrp	x0, <__FRAME_END__>
+> ldr	x1, [x1, #3816]
+> ldr	x0, [x0, #3528]
+> ldrsb	x24, [x1, x19]
+> ldr	x4, [x0, x19, lsl #3]
+26d24
+< mrs	x26, tpidr_el0
+28c26
+< ldr	x0, [x0, #3896]
+---
+> ldr	x0, [x0, #3904]
+31,32c29,32
+< ldr	x27, [x26, x0]
+< cbz	x27, <_umem_alloc>
+---
+> stp	x27, x28, [sp, #80]
+> mrs	x27, tpidr_el0
+> ldr	x28, [x27, x0]
+> cbz	x28, <_umem_alloc>
+34c34
+< add	x2, x27, x2
+---
+> add	x2, x28, x2
+50c50
+< ldr	x3, [x3, #456]
+---
+> ldr	x3, [x3, #464]
+54,55c54,55
+< cbz	x25, <_umem_alloc>
+< ldr	x0, [x19]
+---
+> cbz	x23, <_umem_alloc>
+> ldr	x0, [x26]
+56a57,59
+> ldr	w0, [x20]
+> cbnz	w0, <_umem_alloc>
+> ldr	x0, [x25, #3344]
+58c61,62
+< mov	x1, x25
+---
+> mov	x1, x23
+> ldr	x0, [x0]
+=== _umem_free pre->dc
+14c14
+< ldr	x1, [x1, #3808]
+---
+> ldr	x1, [x1, #3816]
+16c16
+< ldr	x0, [x0, #3520]
+---
+> ldr	x0, [x0, #3528]
+24c24
+< ldr	x0, [x0, #3896]
+---
+> ldr	x0, [x0, #3904]
+49c49
+< ldr	x3, [x3, #456]
+---
+> ldr	x3, [x3, #464]
+59a60,63
+> adrp	x0, <bootstrap_ptrs>
+> add	x0, x0, #0xe38
+> ldr	w0, [x0]
+> cbnz	w0, <_umem_free>
+62c66
+< ldr	x0, [x0, #3336]
+---
+> ldr	x0, [x0, #3344]
+69,70c73,74
+< ldr	x1, [x0, #1976]
+< add	x0, x0, #0x7b8
+---
+> ldr	x1, [x0, #1992]
+> add	x0, x0, #0x7c8
+85a90,101
+> adrp	x0, <bootstrap_ptrs>
+> add	x0, x0, #0xe38
+> ldr	w0, [x0]
+> cbz	w0, <_umem_free>
+> mov	x2, x20
+> mov	x1, x19
+> ldp	x19, x20, [sp, #16]
+> mov	x0, x24
+> ldp	x21, x22, [sp, #32]
+> ldp	x23, x24, [sp, #48]
+> ldp	x29, x30, [sp], #96
+> b	<umem_free_hooked>
+115c131
+< ldr	x0, [x0, #3472]
+---
+> ldr	x0, [x0, #3480]
+119c135
+< ldr	x0, [x0, #4016]
+---
+> ldr	x0, [x0, #4024]
+125,126c141,142
+< ldr	x1, [x0, #2008]
+< add	x0, x0, #0x7d8
+---
+> ldr	x1, [x0, #2024]
+> add	x0, x0, #0x7e8
+131,132c147,148
+< ldr	x1, [x0, #2024]
+=== _umem_free pre->post
+14c14
+< ldr	x1, [x1, #3808]
+---
+> ldr	x1, [x1, #3816]
+16c16
+< ldr	x0, [x0, #3520]
+---
+> ldr	x0, [x0, #3528]
+24c24
+< ldr	x0, [x0, #3896]
+---
+> ldr	x0, [x0, #3904]
+49c49
+< ldr	x3, [x3, #456]
+---
+> ldr	x3, [x3, #464]
+59a60,63
+> adrp	x0, <bootstrap_ptrs>
+> add	x0, x0, #0xe38
+> ldr	w0, [x0]
+> cbnz	w0, <_umem_free>
+62c66
+< ldr	x0, [x0, #3336]
+---
+> ldr	x0, [x0, #3344]
+69,70c73,74
+< ldr	x1, [x0, #1976]
+< add	x0, x0, #0x7b8
+---
+> ldr	x1, [x0, #1992]
+> add	x0, x0, #0x7c8
+85a90,101
+> adrp	x0, <bootstrap_ptrs>
+> add	x0, x0, #0xe38
+> ldr	w0, [x0]
+> cbz	w0, <_umem_free>
+> mov	x2, x20
+> mov	x1, x19
+> ldp	x19, x20, [sp, #16]
+> mov	x0, x24
+> ldp	x21, x22, [sp, #32]
+> ldp	x23, x24, [sp, #48]
+> ldp	x29, x30, [sp], #96
+> b	<umem_free_hooked>
+115c131
+< ldr	x0, [x0, #3472]
+---
+> ldr	x0, [x0, #3480]
+119c135
+< ldr	x0, [x0, #4016]
+---
+> ldr	x0, [x0, #4024]
+125,126c141,142
+< ldr	x1, [x0, #2008]
+< add	x0, x0, #0x7d8
+---
+> ldr	x1, [x0, #2024]
+> add	x0, x0, #0x7e8
+131,132c147,148
+< ldr	x1, [x0, #2024]
+< add	x0, x0, #0x7e8
+---
+> ldr	x1, [x0, #2040]
+> add	x0, x0, #0x7f8
+189c205
+< ldr	x6, [x4, #3968]
+---
+> ldr	x6, [x4, #3976]
+220c236
+< ldr	x4, [x4, #3968]
+---
+> ldr	x4, [x4, #3976]
+248c264
+< ldr	x4, [x4, #456]
+---
+> ldr	x4, [x4, #464]
+297c313
+< ldr	x4, [x4, #456]
+---
+> ldr	x4, [x4, #464]

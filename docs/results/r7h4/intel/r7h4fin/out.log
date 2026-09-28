@@ -1,0 +1,44 @@
+# hotpath A/B  vcpu=8  2026-09-28T03:06:28Z  pre=f40a2da post=20a4f8e  replicates=9 dur=1s
+# instance=c7i.2xlarge gcc=14
+## builds
+  built pre from /home/admin/ab-fin/pre: libumem.so sha256=f565b6aac5c8327c
+  built post from /home/admin/ab-fin/post: libumem.so sha256=713190707fbfa11f
+  built pre2 from /home/admin/ab-fin/pre2: libumem.so sha256=da492e46e8b0b118
+  bench_pairs (one binary, from post): sha256=f6c35eb01bc6efbc
+
+## bench_pairs Mpairs/s (delta = B relative to A)
+  null  s=512 N=128 t=1              last A=121.92    B=122.01     median   +0.03%  (min   -1.52%, max   +0.09%, n=9)
+  A/B   s=512 N=128 t=1              last A=121.95    B=113.05     median   -7.34%  (min   -7.44%, max   -5.94%, n=9)
+  null  s=512 N=128 t=8              last A=489.85    B=498.66     median   +0.00%  (min   -2.02%, max   +1.80%, n=9)
+  A/B   s=512 N=128 t=8              last A=489.84    B=499.60     median   -0.04%  (min   -1.38%, max   +3.37%, n=9)
+
+## perf stat instructions per pair, t=1 (delta = B relative to A; lower is better)
+  null  insn s=512 N=128             last A=142.3     B=142.2      median   +0.00%  (min   -0.07%, max   +0.07%, n=9)
+  A/B   insn s=512 N=128             last A=142.4     B=142.4      median   +0.00%  (min   -0.07%, max   +0.14%, n=9)
+# done 2026-09-28T03:09:10Z
+pre _umem_cache_alloc 262
+pre _umem_cache_free 447
+pre _umem_alloc 349
+pre _umem_alloc.cold 0
+pre _umem_free 434
+pre _umem_free.cold 0
+post _umem_cache_alloc 293
+post _umem_cache_free 461
+post _umem_alloc 353
+post _umem_alloc.cold 10
+post _umem_free 468
+post _umem_free.cold 22
+event frontend_retired.dsb_miss: UNAVAILABLE (<not supported>,,frontend_retired.dsb_miss:u,0,100.00,,)
+event frontend_retired.l1i_miss: UNAVAILABLE (<not supported>,,frontend_retired.l1i_miss:u,0,100.00,,)
+events: cycles:u,instructions:u,branch-misses:u,L1-icache-load-misses:u,idq_uops_not_delivered.core:u,idq.dsb_uops:u,idq.mite_uops:u,icache_data.stalls:u,baclears.any:u
+event (per pair, median of runs)            f40a2da           post     delta
+icache_data.stalls:u                         0.0059         0.0062    +5.23%
+idq.mite_uops:u                              0.0433         0.0457    +5.56%
+idq_uops_not_delivered.core:u               16.4800        29.0259   +76.13%
+idq.dsb_uops:u                             135.3190       134.4450    -0.65%
+L1-icache-load-misses                        0.0014         0.0016   +12.60%
+branch-misses:u                              0.0314         0.0314    +0.06%
+cycles:u                                    25.6997        27.7706    +8.06%
+baclears.any:u                               0.0001         0.0001   +23.20%
+instructions:u                             141.0620       141.0710    +0.01%
+pairs/s (-d 1)                            109060000      101160000    -7.24%

@@ -1,0 +1,11 @@
+event (per pair, median of runs)            f40a2da           post     delta
+icache_data.stalls:u                         0.0059         0.0062    +5.23%
+idq.mite_uops:u                              0.0433         0.0457    +5.56%
+idq_uops_not_delivered.core:u               16.4800        29.0259   +76.13%
+idq.dsb_uops:u                             135.3190       134.4450    -0.65%
+L1-icache-load-misses                        0.0014         0.0016   +12.60%
+branch-misses:u                              0.0314         0.0314    +0.06%
+cycles:u                                    25.6997        27.7706    +8.06%
+baclears.any:u                               0.0001         0.0001   +23.20%
+instructions:u                             141.0620       141.0710    +0.01%
+pairs/s (-d 1)                            109060000      101160000    -7.24%

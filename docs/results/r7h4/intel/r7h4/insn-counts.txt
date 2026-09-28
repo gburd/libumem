@@ -1,0 +1,12 @@
+fn                        f40a2da  dc4f29c  ae9af7e   (insns; start addr mod 64)
+_umem_cache_alloc          262@32    283@0     293@0  
+_umem_cache_alloc.cold       0@-       0@-       0@-  
+_umem_cache_free           447@16    457@0     461@16 
+_umem_cache_free.cold        0@-       0@-       0@-  
+_umem_alloc                349@0     353@0     353@0  
+_umem_alloc.cold             0@-      10@50     10@50 
+_umem_free                 434@0     468@32    468@32 
+_umem_free.cold              0@-      22@54     22@54 
+umem_cache_alloc_tail        0@-      31@0       0@-  
+umem_alloc_hooked            0@-      60@45     60@45 
+umem_free_hooked             0@-      74@0      74@0  

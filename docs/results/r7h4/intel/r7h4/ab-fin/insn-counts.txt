@@ -1,0 +1,12 @@
+pre _umem_cache_alloc 262
+pre _umem_cache_free 447
+pre _umem_alloc 349
+pre _umem_alloc.cold 0
+pre _umem_free 434
+pre _umem_free.cold 0
+post _umem_cache_alloc 293
+post _umem_cache_free 461
+post _umem_alloc 353
+post _umem_alloc.cold 10
+post _umem_free 468
+post _umem_free.cold 22

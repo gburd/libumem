@@ -1,0 +1,16 @@
+# hotpath A/B  vcpu=8  2026-09-28T02:41:28Z  pre=f40a2da post=r7h4-layoutb  replicates=9 dur=1s
+# instance=c7i.2xlarge gcc=14
+## builds
+  built pre from /home/admin/ab-layb/pre: libumem.so sha256=9710494cc2c56f9d
+  built post from /home/admin/ab-layb/post: libumem.so sha256=2eace14e0285d352
+  built pre2 from /home/admin/ab-layb/pre2: libumem.so sha256=8441de92a36d5691
+  bench_pairs (one binary, from post): sha256=daba02fe59489dda
+
+## bench_pairs Mpairs/s (delta = B relative to A)
+  null  s=512 N=128 t=1              last A=121.97    B=121.91     median   +0.01%  (min   -0.11%, max   +1.57%, n=9)
+  A/B   s=512 N=128 t=1              last A=122.03    B=114.73     median   -0.35%  (min   -5.98%, max   -0.28%, n=9)
+
+## perf stat instructions per pair, t=1 (delta = B relative to A; lower is better)
+  null  insn s=512 N=128             last A=142.4     B=142.3      median   +0.00%  (min   -0.07%, max   +0.07%, n=9)
+  A/B   insn s=512 N=128             last A=142.2     B=142.2      median   +0.00%  (min   -0.07%, max   +0.07%, n=9)
+# done 2026-09-28T02:43:34Z

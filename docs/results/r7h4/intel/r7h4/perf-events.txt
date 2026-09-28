@@ -1,0 +1,3 @@
+event frontend_retired.dsb_miss: UNAVAILABLE (<not supported>,,frontend_retired.dsb_miss:u,0,100.00,,)
+event frontend_retired.l1i_miss: UNAVAILABLE (<not supported>,,frontend_retired.l1i_miss:u,0,100.00,,)
+events: cycles:u,instructions:u,branch-misses:u,L1-icache-load-misses:u,idq_uops_not_delivered.core:u,idq.dsb_uops:u,idq.mite_uops:u,icache_data.stalls:u,baclears.any:u
