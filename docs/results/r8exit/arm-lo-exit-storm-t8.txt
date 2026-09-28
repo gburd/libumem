@@ -1,0 +1,23 @@
+15ac2f6a4ba08d9932f809274f313b65ec72b453a2c15fbe45649410e4a60ef3  /tmp/es_pre/libumem.so.2
+61bde33f1eea0a8b6d8e7001e98ef0d61899fda706d00f75e415687345026559  /tmp/es_pre2/libumem.so.2
+1996f75346b1a41eb43cb8b79b1633dedbae952aed4ec7dba8640ee46458ae9d  /tmp/es_post/libumem.so.2
+ccf8ed5d737149bb46a21fe3639e75d70b35ad809b055c8de61fa65c5b63d5f1  /tmp/exit_storm
+# exit_storm T=8 ROUNDS=300 vcpu=8 2026-09-28T14:52:38Z
+null 1 A[pre] threads=8 rounds=300 exit_us_per_round=67.25 total_s=0.0690 | B[pre2] threads=8 rounds=300 exit_us_per_round=64.68 total_s=0.0653
+null 2 A[pre] threads=8 rounds=300 exit_us_per_round=60.67 total_s=0.0640 | B[pre2] threads=8 rounds=300 exit_us_per_round=65.05 total_s=0.0676
+null 3 A[pre] threads=8 rounds=300 exit_us_per_round=66.09 total_s=0.0674 | B[pre2] threads=8 rounds=300 exit_us_per_round=65.75 total_s=0.0677
+null 4 A[pre] threads=8 rounds=300 exit_us_per_round=67.78 total_s=0.0682 | B[pre2] threads=8 rounds=300 exit_us_per_round=66.35 total_s=0.0693
+null 5 A[pre] threads=8 rounds=300 exit_us_per_round=67.88 total_s=0.0691 | B[pre2] threads=8 rounds=300 exit_us_per_round=69.15 total_s=0.0669
+null 6 A[pre] threads=8 rounds=300 exit_us_per_round=70.19 total_s=0.0681 | B[pre2] threads=8 rounds=300 exit_us_per_round=72.08 total_s=0.0692
+null 7 A[pre] threads=8 rounds=300 exit_us_per_round=69.01 total_s=0.0663 | B[pre2] threads=8 rounds=300 exit_us_per_round=66.54 total_s=0.0685
+null 8 A[pre] threads=8 rounds=300 exit_us_per_round=68.54 total_s=0.0683 | B[pre2] threads=8 rounds=300 exit_us_per_round=67.61 total_s=0.0692
+null 9 A[pre] threads=8 rounds=300 exit_us_per_round=65.50 total_s=0.0677 | B[pre2] threads=8 rounds=300 exit_us_per_round=66.57 total_s=0.0684
+ab 1 A[pre] threads=8 rounds=300 exit_us_per_round=71.55 total_s=0.0689 | B[post] threads=8 rounds=300 exit_us_per_round=62.00 total_s=0.0644
+ab 2 A[pre] threads=8 rounds=300 exit_us_per_round=73.23 total_s=0.0699 | B[post] threads=8 rounds=300 exit_us_per_round=67.55 total_s=0.0701
+ab 3 A[pre] threads=8 rounds=300 exit_us_per_round=67.75 total_s=0.0693 | B[post] threads=8 rounds=300 exit_us_per_round=65.46 total_s=0.0689
+ab 4 A[pre] threads=8 rounds=300 exit_us_per_round=69.97 total_s=0.0680 | B[post] threads=8 rounds=300 exit_us_per_round=68.72 total_s=0.0687
+ab 5 A[pre] threads=8 rounds=300 exit_us_per_round=64.60 total_s=0.0673 | B[post] threads=8 rounds=300 exit_us_per_round=65.77 total_s=0.0673
+ab 6 A[pre] threads=8 rounds=300 exit_us_per_round=69.51 total_s=0.0704 | B[post] threads=8 rounds=300 exit_us_per_round=68.66 total_s=0.0673
+ab 7 A[pre] threads=8 rounds=300 exit_us_per_round=67.85 total_s=0.0687 | B[post] threads=8 rounds=300 exit_us_per_round=67.94 total_s=0.0676
+ab 8 A[pre] threads=8 rounds=300 exit_us_per_round=71.64 total_s=0.0694 | B[post] threads=8 rounds=300 exit_us_per_round=65.28 total_s=0.0682
+ab 9 A[pre] threads=8 rounds=300 exit_us_per_round=67.85 total_s=0.0679 | B[post] threads=8 rounds=300 exit_us_per_round=61.88 total_s=0.0660

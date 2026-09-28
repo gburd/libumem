@@ -1,0 +1,30 @@
+# hotpath A/B  vcpu=8  2026-09-28T14:44:02Z  pre=da6314a413cb69c303ad3d83e47308d6dd417cf7 post=acf4479ac9d3d7187daa0bcbb8d53e9edecb8eba  replicates=9 dur=1s
+# instance=c7g.2xlarge gcc=14
+## builds
+  built pre from /home/admin/libumem-ab-r8exit/pre: libumem.so sha256=15ac2f6a4ba08d99
+  built post from /home/admin/libumem-ab-r8exit/post: libumem.so sha256=1996f75346b1a41e
+  built pre2 from /home/admin/libumem-ab-r8exit/pre2: libumem.so sha256=61bde33f1eea0a8b
+  bench_pairs (one binary, from post): sha256=aaf971e4e5afafb1
+
+## bench_pairs Mpairs/s (delta = B relative to A)
+  null  s=512 N=1 t=1                last A=93.10     B=93.11      median   +0.01%  (min   -0.12%, max   +0.15%, n=9)
+  A/B   s=512 N=1 t=1                last A=92.96     B=93.04      median   +0.02%  (min   -0.14%, max   +0.09%, n=9)
+  null  s=16:64 N=64 t=1             last A=71.73     B=71.70      median   -0.04%  (min   -0.10%, max   +0.03%, n=9)
+  A/B   s=16:64 N=64 t=1             last A=71.73     B=71.75      median   +0.03%  (min   -0.11%, max   +2.43%, n=9)
+  null  s=512 N=128 t=1              last A=90.03     B=90.09      median   -0.02%  (min   -0.13%, max   +0.12%, n=9)
+  A/B   s=512 N=128 t=1              last A=90.11     B=90.12      median   +0.06%  (min   -0.13%, max   +0.16%, n=9)
+  null  s=512 N=1 t=8                last A=744.85    B=745.23     median   -0.01%  (min   -0.04%, max   +0.05%, n=9)
+  A/B   s=512 N=1 t=8                last A=744.89    B=745.09     median   -0.02%  (min   -1.10%, max   +0.15%, n=9)
+  null  s=16:64 N=64 t=8             last A=573.75    B=573.52     median   -0.02%  (min   -0.25%, max   +0.17%, n=9)
+  A/B   s=16:64 N=64 t=8             last A=573.64    B=573.55     median   +0.07%  (min   -0.02%, max   +0.29%, n=9)
+  null  s=512 N=128 t=8              last A=719.15    B=719.44     median   -0.00%  (min   -0.44%, max   +0.06%, n=9)
+  A/B   s=512 N=128 t=8              last A=719.06    B=719.33     median   +0.02%  (min   -0.45%, max   +0.19%, n=9)
+
+## perf stat instructions per pair, t=1 (delta = B relative to A; lower is better)
+  null  insn s=512 N=1               last A=148.2     B=148.2      median   +0.00%  (min   -0.07%, max   +0.07%, n=9)
+  A/B   insn s=512 N=1               last A=148.2     B=148.2      median   +0.00%  (min   -0.07%, max   +0.14%, n=9)
+  null  insn s=16:64 N=64            last A=158.5     B=158.5      median   +0.00%  (min   -0.06%, max   +0.00%, n=9)
+  A/B   insn s=16:64 N=64            last A=158.4     B=158.5      median   +0.00%  (min   -0.06%, max   +0.06%, n=9)
+  null  insn s=512 N=128             last A=145.8     B=145.8      median   +0.00%  (min   -0.07%, max   +0.14%, n=9)
+  A/B   insn s=512 N=128             last A=145.8     B=145.8      median   +0.00%  (min   -0.07%, max   +0.00%, n=9)
+# done 2026-09-28T14:50:22Z

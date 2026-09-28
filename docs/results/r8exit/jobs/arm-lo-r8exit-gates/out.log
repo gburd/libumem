@@ -1,0 +1,20 @@
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+build_rc=0
+check_rc=0
+# TOTAL: 71
+# PASS:  59
+# SKIP:  12
+# XFAIL: 0
+# FAIL:  0
+# ERROR: 0
+PASS: test/integration/test_ptc_exit_full_mag
+try 0: shell 0xffff9e908040 rounds=255 cap=255 -> FULL list
+PASS: a full magazine held at thread exit went to the depot full list whole
+o6 runs=20 nonzero=0
+test_ptc_thread_exit_drain rc=0 :: RESULT: PASS (PTC-enabled growth tracks the PTC-off control; exiting threads return their cached objects)
+test_ptc_thread_exit_drain_probe rc=0 :: RESULT: PASS (exact oracle: no object was left in a bin at thread exit)
+test_fork_ptc_drain_probe rc=0 :: RESULT: PASS (orphaned PTCs drained in the child; nothing stranded; busy ones skipped, not torn)
+repro_rseq_resize_leak rc=0 :: RESULT: PASS
+oracle_rc=0
+allocs_ok=327267444 alloc_failures=0
+Result: PASS (no aliasing or corruption; 327267444 successful allocations, 0 failures)

@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Thread exit no longer breaks up a full per-thread magazine one object at
+  a time (O6).** `umem_ptc_mag_flush_all` passed `cache_empty`, so each
+  exactly-full PTC magazine a thread exited with was drained with one
+  `_umem_cache_free` per round (886,721 objects over 12 t=192 runs, sheaves
+  review) instead of being pushed whole onto the depot full list. It now
+  passes `cache_full`, and `umem_ptc_mag_return` routes by count. Nothing
+  was ever lost. New regression `test_ptc_exit_full_mag` (in `TESTS`) FAILs
+  20/20 before the fix and PASSes 20/20 after, on x86_64 and aarch64. The
+  t=8 exit-storm time is inside its null on both arches (-2.9 % / -3.4 %
+  medians, null range about ±6 %), so no speedup is claimed. The hot path
+  is unchanged (bench_pairs within ±0.22 %, instructions per pair +0.00 %).
+  docs/results/r8exit/.
+
 ## [4.0.0] - 2026-09-28
 
 **Soname change: `libumem.so.1` -> `libumem.so.2`.** Programs linked against
