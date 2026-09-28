@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 262464633878
+#
+# Overhead  Shared Object          Symbol                                 
+# ........  .....................  .......................................
+#
+    22.71%  bench_main             [.] producer_thread
+    14.02%  libc.so.6              [.] __aarch64_cas4_acq
+     7.56%  bench_main             [.] __aarch64_cas8_relax
+     7.11%  libc.so.6              [.] __aarch64_swp4_rel
+     4.83%  [vdso]                 [.] __kernel_clock_gettime
+     4.60%  bench_main             [.] td_qsort
+     4.49%  libc.so.6              [.] pthread_mutex_trylock@@GLIBC_2.34
+     1.84%  bench_main             [.] ring_pop
+     1.72%  libjemalloc.so.2       [.] 0x00000000000244c0
+     1.60%  libc.so.6              [.] __GI___pthread_mutex_unlock_usercnt
+     1.56%  libjemalloc.so.2       [.] malloc
+     1.20%  bench_main             [.] td_add
+     1.09%  libc.so.6              [.] __memset_sve_zva64
+     0.98%  libjemalloc.so.2       [.] 0x000000000001ba60
+     0.95%  libjemalloc.so.2       [.] 0x0000000000024f74
+     0.90%  bench_main             [.] consumer_thread
+     0.89%  libjemalloc.so.2       [.] free
+     0.87%  [kernel.kallsyms]      [k] finish_task_switch.isra.0
+     0.78%  bench_main             [.] td_compress
+     0.72%  libjemalloc.so.2       [.] 0x00000000000244bc
+     0.69%  bench_main             [.] iv_poll
+     0.66%  libjemalloc.so.2       [.] 0x0000000000024f68
+     0.66%  libjemalloc.so.2       [.] 0x0000000000024f70
+     0.48%  libjemalloc.so.2       [.] 0x0000000000024350
+     0.44%  libjemalloc.so.2       [.] 0x0000000000024f64
+     0.43%  libjemalloc.so.2       [.] 0x000000000001ba40
+     0.35%  libc.so.6              [.] rand_r
+     0.32%  libjemalloc.so.2       [.] 0x0000000000024f54
+     0.23%  libm.so.6              [.] log@@GLIBC_2.29
+     0.23%  libjemalloc.so.2       [.] 0x0000000000024420
+     0.20%  libjemalloc.so.2       [.] 0x0000000000060d98
+     0.19%  libjemalloc.so.2       [.] 0x0000000000060d9c
+     0.18%  [kernel.kallsyms]      [k] el0_svc
+     0.17%  [kernel.kallsyms]      [k] do_sched_yield

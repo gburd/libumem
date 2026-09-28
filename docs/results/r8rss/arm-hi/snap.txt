@@ -1,0 +1,407 @@
+VmHWM:	  923896 kB
+VmRSS:	  923896 kB
+[New LWP 16145]
+[New LWP 16144]
+[New LWP 16143]
+[New LWP 16142]
+[New LWP 16141]
+[New LWP 16140]
+[New LWP 16139]
+[New LWP 16138]
+[New LWP 16137]
+[New LWP 16136]
+[New LWP 16135]
+[New LWP 16134]
+[New LWP 16133]
+[New LWP 16132]
+[New LWP 16131]
+[New LWP 16130]
+[New LWP 16129]
+[New LWP 16128]
+[New LWP 16127]
+[New LWP 16126]
+[New LWP 16125]
+[New LWP 16124]
+[New LWP 16123]
+[New LWP 16122]
+[New LWP 16121]
+[New LWP 16120]
+[New LWP 16119]
+[New LWP 16118]
+[New LWP 16117]
+[New LWP 16116]
+[New LWP 16115]
+[New LWP 16114]
+[New LWP 16113]
+[New LWP 16112]
+[New LWP 16111]
+[New LWP 16110]
+[New LWP 16109]
+[New LWP 16108]
+[New LWP 16107]
+[New LWP 16106]
+[New LWP 16105]
+[New LWP 16104]
+[New LWP 16103]
+[New LWP 16102]
+[New LWP 16101]
+[New LWP 16100]
+[New LWP 16099]
+[New LWP 16098]
+[New LWP 16097]
+[New LWP 16096]
+[New LWP 16095]
+[New LWP 16094]
+[New LWP 16093]
+[New LWP 16092]
+[New LWP 16091]
+[New LWP 16090]
+[New LWP 16089]
+[New LWP 16088]
+[New LWP 16087]
+[New LWP 16086]
+[New LWP 16085]
+[New LWP 16084]
+[New LWP 16083]
+[New LWP 16082]
+[New LWP 16081]
+[New LWP 16080]
+[New LWP 16079]
+[New LWP 16078]
+[New LWP 16077]
+[New LWP 16076]
+[New LWP 16075]
+[New LWP 16074]
+[New LWP 16073]
+[New LWP 16072]
+[New LWP 16071]
+[New LWP 16070]
+[New LWP 16069]
+[New LWP 16068]
+[New LWP 16067]
+[New LWP 16066]
+[New LWP 16065]
+[New LWP 16064]
+[New LWP 16063]
+[New LWP 16062]
+[New LWP 16061]
+[New LWP 16060]
+[New LWP 16059]
+[New LWP 16058]
+[New LWP 16057]
+[New LWP 16056]
+[New LWP 16055]
+[New LWP 16054]
+[New LWP 16053]
+[New LWP 16052]
+[New LWP 16051]
+[New LWP 16050]
+[New LWP 16049]
+[New LWP 16048]
+[New LWP 16047]
+[New LWP 16046]
+[New LWP 16045]
+[New LWP 16044]
+[New LWP 16043]
+[New LWP 16042]
+[New LWP 16041]
+[New LWP 16040]
+[New LWP 16039]
+[New LWP 16038]
+[New LWP 16037]
+[New LWP 16036]
+[New LWP 16035]
+[New LWP 16034]
+[New LWP 16033]
+[New LWP 16032]
+[New LWP 16031]
+[New LWP 16030]
+[New LWP 16029]
+[New LWP 16028]
+[New LWP 16027]
+[New LWP 16026]
+[New LWP 16025]
+[New LWP 16024]
+[New LWP 16023]
+[New LWP 16022]
+[New LWP 16021]
+[New LWP 16020]
+[New LWP 16019]
+[New LWP 16018]
+[New LWP 16017]
+[New LWP 16016]
+[New LWP 16015]
+[New LWP 16014]
+[New LWP 16013]
+[New LWP 16012]
+[New LWP 16011]
+[New LWP 16010]
+[New LWP 16009]
+[New LWP 16008]
+[New LWP 16007]
+[New LWP 16006]
+[New LWP 16005]
+[New LWP 16004]
+[New LWP 16003]
+[New LWP 16002]
+[New LWP 16001]
+[New LWP 16000]
+[New LWP 15999]
+[New LWP 15998]
+[New LWP 15997]
+[New LWP 15996]
+[New LWP 15995]
+[New LWP 15994]
+[New LWP 15993]
+[New LWP 15992]
+[New LWP 15991]
+[New LWP 15990]
+[New LWP 15989]
+[New LWP 15988]
+[New LWP 15987]
+[New LWP 15986]
+[New LWP 15985]
+[New LWP 15984]
+[New LWP 15983]
+[New LWP 15982]
+[New LWP 15981]
+[New LWP 15980]
+[New LWP 15979]
+[New LWP 15978]
+[New LWP 15977]
+[New LWP 15976]
+[New LWP 15975]
+[New LWP 15974]
+[New LWP 15973]
+[New LWP 15972]
+[New LWP 15971]
+[New LWP 15970]
+[New LWP 15969]
+[New LWP 15968]
+[New LWP 15967]
+[New LWP 15966]
+[New LWP 15965]
+[New LWP 15964]
+[New LWP 15963]
+[New LWP 15962]
+[New LWP 15961]
+[New LWP 15960]
+[New LWP 15959]
+[New LWP 15958]
+[New LWP 15957]
+[New LWP 15956]
+[New LWP 15955]
+[New LWP 15954]
+[New LWP 15953]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/aarch64-linux-gnu/libthread_db.so.1".
+__syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/aarch64/syscall_cancel.S:50
+
+warning: 50	../sysdeps/unix/sysv/linux/aarch64/syscall_cancel.S: No such file or directory
+R8RSS ptc_count 192
+R8RSS ptc_total bin_obj=19968 bin_bytes=48758784 mag_obj=103472 mag_bytes=274038784
+R8RSS ptc_nonempty 96
+R8RSS ptc[0] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[1] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[2] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[3] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[4] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[5] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[6] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[7] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[8] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[9] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[10] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[11] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[12] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[13] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[14] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[15] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[16] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[17] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[18] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[19] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[20] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[21] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[22] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[23] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[24] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[25] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[26] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[27] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[28] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[29] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[30] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[31] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[32] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[33] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[34] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[35] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[36] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[37] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[38] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[39] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[40] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[41] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[42] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[43] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[44] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[45] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[46] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[47] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[48] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[49] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[50] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[51] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[52] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[53] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[54] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[55] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[56] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[57] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[58] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[59] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[60] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[61] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[62] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[63] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[64] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[65] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[66] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[67] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[68] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[69] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[70] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[71] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[72] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[73] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[74] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[75] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[76] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[77] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[78] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[79] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[80] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[81] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[82] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[83] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[84] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[85] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[86] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[87] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[88] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[89] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[90] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[91] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[92] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[93] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[94] bin_obj=208 bin_bytes=507904 mag_obj=1015 mag_bytes=2727424
+R8RSS ptc[95] bin_obj=208 bin_bytes=507904 mag_obj=1031 mag_bytes=2612736
+R8RSS ptc[96] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[97] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[98] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[99] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[100] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[101] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[102] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[103] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[104] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[105] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[106] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[107] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[108] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[109] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[110] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[111] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[112] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[113] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[114] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[115] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[116] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[117] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[118] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[119] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[120] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[121] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[122] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[123] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[124] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[125] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[126] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[127] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[128] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[129] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[130] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[131] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[132] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[133] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[134] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[135] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[136] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[137] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[138] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[139] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[140] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[141] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[142] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[143] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[144] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[145] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[146] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[147] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[148] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[149] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[150] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[151] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[152] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[153] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[154] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[155] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[156] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[157] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[158] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[159] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[160] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[161] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[162] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[163] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[164] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[165] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[166] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[167] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[168] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[169] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[170] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[171] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[172] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[173] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[174] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[175] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[176] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[177] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[178] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[179] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[180] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[181] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[182] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[183] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[184] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[185] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[186] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[187] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[188] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[189] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[190] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[191] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS cache name bufsize magsize slab_out slab_free cpu_obj rseq_obj depot_full_mags depot_obj buftotal
+R8RSS cache umem_alloc_1280 1280 127 38608 0 9372 11809 17 2159 38608
+R8RSS cache umem_alloc_1536 1536 127 39370 6 10522 11039 20 2540 39376
+R8RSS cache umem_alloc_1792 1792 127 38732 4 9448 12614 11 1397 38736
+R8RSS cache umem_alloc_2048 2048 127 40050 14 11309 12138 11 1397 40064
+R8RSS cache umem_alloc_2560 2560 127 38302 2 10597 12693 10 1270 38304
+R8RSS cache umem_alloc_3072 3072 127 38415 1 10840 12432 10 1270 38416
+R8RSS cache umem_alloc_3584 3584 127 37949 3 10502 11033 21 2667 37952
+R8RSS cache umem_alloc_4096 4096 127 38388 12 10754 12113 14 1778 38400
+R8RSS cache umem_alloc_5120 5120 63 15648 0 1381 6288 7 441 15648
+R8RSS bytes ptc_bins=48758784 ptc_mags=274038784 cpu_mags=217436672 rseq_mags=271571200 depot_full=38281216 slab_free=113152 slab_out=850748928 slab_total_chunk_bytes=850862080
+[Inferior 1 (process 15951) detached]

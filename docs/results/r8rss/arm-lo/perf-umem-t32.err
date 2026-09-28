@@ -1,0 +1,8 @@
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'
+bench_main: skipping unavailable allocator 'tcmalloc (not available)'
+bench_main: skipping unavailable allocator 'mimalloc (not available)'
+bench_main: skipping unavailable allocator 'snmalloc (not available)'
+bench_main: skipping unavailable allocator 'scudo (not available)'
+bench_main: skipping unavailable allocator 'rpmalloc (not available)'
+[ perf record: Woken up 42 times to write data ]
+[ perf record: Captured and wrote 11.850 MB /home/admin/r8rss-out/perf-umem-t32.data (119024 samples) ]

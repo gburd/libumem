@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 365667908712
+#
+# Children      Self  Symbol                                   
+# ........  ........  .........................................
+#
+    31.50%     0.00%  [k] 0x4242424242424242
+    14.59%    14.57%  [.] producer_thread
+    10.23%    10.22%  [.] pthread_mutex_trylock@@GLIBC_2.34
+     7.80%     7.80%  [.] __GI___pthread_mutex_unlock_usercnt
+     7.66%     7.65%  [.] ring_pop
+     5.88%     0.23%  [.] clock_gettime@@GLIBC_2.17
+     5.78%     5.77%  [.] __vdso_clock_gettime
+     5.47%     5.46%  [.] td_qsort
+     5.45%     0.00%  [k] 0000000000000000
+     2.80%     0.01%  [k] entry_SYSCALL_64_after_hwframe
+     2.79%     0.02%  [k] do_syscall_64
+     2.73%     2.72%  [.] __memset_avx512_unaligned_erms
+     2.52%     0.05%  [.] __sched_yield
+     2.47%     2.47%  [.] iv_poll
+     2.41%     0.00%  [k] __x64_sys_sched_yield
+     2.26%     2.26%  [.] malloc
+     2.15%     0.00%  [k] schedule
+     2.15%     0.12%  [k] __schedule
+     1.86%     0.00%  [.] 0x404c800000000000
+     1.78%     1.78%  [.] consumer_thread
+     1.66%     1.66%  [.] free
+     1.48%     0.00%  [.] 0x4038000000000000
+     1.36%     0.00%  [.] 0x4037000000000000
+     1.34%     1.34%  [.] __ieee754_log_fma
+     0.99%     0.99%  [k] native_write_msr
+     0.90%     0.90%  [.] td_compress
+     0.84%     0.00%  [.] 0x00007fdb13e4b06d
+     0.84%     0.84%  [.] 0x000000000003706d
+     0.77%     0.77%  [.] td_add
+     0.74%     0.74%  [.] rand_r
+     0.71%     0.08%  [k] __perf_event_task_sched_out
+     0.66%     0.01%  [k] finish_task_switch.isra.0
+     0.65%     0.00%  [.] 0x00007fdb13e4b167
+     0.65%     0.65%  [.] 0x0000000000037167

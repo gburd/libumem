@@ -1,0 +1,68 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 266091159027
+#
+# Overhead  Symbol                                   
+# ........  .........................................
+#
+    29.90%  [.] producer_thread
+            |
+            ---start_thread
+               thread_start
+
+    14.57%  [.] ring_pop
+            |          
+             --14.52%--consumer_thread
+                       start_thread
+                       thread_start
+
+     9.64%  [.] umem_free_wrapper
+            |
+            ---consumer_thread
+               start_thread
+               thread_start
+
+     8.34%  [.] __aarch64_cas8_relax
+            |          
+            |--4.61%--producer_thread
+            |          start_thread
+            |          thread_start
+            |          
+             --3.73%--ring_pop
+                       consumer_thread
+                       start_thread
+                       thread_start
+
+     5.18%  [.] _umem_free
+            |          
+             --5.11%--consumer_thread
+                       start_thread
+                       thread_start
+
+     5.04%  [.] __kernel_clock_gettime
+            |
+            ---clock_gettime@@GLIBC_2.17
+
+     4.14%  [.] umem_alloc_wrapper
+            |          
+             --4.05%--producer_thread
+                       start_thread
+                       thread_start
+
+     3.20%  [.] td_qsort
+     3.11%  [.] _umem_alloc
+            |          
+             --3.11%--umem_alloc_wrapper
+                       producer_thread
+                       start_thread
+                       thread_start
+
+
+
+#
+# (Tip: Treat branches as callchains: perf record -b ... ; perf report --branch-history)
+#

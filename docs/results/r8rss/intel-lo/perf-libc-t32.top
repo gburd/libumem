@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 120K of event 'cycles:P'
+# Event count (approx.): 362774826505
+#
+# Overhead  Shared Object         Symbol                                       
+# ........  ....................  .............................................
+#
+    14.48%  libc.so.6             [.] malloc
+    14.35%  libc.so.6             [.] _int_free_chunk
+    14.05%  libc.so.6             [.] _int_malloc
+    13.20%  bench_main            [.] producer_thread
+     7.75%  bench_main            [.] ring_pop
+     6.15%  [vdso]                [.] __vdso_clock_gettime
+     5.30%  bench_main            [.] td_qsort
+     3.66%  libc.so.6             [.] cfree@GLIBC_2.2.5
+     2.27%  bench_main            [.] iv_poll
+     1.88%  libc.so.6             [.] _int_free_create_chunk
+     1.87%  libc.so.6             [.] _int_free_merge_chunk
+     1.82%  bench_main            [.] consumer_thread
+     1.55%  libc.so.6             [.] unlink_chunk.isra.0
+     1.42%  libc.so.6             [.] __memset_avx512_unaligned_erms
+     1.39%  libm.so.6             [.] __ieee754_log_fma
+     1.06%  [kernel.kallsyms]     [k] native_write_msr
+     0.93%  bench_main            [.] td_compress
+     0.92%  bench_main            [.] td_add
+     0.76%  libc.so.6             [.] rand_r
+     0.43%  bench_main            [.] libc_alloc
+     0.31%  bench_main            [.] rand_r@plt
+     0.30%  bench_main            [.] memset@plt
+     0.29%  bench_main            [.] libc_free
+     0.21%  libc.so.6             [.] alloc_perturb
+     0.21%  [kernel.kallsyms]     [k] entry_SYSCALL_64
+     0.20%  libc.so.6             [.] clock_gettime@@GLIBC_2.17
+     0.15%  [kernel.kallsyms]     [k] _raw_spin_lock
+     0.14%  bench_main            [.] free@plt
+     0.13%  [kernel.kallsyms]     [k] native_queued_spin_lock_slowpath
+     0.11%  [kernel.kallsyms]     [k] restore_fpregs_from_fpstate
+     0.11%  [kernel.kallsyms]     [k] arch_exit_to_user_mode_prepare.isra.0
+     0.10%  [kernel.kallsyms]     [k] pvclock_clocksource_read_nowd
+     0.10%  [kernel.kallsyms]     [k] save_fpregs_to_fpstate
+     0.09%  [kernel.kallsyms]     [k] __schedule

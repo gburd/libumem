@@ -1,0 +1,33 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 120K of event 'cycles:P'
+# Event count (approx.): 362774826505
+#
+# Overhead  Symbol                                       
+# ........  .............................................
+#
+    14.48%  [.] malloc
+            |          
+             --10.83%--0x1
+
+    14.35%  [.] _int_free_chunk
+    14.05%  [.] _int_malloc
+            |          
+             --10.35%--0x1
+
+    13.20%  [.] producer_thread
+     7.75%  [.] ring_pop
+     6.15%  [.] __vdso_clock_gettime
+            |          
+             --6.05%--clock_gettime@@GLIBC_2.17
+
+     5.30%  [.] td_qsort
+     3.66%  [.] cfree@GLIBC_2.2.5
+
+
+#
+# (Tip: Order by the overhead of source file name and line number: perf report -s srcline)
+#

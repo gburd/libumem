@@ -1,0 +1,4 @@
+    4.50 :   92c0:   push   %rbx
+    1.67 :   92cf:   test   %rax,%rax
+   74.69 :   92e1:   add    $0x10,%rax
+   18.75 :   92e9:   pop    %rbx

@@ -1,0 +1,9 @@
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'
+jemalloc,producer-consumer/interval=1,192,6009340029,31298645,10.000133,600926026.15,26,59,219,683,1654,4038349,100,616415232,616415232,7690474552191,0,0,,,0,1103760.0,114229.7,0.0000,1,0,0,0,16,375583755
+bench_main: skipping unavailable allocator 'tcmalloc (not available)'
+bench_main: skipping unavailable allocator 'mimalloc (not available)'
+bench_main: skipping unavailable allocator 'snmalloc (not available)'
+bench_main: skipping unavailable allocator 'scudo (not available)'
+bench_main: skipping unavailable allocator 'rpmalloc (not available)'
+[ perf record: Woken up 398 times to write data ]
+[ perf record: Captured and wrote 118.433 MB /home/admin/r8hi/p.data (1118997 samples) ]

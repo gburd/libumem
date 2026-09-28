@@ -1,0 +1,152 @@
+VmHWM:	  195940 kB
+VmRSS:	  195940 kB
+Threads:	66
+[New LWP 10161]
+[New LWP 10160]
+[New LWP 10159]
+[New LWP 10158]
+[New LWP 10157]
+[New LWP 10156]
+[New LWP 10155]
+[New LWP 10154]
+[New LWP 10153]
+[New LWP 10152]
+[New LWP 10151]
+[New LWP 10150]
+[New LWP 10149]
+[New LWP 10148]
+[New LWP 10147]
+[New LWP 10146]
+[New LWP 10145]
+[New LWP 10144]
+[New LWP 10143]
+[New LWP 10142]
+[New LWP 10141]
+[New LWP 10140]
+[New LWP 10139]
+[New LWP 10138]
+[New LWP 10137]
+[New LWP 10136]
+[New LWP 10135]
+[New LWP 10134]
+[New LWP 10133]
+[New LWP 10132]
+[New LWP 10131]
+[New LWP 10130]
+[New LWP 10129]
+[New LWP 10128]
+[New LWP 10127]
+[New LWP 10126]
+[New LWP 10125]
+[New LWP 10124]
+[New LWP 10123]
+[New LWP 10122]
+[New LWP 10121]
+[New LWP 10120]
+[New LWP 10119]
+[New LWP 10118]
+[New LWP 10117]
+[New LWP 10116]
+[New LWP 10115]
+[New LWP 10114]
+[New LWP 10113]
+[New LWP 10112]
+[New LWP 10111]
+[New LWP 10110]
+[New LWP 10109]
+[New LWP 10108]
+[New LWP 10107]
+[New LWP 10106]
+[New LWP 10105]
+[New LWP 10104]
+[New LWP 10103]
+[New LWP 10102]
+[New LWP 10101]
+[New LWP 10100]
+[New LWP 10099]
+[New LWP 10098]
+[New LWP 10097]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/aarch64-linux-gnu/libthread_db.so.1".
+__syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/aarch64/syscall_cancel.S:50
+
+warning: 50	../sysdeps/unix/sysv/linux/aarch64/syscall_cancel.S: No such file or directory
+R8RSS ptc_count 64
+R8RSS ptc_total bin_obj=6656 bin_bytes=16252928 mag_obj=32916 mag_bytes=85452288
+R8RSS ptc_nonempty 32
+R8RSS ptc[0] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[1] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[2] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[3] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[4] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[5] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[6] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[7] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[8] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[9] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[10] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[11] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[12] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[13] bin_obj=208 bin_bytes=507904 mag_obj=1079 mag_bytes=2858496
+R8RSS ptc[14] bin_obj=208 bin_bytes=507904 mag_obj=1015 mag_bytes=2776576
+R8RSS ptc[15] bin_obj=208 bin_bytes=507904 mag_obj=1015 mag_bytes=2776576
+R8RSS ptc[16] bin_obj=208 bin_bytes=507904 mag_obj=1054 mag_bytes=2768896
+R8RSS ptc[17] bin_obj=208 bin_bytes=507904 mag_obj=1015 mag_bytes=2743808
+R8RSS ptc[18] bin_obj=208 bin_bytes=507904 mag_obj=1015 mag_bytes=2694656
+R8RSS ptc[19] bin_obj=208 bin_bytes=507904 mag_obj=1016 mag_bytes=2535936
+R8RSS ptc[20] bin_obj=208 bin_bytes=507904 mag_obj=1016 mag_bytes=2535936
+R8RSS ptc[21] bin_obj=208 bin_bytes=507904 mag_obj=1016 mag_bytes=2535936
+R8RSS ptc[22] bin_obj=208 bin_bytes=507904 mag_obj=1016 mag_bytes=2535936
+R8RSS ptc[23] bin_obj=208 bin_bytes=507904 mag_obj=1016 mag_bytes=2535936
+R8RSS ptc[24] bin_obj=208 bin_bytes=507904 mag_obj=1016 mag_bytes=2535936
+R8RSS ptc[25] bin_obj=208 bin_bytes=507904 mag_obj=1016 mag_bytes=2535936
+R8RSS ptc[26] bin_obj=208 bin_bytes=507904 mag_obj=952 mag_bytes=2437632
+R8RSS ptc[27] bin_obj=208 bin_bytes=507904 mag_obj=952 mag_bytes=2437632
+R8RSS ptc[28] bin_obj=208 bin_bytes=507904 mag_obj=952 mag_bytes=2421248
+R8RSS ptc[29] bin_obj=208 bin_bytes=507904 mag_obj=952 mag_bytes=2273792
+R8RSS ptc[30] bin_obj=208 bin_bytes=507904 mag_obj=888 mag_bytes=2175488
+R8RSS ptc[31] bin_obj=208 bin_bytes=507904 mag_obj=888 mag_bytes=2175488
+R8RSS ptc[32] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[33] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[34] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[35] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[36] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[37] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[38] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[39] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[40] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[41] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[42] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[43] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[44] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[45] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[46] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[47] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[48] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[49] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[50] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[51] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[52] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[53] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[54] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[55] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[56] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[57] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[58] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[59] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[60] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[61] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[62] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[63] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS cache name bufsize magsize slab_out slab_free cpu_obj rseq_obj depot_full_mags depot_obj buftotal
+R8RSS cache umem_alloc_1280 1280 127 7511 9 389 316 13 1651 7520
+R8RSS cache umem_alloc_1536 1536 127 7149 3 38 612 10 1270 7152
+R8RSS cache umem_alloc_1792 1792 127 7599 225 316 594 12 1524 7824
+R8RSS cache umem_alloc_2048 2048 127 7458 46 71 640 12 1524 7504
+R8RSS cache umem_alloc_2560 2560 127 8872 88 128 654 25 3175 8960
+R8RSS cache umem_alloc_3072 3072 127 8628 28 191 510 23 2921 8656
+R8RSS cache umem_alloc_3584 3584 127 8539 21 197 406 24 3048 8560
+R8RSS cache umem_alloc_4096 4096 127 10054 250 414 355 35 4445 10304
+R8RSS cache umem_alloc_5120 5120 63 2130 2 0 285 2 126 2132
+R8RSS bytes ptc_bins=16252928 ptc_mags=85452288 cpu_mags=4584192 rseq_mags=11329024 depot_full=56793344 slab_free=1934336 slab_out=181394432 slab_total_chunk_bytes=183328768
+[Inferior 1 (process 10095) detached]

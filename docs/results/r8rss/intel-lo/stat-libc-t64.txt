@@ -1,0 +1,15 @@
+# started on Mon Sep 28 14:48:00 2026
+
+
+ Performance counter stats for 'test/bench/.libs/bench_main -a libc -w prodcons -t 64 -n 6400000 -s 64:256 -D 5:4 -W 1 -T 16 -c':
+
+         160025.57 msec task-clock                       #    7.997 CPUs utilized             
+           2778523      context-switches                 #   17.363 K/sec                     
+               185      cpu-migrations                   #    1.156 /sec                      
+
+      20.010664337 seconds time elapsed
+
+     155.822832000 seconds user
+       4.204900000 seconds sys
+
+

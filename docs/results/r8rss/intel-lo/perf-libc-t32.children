@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 120K of event 'cycles:P'
+# Event count (approx.): 362774826505
+#
+# Children      Self  Symbol                                       
+# ........  ........  .............................................
+#
+    26.87%     0.00%  [k] 0x0000000000000001
+    14.50%    14.48%  [.] malloc
+    14.36%    14.35%  [.] _int_free_chunk
+    14.26%     0.00%  [.] 0x4242424242424242
+    14.06%    14.05%  [.] _int_malloc
+    13.20%    13.20%  [.] producer_thread
+     7.76%     7.75%  [.] ring_pop
+     6.25%     0.20%  [.] clock_gettime@@GLIBC_2.17
+     6.16%     6.15%  [.] __vdso_clock_gettime
+     5.30%     5.30%  [.] td_qsort
+     3.66%     3.66%  [.] cfree@GLIBC_2.2.5
+     3.39%     0.02%  [k] entry_SYSCALL_64_after_hwframe
+     3.37%     0.04%  [k] do_syscall_64
+     2.58%     0.06%  [.] __sched_yield
+     2.48%     0.00%  [k] __x64_sys_sched_yield
+     2.27%     0.01%  [k] schedule
+     2.27%     2.27%  [.] iv_poll
+     2.27%     0.09%  [k] __schedule
+     1.88%     1.88%  [.] _int_free_create_chunk
+     1.87%     1.87%  [.] _int_free_merge_chunk
+     1.82%     1.82%  [.] consumer_thread
+     1.55%     1.55%  [.] unlink_chunk.isra.0
+     1.42%     1.42%  [.] __memset_avx512_unaligned_erms
+     1.39%     1.39%  [.] __ieee754_log_fma
+     1.18%     0.00%  [.] 0x4039000000000000
+     1.17%     0.00%  [.] 0x403a000000000000
+     1.16%     0.00%  [.] 0x4041000000000000
+     1.06%     1.06%  [k] native_write_msr
+     0.93%     0.93%  [.] td_compress
+     0.92%     0.92%  [.] td_add
+     0.89%     0.00%  [.] 0x4041800000000000
+     0.77%     0.07%  [k] __perf_event_task_sched_out
+     0.76%     0.76%  [.] rand_r
+     0.73%     0.01%  [k] finish_task_switch.isra.0

@@ -1,0 +1,15 @@
+# started on Mon Sep 28 14:47:40 2026
+
+
+ Performance counter stats for 'test/bench/.libs/bench_main -a umem -w prodcons -t 64 -n 6400000 -s 64:256 -D 5:4 -W 1 -T 16 -c':
+
+         160006.13 msec task-clock                       #    7.995 CPUs utilized             
+           4740400      context-switches                 #   29.626 K/sec                     
+               794      cpu-migrations                   #    4.962 /sec                      
+
+      20.012375436 seconds time elapsed
+
+     155.823089000 seconds user
+       4.186099000 seconds sys
+
+

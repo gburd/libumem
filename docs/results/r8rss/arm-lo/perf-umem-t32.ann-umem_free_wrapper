@@ -1,0 +1,3 @@
+   28.70 :   797c:   mov     x0, #0xbabe                     // #47806
+   68.32 :   7980:   movk    x0, #0xcafe, lsl #16
+    1.29 :   79ac:   mov     x0, x2

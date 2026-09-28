@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 365667908712
+#
+# Overhead  Shared Object         Symbol                                   
+# ........  ....................  .........................................
+#
+    14.57%  bench_main            [.] producer_thread
+    10.22%  libc.so.6             [.] pthread_mutex_trylock@@GLIBC_2.34
+     7.80%  libc.so.6             [.] __GI___pthread_mutex_unlock_usercnt
+     7.65%  bench_main            [.] ring_pop
+     5.77%  [vdso]                [.] __vdso_clock_gettime
+     5.46%  bench_main            [.] td_qsort
+     2.72%  libc.so.6             [.] __memset_avx512_unaligned_erms
+     2.47%  bench_main            [.] iv_poll
+     2.26%  libjemalloc.so.2      [.] malloc
+     1.78%  bench_main            [.] consumer_thread
+     1.66%  libjemalloc.so.2      [.] free
+     1.35%  libm.so.6             [.] __ieee754_log_fma
+     0.99%  [kernel.kallsyms]     [k] native_write_msr
+     0.90%  bench_main            [.] td_compress
+     0.84%  libjemalloc.so.2      [.] 0x000000000003706d
+     0.77%  bench_main            [.] td_add
+     0.74%  libc.so.6             [.] rand_r
+     0.65%  libjemalloc.so.2      [.] 0x0000000000037167
+     0.51%  libjemalloc.so.2      [.] 0x00000000000ae5b0
+     0.46%  libjemalloc.so.2      [.] 0x00000000000ae78e
+     0.45%  libjemalloc.so.2      [.] 0x00000000000ae746
+     0.44%  libjemalloc.so.2      [.] 0x00000000000af1d5
+     0.44%  libjemalloc.so.2      [.] pthread_mutex_trylock@plt
+     0.44%  libjemalloc.so.2      [.] 0x000000000008c242
+     0.43%  bench_main            [.] memset@plt
+     0.43%  libjemalloc.so.2      [.] 0x00000000000af1b0
+     0.42%  libjemalloc.so.2      [.] 0x00000000000275f8
+     0.41%  libjemalloc.so.2      [.] 0x00000000000173d0
+     0.41%  libjemalloc.so.2      [.] 0x000000000001740c
+     0.38%  libjemalloc.so.2      [.] 0x00000000000370b1
+     0.38%  bench_main            [.] jemalloc_alloc
+     0.37%  libjemalloc.so.2      [.] 0x00000000000173eb
+     0.37%  libjemalloc.so.2      [.] 0x0000000000037090
+     0.35%  libjemalloc.so.2      [.] pthread_mutex_unlock@plt

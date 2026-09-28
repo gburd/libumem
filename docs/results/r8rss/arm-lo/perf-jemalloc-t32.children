@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 262464633878
+#
+# Children      Self  Symbol                                 
+# ........  ........  .......................................
+#
+    99.98%     0.00%  [.] start_thread
+    99.98%     0.00%  [.] thread_start
+    57.17%     0.90%  [.] consumer_thread
+    42.48%    22.71%  [.] producer_thread
+    34.39%     0.00%  [.] 0x0000ffff7ecfbc88
+    18.52%     4.49%  [.] pthread_mutex_trylock@@GLIBC_2.34
+    17.71%     0.00%  [.] 0x0000ffff7ed04fa0
+    14.02%    14.02%  [.] __aarch64_cas4_acq
+     8.71%     1.60%  [.] __GI___pthread_mutex_unlock_usercnt
+     7.97%     0.00%  [.] 0x0000ffff7ed05148
+     7.56%     7.56%  [.] __aarch64_cas8_relax
+     7.11%     7.11%  [.] __aarch64_swp4_rel
+     6.82%     1.20%  [.] td_add
+     5.53%     1.84%  [.] ring_pop
+     5.38%     0.78%  [.] td_compress
+     4.97%     0.15%  [.] clock_gettime@@GLIBC_2.17
+     4.85%     0.00%  [.] 0x0000ffff7ecf9d54
+     4.83%     4.83%  [.] __kernel_clock_gettime
+     4.82%     0.00%  [.] 0x0000ffff7ed4d474
+     4.60%     4.60%  [.] td_qsort
+     1.90%     0.00%  [.] 0x0000ffff7ecfbc68
+     1.72%     1.72%  [.] 0x00000000000244c0
+     1.72%     0.00%  [.] 0x0000ffff7ed044c0
+     1.56%     1.56%  [.] malloc
+     1.48%     0.07%  [.] __sched_yield
+     1.45%     0.00%  [k] el0t_64_sync
+     1.45%     0.00%  [k] el0t_64_sync_handler
+     1.43%     0.18%  [k] el0_svc
+     1.15%     0.00%  [k] do_el0_svc
+     1.14%     0.01%  [k] el0_svc_common.constprop.0
+     1.14%     0.01%  [k] invoke_syscall
+     1.10%     1.09%  [.] __memset_sve_zva64
+     1.07%     0.00%  [k] __arm64_sys_sched_yield
+     1.07%     0.17%  [k] do_sched_yield

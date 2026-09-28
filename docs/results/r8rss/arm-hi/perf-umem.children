@@ -1,0 +1,60 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 1M of event 'cycles:P'
+# Event count (approx.): 10217603073845
+#
+# Children      Self  Symbol                                     
+# ........  ........  ...........................................
+#
+   100.00%     0.00%  [.] start_thread
+   100.00%     0.00%  [.] thread_start
+    50.44%     0.24%  [.] consumer_thread
+    49.52%     3.48%  [.] producer_thread
+    33.91%    33.90%  [.] __memset_sve_zva64
+    19.68%    19.67%  [.] umem_free_wrapper
+    16.83%    16.31%  [.] ring_pop
+     9.56%     1.21%  [.] __sched_yield
+     8.38%     0.00%  [k] el0t_64_sync
+     8.38%     0.00%  [k] el0t_64_sync_handler
+     8.36%     1.74%  [k] el0_svc
+     8.12%     8.12%  [.] __aarch64_cas8_relax
+     6.61%     0.03%  [k] do_el0_svc
+     6.55%     0.10%  [k] el0_svc_common.constprop.0
+     6.47%     0.12%  [k] invoke_syscall
+     5.74%     0.03%  [k] __arm64_sys_sched_yield
+     5.71%     0.53%  [k] do_sched_yield
+     5.17%     0.17%  [k] schedule
+     5.03%     5.02%  [k] __schedule
+     3.76%     0.66%  [.] umem_alloc_wrapper
+     3.46%     0.92%  [.] _umem_free
+     3.08%     1.01%  [.] umem_depot_alloc
+     3.07%     0.29%  [.] _umem_alloc
+     2.35%     0.00%  [.] umem_rseq_alloc_slowpath
+     2.09%     1.02%  [.] umem_depot_pop_trylock
+     1.30%     1.30%  [.] __aarch64_cas4_acq
+     1.27%     0.00%  [.] umem_rseq_reload
+     0.90%     0.01%  [.] __GI___pthread_mutex_unlock_usercnt
+     0.89%     0.88%  [.] __aarch64_swp4_rel
+     0.84%     0.06%  [.] umem_depot_free
+     0.79%     0.06%  [.] pthread_mutex_lock@@GLIBC_2.17
+     0.64%     0.02%  [.] clock_gettime@@GLIBC_2.17
+     0.62%     0.62%  [.] __kernel_clock_gettime
+     0.61%     0.18%  [.] td_add
+     0.61%     0.61%  [k] get_random_u16
+     0.59%     0.01%  [.] pthread_mutex_trylock@@GLIBC_2.34
+     0.44%     0.44%  [.] umem_rseq_free_fastpath
+     0.41%     0.08%  [.] td_compress
+     0.34%     0.34%  [.] umem_rseq_alloc_fastpath
+     0.33%     0.33%  [.] td_qsort
+     0.14%     0.14%  [.] iv_poll
+     0.09%     0.00%  [.] _umem_cache_alloc
+     0.06%     0.00%  [.] umem_slab_alloc
+     0.05%     0.00%  [.] umem_slab_create
+     0.04%     0.04%  [.] _dl_tlsdesc_return
+     0.04%     0.00%  [.] vmem_xalloc
+     0.03%     0.00%  [.] vmem_mmap_alloc
+     0.03%     0.03%  [.] rand_r
+     0.03%     0.00%  [k] ____do_softirq

@@ -1,0 +1,9 @@
+umem,producer-consumer/interval=1,64,295783682,4621620,5.000104,59155507.49,34,103,175,271,665,11799026,131,47693824,47693824,23588606126,0,0,,,0,39004.0,996.1,0.0000,1,0,0,0,16,18486485
+umem,producer-consumer/interval=2,64,298769089,4668267,5.000197,59751468.56,35,104,174,269,657,16016278,131,51011584,51011584,23826718238,0,0,,,0,39033.4,968.2,0.0000,1,0,0,0,16,18673066
+umem,producer-consumer/interval=3,64,299388496,4677945,5.000124,59876213.78,35,103,175,269,660,12103282,127,52400128,52400128,23875692661,0,0,,,0,39140.2,851.8,0.0000,1,0,0,0,16,18711787
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'
+bench_main: skipping unavailable allocator 'tcmalloc (not available)'
+bench_main: skipping unavailable allocator 'mimalloc (not available)'
+bench_main: skipping unavailable allocator 'snmalloc (not available)'
+bench_main: skipping unavailable allocator 'scudo (not available)'
+bench_main: skipping unavailable allocator 'rpmalloc (not available)'

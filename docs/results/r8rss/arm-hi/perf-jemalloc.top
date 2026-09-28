@@ -1,0 +1,40 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 1M of event 'cycles:P'
+# Event count (approx.): 6077383579141
+#
+# Overhead  Shared Object          Symbol                                 
+# ........  .....................  .......................................
+#
+    25.28%  libc.so.6              [.] __memset_sve_zva64
+    17.11%  bench_main             [.] producer_thread
+    17.04%  libc.so.6              [.] __aarch64_cas4_acq
+     6.36%  bench_main             [.] __aarch64_cas8_relax
+     5.54%  libc.so.6              [.] __aarch64_swp4_rel
+     3.15%  [kernel.kallsyms]      [k] __schedule
+     2.11%  libc.so.6              [.] pthread_mutex_trylock@@GLIBC_2.34
+     2.06%  [vdso]                 [.] __kernel_clock_gettime
+     1.60%  [kernel.kallsyms]      [k] do_notify_resume
+     1.32%  bench_main             [.] td_qsort
+     1.30%  [kernel.kallsyms]      [k] el0_svc
+     1.30%  libjemalloc.so.2       [.] 0x00000000000718b8
+     1.00%  libc.so.6              [.] __sched_yield
+     0.98%  [kernel.kallsyms]      [k] do_sched_yield
+     0.96%  bench_main             [.] ring_pop
+     0.63%  [kernel.kallsyms]      [k] el0_svc_common.constprop.0
+     0.61%  [kernel.kallsyms]      [k] get_random_u16
+     0.57%  libc.so.6              [.] __GI___pthread_mutex_unlock_usercnt
+     0.49%  libjemalloc.so.2       [.] 0x00000000000244c0
+     0.42%  libjemalloc.so.2       [.] malloc
+     0.37%  libjemalloc.so.2       [.] free
+     0.36%  [kernel.kallsyms]      [k] invoke_syscall
+     0.34%  bench_main             [.] consumer_thread
+     0.32%  bench_main             [.] td_add
+     0.29%  libjemalloc.so.2       [.] 0x0000000000024f64
+     0.28%  bench_main             [.] td_compress
+     0.27%  bench_main             [.] iv_poll
+     0.20%  libjemalloc.so.2       [.] 0x000000000002444c
+     0.19%  libjemalloc.so.2       [.] 0x0000000000060d9c

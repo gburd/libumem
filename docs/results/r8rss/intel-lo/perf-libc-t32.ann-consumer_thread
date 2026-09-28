@@ -1,0 +1,17 @@
+    2.11 :   4684:   je     46a7 <consumer_thread+0x77>
+    3.98 :   468a:   lea    0x38(%r14),%rdx
+    2.25 :   468e:   lea    0x28(%r14),%rsi
+    6.20 :   4692:   lea    0x50(%r14),%rdi
+    1.50 :   4696:   lea    0x30(%r14),%r8
+    1.51 :   46ab:   mov    %r12,%rdx
+   17.30 :   46ae:   mov    %rbp,%rsi
+   27.30 :   46b6:   test   %eax,%eax
+    0.97 :   46d1:   mov    $0x1,%edi
+    1.29 :   46e0:   mov    %r15,%rdi
+    2.88 :   472c:   mov    0x28(%r14),%rdi
+    1.09 :   473e:   addq   $0x1,0x38(%r14)
+    4.67 :   4743:   cmpq   $0x0,0x50(%r14)
+    1.20 :   4748:   jne    4686 <consumer_thread+0x56>
+   11.26 :   47d0:   mov    %r15,%rdi
+    0.96 :   47d3:   call   *0x20(%r13)
+    7.15 :   47d7:   jmp    473e <consumer_thread+0x10e>

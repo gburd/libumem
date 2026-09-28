@@ -1,0 +1,88 @@
+VmHWM:	   30852 kB
+VmRSS:	   30852 kB
+Threads:	34
+[New LWP 9998]
+[New LWP 9997]
+[New LWP 9996]
+[New LWP 9995]
+[New LWP 9994]
+[New LWP 9993]
+[New LWP 9992]
+[New LWP 9991]
+[New LWP 9990]
+[New LWP 9989]
+[New LWP 9988]
+[New LWP 9987]
+[New LWP 9986]
+[New LWP 9985]
+[New LWP 9984]
+[New LWP 9983]
+[New LWP 9982]
+[New LWP 9981]
+[New LWP 9980]
+[New LWP 9979]
+[New LWP 9978]
+[New LWP 9977]
+[New LWP 9976]
+[New LWP 9975]
+[New LWP 9974]
+[New LWP 9973]
+[New LWP 9972]
+[New LWP 9971]
+[New LWP 9970]
+[New LWP 9969]
+[New LWP 9968]
+[New LWP 9967]
+[New LWP 9966]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/aarch64-linux-gnu/libthread_db.so.1".
+__syscall_cancel_arch () at ../sysdeps/unix/sysv/linux/aarch64/syscall_cancel.S:50
+
+warning: 50	../sysdeps/unix/sysv/linux/aarch64/syscall_cancel.S: No such file or directory
+R8RSS ptc_count 32
+R8RSS ptc_total bin_obj=17408 bin_bytes=2883584 mag_obj=35955 mag_bytes=6336240
+R8RSS ptc_nonempty 16
+R8RSS ptc[0] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[1] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[2] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[3] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[4] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[5] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[6] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[7] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[8] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[9] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[10] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[11] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[12] bin_obj=1088 bin_bytes=180224 mag_obj=2295 mag_bytes=399840
+R8RSS ptc[13] bin_obj=1088 bin_bytes=180224 mag_obj=2040 mag_bytes=379440
+R8RSS ptc[14] bin_obj=1088 bin_bytes=180224 mag_obj=2040 mag_bytes=379440
+R8RSS ptc[15] bin_obj=1088 bin_bytes=180224 mag_obj=2040 mag_bytes=379440
+R8RSS ptc[16] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[17] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[18] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[19] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[20] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[21] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[22] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[23] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[24] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[25] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[26] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[27] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[28] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[29] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[30] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS ptc[31] bin_obj=0 bin_bytes=0 mag_obj=0 mag_bytes=0
+R8RSS cache name bufsize magsize slab_out slab_free cpu_obj rseq_obj depot_full_mags depot_obj buftotal
+R8RSS cache umem_alloc_80 80 255 7040 10 0 1151 2 510 7050
+R8RSS cache umem_alloc_96 96 255 10186 23 143 1085 10 2550 10209
+R8RSS cache umem_alloc_112 112 255 9171 34 530 952 5 1275 9205
+R8RSS cache umem_alloc_128 128 255 8957 2 237 1070 5 1275 8959
+R8RSS cache umem_alloc_160 160 255 10093 7 324 1060 8 2040 10100
+R8RSS cache umem_alloc_192 192 255 10720 20 377 852 11 2805 10740
+R8RSS cache umem_alloc_224 224 255 10943 141 254 984 12 3060 11084
+R8RSS cache umem_alloc_256 256 255 10246 14 359 1430 7 1785 10260
+R8RSS cache umem_alloc_320 320 255 8593 11 613 599 8 2040 8604
+R8RSS bytes ptc_bins=2883584 ptc_mags=6336240 cpu_mags=572608 rseq_mags=1551184 depot_full=3251760 slab_free=50720 slab_out=15211792 slab_total_chunk_bytes=15262512
+[Inferior 1 (process 9964) detached]

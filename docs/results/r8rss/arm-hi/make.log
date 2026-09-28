@@ -1,0 +1,170 @@
+depbase=`echo init_lib.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT init_lib.lo -MD -MP -MF $depbase.Tpo -c -o init_lib.lo init_lib.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_agent_support.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_agent_support.lo -MD -MP -MF $depbase.Tpo -c -o umem_agent_support.lo umem_agent_support.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_fail.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_fail.lo -MD -MP -MF $depbase.Tpo -c -o umem_fail.lo umem_fail.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_stacktrace.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_stacktrace.lo -MD -MP -MF $depbase.Tpo -c -o umem_stacktrace.lo umem_stacktrace.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_fork.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_fork.lo -MD -MP -MF $depbase.Tpo -c -o umem_fork.lo umem_fork.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_update_thread.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_update_thread.lo -MD -MP -MF $depbase.Tpo -c -o umem_update_thread.lo umem_update_thread.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo vmem_mmap.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_mmap.lo -MD -MP -MF $depbase.Tpo -c -o vmem_mmap.lo vmem_mmap.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo vmem_sbrk.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_sbrk.lo -MD -MP -MF $depbase.Tpo -c -o vmem_sbrk.lo vmem_sbrk.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo envvar.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT envvar.lo -MD -MP -MF $depbase.Tpo -c -o envvar.lo envvar.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo getpcstack.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT getpcstack.lo -MD -MP -MF $depbase.Tpo -c -o getpcstack.lo getpcstack.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo misc.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT misc.lo -MD -MP -MF $depbase.Tpo -c -o misc.lo misc.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo vmem_base.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_base.lo -MD -MP -MF $depbase.Tpo -c -o vmem_base.lo vmem_base.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem.lo -MD -MP -MF $depbase.Tpo -c -o umem.lo umem.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo vmem.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem.lo -MD -MP -MF $depbase.Tpo -c -o vmem.lo vmem.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo malloc.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc.lo -MD -MP -MF $depbase.Tpo -c -o malloc.lo malloc.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo malloc_guard.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc_guard.lo -MD -MP -MF $depbase.Tpo -c -o malloc_guard.lo malloc_guard.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_audit.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_audit.lo -MD -MP -MF $depbase.Tpo -c -o umem_audit.lo umem_audit.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_inspect.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_inspect.lo -MD -MP -MF $depbase.Tpo -c -o umem_inspect.lo umem_inspect.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_introspect.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_introspect.lo -MD -MP -MF $depbase.Tpo -c -o umem_introspect.lo umem_introspect.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_hooks.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hooks.lo -MD -MP -MF $depbase.Tpo -c -o umem_hooks.lo umem_hooks.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_ptc.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_ptc.lo -MD -MP -MF $depbase.Tpo -c -o umem_ptc.lo umem_ptc.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_profile.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_profile.lo -MD -MP -MF $depbase.Tpo -c -o umem_profile.lo umem_profile.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_arena.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_arena.lo -MD -MP -MF $depbase.Tpo -c -o umem_arena.lo umem_arena.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_own.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_own.lo -MD -MP -MF $depbase.Tpo -c -o umem_own.lo umem_own.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_rseq.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq.lo -MD -MP -MF $depbase.Tpo -c -o umem_rseq.lo umem_rseq.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_rseq_x86_64.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.     -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq_x86_64.lo -MD -MP -MF $depbase.Tpo -c -o umem_rseq_x86_64.lo umem_rseq_x86_64.S &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_rseq_aarch64.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.     -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq_aarch64.lo -MD -MP -MF $depbase.Tpo -c -o umem_rseq_aarch64.lo umem_rseq_aarch64.S &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_numa.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_numa.lo -MD -MP -MF $depbase.Tpo -c -o umem_numa.lo umem_numa.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_hash_partition.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hash_partition.lo -MD -MP -MF $depbase.Tpo -c -o umem_hash_partition.lo umem_hash_partition.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo test/bench/bench_main.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/bench/bench_main.o -MD -MP -MF $depbase.Tpo -c -o test/bench/bench_main.o test/bench/bench_main.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo test/bench/bench_framework.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/bench/bench_framework.o -MD -MP -MF $depbase.Tpo -c -o test/bench/bench_framework.o test/bench/bench_framework.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo test/bench/allocators.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/bench/allocators.o -MD -MP -MF $depbase.Tpo -c -o test/bench/allocators.o test/bench/allocators.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo test/tdigest.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/tdigest.o -MD -MP -MF $depbase.Tpo -c -o test/tdigest.o test/tdigest.c &&\
+mv -f $depbase.Tpo $depbase.Po
+test/bench/allocators.c:47:9: warning: "_GNU_SOURCE" redefined
+   47 | #define _GNU_SOURCE
+      |         ^~~~~~~~~~~
+<command-line>: note: this is the location of the previous definition
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_fail.lo -MD -MP -MF .deps/umem_fail.Tpo -c umem_fail.c  -fPIC -DPIC -o .libs/umem_fail.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_fork.lo -MD -MP -MF .deps/umem_fork.Tpo -c umem_fork.c  -fPIC -DPIC -o .libs/umem_fork.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_agent_support.lo -MD -MP -MF .deps/umem_agent_support.Tpo -c umem_agent_support.c  -fPIC -DPIC -o .libs/umem_agent_support.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_mmap.lo -MD -MP -MF .deps/vmem_mmap.Tpo -c vmem_mmap.c  -fPIC -DPIC -o .libs/vmem_mmap.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_sbrk.lo -MD -MP -MF .deps/vmem_sbrk.Tpo -c vmem_sbrk.c  -fPIC -DPIC -o .libs/vmem_sbrk.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT init_lib.lo -MD -MP -MF .deps/init_lib.Tpo -c init_lib.c  -fPIC -DPIC -o .libs/init_lib.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT misc.lo -MD -MP -MF .deps/misc.Tpo -c misc.c  -fPIC -DPIC -o .libs/misc.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_stacktrace.lo -MD -MP -MF .deps/umem_stacktrace.Tpo -c umem_stacktrace.c  -fPIC -DPIC -o .libs/umem_stacktrace.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem.lo -MD -MP -MF .deps/umem.Tpo -c umem.c  -fPIC -DPIC -o .libs/umem.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT envvar.lo -MD -MP -MF .deps/envvar.Tpo -c envvar.c  -fPIC -DPIC -o .libs/envvar.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_base.lo -MD -MP -MF .deps/vmem_base.Tpo -c vmem_base.c  -fPIC -DPIC -o .libs/vmem_base.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_audit.lo -MD -MP -MF .deps/umem_audit.Tpo -c umem_audit.c  -fPIC -DPIC -o .libs/umem_audit.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem.lo -MD -MP -MF .deps/vmem.Tpo -c vmem.c  -fPIC -DPIC -o .libs/vmem.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_ptc.lo -MD -MP -MF .deps/umem_ptc.Tpo -c umem_ptc.c  -fPIC -DPIC -o .libs/umem_ptc.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq_x86_64.lo -MD -MP -MF .deps/umem_rseq_x86_64.Tpo -c umem_rseq_x86_64.S  -fPIC -DPIC -o .libs/umem_rseq_x86_64.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_update_thread.lo -MD -MP -MF .deps/umem_update_thread.Tpo -c umem_update_thread.c  -fPIC -DPIC -o .libs/umem_update_thread.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_profile.lo -MD -MP -MF .deps/umem_profile.Tpo -c umem_profile.c  -fPIC -DPIC -o .libs/umem_profile.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq_aarch64.lo -MD -MP -MF .deps/umem_rseq_aarch64.Tpo -c umem_rseq_aarch64.S  -fPIC -DPIC -o .libs/umem_rseq_aarch64.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq.lo -MD -MP -MF .deps/umem_rseq.Tpo -c umem_rseq.c  -fPIC -DPIC -o .libs/umem_rseq.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hooks.lo -MD -MP -MF .deps/umem_hooks.Tpo -c umem_hooks.c  -fPIC -DPIC -o .libs/umem_hooks.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc_guard.lo -MD -MP -MF .deps/malloc_guard.Tpo -c malloc_guard.c  -fPIC -DPIC -o .libs/malloc_guard.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_introspect.lo -MD -MP -MF .deps/umem_introspect.Tpo -c umem_introspect.c  -fPIC -DPIC -o .libs/umem_introspect.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc.lo -MD -MP -MF .deps/malloc.Tpo -c malloc.c  -fPIC -DPIC -o .libs/malloc.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT getpcstack.lo -MD -MP -MF .deps/getpcstack.Tpo -c getpcstack.c  -fPIC -DPIC -o .libs/getpcstack.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_arena.lo -MD -MP -MF .deps/umem_arena.Tpo -c umem_arena.c  -fPIC -DPIC -o .libs/umem_arena.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_numa.lo -MD -MP -MF .deps/umem_numa.Tpo -c umem_numa.c  -fPIC -DPIC -o .libs/umem_numa.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_own.lo -MD -MP -MF .deps/umem_own.Tpo -c umem_own.c  -fPIC -DPIC -o .libs/umem_own.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hash_partition.lo -MD -MP -MF .deps/umem_hash_partition.Tpo -c umem_hash_partition.c  -fPIC -DPIC -o .libs/umem_hash_partition.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_inspect.lo -MD -MP -MF .deps/umem_inspect.Tpo -c umem_inspect.c  -fPIC -DPIC -o .libs/umem_inspect.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq_x86_64.lo -MD -MP -MF .deps/umem_rseq_x86_64.Tpo -c umem_rseq_x86_64.S -o umem_rseq_x86_64.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq_aarch64.lo -MD -MP -MF .deps/umem_rseq_aarch64.Tpo -c umem_rseq_aarch64.S -o umem_rseq_aarch64.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc_guard.lo -MD -MP -MF .deps/malloc_guard.Tpo -c malloc_guard.c -o malloc_guard.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_introspect.lo -MD -MP -MF .deps/umem_introspect.Tpo -c umem_introspect.c -o umem_introspect.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_agent_support.lo -MD -MP -MF .deps/umem_agent_support.Tpo -c umem_agent_support.c -o umem_agent_support.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_base.lo -MD -MP -MF .deps/vmem_base.Tpo -c vmem_base.c -o vmem_base.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT init_lib.lo -MD -MP -MF .deps/init_lib.Tpo -c init_lib.c -o init_lib.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_mmap.lo -MD -MP -MF .deps/vmem_mmap.Tpo -c vmem_mmap.c -o vmem_mmap.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_arena.lo -MD -MP -MF .deps/umem_arena.Tpo -c umem_arena.c -o umem_arena.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_fail.lo -MD -MP -MF .deps/umem_fail.Tpo -c umem_fail.c -o umem_fail.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_stacktrace.lo -MD -MP -MF .deps/umem_stacktrace.Tpo -c umem_stacktrace.c -o umem_stacktrace.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_audit.lo -MD -MP -MF .deps/umem_audit.Tpo -c umem_audit.c -o umem_audit.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_update_thread.lo -MD -MP -MF .deps/umem_update_thread.Tpo -c umem_update_thread.c -o umem_update_thread.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem_sbrk.lo -MD -MP -MF .deps/vmem_sbrk.Tpo -c vmem_sbrk.c -o vmem_sbrk.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq.lo -MD -MP -MF .deps/umem_rseq.Tpo -c umem_rseq.c -o umem_rseq.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT getpcstack.lo -MD -MP -MF .deps/getpcstack.Tpo -c getpcstack.c -o getpcstack.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_fork.lo -MD -MP -MF .deps/umem_fork.Tpo -c umem_fork.c -o umem_fork.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT misc.lo -MD -MP -MF .deps/misc.Tpo -c misc.c -o misc.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_numa.lo -MD -MP -MF .deps/umem_numa.Tpo -c umem_numa.c -o umem_numa.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hash_partition.lo -MD -MP -MF .deps/umem_hash_partition.Tpo -c umem_hash_partition.c -o umem_hash_partition.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hooks.lo -MD -MP -MF .deps/umem_hooks.Tpo -c umem_hooks.c -o umem_hooks.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_own.lo -MD -MP -MF .deps/umem_own.Tpo -c umem_own.c -o umem_own.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT envvar.lo -MD -MP -MF .deps/envvar.Tpo -c envvar.c -o envvar.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_ptc.lo -MD -MP -MF .deps/umem_ptc.Tpo -c umem_ptc.c -o umem_ptc.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc.lo -MD -MP -MF .deps/malloc.Tpo -c malloc.c -o malloc.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_profile.lo -MD -MP -MF .deps/umem_profile.Tpo -c umem_profile.c -o umem_profile.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem.lo -MD -MP -MF .deps/vmem.Tpo -c vmem.c -o vmem.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_inspect.lo -MD -MP -MF .deps/umem_inspect.Tpo -c umem_inspect.c -o umem_inspect.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem.lo -MD -MP -MF .deps/umem.Tpo -c umem.c -o umem.o >/dev/null 2>&1
+/bin/bash ./libtool  --tag=CC   --mode=link gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -lpthread -lm -lnuma  -version-info 2:0:0  -o libumem.la -rpath /usr/local/lib init_lib.lo umem_agent_support.lo umem_fail.lo umem_stacktrace.lo umem_fork.lo umem_update_thread.lo vmem_mmap.lo vmem_sbrk.lo envvar.lo getpcstack.lo misc.lo vmem_base.lo umem.lo vmem.lo malloc.lo malloc_guard.lo umem_audit.lo umem_inspect.lo umem_introspect.lo umem_hooks.lo umem_ptc.lo umem_profile.lo umem_arena.lo umem_own.lo   umem_rseq.lo umem_rseq_x86_64.lo umem_rseq_aarch64.lo umem_numa.lo umem_hash_partition.lo    -ldl  -ldw
+libtool: link: gcc -shared  -fPIC -DPIC  .libs/init_lib.o .libs/umem_agent_support.o .libs/umem_fail.o .libs/umem_stacktrace.o .libs/umem_fork.o .libs/umem_update_thread.o .libs/vmem_mmap.o .libs/vmem_sbrk.o .libs/envvar.o .libs/getpcstack.o .libs/misc.o .libs/vmem_base.o .libs/umem.o .libs/vmem.o .libs/malloc.o .libs/malloc_guard.o .libs/umem_audit.o .libs/umem_inspect.o .libs/umem_introspect.o .libs/umem_hooks.o .libs/umem_ptc.o .libs/umem_profile.o .libs/umem_arena.o .libs/umem_own.o .libs/umem_rseq.o .libs/umem_rseq_x86_64.o .libs/umem_rseq_aarch64.o .libs/umem_numa.o .libs/umem_hash_partition.o   -lpthread -lm -lnuma -ldl -ldw  -g -O2   -Wl,-soname -Wl,libumem.so.2 -o .libs/libumem.so.2.0.0
+libtool: link: (cd ".libs" && rm -f "libumem.so.2" && ln -s "libumem.so.2.0.0" "libumem.so.2")
+libtool: link: (cd ".libs" && rm -f "libumem.so" && ln -s "libumem.so.2.0.0" "libumem.so")
+libtool: link: ar cr .libs/libumem.a  init_lib.o umem_agent_support.o umem_fail.o umem_stacktrace.o umem_fork.o umem_update_thread.o vmem_mmap.o vmem_sbrk.o envvar.o getpcstack.o misc.o vmem_base.o umem.o vmem.o malloc.o malloc_guard.o umem_audit.o umem_inspect.o umem_introspect.o umem_hooks.o umem_ptc.o umem_profile.o umem_arena.o umem_own.o umem_rseq.o umem_rseq_x86_64.o umem_rseq_aarch64.o umem_numa.o umem_hash_partition.o
+libtool: link: ranlib .libs/libumem.a
+libtool: link: ( cd ".libs" && rm -f "libumem.la" && ln -s "../libumem.la" "libumem.la" )
+/bin/bash ./libtool  --tag=CC   --mode=link gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -pthread -lm  -o test/bench/bench_main test/bench/bench_main.o test/bench/bench_framework.o test/bench/allocators.o test/tdigest.o libumem.la -ldl  -ldw
+libtool: link: gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -o test/bench/.libs/bench_main test/bench/bench_main.o test/bench/bench_framework.o test/bench/allocators.o test/tdigest.o  -lm ./.libs/libumem.so -ldl -ldw -pthread

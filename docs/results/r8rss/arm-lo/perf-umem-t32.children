@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 266091159027
+#
+# Children      Self  Symbol                                   
+# ........  ........  .........................................
+#
+    99.99%     0.00%  [.] start_thread
+    99.99%     0.00%  [.] thread_start
+    55.96%    29.90%  [.] producer_thread
+    43.80%     0.74%  [.] consumer_thread
+    18.30%    14.57%  [.] ring_pop
+    11.65%     4.14%  [.] umem_alloc_wrapper
+     9.64%     9.64%  [.] umem_free_wrapper
+     8.76%     5.18%  [.] _umem_free
+     8.34%     8.34%  [.] __aarch64_cas8_relax
+     7.33%     3.11%  [.] _umem_alloc
+     5.80%     1.32%  [.] td_add
+     5.18%     0.14%  [.] clock_gettime@@GLIBC_2.17
+     5.04%     5.04%  [.] __kernel_clock_gettime
+     4.06%     0.86%  [.] td_compress
+     3.20%     3.20%  [.] td_qsort
+     2.38%     2.38%  [.] umem_rseq_alloc_fastpath
+     2.21%     2.21%  [.] umem_rseq_free_fastpath
+     2.00%     1.99%  [.] __memset_sve_zva64
+     1.90%     0.13%  [.] __sched_yield
+     1.82%     0.00%  [k] el0t_64_sync
+     1.82%     0.00%  [k] el0t_64_sync_handler
+     1.81%     0.30%  [k] el0_svc
+     1.40%     0.01%  [k] do_el0_svc
+     1.40%     0.25%  [.] umem_depot_alloc
+     1.39%     0.01%  [k] el0_svc_common.constprop.0
+     1.38%     0.02%  [k] invoke_syscall
+     1.27%     0.20%  [k] do_sched_yield
+     1.27%     0.00%  [k] __arm64_sys_sched_yield
+     1.26%     0.01%  [.] umem_rseq_alloc_slowpath
+     1.06%     0.01%  [k] schedule
+     1.05%     0.23%  [k] __schedule
+     0.83%     0.29%  [.] umem_depot_pop_trylock
+     0.82%     0.82%  [k] finish_task_switch.isra.0
+     0.78%     0.01%  [.] umem_rseq_reload

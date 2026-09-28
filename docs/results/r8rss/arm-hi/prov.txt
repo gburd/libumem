@@ -1,0 +1,7 @@
+ref=a8c3e1a
+sha=a8c3e1a1b4e51a68eb6e698e7f0319103cd09da1
+role=arm-hi@r8rss
+job=hi2
+isolated=yes
+192
+6.12.107+deb13-cloud-arm64

@@ -1,0 +1,25 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 365667908712
+#
+# Overhead  Symbol                                   
+# ........  .........................................
+#
+    14.57%  [.] producer_thread
+    10.22%  [.] pthread_mutex_trylock@@GLIBC_2.34
+     7.80%  [.] __GI___pthread_mutex_unlock_usercnt
+     7.65%  [.] ring_pop
+     5.77%  [.] __vdso_clock_gettime
+            |          
+             --5.65%--clock_gettime@@GLIBC_2.17
+
+     5.46%  [.] td_qsort
+
+
+#
+# (Tip: Show individual samples with: perf script)
+#

@@ -1,0 +1,9 @@
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'
+jemalloc,producer-consumer/interval=1,64,643741783,10058465,5.000132,128744947.95,23,58,90,374,1044,41439,68,30343168,30343168,51337783554,0,0,,,0,38898.8,1099.9,0.0000,1,0,0,0,16,40233856
+jemalloc,producer-consumer/interval=2,64,644103258,10064113,5.000168,128816329.35,23,58,90,377,1044,201627,68,30355456,30355456,51367445565,0,0,,,0,39006.7,992.1,0.0000,1,0,0,0,16,40256449
+jemalloc,producer-consumer/interval=3,64,643863151,10060361,5.000169,128768274.30,23,62,90,385,1037,59530,68,30302208,30302208,51347879708,0,0,,,0,38967.6,1032.0,0.0000,1,0,0,0,16,40241452
+bench_main: skipping unavailable allocator 'tcmalloc (not available)'
+bench_main: skipping unavailable allocator 'mimalloc (not available)'
+bench_main: skipping unavailable allocator 'snmalloc (not available)'
+bench_main: skipping unavailable allocator 'scudo (not available)'
+bench_main: skipping unavailable allocator 'rpmalloc (not available)'

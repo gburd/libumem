@@ -1,0 +1,23 @@
+Linux ip-172-31-34-110 6.12.107+deb13-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.107-1 (2026-08-29) x86_64 GNU/Linux
+8
+ref=da6314a
+sha=da6314a413cb69c303ad3d83e47308d6dd417cf7
+role=intel-lo@r8rss
+job=probe
+isolated=yes
+gcc (Debian 14.2.0-19) 14.2.0
+ldd (Debian GLIBC 2.41-12+deb13u4) 2.41
+lrwxrwxrwx 1 root root     16 Mar  3  2025 /usr/lib/x86_64-linux-gnu/libjemalloc.so -> libjemalloc.so.2
+-rw-r--r-- 1 root root 843416 Mar  3  2025 /usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+	linux-vdso.so.1 (0x00007ff995559000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007ff99544b000)
+	libumem.so.2 => /home/admin/libumem-iso-probe-da6314a413cb/.libs/libumem.so.2 (0x00007ff994600000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007ff99440c000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007ff99555b000)
+	libnuma.so.1 => /lib/x86_64-linux-gnu/libnuma.so.1 (0x00007ff99543c000)
+	libdw.so.1 => /lib/x86_64-linux-gnu/libdw.so.1 (0x00007ff995380000)
+	libelf.so.1 => /lib/x86_64-linux-gnu/libelf.so.1 (0x00007ff995362000)
+	libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x00007ff995342000)
+	libzstd.so.1 => /lib/x86_64-linux-gnu/libzstd.so.1 (0x00007ff994342000)
+	liblzma.so.5 => /lib/x86_64-linux-gnu/liblzma.so.5 (0x00007ff994311000)
+	libbz2.so.1.0 => /lib/x86_64-linux-gnu/libbz2.so.1.0 (0x00007ff99532d000)

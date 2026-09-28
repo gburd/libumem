@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 119K of event 'cycles:P'
+# Event count (approx.): 266091159027
+#
+# Overhead  Shared Object          Symbol                                   
+# ........  .....................  .........................................
+#
+    29.90%  bench_main             [.] producer_thread
+    14.57%  bench_main             [.] ring_pop
+     9.64%  bench_main             [.] umem_free_wrapper
+     8.34%  bench_main             [.] __aarch64_cas8_relax
+     5.18%  libumem.so.2.0.0       [.] _umem_free
+     5.04%  [vdso]                 [.] __kernel_clock_gettime
+     4.14%  bench_main             [.] umem_alloc_wrapper
+     3.20%  bench_main             [.] td_qsort
+     3.11%  libumem.so.2.0.0       [.] _umem_alloc
+     2.38%  libumem.so.2.0.0       [.] umem_rseq_alloc_fastpath
+     2.21%  libumem.so.2.0.0       [.] umem_rseq_free_fastpath
+     1.99%  libc.so.6              [.] __memset_sve_zva64
+     1.32%  bench_main             [.] td_add
+     0.86%  bench_main             [.] td_compress
+     0.82%  [kernel.kallsyms]      [k] finish_task_switch.isra.0
+     0.74%  bench_main             [.] consumer_thread
+     0.69%  bench_main             [.] iv_poll
+     0.67%  libc.so.6              [.] __aarch64_cas4_acq
+     0.47%  libc.so.6              [.] __aarch64_swp4_rel
+     0.43%  ld-linux-aarch64.so.1  [.] _dl_tlsdesc_return
+     0.41%  libm.so.6              [.] log@@GLIBC_2.29
+     0.40%  libc.so.6              [.] rand_r
+     0.30%  [kernel.kallsyms]      [k] el0_svc
+     0.29%  libumem.so.2.0.0       [.] umem_depot_pop_trylock
+     0.25%  libumem.so.2.0.0       [.] umem_depot_alloc
+     0.23%  [kernel.kallsyms]      [k] __schedule
+     0.21%  libumem.so.2.0.0       [.] umem_rseq_get_ncpus@plt
+     0.21%  libumem.so.2.0.0       [.] umem_rseq_get_ncpus
+     0.20%  [kernel.kallsyms]      [k] do_sched_yield
+     0.19%  libumem.so.2.0.0       [.] umem_depot_pop
+     0.14%  libumem.so.2.0.0       [.] umem_rseq_alloc_fastpath@plt
+     0.14%  libc.so.6              [.] clock_gettime@@GLIBC_2.17
+     0.13%  libc.so.6              [.] __sched_yield
+     0.13%  libumem.so.2.0.0       [.] umem_ptc_mag_return

@@ -1,0 +1,30 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 118K of event 'cycles:P'
+# Event count (approx.): 408933026281
+#
+# Overhead  Symbol                                       
+# ........  .............................................
+#
+    35.36%  [.] producer_thread
+    22.06%  [.] umem_free_wrapper
+     8.82%  [.] ring_pop
+     4.74%  [.] umem_rseq_alloc_fastpath
+            |          
+             --4.73%--_umem_alloc
+
+     4.68%  [.] umem_rseq_free_fastpath
+            |          
+             --4.67%--_umem_free
+
+     3.78%  [.] _umem_free
+     3.24%  [.] umem_alloc_wrapper
+     3.03%  [.] __vdso_clock_gettime
+
+
+#
+# (Tip: If call chains don't work try perf record --call-graph dwarf or --call-graph lbr)
+#

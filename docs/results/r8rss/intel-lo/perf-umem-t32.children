@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 118K of event 'cycles:P'
+# Event count (approx.): 408933026281
+#
+# Children      Self  Symbol                                       
+# ........  ........  .............................................
+#
+    35.40%    35.36%  [.] producer_thread
+    34.39%     0.00%  [k] 0x4242424242424242
+    22.10%    22.06%  [.] umem_free_wrapper
+     8.83%     8.82%  [.] ring_pop
+     8.47%     3.78%  [.] _umem_free
+     6.73%     1.99%  [.] _umem_alloc
+     4.75%     4.74%  [.] umem_rseq_alloc_fastpath
+     4.69%     4.68%  [.] umem_rseq_free_fastpath
+     3.24%     3.24%  [.] umem_alloc_wrapper
+     3.07%     0.08%  [.] clock_gettime@@GLIBC_2.17
+     3.03%     3.03%  [.] __vdso_clock_gettime
+     2.24%     2.23%  [.] td_qsort
+     1.05%     0.01%  [k] entry_SYSCALL_64_after_hwframe
+     1.05%     0.01%  [k] do_syscall_64
+     0.97%     0.97%  [.] __memset_avx512_unaligned_erms
+     0.96%     0.02%  [.] __sched_yield
+     0.93%     0.93%  [.] iv_poll
+     0.86%     0.00%  [k] __x64_sys_sched_yield
+     0.82%     0.81%  [.] __tls_get_addr
+     0.78%     0.00%  [k] schedule
+     0.78%     0.05%  [k] __schedule
+     0.77%     0.77%  [.] consumer_thread
+     0.71%     0.00%  [.] 0x4042800000000000
+     0.65%     0.65%  [.] __ieee754_log_fma
+     0.59%     0.59%  [.] __tls_get_addr@plt
+     0.54%     0.54%  [.] td_add
+     0.47%     0.00%  [.] 0x4042000000000000
+     0.43%     0.43%  [.] td_compress
+     0.39%     0.39%  [k] native_write_msr
+     0.39%     0.00%  [k] 0000000000000000
+     0.38%     0.38%  [.] umem_rseq_get_ncpus@plt
+     0.33%     0.33%  [.] pthread_mutex_lock@@GLIBC_2.2.5
+     0.33%     0.00%  [k] 0x0000000000000001
+     0.32%     0.32%  [.] umem_depot_pop_trylock

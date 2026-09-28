@@ -1,0 +1,100 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 120K of event 'cycles:P'
+# Event count (approx.): 241592456449
+#
+# Overhead  Symbol                               
+# ........  .....................................
+#
+    13.31%  [.] __aarch64_swp4_rel
+            |          
+            |--6.99%--_int_free_chunk
+            |          cfree@GLIBC_2.17
+            |          consumer_thread
+            |          start_thread
+            |          thread_start
+            |          
+             --6.32%--malloc
+                       producer_thread
+                       start_thread
+                       thread_start
+
+    12.84%  [.] __aarch64_cas8_relax
+            |          
+            |--7.12%--producer_thread
+            |          start_thread
+            |          thread_start
+            |          
+             --5.73%--ring_pop
+                       consumer_thread
+                       start_thread
+                       thread_start
+
+    10.74%  [.] __aarch64_cas4_acq
+            |          
+            |--5.47%--_int_free_chunk
+            |          cfree@GLIBC_2.17
+            |          consumer_thread
+            |          start_thread
+            |          thread_start
+            |          
+             --5.27%--malloc
+                       producer_thread
+                       start_thread
+                       thread_start
+
+    10.51%  [.] _int_malloc
+            |          
+             --10.39%--malloc
+                       producer_thread
+                       start_thread
+                       thread_start
+
+     6.90%  [.] __kernel_clock_gettime
+            |
+            ---clock_gettime@@GLIBC_2.17
+               |          
+               |--3.52%--consumer_thread
+               |          start_thread
+               |          thread_start
+               |          
+                --3.38%--producer_thread
+                          start_thread
+                          thread_start
+
+     6.19%  [.] malloc
+            |          
+             --6.03%--producer_thread
+                       start_thread
+                       thread_start
+
+     5.48%  [.] producer_thread
+            |
+            ---start_thread
+               thread_start
+
+     5.10%  [.] _int_free_chunk
+            |          
+             --4.94%--cfree@GLIBC_2.17
+                       consumer_thread
+                       start_thread
+                       thread_start
+
+     4.70%  [.] td_qsort
+            |          
+             --3.79%--td_qsort
+
+     3.52%  [.] cfree@GLIBC_2.17
+            |          
+             --3.35%--consumer_thread
+                       start_thread
+                       thread_start
+
+
+
+#
+# (Tip: Use --symfs <dir> if your symbol files are in non-standard locations)
+#

@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 120K of event 'cycles:P'
+# Event count (approx.): 241592456449
+#
+# Children      Self  Symbol                                     
+# ........  ........  ...........................................
+#
+    99.99%     0.00%  [.] start_thread
+    99.99%     0.00%  [.] thread_start
+    55.15%     5.48%  [.] producer_thread
+    44.44%     1.17%  [.] consumer_thread
+    31.13%     6.19%  [.] malloc
+    25.66%     3.52%  [.] cfree@GLIBC_2.17
+    22.09%     5.10%  [.] _int_free_chunk
+    13.31%    13.31%  [.] __aarch64_swp4_rel
+    13.29%    10.51%  [.] _int_malloc
+    12.85%    12.84%  [.] __aarch64_cas8_relax
+    10.75%    10.74%  [.] __aarch64_cas4_acq
+     8.32%     2.59%  [.] ring_pop
+     7.81%     1.63%  [.] td_add
+     7.10%     0.20%  [.] clock_gettime@@GLIBC_2.17
+     6.90%     6.90%  [.] __kernel_clock_gettime
+     5.86%     1.16%  [.] td_compress
+     4.70%     4.70%  [.] td_qsort
+     3.72%     1.54%  [.] _int_free_merge_chunk
+     2.54%     0.00%  [k] el0t_64_sync
+     2.54%     0.00%  [k] el0t_64_sync_handler
+     2.53%     0.36%  [k] el0_svc
+     2.46%     0.14%  [.] __sched_yield
+     2.01%     0.00%  [k] do_el0_svc
+     2.00%     0.01%  [k] el0_svc_common.constprop.0
+     1.99%     0.02%  [k] invoke_syscall
+     1.87%     1.62%  [.] _int_free_create_chunk
+     1.77%     0.00%  [k] __arm64_sys_sched_yield
+     1.77%     0.27%  [k] do_sched_yield
+     1.77%     1.77%  [.] __aarch64_cas8_acq
+     1.68%     1.68%  [.] unlink_chunk.isra.0
+     1.53%     0.05%  [k] __schedule
+     1.52%     0.00%  [k] schedule
+     1.47%     1.47%  [k] finish_task_switch.isra.0
+     1.08%     1.08%  [.] __memset_sve_zva64

@@ -1,0 +1,9 @@
+    2.03 :   7a10:   mov     x29, sp
+    0.85 :   7a14:   str     x19, [sp, #16]
+    2.77 :   7a24:   cbz     x0, 7a3c <umem_alloc_wrapper+0x34>
+    1.58 :   7a28:   mov     x1, #0xbabe                     // #47806
+    1.25 :   7a30:   movk    x1, #0xbeef, lsl #32
+    0.92 :   7a34:   movk    x1, #0xdead, lsl #48
+    1.42 :   7a38:   stp     x19, x1, [x0], #16
+   85.46 :   7a3c:   ldr     x19, [sp, #16]
+    1.54 :   7a40:   ldp     x29, x30, [sp], #32
