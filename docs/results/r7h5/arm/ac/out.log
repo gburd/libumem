@@ -1,0 +1,72 @@
+== box: PRETTY_NAME="Debian GNU/Linux 13 (trixie)" aarch64 gcc=14 c7g.2xlarge
+== A->C
+# hotpath A/B  vcpu=8  2026-09-28T03:55:21Z  pre=f951028 post=1f044a3  replicates=9 dur=1s
+# instance=c7g.2xlarge gcc=14
+## builds
+  built pre from /home/admin/ab3/pre: libumem.so sha256=2d9897799e5419d1
+  built post from /home/admin/ab3/post: libumem.so sha256=066253fe510dce0a
+  built pre2 from /home/admin/ab3/pre2: libumem.so sha256=d36de32ac260751e
+  bench_pairs (one binary, from post): sha256=fa60b9d5df619dbd
+
+## bench_pairs Mpairs/s (delta = B relative to A)
+  null  s=512 N=1 t=1                last A=92.65     B=92.68      median   +0.02%  (min   -0.08%, max   +0.05%, n=9)
+  A/B   s=512 N=1 t=1                last A=92.58     B=93.00      median   +0.41%  (min   +0.34%, max   +0.51%, n=9)
+  null  s=512 N=64 t=1               last A=94.78     B=94.76      median   -0.01%  (min   -0.05%, max   +0.02%, n=9)
+  A/B   s=512 N=64 t=1               last A=94.79     B=94.83      median   +0.02%  (min   -0.01%, max   +0.04%, n=9)
+  null  s=512 N=128 t=1              last A=89.83     B=89.76      median   +0.06%  (min   -0.18%, max   +0.21%, n=9)
+  A/B   s=512 N=128 t=1              last A=89.75     B=89.99      median   +0.35%  (min   +0.19%, max   +0.45%, n=9)
+  null  s=16:64 N=1 t=1              last A=63.97     B=63.90      median   -0.06%  (min   -0.27%, max   +0.17%, n=9)
+  A/B   s=16:64 N=1 t=1              last A=63.97     B=64.01      median   +0.25%  (min   +0.03%, max   +0.36%, n=9)
+  null  s=16:64 N=64 t=1             last A=71.63     B=71.45      median   -0.03%  (min   -0.25%, max   +0.53%, n=9)
+  A/B   s=16:64 N=64 t=1             last A=70.50     B=71.76      median   +0.15%  (min   +0.01%, max   +1.79%, n=9)
+  null  s=16:1024 N=1 t=1            last A=57.12     B=57.10      median   -0.04%  (min   -0.33%, max   +0.33%, n=9)
+  A/B   s=16:1024 N=1 t=1            last A=57.11     B=57.10      median   +0.04%  (min   -0.28%, max   +0.21%, n=9)
+  null  s=16:1024 N=64 t=1           last A=61.94     B=61.91      median   +0.00%  (min   -0.62%, max   +0.41%, n=9)
+  A/B   s=16:1024 N=64 t=1           last A=61.91     B=61.96      median   +0.02%  (min   -0.48%, max   +0.19%, n=9)
+  null  s=512 N=1 t=8                last A=678.42    B=667.35     median   -0.01%  (min  -10.75%, max   +0.03%, n=9)
+  A/B   s=512 N=1 t=8                last A=744.33    B=744.96     median   +0.09%  (min   -0.31%, max   +3.85%, n=9)
+  null  s=512 N=128 t=8              last A=718.89    B=718.43     median   +0.04%  (min   -0.07%, max   +0.17%, n=9)
+  A/B   s=512 N=128 t=8              last A=718.57    B=718.47     median   +0.01%  (min   -0.07%, max   +0.40%, n=9)
+  null  s=16:64 N=1 t=8              last A=511.76    B=511.86     median   -0.01%  (min   -0.17%, max   +0.30%, n=9)
+  A/B   s=16:64 N=1 t=8              last A=511.30    B=512.74     median   +0.26%  (min   +0.01%, max   +0.45%, n=9)
+  null  s=16:64 N=64 t=8             last A=569.13    B=569.61     median   -0.10%  (min   -0.47%, max   +0.08%, n=9)
+  A/B   s=16:64 N=64 t=8             last A=570.29    B=573.95     median   +0.72%  (min   +0.48%, max   +0.92%, n=9)
+  null  s=16:1024 N=1 t=8            last A=456.48    B=457.11     median   +0.02%  (min   -0.06%, max   +0.18%, n=9)
+  A/B   s=16:1024 N=1 t=8            last A=457.21    B=456.84     median   -0.07%  (min   -0.15%, max   +0.17%, n=9)
+  null  s=16:1024 N=64 t=8           last A=496.03    B=495.89     median   -0.02%  (min   -0.13%, max   +0.07%, n=9)
+  A/B   s=16:1024 N=64 t=8           last A=495.69    B=495.85     median   -0.03%  (min   -1.13%, max   +0.06%, n=9)
+
+## perf stat instructions per pair, t=1 (delta = B relative to A; lower is better)
+  null  insn s=512 N=1               last A=148.2     B=148.2      median   +0.00%  (min   -0.07%, max   +0.14%, n=9)
+  A/B   insn s=512 N=1               last A=148.2     B=148.2      median   +0.00%  (min   -0.07%, max   +0.14%, n=9)
+  null  insn s=512 N=64              last A=134.3     B=134.4      median   +0.00%  (min   +0.00%, max   +0.07%, n=9)
+  A/B   insn s=512 N=64              last A=134.3     B=134.5      median   +0.00%  (min   -0.07%, max   +0.15%, n=9)
+  null  insn s=512 N=128             last A=145.8     B=145.8      median   +0.00%  (min   +0.00%, max   +0.07%, n=9)
+  A/B   insn s=512 N=128             last A=145.8     B=145.8      median   +0.00%  (min   -0.20%, max   +0.07%, n=9)
+  null  insn s=16:64 N=1             last A=172.3     B=172.3      median   +0.00%  (min   -0.06%, max   +0.06%, n=9)
+  A/B   insn s=16:64 N=1             last A=172.3     B=172.2      median   +0.06%  (min   -0.06%, max   +0.41%, n=9)
+  null  insn s=16:64 N=64            last A=158.5     B=158.5      median   +0.00%  (min   -0.32%, max   +0.06%, n=9)
+  A/B   insn s=16:64 N=64            last A=158.5     B=158.5      median   +0.00%  (min   -0.06%, max   +0.00%, n=9)
+  null  insn s=16:1024 N=1           last A=174.6     B=174.7      median   +0.00%  (min   -0.17%, max   +0.06%, n=9)
+  A/B   insn s=16:1024 N=1           last A=174.7     B=174.7      median   +0.00%  (min   -0.06%, max   +0.06%, n=9)
+  null  insn s=16:1024 N=64          last A=160.9     B=160.8      median   +0.00%  (min   -0.06%, max   +0.06%, n=9)
+  A/B   insn s=16:1024 N=64          last A=160.7     B=160.9      median   +0.00%  (min   -0.06%, max   +0.12%, n=9)
+# done 2026-09-28T04:08:20Z
+== partition: insns per symbol, calls/jumps to hook symbols, which part holds them
+A _umem_alloc insns=352 refs:       2 <umem_alloc_retry> 
+A _umem_alloc.cold absent
+A _umem_free insns=426 refs: 
+A _umem_free.cold absent
+A _umem_cache_alloc insns=256 refs:       1 <umem_alloc_retry>       1 <umem_cache_alloc_debug>       1 <umem_slab_alloc> 
+A _umem_cache_alloc.cold absent
+A _umem_cache_free insns=433 refs: 
+A _umem_cache_free.cold absent
+C _umem_alloc insns=376 refs:       1 <umem_alloc_hooked>       2 <umem_alloc_retry> 
+C _umem_alloc.cold absent
+C _umem_free insns=464 refs:       2 <umem_free_hooked> 
+C _umem_free.cold absent
+C _umem_cache_alloc insns=288 refs:       1 <umem_alloc_retry>       2 <umem_cache_alloc_debug>       1 <umem_hook_alloc>       1 <umem_slab_alloc> 
+C _umem_cache_alloc.cold absent
+C _umem_cache_free insns=448 refs:       1 <umem_hook_free> 
+C _umem_cache_free.cold absent
+ALL_DONE
