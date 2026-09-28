@@ -907,6 +907,12 @@ static void *consumer_thread(void *arg) {
     pc_context_t *ctx = (pc_context_t *)arg;
     allocator_ops_t *ops = ctx->ops;
     uint32_t every = lat_every(ctx->config), lat_tick = 1;
+    /* prodcons carries each buffer's size in the ring, so free it WITH that
+     * size when the allocator offers a size-carrying free -- umem's API arm
+     * then skips the in-band header read (a cross-core coherence miss on the
+     * line the producer wrote; r8rss O5).  Sizeless allocators leave
+     * free_sized NULL and fall back to free(). */
+    void (*free_sized)(void *, size_t) = ops->free_sized;
 
     pthread_barrier_wait(ctx->start_barrier);
 
@@ -916,9 +922,9 @@ static void *consumer_thread(void *arg) {
         /* Interval mode: after the last interval, keep draining the ring
          * (untimed, uncounted) until the producers are done. */
         if (ctx->iv.clock && !PC_POLL(ctx)) {
-            if (ring_pop(ctx->ring, &ptr, &sz))
-                ops->free(ptr);
-            else if (atomic_load(&ctx->ring->done))
+            if (ring_pop(ctx->ring, &ptr, &sz)) {
+                if (free_sized) free_sized(ptr, sz); else ops->free(ptr);
+            } else if (atomic_load(&ctx->ring->done))
                 break;
             else
                 sched_yield();
@@ -927,14 +933,14 @@ static void *consumer_thread(void *arg) {
         if (ring_pop(ctx->ring, &ptr, &sz)) {
             int timed = lat_take(&lat_tick, every);
             uint64_t t0 = timed ? bench_get_ns() : 0;
-            ops->free(ptr);
+            if (free_sized) free_sized(ptr, sz); else ops->free(ptr);
             uint64_t t1 = timed ? bench_get_ns() : 0;
             if (timed) td_add(ctx->latency_hist, (double)(t1 - t0), 1);
             ctx->operations++;
         } else if (atomic_load(&ctx->ring->done)) {
             /* Drain remaining */
             while (ring_pop(ctx->ring, &ptr, &sz)) {
-                ops->free(ptr);
+                if (free_sized) free_sized(ptr, sz); else ops->free(ptr);
                 ctx->operations++;
             }
             break;

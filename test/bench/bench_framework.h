@@ -28,6 +28,15 @@ typedef struct allocator_ops {
     void* (*calloc)(size_t, size_t);
     void* (*realloc)(void*, size_t);
     void (*free)(void*);
+    /* Optional size-carrying free, for the callers that already know the
+     * size they asked alloc() for (prodcons: the ring carries it).  When set,
+     * such a caller uses it INSTEAD of free() so the allocator need not
+     * recover the size from an in-band header -- for umem's API arm that
+     * header read is a cross-core coherence miss on a line the producer wrote
+     * (r8rss O5).  NULL => the caller must use free() (single/multi/frag, and
+     * every allocator whose free() is already sizeless: libc, jemalloc, ...).
+     * The size passed is the SAME value passed to alloc(). */
+    void (*free_sized)(void *ptr, size_t alloc_size);
     void (*cleanup)(void);  /* Optional cleanup between runs */
 } allocator_ops_t;
 

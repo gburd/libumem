@@ -180,12 +180,25 @@ static void umem_free_wrapper(void *ptr) {
     umem_free((void *)header, header->size);
 }
 
+/* Size-carrying free: the caller already knows the size it passed to
+ * umem_alloc_wrapper(), so reconstruct the raw allocation size arithmetically
+ * and hand it to umem_free() WITHOUT reading the in-band header.  The header
+ * read in umem_free_wrapper() is a cross-core coherence miss on prodcons (the
+ * consumer's first touch of a line the producer wrote); this path removes it.
+ * `alloc_size` is the value passed to umem_alloc_wrapper(). */
+static void umem_free_sized_wrapper(void *ptr, size_t alloc_size) {
+    if (!ptr) return;
+    umem_size_header_t *header = ((umem_size_header_t *)ptr) - 1;
+    umem_free((void *)header, alloc_size + sizeof(umem_size_header_t));
+}
+
 allocator_ops_t allocator_umem = {
     .name = "umem",
     .alloc = umem_alloc_wrapper,
     .calloc = umem_calloc_wrapper,
     .realloc = umem_realloc_wrapper,
     .free = umem_free_wrapper,
+    .free_sized = umem_free_sized_wrapper,
     .cleanup = NULL
 };
 
@@ -205,6 +218,12 @@ allocator_ops_t allocator_umem = {
 static void* umem_preload_alloc(size_t size) { return malloc(size); }
 static void* umem_preload_calloc(size_t n, size_t size) { return calloc(n, size); }
 static void* umem_preload_realloc(void *p, size_t size) { return realloc(p, size); }
+/* ponytail: no free_sized for the drop-in arm.  A real malloc()/free() caller
+ * has no size at free time, so this path must recover it from the in-band
+ * malloc_stat tag (malloc.c) -- the same class of coherence miss O5 removes
+ * for the API arm.  A sizeless free that finds the size from the slab address
+ * (page-map) instead of an in-band tag is a class-(ii) LIBRARY change, not a
+ * harness one; deferred, see docs/results/r8rss/README.md O5 "Drop-in". */
 static void umem_preload_free(void *p) { free(p); }
 
 allocator_ops_t allocator_umem_preload = {

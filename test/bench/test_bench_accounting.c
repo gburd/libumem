@@ -543,6 +543,100 @@ static void tag_free(void *p)
 	free(h);
 }
 
+/*
+ * O5 (r8rss): the umem API arm wraps each allocation with a 16-byte size
+ * header so its sizeless free() can recover the size.  In prodcons the
+ * consumer reads that header on a line the producer wrote on another core --
+ * a coherence miss (umem_free_wrapper ~37.6 % of samples).  The ring already
+ * carries each buffer's size, so an allocator that exposes free_sized(ptr,sz)
+ * must be freed THROUGH it, never through the header-reading free().
+ *
+ * Proof without inspecting the allocator's own memory: a mock whose free()
+ * increments a "header was read" counter and whose free_sized() does not.
+ * With free_sized set (post-fix), header reads must be zero and every op must
+ * go through free_sized.  With it NULL (pre-fix behaviour, and every sizeless
+ * allocator), the consumer falls back to free() and the header IS read on
+ * every op.
+ */
+static atomic_ulong fs_header_reads, fs_sized_frees, fs_plain_frees;
+static void *fs_alloc(size_t n)
+{
+	size_t *h = malloc(n + 16);
+	if (h == NULL)
+		return (NULL);
+	h[0] = n;		/* the "size header" the sizeless free would read */
+	return ((char *)h + 16);
+}
+static void fs_free(void *p)
+{
+	if (p == NULL)
+		return;
+	size_t *h = (size_t *)((char *)p - 16);
+	(void)h[0];		/* sizeless free MUST read the header for the size */
+	atomic_fetch_add(&fs_header_reads, 1);
+	atomic_fetch_add(&fs_plain_frees, 1);
+	free(h);
+}
+static void fs_free_sized(void *p, size_t sz)
+{
+	if (p == NULL)
+		return;
+	(void)sz;		/* size came from the caller: no header read */
+	atomic_fetch_add(&fs_sized_frees, 1);
+	free((char *)p - 16);
+}
+
+static void
+test_prodcons_free_sized(void)
+{
+	printf("prodcons: size-carrying free skips the in-band header (O5)\n");
+	allocator_ops_t sized = mock;
+	sized.alloc = fs_alloc;
+	sized.free = fs_free;
+	sized.free_sized = fs_free_sized;
+	workload_config_t cfg = {
+		.name = "producer-consumer", .fn = workload_producer_consumer,
+		.thread_count = 8,
+		.operation_count = (uint64_t)BENCH_MIN_OPS_PER_THREAD * 4,
+		.min_size = 16, .max_size = 64,
+	};
+	bench_stats_t st;
+
+	/* With free_sized set: no header read, every op through free_sized. */
+	atomic_store(&fs_header_reads, 0);
+	atomic_store(&fs_sized_frees, 0);
+	atomic_store(&fs_plain_frees, 0);
+	bench_run(&sized, &cfg, &st);
+	unsigned long reads = atomic_load(&fs_header_reads);
+	unsigned long sizedf = atomic_load(&fs_sized_frees);
+	printf("   free_sized set : header_reads=%lu sized_frees=%lu "
+	    "ops=%llu\n", reads, sizedf,
+	    (unsigned long long)st.total_operations);
+	CHECK(reads == 0,
+	    "%lu header reads with free_sized available: the consumer still "
+	    "routes prodcons frees through the sizeless free()", reads);
+	CHECK(sizedf == st.total_operations / 2 && sizedf > 0,
+	    "%lu sized frees for %llu ops: not every buffer freed with its "
+	    "ring-carried size", sizedf,
+	    (unsigned long long)st.total_operations);
+
+	/* Control: with free_sized NULL (pre-fix, and every sizeless
+	 * allocator) the consumer uses free(), which reads the header. */
+	sized.free_sized = NULL;
+	atomic_store(&fs_header_reads, 0);
+	atomic_store(&fs_sized_frees, 0);
+	atomic_store(&fs_plain_frees, 0);
+	bench_run(&sized, &cfg, &st);
+	unsigned long reads0 = atomic_load(&fs_header_reads);
+	printf("   free_sized NULL: header_reads=%lu plain_frees=%lu ops=%llu\n",
+	    reads0, atomic_load(&fs_plain_frees),
+	    (unsigned long long)st.total_operations);
+	CHECK(reads0 == st.total_operations / 2 && reads0 > 0,
+	    "%lu header reads with free_sized NULL: the fallback free() path "
+	    "must still read the header (%llu ops expected)", reads0,
+	    (unsigned long long)st.total_operations);
+}
+
 static void
 test_prodcons_rings(void)
 {
@@ -850,6 +944,7 @@ main(void)
 	test_frag_live_bytes();
 	test_frag_live_slots();
 	test_prodcons_rings();
+	test_prodcons_free_sized();
 	test_frag_large_sizes();
 	test_frag_live_budget();
 	test_ctx_alignment();
