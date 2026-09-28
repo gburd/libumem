@@ -70,7 +70,10 @@ better. p99/p999 (ns, sampled 1/16) and peak RSS (MiB): lower is better.
 Run-to-run spread was small (usually < 3 %), so most pairs resolve. The
 exception is x86 t=192 prodcons: glibc's three runs spanned 373-1096 Mops/s
 and 3.9-18.4 us p999, and jemalloc's spanned 781-982 Mops/s. That is why
-several x86 cell-1 prodcons pairs are ≈.
+several x86 cell-1 prodcons pairs are ≈. One umem run in arm cell 4 is an outlier:
+p99 98.7 us and p999 195 us, against 52.8-53.4 us and 107-111 us for the
+other two. The umem-vs-jemalloc p99 verdict there holds either way, since
+jemalloc's max is 42.4 us. I did not diagnose the outlier.
 
 ## Caveats that bound these numbers
 
