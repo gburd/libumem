@@ -228,6 +228,22 @@ measured the ring, not the allocator (see
 
 **Use case**: Server applications with separate I/O and processing threads
 
+**Freeing with the ring's size (umem API arm).** The ring carries each
+buffer's size, so the consumer frees through the optional
+`allocator_ops_t.free_sized(ptr, size)` when the allocator provides one. The
+umem **API** arm (`allocator_umem`) does: `umem_free_sized_wrapper` reconstructs
+the raw size arithmetically and calls `umem_free()` **without reading the
+16-byte size header**. r8rss (O5) measured that header read as a cross-core
+coherence miss -- the consumer's first touch of a line the producer wrote --
+at ~37.6 % of prodcons samples, which distorted the API arm's comparison. Every
+other allocator leaves `free_sized` NULL and the consumer falls back to
+`free()`; libc/jemalloc/... are unaffected. The single/multi/frag workloads,
+and the umem `realloc`/plain `free` paths, still use the header (they free
+without a caller-known size). The LD_PRELOAD drop-in arm stays sizeless on
+purpose (a real `free()` caller has no size); its in-band-tag read is a
+class-(ii) library question, not a harness one. See
+`docs/results/r8o5/README.md`.
+
 ### Fragmentation (`frag`)
 
 Builds a live working set, then churns it: allocate a batch into a live pool,

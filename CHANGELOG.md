@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Benchmark (measurement only, not the allocator): the `prodcons` workload
+  now frees the umem API arm with the size the ring already carries, skipping
+  the 16-byte size header (O5).** The umem API arm wraps each allocation with a
+  `umem_size_header_t` so its sizeless `free()` can recover the size; in
+  `prodcons` the consumer read that header on a line the **producer** wrote on
+  another core -- a cross-core coherence miss r8rss measured as
+  `umem_free_wrapper` ~37.6 % of samples, distorting the API arm's comparison.
+  The ring already carries each buffer's size, so `allocator_ops_t` gained an
+  optional `free_sized(ptr, size)`, the umem arm reconstructs the raw size
+  arithmetically (no header read), and the `prodcons` consumer frees through it
+  with the ring's size. Every other allocator (libc/jemalloc/...) leaves it
+  NULL and is unaffected; single/multi/frag and umem `realloc`/`free` still use
+  the header. The LD_PRELOAD drop-in free stays sizeless (a real `free()`
+  caller has no size); its in-band-tag read is a class-(ii) library question,
+  marked with a `ponytail:` note, not implemented. Regression:
+  `test_bench_accounting::test_prodcons_free_sized` (0 header reads with the fix
+  set, `reads == ops` in the sizeless-fallback control). Harness only; the
+  default library is byte-identical. `test/bench/*`, `docs/results/r8o5/`.
+
 ### Fixed
 
 - **First allocation no longer eagerly warms the stacktrace resolver, cutting
