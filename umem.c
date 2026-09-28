@@ -6857,7 +6857,25 @@ umem_init(void)
 #endif
 	umem_hooks_sync();	/* publishes the PTC bin table (T1/T8) */
 
-	umem_stacktrace_init();
+	/*
+	 * O7: umem_stacktrace_init() is NOT called here.  It warms backtrace(3)
+	 * (a libgcc_s unwind load) and sets up libdw's dwfl, ~4.7-5.1 KB of
+	 * stack, and serves only symbolized error reports and umem_findleaks --
+	 * nothing on the allocation fast path.  Warming it from umem_init() made
+	 * a first umem_alloc() cost 5.2-5.4 KB of stack vs glibc's <=3.4 KB, so
+	 * a first alloc on a ~4 KiB stack SEGV'd where glibc survives
+	 * (docs/results/2026-09-27-arm-dlopen-stack-crash.md "Residual").
+	 *
+	 * Invariant: until some tool caller warms it, resolver_tier stays
+	 * RESOLVE_DLADDR (its file-scope default in umem_stacktrace.c) and
+	 * umem_backtrace_warmed stays 0.  Both are read only inside
+	 * umem_stacktrace.c (dladdr-only symbolization) and getpcstack.c (whose
+	 * fast path refuses backtrace() until warmed) -- a correct degradation,
+	 * not a fault.  umem_stacktrace_init() is idempotent and each tool entry
+	 * (umem_findleaks, umem_walk, umem_log_dump, umem_whatis in
+	 * umem_inspect.c) calls it on its own request path, so the resolver is
+	 * warm by first tool use.
+	 */
 
 	/*
 	 * Initialize allocation profiling if configured via UMEM_OPTIONS
