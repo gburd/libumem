@@ -32,12 +32,27 @@
  *
  * A second, TIGHTER budget is selectable with a numeric third argument
  * (bytes), e.g. "api 4096": a first umem_alloc() with only ~4 KiB of usable
- * stack below the alloc frame.  glibc survives 4 KiB; umem's first call at
- * v3.x cost 5.2-5.4 KB (docs/results/2026-09-27-arm-dlopen-stack-crash.md
- * "Residual"), so this arm SEGVs on umem before O7 (the eager
- * umem_stacktrace_init in umem_init) and passes after.  If the platform's
- * pthread stack floor plus TLS/guard leaves less than the budget usable,
- * under() is skipped and the arm SKIPs (77) rather than falsely failing.
+ * stack below the alloc frame.  glibc survives 4 KiB.
+ *
+ * A depth-CAP mode is selectable with "cap:<bytes>" as the third argument,
+ * e.g. "api cap:3800": run the first allocation on a large (default) stack,
+ * paint below sp and scan for the deepest touched byte (the method of
+ * probe_first_alloc_stack.c), and assert the peak <= cap.  This is an
+ * enforced upper bound on first-alloc stack use, green now and red if a
+ * regression deepens it.
+ *
+ * O7 (dropping the eager umem_stacktrace_init() from umem_init) is
+ * arch-specific, measured on Debian 13 (docs/results/r8stack/):
+ *   arm64:  first-alloc peak 5.36 KB -> 3.57 KB.  Now survives a 4 KiB stack
+ *           where it SEGV'd before.  cap 3800 B: PASS post-fix, FAIL pre-fix.
+ *   x86_64: first-alloc peak ~5.2 KB, UNCHANGED by O7.  The x86 floor is not
+ *           the stacktrace warm-up but dlopen(NULL) (~3.4 KB) + ncpus/numa
+ *           probing (~3.5 KB) + umem_init's own frames; O7 removed a frame
+ *           that was not the x86 peak.  cap 5400 B: PASS now, red if the x86
+ *           first-alloc depth grows (e.g. eager warm re-added, or a new deep
+ *           sub-path).  Only arm64 meets the 4 KiB target; chasing the x86
+ *           floor (moving dlopen/numa off the first-alloc path) is a separate
+ *           follow-up, not done here.
  */
 #include <pthread.h>
 #include <stdint.h>
@@ -51,6 +66,8 @@
 #define	SMALL_STACK		(16 * 1024)
 
 static size_t budget = FIRST_ALLOC_BUDGET;
+static size_t cap;		/* > 0: depth-cap mode; assert depth <= cap */
+static size_t measured_depth;
 static int use_malloc;
 static void *result;
 static size_t usable;
@@ -69,6 +86,13 @@ static __attribute__((noinline)) void
 first_alloc(void)
 {
 	result = use_malloc ? malloc(64) : umem_alloc(64, UMEM_DEFAULT);
+}
+
+static __attribute__((noinline)) void
+paint(volatile unsigned char *lo, volatile unsigned char *hi)
+{
+	while (lo < hi)
+		*lo++ = 0xA5;
 }
 
 /* Leave about FIRST_ALLOC_BUDGET bytes of stack below this frame's callee. */
@@ -98,6 +122,29 @@ thr(void *arg)
 	(void) pthread_attr_destroy(&a);
 	usable = (size_t)(sp - (unsigned char *)lo);
 
+	if (cap > 0) {
+		/*
+		 * Depth-cap mode: measure the peak stack the first allocation
+		 * uses (paint below sp with 0xA5, run it, scan for the lowest
+		 * overwritten byte -- same method as probe_first_alloc_stack.c)
+		 * and assert it is <= cap.  Runs on the thread's own (large)
+		 * stack, no VLA.  The paint floor is 4 KiB above the stack low
+		 * end (the guard), like the probe.
+		 */
+		volatile unsigned char *pfloor = (unsigned char *)lo + 4096;
+		volatile unsigned char *p;
+
+		if (sp - 1024 > pfloor)
+			paint(pfloor, sp - 1024);
+		first_alloc();
+		if (sp - 1024 > pfloor) {
+			for (p = pfloor; p < sp && *p == 0xA5; p++)
+				;
+			measured_depth = (size_t)(sp - p);
+		}
+		return (NULL);
+	}
+
 	/* 512 B: this frame, under()'s frame, and the call. */
 	if (usable > budget + 512)
 		under(usable - budget - 512);
@@ -124,15 +171,24 @@ main(int argc, char **argv)
 
 	use_malloc = argc > 1 && strcmp(argv[1], "malloc") == 0;
 	if (argc > 2) {
-		unsigned long b = strtoul(argv[2], NULL, 0);
-		if (b >= 512)
-			budget = (size_t)b;
+		if (strncmp(argv[2], "cap:", 4) == 0)
+			cap = (size_t)strtoul(argv[2] + 4, NULL, 0);
+		else {
+			unsigned long b = strtoul(argv[2], NULL, 0);
+			if (b >= 512)
+				budget = (size_t)b;
+		}
 	}
 	if (stk < (size_t)PTHREAD_STACK_MIN)
 		stk = (size_t)PTHREAD_STACK_MIN;
 
 	(void) pthread_attr_init(&a);
-	if ((rc = pthread_attr_setstacksize(&a, stk)) != 0) {
+	/*
+	 * Depth-cap mode measures the peak stack of the first allocation, so it
+	 * needs a large stack to paint into: use the platform default attr, not
+	 * SMALL_STACK.
+	 */
+	if (cap == 0 && (rc = pthread_attr_setstacksize(&a, stk)) != 0) {
 		fprintf(stderr, "FAIL: setstacksize(%zu) rc=%d\n", stk, rc);
 		return (1);
 	}
@@ -141,6 +197,20 @@ main(int argc, char **argv)
 		return (1);
 	}
 	(void) pthread_join(t, NULL);
+
+	if (cap > 0) {
+		if (measured_depth == 0) {
+			printf("SKIP: could not measure first-alloc depth\n");
+			return (77);
+		}
+		printf("%s: first %s() peak stack %zu B (cap %zu B); umem_init %s\n",
+		    measured_depth <= cap ? "PASS" : "FAIL",
+		    use_malloc ? "malloc" : "umem_alloc", measured_depth, cap,
+		    ready_before == 1 ? (umem_ready == 1 ?
+		    "never ran (not umem's malloc)" : "ran on this thread") :
+		    "had already run before this thread");
+		return (measured_depth <= cap ? 0 : 1);
+	}
 
 	if (usable == 0) {
 		printf("SKIP: no stack bounds, or tight budget below platform "

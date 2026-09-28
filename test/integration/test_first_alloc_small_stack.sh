@@ -8,11 +8,15 @@
 #      then reaches log_message() (misc.c), whose 4 KiB stack buffer alone
 #      still SEGVs a 16 KiB x86 thread once init_lib.c's 64 KiB one is gone
 #      (docs/results/2026-09-27-arm-dlopen-stack-crash.md section 9)
-#   5. TIGHT budget (4 KiB usable below the alloc): umem_alloc() API. glibc
-#      survives 4 KiB; umem's first call cost 5.2-5.4 KB before O7 (the eager
-#      umem_stacktrace_init in umem_init), so this SEGVs on master and passes
-#      after the fix.  SKIPs if the platform floor won't leave 4 KiB usable.
-#   6. TIGHT budget glibc control -- must pass in both.
+#   5. Per-arch ENFORCED depth cap on the first umem_alloc (cap:<bytes>),
+#      measured on a large stack.  arm64 cap 3800 B (post-fix ~3.57 KB PASS,
+#      pre-fix ~5.36 KB FAIL); x86_64 cap 5400 B (post-fix ~5.2 KB PASS, red if
+#      the x86 first-alloc depth grows).  Both green now, both red on
+#      regression.  See the .c head for why O7 helps arm but not x86.
+#   6. arm64 only: survival of a first umem_alloc on a 4 KiB budget (the real
+#      target).  Passes post-fix, SEGV'd pre-fix.  x86 does not meet 4 KiB
+#      (~5.2 KB floor), so this arm is arm64-only; the x86 bound is the cap.
+#   7. TIGHT budget glibc control -- must pass in both.
 # Each case prints where umem_init ran.  Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -36,8 +40,14 @@ ARGS=(malloc); run "glibc malloc (control)"    X_=1
 ARGS=(malloc); run "libumem_malloc.so preload" LD_PRELOAD="$PRELOAD"
 ARGS=(api);    run "umem_alloc API, bad UMEM_OPTIONS item" \
 	UMEM_OPTIONS=first_alloc_small_stack_bogus_item
-ARGS=(api 4096);    run "umem_alloc API, 4 KiB budget"          X_=1
 ARGS=(malloc 4096); run "glibc malloc, 4 KiB budget (control)" X_=1
+# Per-arch enforced depth cap (green now, red if first-alloc depth grows).
+if [[ $(uname -m) == aarch64 ]]; then
+	ARGS=(api cap:3800); run "umem_alloc first-alloc depth <= 3800 B (arm64)" X_=1
+	ARGS=(api 4096);     run "umem_alloc API, 4 KiB budget survival (arm64)" X_=1
+else
+	ARGS=(api cap:5400); run "umem_alloc first-alloc depth <= 5400 B (x86_64)" X_=1
+fi
 [[ $rc -eq 0 ]] && echo "PASS: first allocation on a small stack" \
 	|| echo "FAIL: first allocation on a small stack"
 exit $rc
