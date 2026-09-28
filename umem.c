@@ -1606,6 +1606,17 @@ unsigned long umem_dbg_rseq_armed = 0;
 unsigned long umem_dbg_rseq_slow_called = 0;
 unsigned long umem_dbg_rseq_commit_abort = 0;
 unsigned long umem_dbg_rseq_break_cpu = 0;
+/*
+ * F1-b (round 8): does an rseq free-slowpath miss push frees down into the
+ * classic cc_lock per-CPU layer, so the two per-CPU layers double-hold?
+ *   umem_dbg_rseq_free_no_empty -- free slowpath found no empty magazine and
+ *     returned 0 (the fall-through the r8rss inference blamed).
+ *   umem_dbg_cc_free            -- a free reached the cc_lock body of
+ *     _umem_cache_free (the classic per-CPU layer actually took it).
+ * If umem_dbg_cc_free stays ~0 in prodcons the layers do NOT double-hold.
+ */
+unsigned long umem_dbg_rseq_free_no_empty = 0;
+unsigned long umem_dbg_cc_free = 0;
 extern int umem_dbg_rseq_probe;
 #define	UMEM_RSEQ_DBG_INC(ctr)	do {					\
 	extern unsigned long ctr;					\
@@ -3423,8 +3434,10 @@ umem_rseq_free_slowpath(umem_cache_t *cp, int cpu_id)
 	umem_magazine_t *emp;
 
 	emp = umem_depot_alloc(cp, &cp->cache_empty);
-	if (emp == NULL)
+	if (emp == NULL) {
+		UMEM_RSEQ_DBG_INC(umem_dbg_rseq_free_no_empty);
 		return (0);
+	}
 	if (umem_rseq_reload(cp, cpu_id, emp, 0))
 		return (1);
 	umem_depot_free(cp, &cp->cache_empty, emp);	/* never published */
@@ -4115,6 +4128,7 @@ _umem_cache_free(umem_cache_t *cp, void *buf)
 	}
 #endif
 
+	UMEM_RSEQ_DBG_INC(umem_dbg_cc_free);
 	(void) mutex_lock(&ccp->cc_lock);
 	for (;;) {
 		/*

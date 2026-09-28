@@ -98,10 +98,13 @@ main(int argc, char **argv)
 		extern unsigned long umem_dbg_rseq_enter, umem_dbg_rseq_no_full,
 		    umem_dbg_rseq_armed, umem_dbg_rseq_slow_called,
 		    umem_dbg_rseq_commit_abort, umem_dbg_rseq_break_cpu;
+		extern unsigned long umem_dbg_rseq_free_no_empty, umem_dbg_cc_free;
 		printf("DBG entered=%lu slow_called=%lu armed=%lu abort=%lu no_full=%lu break_cpu=%lu\n",
 		    umem_dbg_rseq_enter, umem_dbg_rseq_slow_called,
 		    umem_dbg_rseq_armed, umem_dbg_rseq_commit_abort,
 		    umem_dbg_rseq_no_full, umem_dbg_rseq_break_cpu);
+		printf("F1-b: free_no_empty=%lu cc_free=%lu  (cc_free>0 => two per-CPU layers double-hold)\n",
+		    umem_dbg_rseq_free_no_empty, umem_dbg_cc_free);
 	}
 #endif
 	return 0;
