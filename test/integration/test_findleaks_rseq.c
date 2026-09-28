@@ -10,7 +10,7 @@
  */
 
 /*
- * test_findleaks_rseq.c -- O9: findleaks must NOT report objects that are
+ * test_findleaks_rseq.c -- O9: findleaks must NOT report buffers that are
  * resident in rseq per-CPU magazines as outstanding.
  *
  * umem_inspect.c's cached_set_build_cache() subtracts, from the outstanding
@@ -19,46 +19,95 @@
  * test exercises -- each cache's rseq per-CPU loaded/previous magazine
  * (cache_rseq[], guarded by UMEM_RSEQ_AVAILABLE && umem_rseq_enabled).
  *
- * Phase 3 recorded that subtraction as compiled-but-never-exercised because
- * rseq then served zero rounds.  Since v3.3.2 (P8.5b) the PTC magazine
- * refill/flush routes THROUGH the rseq layer, so on a PTC-magazine flush miss
- * a freed buffer lands in cache_rseq[cpu].  That makes the subtraction
- * testable for the first time.
+ * Phase 3 recorded that rseq block as compiled-but-never-exercised because
+ * rseq then served zero rounds.  Since P8.5b the PTC magazine refill/flush
+ * routes overflow THROUGH the rseq layer, but ONLY under multi-thread CPU
+ * contention (single-threaded, rseq_alloc = rseq_free = 0; measured in
+ * docs/results/2026-09-26-p85b-arch-rseq-feeds-ptc.md).  So this test drives
+ * the same batch-alloc/free churn that probe_rseq_batch.c uses to arm and
+ * populate the rseq layer, then QUIESCES the workers (kept alive, not joined:
+ * thread exit drains the PTC) and, from the main thread, reads findleaks'
+ * JSON cached_skipped while the last-freed rounds are still sitting in
+ * cache_rseq[cpu].
  *
- * WHY THIS IS NOT A SIMPLE "cached_skipped > 0" CHECK.  The depot and per-CPU
- * magazines are subtracted too, and they exist in both builds.  norseq is NOT
- * a clean negative arm: with rseq off those buffers do not vanish, they sit in
- * the DEPOT full list instead, which cached_set_build_cache() also enumerates
- * and subtracts -- so the count would barely move and would prove nothing
- * about the rseq block specifically.
+ * WHY NOT norseq FOR THE NEGATIVE ARM.  With rseq off, those buffers do not
+ * vanish -- they sit in the DEPOT full list instead, which
+ * cached_set_build_cache() ALSO enumerates and subtracts.  So norseq barely
+ * moves cached_skipped and proves nothing about the rseq block specifically.
  *
- * The clean negative arm is therefore a test-only build knob,
+ * The clean negative arm is a test-only build knob,
  * -DUMEM_FINDLEAKS_NO_RSEQ_SUBTRACT, that compiles out ONLY the rseq
- * subtraction block in cached_set_build_cache() and changes nothing else.
- * The default library is byte-identical.  The two builds run the identical
- * program:
+ * subtraction block and changes nothing else (the default library is
+ * byte-identical).  Both builds run this identical program:
  *
- *   default   (rseq subtracted):     rseq-resident buffers are NOT counted
- *   knob build (rseq NOT subtracted): the SAME buffers ARE counted
+ *   default   (rseq subtracted):     rseq-resident rounds are NOT counted
+ *   knob build (rseq NOT subtracted): the SAME rounds ARE counted
  *
- * so cached_skipped(default) - cached_skipped(knob) == (buffers this program
- * parked in rseq magazines) > 0.  That difference is exactly the rseq
- * subtraction doing its job; nothing else in the run differs.
+ * so cached_skipped(default) > cached_skipped(knob) by exactly the rounds
+ * this run left in rseq magazines.  The driver
+ * (test_findleaks_rseq.sh) runs both and asserts that difference is
+ * positive; a single build cannot see both, so each build just prints its
+ * own number and the driver compares.
  *
- * If the platform has no rseq (UMEM_RSEQ_AVAILABLE unset, or the kernel
- * refused registration so umem_rseq_enabled==0), both builds behave
- * identically and there is nothing to test: SKIP (77).
+ * If rseq is unavailable/disabled (no UMEM_RSEQ_AVAILABLE, non-x86/arm, or
+ * the kernel refused registration) there is nothing to test: the program
+ * still runs and prints its count; the driver detects a zero difference and
+ * SKIPs.
  */
 
+#define	_GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sched.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <unistd.h>
 #include <umem.h>
 #include "umem_inspect.h"
 
+#define	BATCH	1024		/* > any magazine (max magsize 255) */
+#define	SZ	64		/* PTC-served (<= umem_ptc_maxsize) */
+
+static atomic_int g_stop = 0;
+static atomic_int g_parked = 0;
+static int g_nthreads;
+
 /*
- * Extract "cached_skipped":<n> from findleaks' one-line JSON object.
+ * Churn batches to arm and fill the rseq per-CPU layer, then park (buffers
+ * from the LAST freed batch stay in cache_rseq[cpu]).  Do not exit: thread
+ * exit drains the PTC.
  */
+static void *
+worker(void *arg)
+{
+	(void) arg;
+	void **buf = malloc(BATCH * sizeof (*buf));
+	unsigned long iters = 0;
+
+	if (buf == NULL)
+		return (NULL);
+	while (!atomic_load(&g_stop)) {
+		int i;
+		for (i = 0; i < BATCH; i++)
+			buf[i] = umem_alloc(SZ, UMEM_DEFAULT);
+		for (i = 0; i < BATCH; i++)
+			if (buf[i] != NULL)
+				*(char *)buf[i] = (char)i;
+		for (i = 0; i < BATCH; i++)
+			if (buf[i] != NULL)
+				umem_free(buf[i], SZ);
+		if ((++iters & 0x3f) == 0)
+			sched_yield();
+	}
+	/* Parked: keep the thread (and its rseq CPU residency) alive. */
+	atomic_fetch_add(&g_parked, 1);
+	while (atomic_load(&g_parked) != -1)
+		usleep(1000);
+	free(buf);
+	return (NULL);
+}
+
 static long
 findleaks_cached_skipped(void)
 {
@@ -69,9 +118,8 @@ findleaks_cached_skipped(void)
 
 	if (ms == NULL)
 		return (-1);
-	(void) umem_findleaks(ms, UMEM_FMT_JSON, 10);
+	(void) umem_findleaks(ms, UMEM_FMT_JSON, 3);
 	(void) fclose(ms);
-
 	if (buf != NULL) {
 		const char *p = strstr(buf, "\"cached_skipped\":");
 		if (p != NULL)
@@ -81,108 +129,49 @@ findleaks_cached_skipped(void)
 	return (v);
 }
 
-/*
- * Park buffers in the rseq per-CPU magazines.
- *
- * The rseq layer sits behind the PTC.  A freed buffer only reaches it on a
- * PTC magazine FLUSH miss -- i.e. when both the loaded and previous PTC
- * magazines are already full and the flush routes the overflow through
- * umem_rseq_ptc_free().  So a large free burst of one PTC-served size class
- * (<= umem_ptc_maxsize, default 8192) first fills the two PTC magazines and
- * then pours the rest through rseq into cache_rseq[cpu].
- *
- * Every buffer freed here is still counted "allocated" by the slab layer
- * (freeing to a cache does not return it to the slab), so umem_walk_allocated
- * sees all of them; the ones now in rseq magazines are what the subtraction
- * must remove.
- */
-#define	OBJSZ	512		/* PTC-served (<= 8192) */
-#define	NBUF	20000		/* well past two PTC magazines' worth */
-
 int
-main(void)
+main(int argc, char **argv)
 {
-	void **p = calloc(NBUF, sizeof (*p));
-	long baseline, after;
+	int dur = (argc > 1) ? atoi(argv[1]) : 3;
+	pthread_t *t;
+	long skipped;
 	int i;
 
-	if (p == NULL) {
-		fprintf(stderr, "harness: calloc failed\n");
+	g_nthreads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+	if (g_nthreads < 2)
+		g_nthreads = 2;
+	t = calloc(g_nthreads, sizeof (*t));
+	if (t == NULL)
 		return (99);
-	}
 
-	/*
-	 * Baseline: cached_skipped from whatever is already resident before
-	 * this program frees anything of its own.
-	 */
-	baseline = findleaks_cached_skipped();
-	if (baseline < 0) {
+	for (i = 0; i < g_nthreads; i++) {
+		if (pthread_create(&t[i], NULL, worker, NULL) != 0)
+			return (99);
+	}
+	sleep(dur);
+	atomic_store(&g_stop, 1);
+	/* Wait for every worker to reach the parked state (rseq still live). */
+	while (atomic_load(&g_parked) != g_nthreads)
+		usleep(1000);
+
+	skipped = findleaks_cached_skipped();
+
+	/* Release the parked workers and join. */
+	atomic_store(&g_parked, -1);
+	for (i = 0; i < g_nthreads; i++)
+		(void) pthread_join(t[i], NULL);
+	free(t);
+
+	if (skipped < 0) {
 		fprintf(stderr, "harness: findleaks produced no JSON "
 		    "cached_skipped field\n");
-		free(p);
 		return (99);
 	}
-
-	for (i = 0; i < NBUF; i++) {
-		p[i] = umem_alloc(OBJSZ, UMEM_DEFAULT);
-		if (p[i] == NULL) {
-			fprintf(stderr, "harness: umem_alloc failed at %d\n", i);
-			free(p);
-			return (99);
-		}
-	}
-	/* Free them all: PTC mags fill, the overflow routes through rseq. */
-	for (i = 0; i < NBUF; i++)
-		umem_free(p[i], OBJSZ);
-	free(p);
-
-	after = findleaks_cached_skipped();
-	if (after < 0) {
-		fprintf(stderr, "harness: findleaks produced no JSON\n");
-		return (99);
-	}
-
-	printf("cached_skipped: baseline=%ld after=%ld delta=%ld\n",
-	    baseline, after, after - baseline);
 
 #ifdef UMEM_FINDLEAKS_NO_RSEQ_SUBTRACT
-	/*
-	 * NEGATIVE ARM: the rseq subtraction is compiled out of the library.
-	 * The identical free burst still parks buffers in rseq magazines, but
-	 * they are NOT subtracted, so they show up as outstanding.  We only
-	 * print our count; the driver compares it against the default build.
-	 */
-	printf("RESULT: NEGATIVE-ARM (rseq subtraction compiled out); "
-	    "cached_skipped after=%ld\n", after);
-	return (0);
+	printf("cached_skipped=%ld arm=norseqsub\n", skipped);
 #else
-	/*
-	 * POSITIVE ARM (default build): the buffers we just parked in rseq
-	 * magazines must be subtracted.  If rseq is unavailable/disabled the
-	 * rseq block does nothing and there is nothing under test.
-	 */
-#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
-	if (after <= baseline) {
-		/*
-		 * Either the kernel refused rseq registration (nothing to
-		 * test) or the buffers all fit in the two PTC magazines and
-		 * none reached rseq.  Distinguish by size: NBUF=20000 far
-		 * exceeds two PTC magazines, so a zero delta on a working
-		 * rseq build would be a real failure.  We cannot read
-		 * umem_rseq_enabled from here, so treat no growth as SKIP and
-		 * let the driver decide using the negative-arm delta.
-		 */
-		printf("RESULT: SKIP (cached_skipped did not grow; rseq likely "
-		    "unavailable or disabled)\n");
-		return (77);
-	}
-	printf("RESULT: PASS (findleaks subtracted %ld rseq/magazine-resident "
-	    "buffers; they are not reported as outstanding)\n",
-	    after - baseline);
+	printf("cached_skipped=%ld arm=default\n", skipped);
+#endif
 	return (0);
-#else
-	printf("RESULT: SKIP (no rseq on this platform)\n");
-	return (77);
-#endif
-#endif
 }

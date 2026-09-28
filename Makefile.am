@@ -32,7 +32,6 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/integration/test_debug_features \
 		  test/integration/test_threading_stress \
 		  test/integration/test_fork_mt_load \
-		  test/integration/test_findleaks_rseq \
 		  test/integration/test_update_thread_startup \
 		  test/stress/stress_main \
 		  test/stress/stress_concurrency_oracle \
@@ -583,13 +582,15 @@ test_integration_test_ptc_resize_no_loss_probe_LDFLAGS = -pthread
 test_integration_test_ptc_resize_no_loss_probe_CPPFLAGS = \
 	-I$(srcdir) -DUMEM_PTC_RESIZE_PROBE
 
-# O9: findleaks must not report rseq-resident buffers as outstanding.  The
-# default program (positive arm) asserts the subtraction fires; the norseqsub
-# variant (negative arm) is the SAME source linked against a library built
-# with only the rseq subtraction block compiled out
-# (-DUMEM_FINDLEAKS_NO_RSEQ_SUBTRACT), which isolates that block from the
-# depot/per-CPU subtraction present in both builds.  The default library is
-# byte-identical; the knob touches nothing else.
+# O9: findleaks must not report rseq-resident buffers as outstanding.  Driven
+# by test/integration/test_findleaks_rseq.sh, which runs the SAME program in
+# two library builds and compares cached_skipped: the default (rseq
+# subtraction compiled in) minus the norseqsub build (only the rseq
+# subtraction block compiled out, -DUMEM_FINDLEAKS_NO_RSEQ_SUBTRACT) is the
+# count of rseq-resident buffers, isolated from the depot/per-CPU subtraction
+# present in both builds.  The default library is byte-identical; the knob
+# touches nothing else.
+noinst_PROGRAMS += test/integration/test_findleaks_rseq
 test_integration_test_findleaks_rseq_SOURCES = \
 	test/integration/test_findleaks_rseq.c
 test_integration_test_findleaks_rseq_LDADD = libumem.la
@@ -965,6 +966,9 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_oversize_vma.sh \
 	test/integration/test_first_alloc_small_stack.sh
 
+# O9 driver runs the default + norseqsub helper programs and compares.
+TESTS += test/integration/test_findleaks_rseq.sh
+
 # Phase 5 security regressions (P5.1, P5.2, P5.3, P5.5, P5.6, P5.7, P5.8,
 # P5.9).  Each demonstrates the exposure it closes and fails against v3.0.0 --
 # see the header comment in each file for the pre-fix behaviour.  They are in
@@ -1306,6 +1310,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_oversize_vma.sh \
 	test/integration/test_first_alloc_small_stack.sh \
+	test/integration/test_findleaks_rseq.sh \
 	test/bench/test_bench_missing_alloc.sh \
 	test/debugger/test_lldb_e2e.sh \
 	test/debugger/test_introspect_contracts.sh \
