@@ -278,12 +278,46 @@ int main(int argc, char *argv[]) {
 
     /* Don't print header here - use -H flag for header-only output */
 
+    /*
+     * An allocator named with -a that did not load is an ERROR, not an empty
+     * run: exiting 0 with no rows let a comparison silently lose jemalloc
+     * when its dlopen hit the static-TLS limit (round 7, r7samp).  "all"
+     * still skips what is missing, and says so on stderr.
+     */
+    int named_found = 0;
+    size_t named_len = strlen(allocator_name);
+    for (int i = 0; allocators[i] != NULL; i++) {
+        const char *nm = allocators[i]->name;
+
+        /* An unloaded allocator is renamed "<name> (not available...)". */
+        if (strcmp(allocator_name, "all") == 0 ||
+            strncmp(nm, allocator_name, named_len) != 0 ||
+            (nm[named_len] != '\0' && nm[named_len] != ' '))
+            continue;
+        named_found = 1;
+        if (allocators[i]->alloc == NULL) {
+            fprintf(stderr, "bench_main: allocator '%s' is not available "
+                "(library missing or dlopen failed; see stderr above; for "
+                "static-TLS failures set GLIBC_TUNABLES=glibc.rtld."
+                "optional_static_tls=65536 or LD_PRELOAD it)\n",
+                allocator_name);
+            return 2;
+        }
+    }
+    if (strcmp(allocator_name, "all") != 0 && !named_found) {
+        fprintf(stderr, "bench_main: unknown allocator '%s'\n",
+            allocator_name);
+        return 2;
+    }
+
     /* Run benchmarks */
     for (int i = 0; allocators[i] != NULL; i++) {
         allocator_ops_t *alloc = allocators[i];
 
-        /* Skip unavailable allocators */
+        /* Skip unavailable allocators (only reachable with -a all) */
         if (alloc->alloc == NULL) {
+            fprintf(stderr, "bench_main: skipping unavailable allocator "
+                "'%s'\n", alloc->name);
             continue;
         }
 
