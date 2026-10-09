@@ -22,7 +22,12 @@ Roles: `intel-lo` (8 vCPU x86_64), `intel-hi` (192 vCPU metal x86_64),
 ## 2. The AWS profile rotates. Verify, never assume
 
 This burner account has rotated repeatedly (`numa` → `beef` → `bene` →
-`hotdog`). At session start:
+`hotdog`); the profile name `hotdog` itself has rotated across accounts
+(373102893032 → 170848442262 as of 2026-10-09). The account also holds the
+maintainer's OTHER projects' instances (libdb, libxtc, undo, dbsql, noxu,
+freebsd audits), tagged `Owner=gburd` but NOT `Project=libumem`. That is
+expected, not a stranger's: still, only ever touch `Project=libumem`. At
+session start:
 
 ```sh
 aws sts get-caller-identity          # if this fails, probe for a live profile
