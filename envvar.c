@@ -216,6 +216,15 @@ static umem_env_item_t umem_options_items[] = {
 		"Enable magazine size auto-tuning (1=enable, 0=disable)",
 		NULL, 0,	&umem_magazine_tuning
 	},
+	{ "owner_recycle",	"Evolving",	ITEM_UINT,
+		"R9F3 owner-routed recycling: on free, spread full magazines "
+		    "across node stripes so a cross-node producer reloads from "
+		    "its own node instead of stealing remote (1=enable, 0=off, "
+		    "default off). Off the fast path; see umem.c umem_owner_recycle.",
+		NULL, 0,	&umem_owner_recycle
+		/* Pure performance tunable with no file/socket/exec/disclosure
+		 * side effect; honoured under AT_SECURE (item_secure_unsafe 0). */
+	},
 
 	{ "size_add",		"Private",	ITEM_SPECIAL,
 		"add a size to the cache size table",

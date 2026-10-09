@@ -122,6 +122,7 @@ extern uint32_t umem_reap_interval;
 extern uint32_t umem_update_interval;
 extern uint32_t umem_depot_contention;
 extern uint32_t umem_magazine_tuning;
+extern uint32_t umem_owner_recycle;
 extern uint32_t umem_abort;
 extern uint32_t umem_output;
 extern uint32_t umem_logging;

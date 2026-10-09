@@ -609,6 +609,38 @@ uint_t umem_depot_contention = 2; /* max failed trylocks per real interval */
 int umem_depot_steal_max = 8;
 #define UMEM_DEPOT_STEAL_MAX umem_depot_steal_max
 uint_t umem_magazine_tuning = 0; /* magazine size auto-tuning (0=off, 1=on) */
+/*
+ * R9F3 owner-routed recycling (UMEM_OPTIONS=owner_recycle=1; default OFF).
+ *
+ * The depot recycles freed objects anonymously: a consumer's full magazine is
+ * pushed onto the FREEING CPU's own depot stripe, so under cross-thread free
+ * (prodcons: producers alloc on node A, consumers free on node B, disjoint)
+ * every full magazine piles on a node-B stripe, a producer's own node-A stripe
+ * is empty, and umem_depot_alloc() falls through its local (step 2) scan to the
+ * remote cross-node steal (step 3). The producer then memsets objects whose
+ * lines a remote consumer last wrote -- the remote-HITM/remote-DRAM volume the
+ * r9f3 step-0 perf c2c measured (15.7x LLC misses vs jemalloc).
+ *
+ * When owner_recycle is on, a FULL magazine is instead pushed to a NODE-ROTATED
+ * stripe (round-robin across all stripes via umem_owner_rotor), spreading full
+ * magazines across every node's stripes so a producer finds one on its OWN node
+ * (step 2) instead of always stealing cross-node (step 3). Empty magazines are
+ * unchanged (they stay on the freeing/producing CPU's local stripe).
+ *
+ * SOUNDNESS: this only changes which depot stripe index a magazine lands on.
+ * The magazine still moves atomically from a thread-owned loaded slot (under
+ * cc_lock) onto exactly ONE depot ml_list (under that stripe's ml_lock) -- no
+ * second owner, no leak, no object handed to two callers. Fork drains the PTC
+ * and magazines (P1.3d) regardless of which stripe held them. The rotor is a
+ * plain racy counter; a torn increment only picks a different valid stripe.
+ *
+ * OFF THE FAST PATH: this lives only inside umem_depot_free[_trylock](), the
+ * magazine-full/empty slowpath reached under cc_lock, never per-op. The alloc/
+ * free fast paths (rseq + cc_round pop/push) do not read umem_owner_recycle, so
+ * their object code is byte-identical whether the flag is set or not (gate 1).
+ */
+uint_t umem_owner_recycle = 0;
+static uint32_t umem_owner_rotor = 0;
 uint_t umem_abort = 1;          /* whether to abort on error */
 uint_t umem_output = 0;         /* whether to write to standard error */
 uint_t umem_logging = 0;        /* umem_log_enter() override */
@@ -2879,8 +2911,15 @@ umem_depot_free_trylock(umem_cache_t *cp, umem_maglist_t *mlp,
 		int cpu = get_cached_cpu_hint() & (ncpus - 1);
 		umem_maglist_t *pcpu_arr;
 
-		pcpu_arr = (mlp == &cp->cache_full) ?
-		    cp->cache_depot_full : cp->cache_depot_empty;
+		if (mlp == &cp->cache_full) {
+			/* Owner-routed recycling; see umem_depot_free(). */
+			if (unlikely(umem_owner_recycle))
+				cpu = (int)(__atomic_fetch_add(&umem_owner_rotor, 1, __ATOMIC_RELAXED)
+				    & (ncpus - 1));
+			pcpu_arr = cp->cache_depot_full;
+		} else {
+			pcpu_arr = cp->cache_depot_empty;
+		}
 
 		if (umem_depot_push_trylock(&pcpu_arr[cpu], mp) == 0)
 			return;
@@ -3105,8 +3144,21 @@ umem_depot_free(umem_cache_t *cp, umem_maglist_t *mlp,
 		int cpu = get_cached_cpu_hint() & (ncpus - 1);
 		umem_maglist_t *pcpu_arr;
 
-		pcpu_arr = (mlp == &cp->cache_full) ?
-		    cp->cache_depot_full : cp->cache_depot_empty;
+		if (mlp == &cp->cache_full) {
+			/*
+			 * Owner-routed recycling (gate off the fast path): spread
+			 * full magazines across node stripes so a cross-node
+			 * producer finds one on its own node instead of stealing
+			 * remote. See umem_owner_recycle. Racy rotor is fine; it
+			 * only selects a valid stripe index.
+			 */
+			if (unlikely(umem_owner_recycle))
+				cpu = (int)(__atomic_fetch_add(&umem_owner_rotor, 1, __ATOMIC_RELAXED)
+				    & (ncpus - 1));
+			pcpu_arr = cp->cache_depot_full;
+		} else {
+			pcpu_arr = cp->cache_depot_empty;
+		}
 
 		umem_depot_push(&pcpu_arr[cpu], mp);
 		return;
