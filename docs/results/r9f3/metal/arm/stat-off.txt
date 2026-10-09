@@ -1,0 +1,24 @@
+# started on Fri Oct  9 22:12:50 2026
+
+
+ Performance counter stats for 'numactl --interleave=all -- test/bench/.libs/bench_main -a umem -w prodcons -n 19200000 -s 1024:4096 -T 16 -c -D 60:7 -W 2 -t 192':
+
+       79732083.91 msec task-clock                       #  189.783 CPUs utilized             
+         181868145      context-switches                 #    2.281 K/sec                     
+              6612      cpu-migrations                   #    0.083 /sec                      
+            275416      page-faults                      #    3.454 /sec                      
+   214917329401275      cycles                           #    2.695 GHz                         (25.00%)
+   138535334687238      instructions                     #    0.64  insn per cycle              (37.50%)
+    24893690931581      branches                         #  312.217 M/sec                       (50.00%)
+       79651173207      branch-misses                    #    0.32% of all branches             (62.50%)
+                        TopdownL1                 #      8.2 percent of slots  retiring  (50.00%)
+                                                  #      4.6 percent of slots  frontend_bound  (25.00%)
+                                                  #      0.4 percent of slots  bad_speculation  (12.50%)
+                                                  #     86.8 percent of slots  backend_bound  (12.50%)
+
+     420.122555592 seconds time elapsed
+
+   63051.269091000 seconds user
+   16680.591794000 seconds sys
+
+

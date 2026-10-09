@@ -1,11 +1,15 @@
 # Round 9 F3 -- owner-routed recycling prototype (branch `r9f3`)
 
-**Status as of this writeup: gates 1, 2, 4 GREEN on both arches; metal A/B
-(gate 3) + RSS (gate 5) + perf mechanism were IN FLIGHT on c7i.metal-48xl /
-c8g.metal-48xl when the worker's tool budget ran out. NOT yet merged.** The
-decision (merge vs characterized-deferred) depends on the metal throughput/RSS
-result, which a follow-up must fetch from `~/libumem-metal-r9f3b/out/` on the
-metal boxes (or re-run `scripts` below) before touching master.
+**VERDICT (@r9f3c, metal measured): DO NOT MERGE -- characterized-but-deferred.**
+Gates 1, 2, 4 GREEN on both arches (fast path byte-identical OFF, A/B inside
+the null, soundness ON+OFF). Gate 5 (RSS) PASS: no regression. But gate 3 FAILS
+the merge bar: owner routing produced NO non-overlapping throughput win on any
+arch/thread-count (x86 t=192 ON actually REGRESSES), and the x86 perf c2c
+mechanism check shows the remote-HITM / LLC-miss / remote-DRAM VOLUME it was
+designed to attack did NOT drop (within +-2% ON vs OFF). The lever is measured
+and characterized here; it stays on branch `r9f3` and does not touch master.
+Measured on c7i.metal-48xl (x86) + c8g.metal-48xl (arm), Debian 13, account
+170848442262, post library 3c5a247 for both OFF and ON.
 
 Base: branch `r9f3` from `origin/master` **4bbfe44**. Prototype commit
 **3c5a247**. Account 170848442262, profile hotdog, Debian EC2.
@@ -85,23 +89,95 @@ Feature ON (`UMEM_OPTIONS=owner_recycle=1`): `make check` 0 FAIL both arches;
 `test_fork_ptc_drain` PASS (P1.3d fork-drain holds); `test_ptc_thread_exit_drain`
 PASS; `repro_rseq_resize_leak` PASS; 8-thread oracle small/mag/mixed/large PASS.
 
-## Gate 3 (metal throughput + RSS) + perf mechanism -- IN FLIGHT, verdict pending
+## Gate 3 (metal throughput) + perf mechanism -- MEASURED (@r9f3c): NO WIN
 
-`scripts` on the metal boxes: `~/libumem-metal-r9f3b/repo` built r9f3 tip;
-prodcons 1024:4096 at t=192 AND t=384, `-D 60:10 -W 5` (10-min run, first 5 min
-dropped), 3 runs per (config,threads), umem OFF vs umem ON (same post library).
-Per-interval CSV captures ops/s, p99, p999, peak RSS. Then a perf pass per
-config: perf c2c (x86) / perf stat remote_access (arm), perf data to /tmp
-(tmpfs 189 GB), to show the remote-HITM / LLC-miss volume ON vs OFF.
+`scripts/ec2/r9f3_metal.sh` on fresh c7i.metal-48xl (x86) and c8g.metal-48xl
+(arm). prodcons 1024:4096 at t=192 AND t=384, `-D 60:10 -W 5` (10-min run, first
+5 min dropped), 3 runs per (config,threads), umem OFF vs umem ON, same post
+library 3c5a247, `numactl --interleave=all`,
+`GLIBC_TUNABLES=glibc.rtld.optional_static_tls=65536`. The non-overlap rule:
+a win counts ONLY if the ON ops/s range across all 3 runs' steady intervals
+(n=15) does NOT overlap the OFF range.
 
-**Merge bar for gate 3/5:** a CLEAR win = umem-ON ops/s beats umem-OFF with
-NON-OVERLAPPING ranges across the steady intervals of all 3 runs, AND no RSS
-regression (ON peak RSS within OFF's spread or lower), AND c2c/remote_access
-shows the remote traffic dropped ON vs OFF. If the ranges overlap or RSS
-regresses, this stays a characterized-but-deferred lever (like F1-a) and does
-NOT merge -- write the measured result here and leave it on `r9f3`.
+### Throughput (ops/s, min..max across 15 steady intervals of 3 runs)
 
-Output to fetch: `~/libumem-metal-r9f3b/out/` on intel-hi@r9f3b and
-arm-hi@r9f3b -- `csv-{off,on}-t{192,384}-r{1,2,3}.csv`, the SUMMARY block in
-`~/libumem-jobs/metal/out.log`, `c2c-{off,on}.report.txt` (x86),
-`stat-{off,on}.txt` (arm).
+| arch | t   | OFF min..max (mean)      | ON min..max (mean)       | verdict |
+|------|-----|--------------------------|--------------------------|---------|
+| x86  | 192 | 138.6..147.4M (141.6M)   | 132.7..136.7M (134.7M)   | **ON WORSE** (ON max 136.7 < OFF min 138.6; ranges disjoint, wrong way) |
+| x86  | 384 | 141.5..146.6M (143.8M)   | 143.2..147.5M (144.9M)   | OVERLAP (143.2..146.6 shared) -> no win |
+| arm  | 192 | 147.0..163.0M (154.6M)   | 142.5..160.1M (154.1M)   | OVERLAP -> no win |
+| arm  | 384 | 127.6..138.9M (132.2M)   | 131.5..133.4M (132.2M)   | OVERLAP -> no win |
+
+### Tail latency (ns, median / max across the same intervals)
+
+| arch | t   | OFF p99 med/max | ON p99 med/max | OFF p999 med/max | ON p999 med/max |
+|------|-----|-----------------|----------------|------------------|-----------------|
+| x86  | 192 | 1184 / 1233     | 1270 / 1384    | 4128 / 4143      | 4122 / 4454     |
+| x86  | 384 | 1028 / 1065     | 1156 / 1227    | 3026 / 3216      | 3646 / 3861     |
+| arm  | 192 | 1261 / 1337     | 1295 / 1418    | 4720 / 4788      | 4740 / 5389     |
+| arm  | 384 | 1664 / 1775     | 1775 / 1833    | 6134 / 7017      | 6199 / 6557     |
+
+ON tail latency is equal-or-slightly-worse everywhere; never better.
+
+### Gate 5 -- RSS (peak live-heap RSS, MiB): PASS, no regression
+
+| arch | t   | OFF peak | ON peak | delta  |
+|------|-----|----------|---------|--------|
+| x86  | 192 | 1002.6   | 1019.3  | +1.7%  |
+| x86  | 384 | 1653.4   | 1629.8  | -1.4%  |
+| arm  | 192 | 1000.5   | 1032.2  | +3.2%  |
+| arm  | 384 | 1600.9   | 1588.9  | -0.7%  |
+
+ON is within OFF's run-to-run spread (both directions; LOWER at t=384 on both
+arches). Owner routing did NOT re-create F1's parked stock -- gate 5 is met.
+The problem is gate 3, not gate 5.
+
+### Mechanism -- the point of owner routing, and why it failed
+
+x86 `perf c2c` (t=192, `-D 60:7 -W 2`, data -> tmpfs /tmp), OFF vs ON, SAME
+library -- the counters the feature was supposed to move:
+
+| x86 c2c counter (volume)       | OFF         | ON          | delta  |
+|--------------------------------|-------------|-------------|--------|
+| Load Remote HITM               | 2,244,133   | 2,198,124   | -2.0%  |
+| Load LLC Misses                | 7,647,247   | 7,684,261   | +0.5%  |
+| Load Remote DRAM               | 5,001,180   | 5,045,530   | +0.9%  |
+| LLC Misses to Remote DRAM      | 65.4%       | 65.7%       | ~flat  |
+| LLC Misses to Remote cache HITM| 29.3%       | 28.6%       | ~flat  |
+
+**The remote traffic did not drop.** Owner routing spread full magazines across
+node-rotated depot stripes, but the remote-HITM / LLC-miss / remote-DRAM volume
+-- the exact cost step 0 identified -- is unchanged within +-2%. The producer
+still memsets lines a remote consumer last wrote. Node-rotation evidently does
+not land a producer's refill on a magazine whose objects it (or a node-local
+peer) last touched; under disjoint producer/consumer CPU sets the freed objects
+were written on the consumer node no matter which stripe index receives the
+magazine, so rotating the stripe index does not change line ownership.
+
+arm `perf stat`: the targeted PMU events (`remote_access`, `ll_cache_miss_rd`)
+were unavailable on this Graviton4 (same limitation @r9f3a hit); perf fell back
+to the generic event set, so arm has no remote-access volume counter. The
+fallback shows ON executed +8.6% instructions (150.5e12 vs 138.5e12) and more
+sys time (18635s vs 16680s) for identical work -- extra rotor/spread overhead
+with no locality payoff, consistent with the x86 c2c result and the flat arm
+throughput.
+
+### Verdict against the merge bar
+
+Merge requires (2) a non-overlapping throughput win AND the mechanism dropped
+AND (5) no RSS regression. Gate 5 passes; gates 2's win and the mechanism both
+FAIL. Two of three required conditions are absent, and x86 t=192 regresses. Per
+the round-9 bar ("If the ranges overlap or RSS regresses, this stays a
+characterized-but-deferred lever ... and does NOT merge"), **this does not
+merge.** The hypothesis -- that routing full magazines to a producer's own node
+would relieve the remote-cache cost -- is measured false at the depot-stripe
+granularity: stripe index does not control which node physically wrote the
+object's lines. A finer design (tag objects/rounds with the WRITING cpu and
+refill from same-writer magazines) would be a different, larger change on the
+magazine round layout, not this stripe-index rotor; it is out of scope for a
+fast-path-free prototype and is left as the upgrade path.
+
+Raw data: `docs/results/r9f3/metal/{x86,arm}/` -- `csv-{off,on}-t{192,384}-r{1,2,3}.csv`,
+`c2c-{off,on}.report.txt` (x86), `stat-{off,on}.txt` (arm), `prov.txt`.
+Full job log (SUMMARY block): `docs/results/jobs/intel-hi-r9f3c-metal/`.
+Box-hours: ~2.5 h each on c7i.metal-48xl and c8g.metal-48xl; both terminated.

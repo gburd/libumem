@@ -1,0 +1,3 @@
+arch=aarch64 nproc=192 kernel=6.12.111+deb13-cloud-arm64
+os=Debian GNU/Linux 13 (trixie)
+post=3c5a247

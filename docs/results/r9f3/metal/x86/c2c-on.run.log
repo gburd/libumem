@@ -1,0 +1,15 @@
+umem,producer-consumer/interval=2,192,7810646697,40680451,60.000148,130177124.68,21,126,293,1733,5460,4286319,186,1058349056,1058349056,9995646120499,0,0,,,0,8435360.7,3023197.4,0.0000,1,0,0,0,16,488165415
+umem,producer-consumer/interval=3,192,7804359842,40647707,60.000131,130072380.02,21,126,296,1663,5500,8053057,186,1062604800,1062604800,9987642095701,0,0,,,0,8454897.8,3004614.8,0.0000,1,0,0,0,16,487772492
+umem,producer-consumer/interval=4,192,7800587940,40628062,60.000161,130009450.28,20,126,294,1647,5451,5182466,185,1063837696,1063837696,9982767310945,0,0,,,0,8466897.9,2992840.1,0.0000,1,0,0,0,16,487536746
+umem,producer-consumer/interval=5,192,7853755308,40904975,60.000171,130895547.91,20,126,296,1620,5472,4055414,185,1064747008,1064747008,10050879392744,0,0,,,0,8477794.8,2981930.3,0.0000,1,0,0,0,16,490859705
+umem,producer-consumer/interval=6,192,7887087733,41078581,60.000159,131451114.14,21,125,290,1733,5440,624534,185,1065418752,1065418752,10093484474056,0,0,,,0,8488320.1,2971457.6,0.0000,1,0,0,0,16,492942985
+bench_main: skipping unavailable allocator 'umem-preload (not available: LD_PRELOAD libumem_malloc.so)'
+bench_main: skipping unavailable allocator 'tcmalloc (not available)'
+bench_main: skipping unavailable allocator 'mimalloc (not available)'
+bench_main: skipping unavailable allocator 'snmalloc (not available)'
+bench_main: skipping unavailable allocator 'scudo (not available)'
+bench_main: skipping unavailable allocator 'rpmalloc (not available)'
+[ perf record: Woken up 1590 times to write data ]
+Warning:
+2452 out of order events recorded.
+[ perf record: Captured and wrote 32897.839 MB /tmp/c2c-on.data (391007730 samples) ]
