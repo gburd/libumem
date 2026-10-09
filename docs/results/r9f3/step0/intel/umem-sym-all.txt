@@ -1,0 +1,15 @@
+     0.00%  [.] _IO_fgets                         -      -            
+     0.00%  [.] _IO_file_doallocate               -      -            
+     0.00%  [.] _IO_getline_info                  -      -            
+     0.00%  [.] __GI___lll_lock_wait              -      -            
+     0.00%  [k] ___slab_alloc                     -      -            
+     0.00%  [k] __bitmap_and                      -      -            
+     0.00%  [k] __call_rcu_common                 -      -            
+     0.00%  [k] __cond_resched                    -      -            
+     0.00%  [k] __folio_batch_add_and_move        -      -            
+     0.00%  [k] __folio_mod_stat                  -      -            
+     0.00%  [k] __futex_queue                     -      -            
+     0.00%  [k] __get_unmapped_area               -      -            
+     0.00%  [k] __iommu_dma_unmap                 -      -            
+     0.00%  [.] __libc_calloc                     -      -            
+     0.00%  [k] __lruvec_stat_mod_folio           -      -            

@@ -1,0 +1,40 @@
+  arm_cmn/hns_brd_snoops_sent/                       [Kernel PMU event]
+  arm_cmn/hns_cache_miss_all/                        [Kernel PMU event]
+  arm_cmn/hns_cache_miss_hbt/                        [Kernel PMU event]
+  arm_cmn/hns_cache_miss_lbt/                        [Kernel PMU event]
+  arm_cmn/hns_class_mc_reqs_remote_class0/           [Kernel PMU event]
+  arm_cmn/hns_class_mc_reqs_remote_class1/           [Kernel PMU event]
+  arm_cmn/hns_class_mc_reqs_remote_class2/           [Kernel PMU event]
+  arm_cmn/hns_class_mc_reqs_remote_class3/           [Kernel PMU event]
+  arm_cmn/hns_dir_snoops_sent/                       [Kernel PMU event]
+  arm_cmn/hns_mc_reqs_remote_all/                    [Kernel PMU event]
+  arm_cmn/hns_mc_reqs_remote_home/                   [Kernel PMU event]
+  arm_cmn/hns_mc_reqs_remote_sn/                     [Kernel PMU event]
+  arm_cmn/hns_mc_retries_remote/                     [Kernel PMU event]
+  smmuv3_pmcg/config_cache_miss/                     [Kernel PMU event]
+  hnf_brd_snoops_sent
+       [Counts number of multicast snoops sent (not including SF back
+  hnf_cache_miss
+  hnf_dir_snoops_sent
+       [Counts number of directed snoops sent (not including SF back
+  ll_cache_miss_rd
+  mem_access
+  mem_access_checked
+  mem_access_checked_rd
+  mem_access_checked_wr
+  mem_access_rd
+  mem_access_wr
+  remote_access
+       [Cross-trigger Interface output trigger 4. Unit: armv8_pmuv3_0]
+       [Cross-trigger Interface output trigger 5 . Unit: armv8_pmuv3_0]
+       [Cross-trigger Interface output trigger 6. Unit: armv8_pmuv3_0]
+       [Cross-trigger Interface output trigger 7. Unit: armv8_pmuv3_0]
+  l1d_cache_miss_ratio
+  l1i_cache_miss_ratio
+  l2_cache_miss_ratio
+  l3d_cache_miss_rate
+  l1d_cache_miss_ratio
+  l1i_cache_miss_ratio
+  l2_cache_miss_ratio
+  l3d_cache_miss_rate
+       [Snoop filter hit rate can be used to measure the snoop filter

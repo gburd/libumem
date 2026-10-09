@@ -1,0 +1,9 @@
+ref=cdc9fba
+sha=cdc9fba0ee91085bd71e2e5ae3ee66aa03aa14ba
+role=arm-hi@r9f3a
+job=step0
+isolated=yes
+nproc=192
+kernel=6.12.111+deb13-cloud-arm64
+arch=aarch64
+os=Debian GNU/Linux 13 (trixie)

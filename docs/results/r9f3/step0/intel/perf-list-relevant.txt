@@ -1,0 +1,713 @@
+  mem_inst_retired.all_loads
+  mem_inst_retired.all_stores
+  mem_inst_retired.any
+  mem_inst_retired.lock_loads
+  mem_inst_retired.split_loads
+       [Retired load instructions that split across a cacheline boundary
+  mem_inst_retired.split_stores
+       [Retired store instructions that split across a cacheline boundary
+  mem_inst_retired.stlb_miss_loads
+  mem_inst_retired.stlb_miss_stores
+  mem_load_completed.l1_miss_any
+  mem_load_l3_hit_retired.xsnp_fwd
+       [Retired load instructions whose data sources were HitM responses from
+  mem_load_l3_hit_retired.xsnp_miss
+        cross-core snoop missed in on-pkg core cache Supports address when
+  mem_load_l3_hit_retired.xsnp_no_fwd
+       [Retired load instructions whose data sources were L3 and cross-core
+        snoop hits in on-pkg core cache Supports address when precise (Precise
+  mem_load_l3_hit_retired.xsnp_none
+        snoops required Supports address when precise (Precise event). Unit:
+  mem_load_l3_miss_retired.local_dram
+  mem_load_l3_miss_retired.remote_dram
+       [MEM_LOAD_L3_MISS_RETIRED.REMOTE_DRAM Supports address when precise
+  mem_load_l3_miss_retired.remote_fwd
+        remote cache Supports address when precise (Precise event). Unit: cpu]
+  mem_load_l3_miss_retired.remote_hitm
+       [MEM_LOAD_L3_MISS_RETIRED.REMOTE_HITM Supports address when precise
+  mem_load_l3_miss_retired.remote_pmm
+       [Retired load instructions with remote Intel(R) Optane(TM) DC
+  mem_load_misc_retired.uc
+  mem_load_retired.fb_hit
+  mem_load_retired.l1_hit
+  mem_load_retired.l1_miss
+  mem_load_retired.l2_hit
+  mem_load_retired.l2_miss
+  mem_load_retired.l3_hit
+  mem_load_retired.l3_miss
+  mem_load_retired.local_pmm
+  mem_store_retired.l2_hit
+       [MEM_STORE_RETIRED.L2_HIT. Unit: cpu]
+  mem_uop_retired.any
+        that hit in the L3 or were snooped from another core's caches on the
+  ocr.demand_code_rd.l3_hit.snoop_hitm
+        that resulted in a snoop hit a modified line in another core's caches
+        snooped from a distant core's L1/L2 caches on this socket when the
+  ocr.demand_code_rd.snc_cache.hitm
+        that hit a modified line in a distant L3 Cache or were snooped from a
+       [Counts demand data reads that hit in the L3 or were snooped from
+  ocr.demand_data_rd.l3_hit.snoop_hit_no_fwd
+       [Counts demand data reads that resulted in a snoop that hit in another
+  ocr.demand_data_rd.l3_hit.snoop_hit_with_fwd
+       [Counts demand data reads that resulted in a snoop hit in another
+  ocr.demand_data_rd.l3_hit.snoop_hitm
+       [Counts demand data reads that resulted in a snoop hit a modified line
+  ocr.demand_data_rd.remote_cache.snoop_hit_with_fwd
+       [Counts demand data reads that were supplied by a cache on a remote
+        socket where a snoop hit in another core's caches which forwarded the
+  ocr.demand_data_rd.remote_cache.snoop_hitm
+       [Counts demand data reads that were supplied by a cache on a remote
+        socket where a snoop hit a modified line in another core's caches
+        distant L3 Cache or were snooped from a distant core's L1/L2 caches on
+  ocr.demand_data_rd.snc_cache.hitm
+        Cache or were snooped from a distant core's L1/L2 caches on this
+        were snooped from another core's caches on the same socket. Unit: cpu]
+  ocr.demand_rfo.l3_hit.snoop_hitm
+        snoop hit a modified line in another core's caches which forwarded the
+        non-modified line in a distant L3 Cache or were snooped from a distant
+  ocr.demand_rfo.snc_cache.hitm
+        line in a distant L3 Cache or were snooped from a distant core's L1/L2
+        snooped from another core's caches on the same socket. Unit: cpu]
+        L3 or were snooped from another core's caches on the same socket.
+  ocr.reads_to_core.l3_hit.snoop_hit_no_fwd
+        a snoop that hit in another core,which did not forward the data. Unit:
+  ocr.reads_to_core.l3_hit.snoop_hit_with_fwd
+        a snoop hit in another core's caches which forwarded the unmodified
+  ocr.reads_to_core.l3_hit.snoop_hitm
+        a snoop hit a modified line in another core's caches which forwarded
+  ocr.reads_to_core.remote_cache.snoop_fwd
+        supplied by a cache on a remote socket where a snoop was sent and data
+  ocr.reads_to_core.remote_cache.snoop_hit_with_fwd
+        supplied by a cache on a remote socket where a snoop hit in another
+  ocr.reads_to_core.remote_cache.snoop_hitm
+        supplied by a cache on a remote socket where a snoop hit a modified
+        non-modified line in a distant L3 Cache or were snooped from a distant
+  ocr.reads_to_core.snc_cache.hitm
+        modified line in a distant L3 Cache or were snooped from a distant
+        (PREFETCHW) that hit to a (M)odified cacheline in the L3 or snoop
+       [Counts streaming stores that hit in the L3 or were snooped from
+  offcore_requests.all_requests
+       [OFFCORE_REQUESTS.ALL_REQUESTS. Unit: cpu]
+  offcore_requests.data_rd
+  offcore_requests.demand_code_rd
+  offcore_requests.demand_data_rd
+  offcore_requests.demand_rfo
+  offcore_requests_outstanding.cycles_with_data_rd
+       [OFFCORE_REQUESTS_OUTSTANDING.CYCLES_WITH_DATA_RD. Unit: cpu]
+  offcore_requests_outstanding.cycles_with_demand_code_rd
+       [Cycles with offcore outstanding Code Reads transactions in the
+  offcore_requests_outstanding.cycles_with_demand_data_rd
+  offcore_requests_outstanding.cycles_with_demand_rfo
+       [OFFCORE_REQUESTS_OUTSTANDING.CYCLES_WITH_DEMAND_RFO. Unit: cpu]
+  offcore_requests_outstanding.data_rd
+       [OFFCORE_REQUESTS_OUTSTANDING.DATA_RD. Unit: cpu]
+  offcore_requests_outstanding.demand_code_rd
+       [Offcore outstanding Code Reads transactions in the SuperQueue (SQ),
+  offcore_requests_outstanding.demand_data_rd
+  cycle_activity.stalls_l3_miss
+  mem_trans_retired.load_latency_gt_1024
+  mem_trans_retired.load_latency_gt_128
+  mem_trans_retired.load_latency_gt_16
+  mem_trans_retired.load_latency_gt_256
+  mem_trans_retired.load_latency_gt_32
+  mem_trans_retired.load_latency_gt_4
+  mem_trans_retired.load_latency_gt_512
+  mem_trans_retired.load_latency_gt_64
+  mem_trans_retired.load_latency_gt_8
+  mem_trans_retired.store_sample
+  memory_activity.stalls_l3_miss
+  ocr.demand_code_rd.l3_miss
+  ocr.demand_data_rd.l3_miss
+  ocr.demand_rfo.l3_miss
+  ocr.hwpf_l3.l3_miss
+  ocr.hwpf_l3.l3_miss_local
+  ocr.reads_to_core.l3_miss
+  ocr.reads_to_core.l3_miss_local
+  ocr.reads_to_core.l3_miss_local_socket
+  ocr.streaming_wr.l3_miss
+  ocr.streaming_wr.l3_miss_local
+  offcore_requests.l3_miss_demand_data_rd
+  offcore_requests_outstanding.l3_miss_demand_data_rd
+  ocr.demand_data_rd.remote_dram
+  ocr.demand_data_rd.remote_pmm
+  ocr.hwpf_l3.remote
+        remote socket. Unit: cpu]
+  ocr.reads_to_core.remote
+        a remote socket. Unit: cpu]
+  ocr.reads_to_core.remote_dram
+  ocr.reads_to_core.remote_memory
+  ocr.reads_to_core.remote_pmm
+  cycle_activity.cycles_mem_any
+       [Core Cross Snoops Issued : Any Cycle with Multiple Snoops. Unit:
+       [Core Cross Snoops Issued : Any Single Snoop. Unit: uncore_cha]
+       [Core Cross Snoops Issued : Multiple Core Requests. Unit: uncore_cha]
+       [Core Cross Snoops Issued : Single Core Requests. Unit: uncore_cha]
+       [Core Cross Snoops Issued : Multiple Eviction. Unit: uncore_cha]
+       [Core Cross Snoops Issued : Single Eviction. Unit: uncore_cha]
+       [Core Cross Snoops Issued : Multiple External Snoops. Unit: uncore_cha]
+       [Core Cross Snoops Issued : Single External Snoops. Unit: uncore_cha]
+  unc_cha_core_snp.remote_gtone
+       [Core Cross Snoops Issued : Multiple Snoop Targets from Remote. Unit:
+  unc_cha_core_snp.remote_one
+       [Core Cross Snoops Issued : Single Snoop Target from Remote. Unit:
+       [Multi-socket cacheline Directory state lookups; Snoop Not Needed.
+       [Multi-socket cacheline Directory state lookups; Snoop Needed. Unit:
+  unc_cha_egress_ordering.iv_snoopgo_dn
+  unc_cha_egress_ordering.iv_snoopgo_up
+  unc_cha_hitme_hit.ex_rds
+       [Read request from a remote socket which hit in the HitMe Cache to a
+  unc_cha_hitme_hit.shared_ownreq
+       [Counts Number of Hits in HitMe Cache : Shared hit and op is RdInvOwn,
+  unc_cha_hitme_hit.wbmtoe
+       [Counts Number of Hits in HitMe Cache : op is WbMtoE. Unit: uncore_cha]
+  unc_cha_hitme_hit.wbmtoi_or_s
+       [Counts Number of Hits in HitMe Cache : op is WbMtoI,WbPushMtoI,WbFlush,
+  unc_cha_hitme_lookup.read
+       [Counts Number of times HitMe Cache is accessed : op is RdCode,RdData,
+  unc_cha_hitme_lookup.write
+       [Counts Number of times HitMe Cache is accessed : op is WbMtoE,WbMtoI,
+  unc_cha_hitme_miss.notshared_rdinvown
+       [Counts Number of Misses in HitMe Cache : No SF/LLC HitS/F and op is
+  unc_cha_hitme_miss.read_or_inv
+       [Counts Number of Misses in HitMe Cache : op is RdCode,RdData,
+  unc_cha_hitme_miss.shared_rdinvown
+       [Counts Number of Misses in HitMe Cache : SF/LLC HitS/F and op is
+  unc_cha_hitme_update.deallocate
+       [Counts the number of Allocate/Update to HitMe Cache : Deallocate
+        HitME$ on Reads without RspFwdI*. Unit: uncore_cha]
+  unc_cha_hitme_update.deallocate_rspfwdi_loc
+       [Counts the number of Allocate/Update to HitMe Cache : op is RspIFwd or
+  unc_cha_hitme_update.rdinvown
+       [Counts the number of Allocate/Update to HitMe Cache : Update HitMe
+  unc_cha_hitme_update.rspfwdi_rem
+       [Counts the number of Allocate/Update to HitMe Cache : op is RspIFwd or
+        RspIFwdWb for a remote request. Unit: uncore_cha]
+  unc_cha_hitme_update.shared
+       [Counts the number of Allocate/Update to HitMe Cache : Update HitMe
+       [Cache and Snoop Filter Lookups; Any Request. Unit: uncore_cha]
+  unc_cha_llc_lookup.all_remote
+       [Cache Lookups : All transactions from Remote Agents. Unit: uncore_cha]
+       [Cache and Snoop Filter Lookups; Data Read Request. Unit: uncore_cha]
+       [Cache and Snoop Filter Lookups; Data Read Request that come from the
+       [Cache and Snoop Filter Lookups; Demand Data Reads that come from the
+       [Cache and Snoop Filter Lookups; Prefetch requests to the LLC that come
+       [Cache and Snoop Filter Lookups; Data Read Prefetches that come from
+       [Cache and Snoop Filter Lookups; Data Read Prefetches that come from
+  unc_cha_llc_lookup.pref_or_dmnd_remote_f
+       [Cache Lookups : Remote non-snoop requests. Unit: uncore_cha]
+  unc_cha_llc_lookup.remote_code
+       [Cache Lookups : CRd Requests that come from a Remote socket. Unit:
+  unc_cha_llc_lookup.remote_data_rd
+       [Cache and Snoop Filter Lookups; Data Read Requests that come from a
+        Remote socket. Unit: uncore_cha]
+  unc_cha_llc_lookup.remote_f
+       [Cache Lookups : Transactions homed remotely. Unit: uncore_cha]
+  unc_cha_llc_lookup.remote_flush_inv
+       [Cache Lookups : Flush or Invalidate requests that come from a Remote
+  unc_cha_llc_lookup.remote_other
+        cache that come from a remote socket. Unit: uncore_cha]
+  unc_cha_llc_lookup.remote_rfo
+       [Cache Lookups : RFO Requests that come from a Remote socket. Unit:
+  unc_cha_llc_lookup.remote_snoop_f
+       [Cache Lookups : Remote snoop requests. Unit: uncore_cha]
+  unc_cha_llc_lookup.remote_snp
+       [Cache and Snoop Filter Lookups; Snoop Requests from a Remote Socket.
+  unc_cha_llc_lookup.remotely_homed_address
+       [Cache Lookups : Transactions homed remotely. Unit: uncore_cha]
+       [Cache Lookups : SnoopFilter - E State. Unit: uncore_cha]
+       [Cache Lookups : SnoopFilter - H State. Unit: uncore_cha]
+       [Cache Lookups : SnoopFilter - S State. Unit: uncore_cha]
+  unc_cha_llc_lookup.write_remote
+       [Cache Lookups : Remote Writes. Unit: uncore_cha]
+  unc_cha_llc_victims.remote_all
+       [Lines Victimized; Remote - All Lines. Unit: uncore_cha]
+  unc_cha_llc_victims.remote_e
+  unc_cha_llc_victims.remote_m
+  unc_cha_llc_victims.remote_only
+       [Lines Victimized : Remote Only. Unit: uncore_cha]
+  unc_cha_llc_victims.remote_s
+       [Cbo Misc : Silent Snoop Eviction. Unit: uncore_cha]
+       [OSB Snoop Broadcast : Local InvItoE. Unit: uncore_cha]
+       [OSB Snoop Broadcast : Local Rd. Unit: uncore_cha]
+       [OSB Snoop Broadcast : Off. Unit: uncore_cha]
+  unc_cha_osb.remote_read
+       [OSB Snoop Broadcast : Remote Rd. Unit: uncore_cha]
+  unc_cha_osb.remote_readinvitoe
+       [OSB Snoop Broadcast : Remote Rd InvItoE. Unit: uncore_cha]
+       [OSB Snoop Broadcast : RFO HitS Snoop Broadcast. Unit: uncore_cha]
+  unc_cha_pmm_memmode_nm_invitox.remote
+       [UNC_CHA_PMM_MEMMODE_NM_INVITOX.REMOTE. Unit: uncore_cha]
+  unc_cha_requests.invitoe_remote
+       [Remote requests for exclusive ownership of a cache line without
+  unc_cha_requests.reads_remote
+       [Read requests from a remote socket. Unit: uncore_cha]
+  unc_cha_requests.writes_remote
+       [Read and Write Requests; Writes Remote. Unit: uncore_cha]
+       [IPQ Requests (from CMS) Rejected - Set 1 : Allow Snoop. Unit:
+       [IRQ Requests (from CMS) Rejected - Set 1 : Allow Snoop. Unit:
+       [Other Retries - Set 1 : Allow Snoop. Unit: uncore_cha]
+       [PRQ Requests (from CMS) Rejected - Set 1 : Allow Snoop. Unit:
+       [Request Queue Retries - Set 1 : Allow Snoop. Unit: uncore_cha]
+       [RRQ Rejects - Set 1 : Allow Snoop. Unit: uncore_cha]
+       [WBQ Rejects - Set 1 : Allow Snoop. Unit: uncore_cha]
+  unc_cha_snoop_resp.rspcnflct
+       [Snoop Responses Received : RSPCNFLCT*. Unit: uncore_cha]
+  unc_cha_snoop_resp.rspfwd
+       [Snoop Responses Received : RspFwd. Unit: uncore_cha]
+  unc_cha_snoop_resp.rspfwdwb
+       [Snoop Responses Received : Rsp*Fwd*WB. Unit: uncore_cha]
+  unc_cha_snoop_resp.rspi
+       [RspI Snoop Responses Received. Unit: uncore_cha]
+  unc_cha_snoop_resp.rspifwd
+       [RspIFwd Snoop Responses Received. Unit: uncore_cha]
+  unc_cha_snoop_resp.rsps
+       [RspS Snoop Responses Received. Unit: uncore_cha]
+  unc_cha_snoop_resp.rspsfwd
+       [RspSFwd Snoop Responses Received. Unit: uncore_cha]
+  unc_cha_snoop_resp.rspwb
+       [Snoop Responses Received : Rsp*WB. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rspcnflct
+       [Snoop Responses Received Local : RspCnflct. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rspfwd
+       [Snoop Responses Received Local : RspFwd. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rspfwdwb
+       [Snoop Responses Received Local : Rsp*FWD*WB. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rspi
+       [Snoop Responses Received Local : RspI. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rspifwd
+       [Snoop Responses Received Local : RspIFwd. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rsps
+       [Snoop Responses Received Local : RspS. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rspsfwd
+       [Snoop Responses Received Local : RspSFwd. Unit: uncore_cha]
+  unc_cha_snoop_resp_local.rspwb
+       [Snoop Responses Received Local : Rsp*WB. Unit: uncore_cha]
+  unc_cha_snoop_rsp_misc.mtoi_rspdatam
+       [Misc Snoop Responses Received : MtoI RspIDataM. Unit: uncore_cha]
+  unc_cha_snoop_rsp_misc.mtoi_rspifwdm
+       [Misc Snoop Responses Received : MtoI RspIFwdM. Unit: uncore_cha]
+  unc_cha_snoop_rsp_misc.pulldataptl_hitllc
+       [Misc Snoop Responses Received : Pull Data Partial - Hit LLC. Unit:
+  unc_cha_snoop_rsp_misc.pulldataptl_hitsf
+       [Misc Snoop Responses Received : Pull Data Partial - Hit SF. Unit:
+  unc_cha_snoop_rsp_misc.rspifwdmptl_hitllc
+       [Misc Snoop Responses Received : RspIFwdPtl Hit LLC. Unit: uncore_cha]
+  unc_cha_snoop_rsp_misc.rspifwdmptl_hitsf
+       [Misc Snoop Responses Received : RspIFwdPtl Hit SF. Unit: uncore_cha]
+  unc_cha_snoops_sent.all
+       [Snoops Sent : All. Unit: uncore_cha]
+  unc_cha_snoops_sent.bcst_local
+       [Snoops Sent : Broadcast snoop for Local Requests. Unit: uncore_cha]
+  unc_cha_snoops_sent.bcst_remote
+       [Snoops Sent : Broadcast snoops for Remote Requests. Unit: uncore_cha]
+  unc_cha_snoops_sent.direct_local
+       [Snoops Sent : Directed snoops for Local Requests. Unit: uncore_cha]
+  unc_cha_snoops_sent.direct_remote
+       [Snoops Sent : Directed snoops for Remote Requests. Unit: uncore_cha]
+  unc_cha_snoops_sent.local
+       [Snoops Sent : Broadcast or directed Snoops sent for Local Requests.
+  unc_cha_snoops_sent.remote
+       [Snoops Sent : Broadcast or directed Snoops sent for Remote Requests.
+  unc_cha_tor_inserts.ia_miss_crd_pref_remote
+        remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_crd_remote
+        remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_drd_pref_remote
+       [TOR Inserts for DRd Pref misses from local IA targeting remote memory.
+  unc_cha_tor_inserts.ia_miss_drd_pref_remote_ddr
+        Missed the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_drd_pref_remote_pmm
+        Missed the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_drd_remote
+       [TOR Inserts for DRd misses from local IA targeting remote memory.
+  unc_cha_tor_inserts.ia_miss_drd_remote_ddr
+        the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_drd_remote_pmm
+        the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_remote_wcil_ddr
+        LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_remote_wcil_pmm
+        LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_remote_wcilf_ddr
+        LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_remote_wcilf_pmm
+        LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_inserts.ia_miss_rfo_pref_remote
+  unc_cha_tor_inserts.ia_miss_rfo_remote
+  unc_cha_tor_inserts.io_itom_remote
+        remote socket. Unit: uncore_cha]
+  unc_cha_tor_inserts.io_itomcachenear_remote
+        addresses memory on a remote socket. Unit: uncore_cha]
+        on a remote socket. Unit: uncore_cha]
+  unc_cha_tor_inserts.io_pcirdcur_remote
+       [TOR Inserts : All from Remote. Unit: uncore_cha]
+       [TOR Inserts : All Snoops from Remote. Unit: uncore_cha]
+  unc_cha_tor_inserts.remote_tgt
+       [TOR Inserts : Just Remote Targets. Unit: uncore_cha]
+       [TOR Inserts; All Snoops from Remote. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_crd_pref_remote
+        HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_crd_remote
+        remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_drd_pref_remote
+  unc_cha_tor_occupancy.ia_miss_drd_pref_remote_ddr
+        Missed the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_drd_pref_remote_pmm
+        Missed the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_drd_remote
+       [TOR Occupancy for DRd misses from local IA targeting remote memory.
+  unc_cha_tor_occupancy.ia_miss_drd_remote_ddr
+        the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_drd_remote_pmm
+        the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_remote_wcil_ddr
+        LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_remote_wcil_pmm
+        LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_remote_wcilf_ddr
+        the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_remote_wcilf_pmm
+        the LLC - HOMed remotely. Unit: uncore_cha]
+  unc_cha_tor_occupancy.ia_miss_rfo_pref_remote
+  unc_cha_tor_occupancy.ia_miss_rfo_remote
+  unc_cha_tor_occupancy.io_miss_itom_remote
+       [TOR Occupancy; ITOM misses from local IO and targets remote memory.
+  unc_cha_tor_occupancy.io_miss_itomcachenear_remote
+        IO Devices that missed the LLC and targets remote memory. Unit:
+  unc_cha_tor_occupancy.io_miss_pcirdcur_remote
+        remote memory. Unit: uncore_cha]
+       [TOR Occupancy : All from Remote. Unit: uncore_cha]
+       [TOR Occupancy : All Snoops from Remote. Unit: uncore_cha]
+  unc_cha_tor_occupancy.remote_tgt
+       [TOR Occupancy : Just Remote Targets. Unit: uncore_cha]
+       [TOR Occupancy; All Snoops from Remote. Unit: uncore_cha]
+       [: All Inserts Outbound (BL,AK,Snoops). Unit: uncore_irp]
+       [: All Inserts Outbound (BL,AK,Snoops). Unit: uncore_irp]
+  unc_i_snoop_resp.all_hit
+       [Responses to snoops of any type that hit M,E,S or I line in the IIO.
+  unc_i_snoop_resp.all_hit_es
+       [Responses to snoops of any type that hit E or S line in the IIO cache.
+  unc_i_snoop_resp.all_hit_i
+       [Responses to snoops of any type that hit I line in the IIO cache.
+  unc_i_snoop_resp.all_hit_m
+       [Responses to snoops of any type that hit M line in the IIO cache.
+  unc_i_snoop_resp.all_miss
+       [Responses to snoops of any type that miss the IIO cache. Unit:
+  unc_i_snoop_resp.hit_es
+       [Snoop Responses : Hit E or S. Unit: uncore_irp]
+  unc_i_snoop_resp.hit_i
+       [Snoop Responses : Hit I. Unit: uncore_irp]
+  unc_i_snoop_resp.hit_m
+       [Snoop Responses : Hit M. Unit: uncore_irp]
+  unc_i_snoop_resp.miss
+       [Snoop Responses : Miss. Unit: uncore_irp]
+  unc_i_snoop_resp.snpcode
+       [Snoop Responses : SnpCode. Unit: uncore_irp]
+  unc_i_snoop_resp.snpdata
+       [Snoop Responses : SnpData. Unit: uncore_irp]
+  unc_i_snoop_resp.snpinv
+       [Snoop Responses : SnpInv. Unit: uncore_irp]
+       [Counts the time when FM didn't do d2c for fill reads (cross tile
+  unc_m2m_egress_ordering.iv_snoopgo_dn
+  unc_m2m_egress_ordering.iv_snoopgo_up
+       [CBox AD Credits Empty : Snoops. Unit: uncore_m3upi]
+  unc_m3upi_egress_ordering.iv_snoopgo_dn
+  unc_m3upi_egress_ordering.iv_snoopgo_up
+       [Remote VNA Credits : Any In Use. Unit: uncore_m3upi]
+       [Remote VNA Credits : Corrected. Unit: uncore_m3upi]
+       [Remote VNA Credits : Level < 1. Unit: uncore_m3upi]
+       [Remote VNA Credits : Level < 10. Unit: uncore_m3upi]
+       [Remote VNA Credits : Level < 4. Unit: uncore_m3upi]
+       [Remote VNA Credits : Level < 5. Unit: uncore_m3upi]
+  unc_iio_data_req_by_cpu.mem_read.all_parts
+  unc_iio_data_req_by_cpu.mem_read.part0
+  unc_iio_data_req_by_cpu.mem_read.part1
+  unc_iio_data_req_by_cpu.mem_read.part2
+  unc_iio_data_req_by_cpu.mem_read.part3
+  unc_iio_data_req_by_cpu.mem_read.part4
+  unc_iio_data_req_by_cpu.mem_read.part5
+  unc_iio_data_req_by_cpu.mem_read.part6
+  unc_iio_data_req_by_cpu.mem_read.part7
+  unc_iio_data_req_by_cpu.mem_write.all_parts
+  unc_iio_data_req_by_cpu.mem_write.iommu0
+  unc_iio_data_req_by_cpu.mem_write.iommu1
+  unc_iio_data_req_by_cpu.mem_write.part0
+  unc_iio_data_req_by_cpu.mem_write.part1
+  unc_iio_data_req_by_cpu.mem_write.part2
+  unc_iio_data_req_by_cpu.mem_write.part3
+  unc_iio_data_req_by_cpu.mem_write.part4
+  unc_iio_data_req_by_cpu.mem_write.part5
+  unc_iio_data_req_by_cpu.mem_write.part6
+  unc_iio_data_req_by_cpu.mem_write.part7
+  unc_iio_data_req_of_cpu.mem_read.all_parts
+  unc_iio_data_req_of_cpu.mem_read.part0
+  unc_iio_data_req_of_cpu.mem_read.part1
+  unc_iio_data_req_of_cpu.mem_read.part2
+  unc_iio_data_req_of_cpu.mem_read.part3
+  unc_iio_data_req_of_cpu.mem_read.part4
+  unc_iio_data_req_of_cpu.mem_read.part5
+  unc_iio_data_req_of_cpu.mem_read.part6
+  unc_iio_data_req_of_cpu.mem_read.part7
+  unc_iio_data_req_of_cpu.mem_write.all_parts
+  unc_iio_data_req_of_cpu.mem_write.part0
+  unc_iio_data_req_of_cpu.mem_write.part1
+  unc_iio_data_req_of_cpu.mem_write.part2
+  unc_iio_data_req_of_cpu.mem_write.part3
+  unc_iio_data_req_of_cpu.mem_write.part4
+  unc_iio_data_req_of_cpu.mem_write.part5
+  unc_iio_data_req_of_cpu.mem_write.part6
+  unc_iio_data_req_of_cpu.mem_write.part7
+  unc_iio_iommu1.num_mem_accesses
+       [Num requests sent by PCIe - by target : Remote P2P. Unit: uncore_iio]
+  unc_iio_txn_req_by_cpu.mem_read.part0
+  unc_iio_txn_req_by_cpu.mem_read.part1
+  unc_iio_txn_req_by_cpu.mem_read.part2
+  unc_iio_txn_req_by_cpu.mem_read.part3
+  unc_iio_txn_req_by_cpu.mem_read.part4
+  unc_iio_txn_req_by_cpu.mem_read.part5
+  unc_iio_txn_req_by_cpu.mem_read.part6
+  unc_iio_txn_req_by_cpu.mem_read.part7
+  unc_iio_txn_req_by_cpu.mem_write.part0
+  unc_iio_txn_req_by_cpu.mem_write.part1
+  unc_iio_txn_req_by_cpu.mem_write.part2
+  unc_iio_txn_req_by_cpu.mem_write.part3
+  unc_iio_txn_req_by_cpu.mem_write.part4
+  unc_iio_txn_req_by_cpu.mem_write.part5
+  unc_iio_txn_req_by_cpu.mem_write.part6
+  unc_iio_txn_req_by_cpu.mem_write.part7
+  unc_iio_txn_req_of_cpu.mem_read.part0
+  unc_iio_txn_req_of_cpu.mem_read.part1
+  unc_iio_txn_req_of_cpu.mem_read.part2
+  unc_iio_txn_req_of_cpu.mem_read.part3
+  unc_iio_txn_req_of_cpu.mem_read.part4
+  unc_iio_txn_req_of_cpu.mem_read.part5
+  unc_iio_txn_req_of_cpu.mem_read.part6
+  unc_iio_txn_req_of_cpu.mem_read.part7
+  unc_iio_txn_req_of_cpu.mem_write.part0
+  unc_iio_txn_req_of_cpu.mem_write.part1
+  unc_iio_txn_req_of_cpu.mem_write.part2
+  unc_iio_txn_req_of_cpu.mem_write.part3
+  unc_iio_txn_req_of_cpu.mem_write.part4
+  unc_iio_txn_req_of_cpu.mem_write.part5
+  unc_iio_txn_req_of_cpu.mem_write.part6
+  unc_iio_txn_req_of_cpu.mem_write.part7
+  unc_m2p_egress_ordering.iv_snoopgo_dn
+  unc_m2p_egress_ordering.iv_snoopgo_up
+  unc_m2p_p2p_crd_occupancy.remote_ncb
+       [P2P Credit Occupancy : Remote NCB. Unit: uncore_m2pcie]
+  unc_m2p_p2p_crd_occupancy.remote_ncs
+       [P2P Credit Occupancy : Remote NCS. Unit: uncore_m2pcie]
+  unc_m2p_p2p_ded_received.remote_ncb
+       [Dedicated Credits Received : Remote NCB. Unit: uncore_m2pcie]
+  unc_m2p_p2p_ded_received.remote_ncs
+       [Dedicated Credits Received : Remote NCS. Unit: uncore_m2pcie]
+  unc_m2p_p2p_shar_received.remote_ncb
+       [Shared Credits Received : Remote NCB. Unit: uncore_m2pcie]
+  unc_m2p_p2p_shar_received.remote_ncs
+       [Shared Credits Received : Remote NCS. Unit: uncore_m2pcie]
+  unc_m2p_remote_ded_p2p_crd_taken_0.upi0_drs
+       [Remote Dedicated P2P Credit Taken - 0 : UPI0 - DRS. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_0.upi0_ncb
+       [Remote Dedicated P2P Credit Taken - 0 : UPI0 - NCB. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_0.upi0_ncs
+       [Remote Dedicated P2P Credit Taken - 0 : UPI0 - NCS. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_0.upi1_drs
+       [Remote Dedicated P2P Credit Taken - 0 : UPI1 - DRS. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_0.upi1_ncb
+       [Remote Dedicated P2P Credit Taken - 0 : UPI1 - NCB. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_0.upi1_ncs
+       [Remote Dedicated P2P Credit Taken - 0 : UPI1 - NCS. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_1.upi2_drs
+       [Remote Dedicated P2P Credit Taken - 1 : UPI2 - DRS. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_1.upi2_ncb
+       [Remote Dedicated P2P Credit Taken - 1 : UPI2 - NCB. Unit:
+  unc_m2p_remote_ded_p2p_crd_taken_1.upi2_ncs
+       [Remote Dedicated P2P Credit Taken - 1 : UPI2 - NCS. Unit:
+  unc_m2p_remote_p2p_ded_returned.upi0_ncb
+       [Remote P2P Dedicated Credits Returned : UPI0 - NCB. Unit:
+  unc_m2p_remote_p2p_ded_returned.upi0_ncs
+       [Remote P2P Dedicated Credits Returned : UPI0 - NCS. Unit:
+  unc_m2p_remote_p2p_ded_returned.upi1_ncb
+       [Remote P2P Dedicated Credits Returned : UPI1 - NCB. Unit:
+  unc_m2p_remote_p2p_ded_returned.upi1_ncs
+       [Remote P2P Dedicated Credits Returned : UPI1 - NCS. Unit:
+  unc_m2p_remote_p2p_ded_returned.upi2_ncb
+       [Remote P2P Dedicated Credits Returned : UPI2 - NCB. Unit:
+  unc_m2p_remote_p2p_ded_returned.upi2_ncs
+       [Remote P2P Dedicated Credits Returned : UPI2 - NCS. Unit:
+  unc_m2p_remote_p2p_shar_returned.agent_0
+       [Remote P2P Shared Credits Returned : Agent0. Unit: uncore_m2pcie]
+  unc_m2p_remote_p2p_shar_returned.agent_1
+       [Remote P2P Shared Credits Returned : Agent1. Unit: uncore_m2pcie]
+  unc_m2p_remote_p2p_shar_returned.agent_2
+       [Remote P2P Shared Credits Returned : Agent2. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_returned.agent_0
+       [Remote Shared P2P Credit Returned to credit ring : Agent0. Unit:
+  unc_m2p_remote_shar_p2p_crd_returned.agent_1
+       [Remote Shared P2P Credit Returned to credit ring : Agent1. Unit:
+  unc_m2p_remote_shar_p2p_crd_returned.agent_2
+       [Remote Shared P2P Credit Returned to credit ring : Agent2. Unit:
+  unc_m2p_remote_shar_p2p_crd_taken_0.upi0_drs
+       [Remote Shared P2P Credit Taken - 0 : UPI0 - DRS. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_0.upi0_ncb
+       [Remote Shared P2P Credit Taken - 0 : UPI0 - NCB. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_0.upi0_ncs
+       [Remote Shared P2P Credit Taken - 0 : UPI0 - NCS. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_0.upi1_drs
+       [Remote Shared P2P Credit Taken - 0 : UPI1 - DRS. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_0.upi1_ncb
+       [Remote Shared P2P Credit Taken - 0 : UPI1 - NCB. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_0.upi1_ncs
+       [Remote Shared P2P Credit Taken - 0 : UPI1 - NCS. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_1.upi2_drs
+       [Remote Shared P2P Credit Taken - 1 : UPI2 - DRS. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_1.upi2_ncb
+       [Remote Shared P2P Credit Taken - 1 : UPI2 - NCB. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_taken_1.upi2_ncs
+       [Remote Shared P2P Credit Taken - 1 : UPI2 - NCS. Unit: uncore_m2pcie]
+  unc_m2p_remote_shar_p2p_crd_wait_0.upi0_drs
+       [Waiting on Remote Shared P2P Credit - 0 : UPI0 - DRS. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_0.upi0_ncb
+       [Waiting on Remote Shared P2P Credit - 0 : UPI0 - NCB. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_0.upi0_ncs
+       [Waiting on Remote Shared P2P Credit - 0 : UPI0 - NCS. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_0.upi1_drs
+       [Waiting on Remote Shared P2P Credit - 0 : UPI1 - DRS. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_0.upi1_ncb
+       [Waiting on Remote Shared P2P Credit - 0 : UPI1 - NCB. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_0.upi1_ncs
+       [Waiting on Remote Shared P2P Credit - 0 : UPI1 - NCS. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_1.upi2_drs
+       [Waiting on Remote Shared P2P Credit - 1 : UPI2 - DRS. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_1.upi2_ncb
+       [Waiting on Remote Shared P2P Credit - 1 : UPI2 - NCB. Unit:
+  unc_m2p_remote_shar_p2p_crd_wait_1.upi2_ncs
+       [Waiting on Remote Shared P2P Credit - 1 : UPI2 - NCS. Unit:
+  tma_icache_misses
+  tma_icache_misses
+  tma_mem_latency
+        (data transfers and coherency updates across processors)]
+  tma_mem_bandwidth
+  tma_info_memory_mix_offcore_read_any_pki
+       [Offcore requests (L2 cache miss) per kilo instruction for demand RFOs]
+        fraction the CPU has retired aggregated across all vector widths]
+  tma_info_frontend_icache_miss_latency
+  tma_icache_misses
+  tma_info_frontend_icache_miss_latency
+        fraction the CPU has retired aggregated across all vector widths]
+        to local- and remote-socket]
+  tma_info_memory_soc_r2c_offcore_bw
+  tma_icache_misses
+  tma_info_frontend_icache_miss_latency
+        (data transfers and coherency updates across processors)]
+        to local- and remote-socket]
+  tma_info_memory_soc_r2c_offcore_bw
+  tma_info_system_mem_parallel_reads
+  tma_info_system_mem_read_latency
+MemOffcore: [Grouping from Top-down Microarchitecture Analysis Metrics spreadsheet]
+  tma_info_system_mem_dram_read_latency
+  tma_info_system_mem_pmm_read_latency
+        to local- and remote-socket]
+  tma_info_memory_soc_r2c_offcore_bw
+  tma_info_system_mem_parallel_reads
+  tma_mem_bandwidth
+  tma_info_system_mem_dram_read_latency
+  tma_info_system_mem_pmm_read_latency
+  tma_info_system_mem_read_latency
+  tma_mem_latency
+  tma_info_memory_latency_load_l3_miss_latency
+Offcore: [Grouping from Top-down Microarchitecture Analysis Metrics spreadsheet]
+        (data transfers and coherency updates across processors)]
+       [Offcore requests (L2 cache miss) per kilo instruction for demand RFOs]
+  tma_info_memory_latency_load_l3_miss_latency
+  tma_info_memory_mix_offcore_mwrite_any_pki
+  tma_info_memory_mix_offcore_read_any_pki
+  tma_info_memory_mix_offcore_read_l3m_pki
+  tma_mem_bandwidth
+  tma_mem_latency
+  tma_remote_cache
+        was handling loads from remote cache in other sockets including
+       [Instructions Per Cycle across hyper-threads (per physical core)]
+       [Instructions Per Cycle across hyper-threads (per physical core)]
+  tma_info_system_mem_dram_read_latency
+  tma_info_system_mem_pmm_read_latency
+       [Cross-socket Ultra Path Interconnect (UPI) data transmit bandwidth for
+  tma_remote_cache
+        was handling loads from remote cache in other sockets including
+  tma_remote_mem
+        was handling loads from remote memory]
+Snoop: [Grouping from Top-down Microarchitecture Analysis Metrics spreadsheet]
+  tma_remote_cache
+        was handling loads from remote cache in other sockets including
+  tma_remote_mem
+        was handling loads from remote memory]
+        to local- and remote-socket]
+  tma_info_memory_soc_r2c_offcore_bw
+  tma_info_system_mem_dram_read_latency
+  tma_info_system_mem_parallel_reads
+  tma_info_system_mem_pmm_read_latency
+  tma_info_system_mem_read_latency
+       [Cross-socket Ultra Path Interconnect (UPI) data transmit bandwidth for
+       [Instructions Per Cycle across hyper-threads (per physical core)]
+  tma_icache_misses
+        fraction the CPU has retired aggregated across all vector widths]
+  tma_mem_bandwidth
+  tma_mem_latency
+        accesses - load that cross 64-byte cache line boundary]
+  tma_remote_cache
+        was handling loads from remote cache in other sockets including
+  tma_remote_mem
+        was handling loads from remote memory]
+io_bandwidth_read_remote:
+  io_bandwidth_read_remote
+        that are requesting memory from a remote CPU socket]
+io_bandwidth_write_remote:
+  io_bandwidth_write_remote
+        that are writing memory to a remote CPU socket]
+llc_demand_data_read_miss_latency_for_remote_requests:
+  llc_demand_data_read_miss_latency_for_remote_requests
+        (read memory access) addressed to remote memory in nano seconds]
+llc_demand_data_read_miss_to_pmem_latency:
+  llc_demand_data_read_miss_to_pmem_latency
+llc_miss_remote_memory_bandwidth_read:
+  llc_miss_remote_memory_bandwidth_read
+        (LLC) and go to remote memory]
+llc_miss_remote_memory_bandwidth_write:
+  llc_miss_remote_memory_bandwidth_write
+        (LLC) and go to remote memory]
+numa_reads_addressed_to_remote_dram:
+  numa_reads_addressed_to_remote_dram
+       [Memory reads that miss the last level cache (LLC) addressed to remote
+pmem_memory_bandwidth_read:
+  pmem_memory_bandwidth_read
+pmem_memory_bandwidth_total:
+  pmem_memory_bandwidth_total
+pmem_memory_bandwidth_write:
+  pmem_memory_bandwidth_write
+       [Instructions Per Cycle across hyper-threads (per physical core)]
+  tma_icache_misses
+        fraction the CPU has retired aggregated across all vector widths]
+  tma_mem_bandwidth
+  tma_mem_latency
+        accesses - load that cross 64-byte cache line boundary]
+  tma_remote_cache
+        was handling loads from remote cache in other sockets including
+  tma_remote_mem
+        was handling loads from remote memory]
+  tma_mem_bandwidth
+  tma_mem_latency
+  tma_icache_misses
+        fraction the CPU has retired aggregated across all vector widths]
+        fraction the CPU has retired aggregated across all vector widths]
+  tma_mem_bandwidth
+  tma_mem_latency
+  tma_remote_cache
+        was handling loads from remote cache in other sockets including
+        (data transfers and coherency updates across processors)]
+        accesses - load that cross 64-byte cache line boundary]
+tma_mem_bandwidth_group: [Metrics contributing to tma_mem_bandwidth category]
+tma_mem_latency_group: [Metrics contributing to tma_mem_latency category]
+  tma_remote_cache
+        was handling loads from remote cache in other sockets including
+  tma_remote_mem
+        was handling loads from remote memory]

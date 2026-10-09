@@ -1,0 +1,40 @@
+            Trace Event Information              
+=================================================
+  Total records                     :  193812128
+  Locked Load/Store Operations      :   33393893
+  Load Operations                   :   63473574
+  Loads - uncacheable               :          0
+  Loads - IO                        :          0
+  Loads - Miss                      :        126
+  Loads - no mapping                :          0
+  Load Fill Buffer Hit              :   11221178
+  Load L1D hit                      :   45759366
+  Load L2D hit                      :    2084527
+  Load LLC hit                      :    4055642
+  Load Local HITM                   :    3404223
+  Load Remote HITM                  :     217070
+  Load Remote HIT                   :          0
+  Load Local DRAM                   :       7226
+  Load Remote DRAM                  :     345509
+  Load MESI State Exclusive         :     345509
+  Load MESI State Shared            :       7226
+  Load LLC Misses                   :     569805
+  Load access blocked by data       :    2404972
+  Load access blocked by address    :    7176921
+  Load HIT Local Peer               :          0
+  Load HIT Remote Peer              :          0
+  LLC Misses to Local DRAM          :        1.3%
+  LLC Misses to Remote DRAM         :       60.6%
+  LLC Misses to Remote cache (HIT)  :        0.0%
+  LLC Misses to Remote cache (HITM) :       38.1%
+  Store Operations                  :   71973861
+  Store - uncacheable               :          0
+  Store - no mapping                :          0
+  Store L1D Hit                     :   68192916
+  Store L1D Miss                    :          0
+  Store No available memory level   :          0
+  No Page Map Rejects               :   12688192
+  Unable to parse data source       :   58364693
+
+=================================================
+    Global Shared Cache Line Event Information   
