@@ -20,6 +20,11 @@
 #       its next matching allocation with nothing able to resume it.
 set -uo pipefail
 
+if ! command -v python3 >/dev/null 2>&1; then
+	echo "SKIP: python3 not installed (JSON assertions need it)"
+	exit 77
+fi
+
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 CTL=$ROOT/tools/umemctl

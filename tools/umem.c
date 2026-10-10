@@ -41,6 +41,7 @@
  *
  * Environment:
  *   UMEM_TOOL_GDB=/path/to/gdb    override the gdb binary
+ *   UMEM_TOOL_PYTHON=/path/to/py  override python3 used for --dump
  *
  * Notes:
  *   Live pid mode ptraces the target, pauses it for the duration of the
@@ -90,7 +91,8 @@ usage(int code)
 "  snapshot <path>\n"
 "\n"
 "Environment:\n"
-"  UMEM_TOOL_GDB=/path/to/gdb    override the gdb binary\n");
+"  UMEM_TOOL_GDB=/path/to/gdb    override the gdb binary\n"
+"  UMEM_TOOL_PYTHON=/path/to/py  override python3 for --dump\n");
 	exit(code);
 }
 
@@ -431,6 +433,37 @@ main(int argc, char **argv)
 			ra[k++] = args[j];
 		ra[k] = NULL;
 		execv(reader, ra);
+		/*
+		 * execv can fail with ENOENT even though `reader` exists and is
+		 * executable (we just checked with access(X_OK)): the kernel
+		 * reports ENOENT when the script's INTERPRETER is missing, and
+		 * umem_dump_reader starts "#!/usr/bin/env python3".  A build
+		 * sandbox or a minimal image has no /usr/bin/env, so the error
+		 * names this file while the absent one is the interpreter --
+		 * misleading enough that it was read as a missing reader.
+		 *
+		 * Retry through python3 from PATH, which needs no /usr/bin/env.
+		 * UMEM_TOOL_PYTHON overrides, matching UMEM_TOOL_GDB.
+		 */
+		if (errno == ENOENT) {
+			const char *py = getenv("UMEM_TOOL_PYTHON");
+			if (py == NULL)
+				py = "python3";
+			ra[0] = (char *)py;
+			char **pa = calloc((size_t)nargs + 6, sizeof (char *));
+			if (pa == NULL)
+				die("out of memory");
+			int m = 0;
+			pa[m++] = (char *)py;
+			pa[m++] = reader;
+			pa[m++] = "--dump";
+			pa[m++] = (char *)dump;
+			pa[m++] = (char *)cmd;
+			for (int j = 0; j < nargs; j++)
+				pa[m++] = args[j];
+			pa[m] = NULL;
+			execvp(py, pa);
+		}
 		die("failed to exec %s: %s", reader, strerror(errno));
 	}
 

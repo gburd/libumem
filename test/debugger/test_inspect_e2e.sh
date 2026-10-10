@@ -21,6 +21,15 @@ if [[ ! -x $TOOL ]]; then
 	echo "FAIL: $TOOL not found / not executable"
 	exit 1
 fi
+# The JSON assertions below are written in python3.  Skip rather than fail
+# when it is absent: a sandboxed or minimal build environment legitimately
+# has no python3, and the allocator is not what is under test here. 77 is
+# automake's SKIP status (exit 0 would report a false PASS).
+if ! command -v python3 >/dev/null 2>&1; then
+	echo "SKIP: python3 not installed (JSON assertions need it)"
+	exit 77
+fi
+
 if [[ ! -x $ROOT/test/test_inspect_live ]]; then
 	echo "FAIL: $ROOT/test/test_inspect_live not built (run make)"
 	exit 1

@@ -1,0 +1,164 @@
+.\" Copyright (c) 2026 libumem contributors.
+.\" The contents of this file are subject to the terms of the Common
+.\" Development and Distribution License (the "License").  You may not use
+.\" this file except in compliance with the License.  See OPENSOLARIS.LICENSE
+.\" in the source distribution for the full text.
+.TH LIBUMEM 3 "2026-10" "libumem" "Library Functions"
+.SH NAME
+libumem \- userspace slab memory allocator with debugging facilities
+.SH SYNOPSIS
+.nf
+.B #include <umem.h>
+.PP
+.B cc
+.I file.c
+.B \-lumem
+.fi
+.PP
+Or, without rebuilding the program:
+.PP
+.RS
+.EX
+LD_PRELOAD=\fIPREFIX\fR/lib/libumem_malloc.so ./myprog
+.EE
+.RE
+.SH DESCRIPTION
+.B libumem
+is the userspace slab allocator first shipped in Solaris 9, now the default
+allocator on Solaris and illumos, ported to Linux, Windows and BSD-family
+systems.  It provides the usual allocation entry points, an object-cache
+interface for fixed-size objects, and \(em the reason most people reach for
+it \(em facilities for finding memory bugs in a running program.
+.PP
+This page is a map.  Each area below has its own page.
+.SS Allocating
+.BR umem_alloc (3)
+covers
+.BR umem_alloc (),
+.BR umem_zalloc (),
+.BR umem_free ()
+and the
+.B UMEM_
+flags.
+.BR umem_cache_create (3)
+covers the object-cache interface for fixed-size objects with optional
+constructors and destructors.
+.BR umem_hooks (3)
+covers the allocation hooks.
+.SS Debugging
+.BR umem_debug (3)
+is the page to read when hunting a bug.  It documents the
+.B UMEM_DEBUG
+and
+.B UMEM_OPTIONS
+environment variables and what each mode costs.  A sketch:
+.PP
+.RS
+.TP
+.B UMEM_DEBUG=default
+audit + contents + guards; the usual choice
+.TP
+.B UMEM_DEBUG=audit
+record an allocation stack per buffer
+.TP
+.B UMEM_DEBUG=guards
+redzones either side of each buffer
+.TP
+.BI UMEM_DEBUG=firewall= N
+VM-backed guard pages for buffers over
+.I N
+bytes
+.TP
+.B UMEM_DEBUG=lite
+cheap subset, usable in production
+.TP
+.B UMEM_OPTIONS=tcache=0
+disable the per-thread cache
+.RE
+.PP
+Two things catch people out.
+.B UMEM_DEBUG
+is read during allocator initialisation, so it must be set
+.I before
+the process starts \(em exporting it later does nothing.  And when hunting a
+.I leak,
+set
+.B UMEM_OPTIONS=tcache=0
+as well: with the per-thread cache enabled a freed buffer can still be held
+in a thread-local magazine, where it is reported as
+.B CACHED
+rather than freed, which makes leak output ambiguous.
+.SS Inspecting a live process
+.BR umem (1)
+is the command-line tool:
+.B umem --pid
+.I PID
+.BR status ,
+.BR findleaks ,
+.BR walk ,
+.BR whatis ,
+.BR bufctl ,
+.BR log ,
+.BR snapshot .
+.BR umem_inspect (3)
+documents the programmatic interface behind it.
+.PP
+The same commands are available inside a debugger.  See
+.BR umem (1),
+section FILES, for the installed locations of the GDB and LLDB modules and
+how to load them; in short:
+.PP
+.RS
+.EX
+gdb  \-p \fIPID\fR \-ex 'source \fIPREFIX\fR/share/umem/debugger/gdb/umem_gdb.py'
+lldb \-p \fIPID\fR \-o  'command script import \fIPREFIX\fR/share/umem/debugger/lldb/umem_lldb.py'
+.EE
+.RE
+.PP
+.BR umem_debugging (7)
+is the longer narrative treatment of the whole debugging story.
+.SH FILES
+.I PREFIX
+is the configure prefix
+.RI ( /usr/local
+by default).  On a Nix or Homebrew install it is the package's own
+store/cellar directory, so resolve it with
+.B pkg\-config \-\-variable=prefix libumem
+rather than assuming.
+.TP
+.I PREFIX/lib/libumem.so
+The allocator, for programs that link
+.B \-lumem
+directly.
+.TP
+.I PREFIX/lib/libumem_malloc.so
+.BR malloc (3)
+interposer, for
+.B LD_PRELOAD
+use against a program that was not built for libumem.
+.TP
+.I PREFIX/lib/pkgconfig/libumem.pc
+pkg-config metadata.  Also the reliable way to find
+.I PREFIX
+itself.
+.PP
+See
+.BR umem (1),
+section FILES, for the tools and debugger modules.
+.SH NOTES
+Do not
+.B LD_PRELOAD
+the interposer into a language runtime you care about \(em Node, Python and
+Electron have all been seen to crash under an interposed debug allocator.
+Preload it into the program under investigation, not into your toolchain.
+.SH SEE ALSO
+.BR umem (1),
+.BR umem_alloc (3),
+.BR umem_cache_create (3),
+.BR umem_debug (3),
+.BR umem_hooks (3),
+.BR umem_inspect (3),
+.BR umem_debugging (7),
+.BR gdb (1),
+.BR lldb (1),
+.BR malloc (3)

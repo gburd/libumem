@@ -517,7 +517,7 @@ UMEM_DEBUG=audit UMEM_LOGGING=transaction=10M ./myapp
 umem --pid $! findleaks
 umem --pid $! status
 # Or attach a debugger:
-(gdb) source /path/to/tools/gdb/umem_gdb.py
+(gdb) source PREFIX/share/umem/debugger/gdb/umem_gdb.py
 (gdb) umem findleaks
 (gdb) umem status
 .fi
@@ -614,7 +614,7 @@ Load the extension with:
 .sp
 .in +2
 .nf
-(gdb) source /path/to/umem_gdb.py
+(gdb) source PREFIX/share/umem/debugger/gdb/umem_gdb.py
 .fi
 .in -2
 .sp
@@ -684,7 +684,7 @@ Load the extension with:
 .sp
 .in +2
 .nf
-(lldb) command script import /path/to/umem_lldb.py
+(lldb) command script import PREFIX/share/umem/debugger/lldb/umem_lldb.py
 .fi
 .in -2
 .sp
@@ -696,6 +696,12 @@ These extensions provide runtime inspection of umem state. For detailed
 allocation information including stack traces, use with \fBUMEM_DEBUG=audit\fR.
 For complete documentation, see \fBumem_inspect\fR(3),
 \fBumem_debugging\fR(7), and \fBtools/DEBUGGING.md\fR in the source tree.
+.PP
+\fIPREFIX\fR above is the configure prefix (\fI/usr/local\fR by default).
+On a Nix or Homebrew install it is the package's own store/cellar directory;
+resolve it with \fBpkg\-config \-\-variable=prefix libumem\fR rather than
+assuming.  See \fBumem\fR(1) \(em section FILES \(em for the full list of
+installed debugger files.
 .SS "Performance Impact"
 .sp
 .LP
@@ -764,7 +770,7 @@ UMEM_DEBUG=audit ./myapp
 # Either use the umem(1) tool against the running process:
 umem --pid $(pgrep myapp) findleaks
 # Or attach a debugger:
-(gdb) source /path/to/tools/gdb/umem_gdb.py
+(gdb) source PREFIX/share/umem/debugger/gdb/umem_gdb.py
 (gdb) umem findleaks
 (gdb) umem status
 .fi

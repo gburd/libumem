@@ -9,6 +9,11 @@ set -eu
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 
+if ! command -v python3 >/dev/null 2>&1; then
+	echo "SKIP: python3 not installed (JSON assertions need it)"
+	exit 77
+fi
+
 if ! command -v lldb >/dev/null 2>&1; then
 	echo "SKIP: lldb not installed"
 	exit 0

@@ -235,17 +235,44 @@ permitted).  Required for
 .B umem log
 to return any records.  ~5% allocation overhead.
 .SH FILES
+Paths below are given as installed.
+.I PREFIX
+is the configure prefix (\fI/usr/local\fR by default); on a Nix or
+Homebrew install it is the package's own store/cellar directory, so resolve
+it with
+.B pkg-config --variable=prefix libumem
+rather than assuming.
 .TP
-.I tools/gdb/umem_gdb.py
+.I PREFIX/share/umem/debugger/gdb/umem_gdb.py
 GDB Python extension; sourced automatically by
 .BR umem .
-Can also be sourced interactively in
-.BR gdb (1).
+To use it directly in an interactive session:
+.PP
+.RS
+.EX
+gdb \-p \fIPID\fR \-ex 'source \fIPREFIX\fR/share/umem/debugger/gdb/umem_gdb.py'
+.EE
+.RE
+.PP
+It registers a
+.B umem
+command prefix; run
+.B umem help
+inside GDB for the subcommand list.
 .TP
-.I tools/lldb/umem_lldb.py
-LLDB equivalent; same command set.
+.I PREFIX/share/umem/debugger/lldb/umem_lldb.py
+LLDB equivalent, same command set:
+.PP
+.RS
+.EX
+lldb \-p \fIPID\fR \-o 'command script import \fIPREFIX\fR/share/umem/debugger/lldb/umem_lldb.py'
+.EE
+.RE
+.PP
+Most LLDB subcommands call into the library in the live process, so they
+need a running target rather than a core file.
 .TP
-.I tools/umem_dump_reader
+.I PREFIX/bin/umem_dump_reader
 Python reader for v2 binary snapshots (\fI.ums\fR files).  Invoked by
 .B umem
 in

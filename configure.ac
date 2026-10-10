@@ -4,6 +4,23 @@ AC_CONFIG_MACRO_DIRS([m4])
 
 AC_PROG_CC
 
+# Absolute path to bash, for SH_LOG_COMPILER in Makefile.am.
+#
+# The .sh tests are bash scripts shipped executable with
+# '#!/usr/bin/env bash'.  Letting the kernel honour that shebang works on a
+# normal system but FAILS CLOSED in a sandboxed build (the Nix builder, and
+# anything else with a minimal filesystem) because /usr/bin/env does not
+# exist there: every such test then exits 127 instantly, before running a
+# line of its own logic.
+#
+# Running them through $(SHELL) is not the answer either -- that is /bin/sh,
+# which is dash on Debian/Ubuntu, where the scripts' bash-only syntax breaks
+# for reasons unrelated to the allocator.  So find bash explicitly and use
+# that.  If bash is genuinely absent, UMEM_BASH stays empty and Makefile.am
+# falls back to the shebang, preserving the old behaviour rather than
+# hard-failing configure.
+AC_PATH_PROG([UMEM_BASH], [bash], [])
+
 # Require C17 standard (ISO/IEC 9899:2018)
 # Matches PostgreSQL v16+ requirements
 # Try -std=c17 first, fall back to -std=c11

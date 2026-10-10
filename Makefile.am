@@ -874,8 +874,11 @@ dbg_gdb_DATA = tools/gdb/umem_gdb.py
 dbg_lldb_DATA = tools/lldb/umem_lldb.py
 
 man1_MANS = umem.1
-man3_MANS = umem_alloc.3 umem_cache_create.3 umem_debug.3 umem_inspect.3 \
-	umem_hooks.3
+# libumem.3 is the entry point: `man libumem` used to fail outright, because
+# no page NAMEd itself libumem.  It is a map to the other pages, not a
+# duplicate of them.
+man3_MANS = libumem.3 umem_alloc.3 umem_cache_create.3 umem_debug.3 \
+	umem_inspect.3 umem_hooks.3
 man7_MANS = umem_debugging.7
 EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	$(man1_MANS) $(man3_MANS) $(man7_MANS) \
@@ -1307,12 +1310,24 @@ test_limits_probe_reclaim_glibc_CPPFLAGS = $(LIMITS_CPPFLAGS) -DLIM_GLIBC
 
 TEST_EXTENSIONS = .sh
 # The .sh tests are '#!/usr/bin/env bash' scripts using bash-only syntax, and
-# they are shipped executable.  Let the kernel honour their shebang: with an
-# empty compiler automake invokes the script itself.  This used to be
-# $(SHELL), which forced them through /bin/sh -- dash on Debian/Ubuntu --
-# where bash-only constructs fail for reasons that have nothing to do with
-# the allocator.
-SH_LOG_COMPILER =
+# they are shipped executable.
+#
+# This must NOT be $(SHELL): that is /bin/sh, which is dash on
+# Debian/Ubuntu, where the scripts' bash-only constructs fail for reasons
+# that have nothing to do with the allocator.
+#
+# Nor can it be empty.  An empty compiler makes automake invoke the script
+# itself and rely on the kernel honouring '#!/usr/bin/env bash' -- which
+# FAILS CLOSED in a sandboxed build, because /usr/bin/env does not exist
+# there.  Measured in a Nix builder: all four .sh entries in TESTS exited
+# 127 in 0s, before running a line of their own logic, while the five C
+# tests passed.  That is what made `make check` look like it "hangs" under
+# Nix; it does not hang, it cannot start.
+#
+# So use the absolute bash that configure found (AC_PATH_PROG in
+# configure.ac).  If bash is genuinely absent UMEM_BASH is empty and this
+# degrades to the old shebang behaviour rather than breaking the build.
+SH_LOG_COMPILER = $(UMEM_BASH)
 
 test_test_inspect_SOURCES = test/test_inspect.c
 test_test_inspect_LDADD = libumem.la
