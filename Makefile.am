@@ -138,6 +138,7 @@ libumem_la_SOURCES = init_lib.c \
 			atomic.h \
 			pal/pal.h \
 			pal/pal_concept.h \
+			pal/pal_mem.h \
 			pal/pal_posix.c \
 			aal/aal.h \
 			aal/aal_concept.h \

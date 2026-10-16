@@ -494,6 +494,7 @@
 #endif
 
 #include "misc.h"
+#include "pal/pal_mem.h"
 
 #define UMEM_VMFLAGS(umflag)    (VM_NOSLEEP)
 
@@ -5258,14 +5259,7 @@ umem_slab_reclaim(umem_cache_t *cp, umem_slab_t *sp)
 	size_t reclaim_size = (size_t)(end - start);
 	void *reclaim_base = (void *)start;
 
-#if defined(_WIN32)
-	(void) VirtualAlloc(reclaim_base, reclaim_size,
-	    MEM_RESET, PAGE_READWRITE);
-#elif defined(__FreeBSD__)
-	(void) madvise(reclaim_base, reclaim_size, MADV_FREE);
-#else
-	(void) madvise(reclaim_base, reclaim_size, MADV_DONTNEED);
-#endif
+	umem_pal_decommit(reclaim_base, reclaim_size, UMEM_PAL_DECOMMIT_LAZY);
 }
 
 /*
@@ -6814,9 +6808,7 @@ umem_init(void)
 		 */
 		if (ncpus_map > UMEM_MAX_DEPOT_CPUS) {
 			size_t nbytes = (size_t)ncpus_map * sizeof (int);
-			void *tbl = mmap(NULL, nbytes,
-			    PROT_READ | PROT_WRITE,
-			    MAP_PRIVATE | MAP_ANON, -1, 0);
+			void *tbl = umem_pal_map_rw(nbytes);
 			if (tbl != MAP_FAILED) {
 				umem_cpu_node = (int *)tbl;
 				umem_cpu_node_ncpus = ncpus_map;

@@ -48,47 +48,15 @@
 #endif
 
 #include "vmem_base.h"
+#include "pal/pal_mem.h"
 
 /*
- * No PROT_EXEC: libumem allocates data memory, not executable code.
- * The original Solaris code had PROT_EXEC for genasm (runtime code
- * generation in the heap), which has been removed.
- * W^X enforcement on modern OSes (FreeBSD, OpenBSD) rejects RWX mappings.
+ * The reserve/commit/decommit/release syscalls and their per-OS flag sets now
+ * live in pal/pal_mem.h behind the umem_pal_* contract (docs/design/PAL.md).
+ * This file keeps the arena policy -- the guard-vs-dontneed decision, the
+ * errno discipline, and the vmem bookkeeping -- which is what is specific to
+ * libumem's heap, not to the OS.
  */
-#ifndef _WIN32
-#define	ALLOC_PROT	PROT_READ | PROT_WRITE
-#define	FREE_PROT	PROT_NONE
-#endif
-
-/*
- * MAP_FAILED portability.
- * On Windows without sys/mman.h, define MAP_FAILED for the fallback
- * code path in vmem_mmap_top_alloc.
- */
-#ifndef MAP_FAILED
-#define	MAP_FAILED	((void *)-1)
-#endif
-
-#ifndef _WIN32
-/*
- * MAP_ANON / MAP_ANONYMOUS portability.
- * POSIX does not define either; MAP_ANONYMOUS is the Linux/glibc name,
- * MAP_ANON is the BSD name.  Most systems define both as aliases.
- */
-#if !defined(MAP_ANON) && defined(MAP_ANONYMOUS)
-#define	MAP_ANON	MAP_ANONYMOUS
-#endif
-
-#define	ALLOC_FLAGS	MAP_PRIVATE | MAP_ANON
-/*
- * MAP_NORESERVE is not available on all platforms (e.g., FreeBSD).
- * Define it to 0 if missing so it has no effect in the flags bitmask.
- */
-#ifndef MAP_NORESERVE
-#define	MAP_NORESERVE	0
-#endif
-#define	FREE_FLAGS	MAP_PRIVATE | MAP_ANON | MAP_NORESERVE
-#endif /* !_WIN32 */
 
 #ifdef MAP_ALIGN
 #define	CHUNKSIZE	(64*1024)	/* 64 kilobytes */
@@ -105,20 +73,16 @@ vmem_mmap_alloc(vmem_t *src, size_t size, int vmflags)
 	int old_errno = errno;
 
 	ret = vmem_alloc(src, size, vmflags);
-#ifndef _WIN32
-	if (ret != NULL &&
-	    mmap(ret, size, ALLOC_PROT, ALLOC_FLAGS | MAP_FIXED, -1, 0) ==
-	    MAP_FAILED) {
+	if (ret != NULL && umem_pal_commit(ret, size) != 0) {
 		vmem_free(src, ret, size);
 		vmem_reap();
 
 		ASSERT((vmflags & VM_NOSLEEP) == VM_NOSLEEP);
 		/*
-		 * Failure: leave errno as mmap() set it.  See below.
+		 * Failure: leave errno as the commit (mmap) set it.  See below.
 		 */
 		return (NULL);
 	}
-#endif
 
 	/*
 	 * Restore errno ONLY on success.  A successful allocation must not
@@ -186,16 +150,11 @@ static void
 vmem_mmap_free(vmem_t *src, void *addr, size_t size)
 {
 	int old_errno = errno;
-#ifdef _WIN32
-	VirtualFree(addr, size, MEM_RELEASE);
-#else
 	if (vmem_mmap_guard_min != 0 && size >= vmem_mmap_guard_min) {
-		(void) mmap(addr, size, FREE_PROT, FREE_FLAGS | MAP_FIXED,
-		    -1, 0);
+		umem_pal_decommit(addr, size, UMEM_PAL_DECOMMIT_GUARD);
 	} else {
-		(void) madvise(addr, size, MADV_DONTNEED);
+		umem_pal_decommit(addr, size, UMEM_PAL_DECOMMIT_DONTNEED);
 	}
-#endif
 	vmem_free(src, addr, size);
 	errno = old_errno;
 }
@@ -216,14 +175,10 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 	/*
 	 * Need to grow the heap
 	 */
-#ifdef _WIN32
-	buf = VirtualAlloc(NULL, size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-	if (buf == NULL) buf = MAP_FAILED;
-#elif defined(MAP_ALIGN)
-	buf = mmap((void*)CHUNKSIZE, size, FREE_PROT, FREE_FLAGS | MAP_ALIGN,
-			-1, 0);
+#if defined(MAP_ALIGN) && !defined(_WIN32)
+	buf = umem_pal_reserve_aligned(size, CHUNKSIZE);
 #else
-	buf = mmap(0, size, FREE_PROT, FREE_FLAGS, -1, 0);
+	buf = umem_pal_reserve(size);
 #endif
 
 	if (buf != MAP_FAILED) {
@@ -231,11 +186,7 @@ vmem_mmap_top_alloc(vmem_t *src, size_t size, int vmflags)
 		if (ret != NULL)
 			return (ret);
 		else {
-#ifdef _WIN32
-			(void) VirtualFree(buf, 0, MEM_RELEASE);
-#else
-			(void) munmap(buf, size);
-#endif
+			umem_pal_release(buf, size);
 			errno = old_errno;
 			return (NULL);
 		}

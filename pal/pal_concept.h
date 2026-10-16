@@ -47,13 +47,26 @@ docs/porting/README.md and docs/design/PAL.md."
  *    homes (vmem_base.h for the mmap arena, misc.h, umem_base.h); this is the
  *    port contract, enforced by the smoke test which references each one.
  *
- *  Memory (vmem_mmap.c / pal_posix mmap arena):
+ *  Memory (pal/pal_mem.h static inlines; byte-for-byte the syscalls the
+ *  scattered sites emitted before the carve-out):
+ *    void *umem_pal_reserve(size_t);
+ *        -- reserve address space, not yet usable (PROT_NONE, MAP_NORESERVE);
+ *           the heap-growth path in vmem_mmap_top_alloc().
+ *    void *umem_pal_reserve_aligned(size_t, size_t align);
+ *        -- OS-aligned reservation (illumos MAP_ALIGN); exists only where
+ *           UMEM_PAL_STRONG_ALIGN, else the core over-reserves and trims.
+ *    int   umem_pal_commit(void *, size_t);
+ *        -- make a reservation usable (MAP_FIXED RW); vmem_mmap_alloc().
+ *    void  umem_pal_decommit(void *, size_t, int mode);
+ *        -- return pages to the OS: GUARD (PROT_NONE), DONTNEED, or LAZY
+ *           (MADV_FREE where present); vmem_mmap_free() and umem_slab_reclaim.
+ *    void  umem_pal_release(void *, size_t);
+ *        -- munmap the span; vmem_mmap_top_alloc() rollback.
+ *    void *umem_pal_map_rw(size_t);
+ *        -- one-shot anonymous RW map (no MAP_FIXED); umem.c CPU->node table.
  *    vmem_t *vmem_mmap_arena(vmem_alloc_t **, vmem_free_t **);
- *        -- reserve/commit/decommit/release of the mmap heap: the PROT_NONE
- *           reservation (umem_pal_reserve), MAP_FIXED commit (umem_pal_commit),
- *           MADV_DONTNEED/PROT_NONE decommit (umem_pal_decommit), munmap
- *           (umem_pal_release).  These are internal statics in vmem_mmap.c;
- *           the arena is the published entry point.
+ *        -- the published heap arena entry point, wiring the above into the
+ *           reserve/commit/decommit/release state machine (vmem_base.h).
  *    size_t umem_pal_page_size(void);
  *        -- sysconf(_SC_PAGESIZE), may exceed the hardware page (ppc 64K).
  *

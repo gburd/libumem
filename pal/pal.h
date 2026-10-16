@@ -92,9 +92,19 @@ unsigned int umem_pal_features(void);
 
 /*
  * Memory (the core demand on the OS).  The reserve/commit/decommit/release
- * state machine lives in vmem_mmap.c and is reached through this arena entry
- * point; it is on NO fast path.  Declared in vmem_base.h as
- * vmem_mmap_arena(); named here as the PAL memory contract.
+ * state machine is the PAL memory contract, implemented as static inlines in
+ * pal/pal_mem.h so the carve-out adds no indirection a hotpath A/B could
+ * catch (none of these is on the malloc/free fast path -- the PTC-hit path
+ * makes no syscall -- but they stay inline so that if one ever reached the
+ * fast path it would cost nothing).  vmem_mmap.c reaches the heap through
+ * these; umem.c's slab-page reclaim and CPU->node table map do too.
+ *
+ *   void *umem_pal_reserve(size_t);              -- PROT_NONE reservation
+ *   void *umem_pal_reserve_aligned(size_t, size_t); -- MAP_ALIGN platforms
+ *   int   umem_pal_commit(void *, size_t);       -- MAP_FIXED RW commit
+ *   void  umem_pal_decommit(void *, size_t, int);-- GUARD/DONTNEED/LAZY
+ *   void  umem_pal_release(void *, size_t);      -- munmap
+ *   void *umem_pal_map_rw(size_t);               -- one-shot anon RW map
  */
 size_t umem_pal_page_size(void);
 
@@ -115,6 +125,7 @@ void umem_pal_abort(void) __attribute__((__noreturn__));
 }
 #endif
 
+#include "pal/pal_mem.h"
 #include "pal/pal_concept.h"
 
 #endif /* _UMEM_PAL_H */

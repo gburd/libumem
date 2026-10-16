@@ -116,6 +116,42 @@ main(void)
 			rc = 1;
 	}
 
+	/*
+	 * PAL memory contract (pal/pal_mem.h): reserve/commit/decommit/release
+	 * are static inlines, so exercise a tiny self-contained one-page
+	 * round-trip to require every symbol and confirm it works.  This does
+	 * NOT touch the allocator -- it maps and unmaps its own page.
+	 */
+	{
+		size_t ps = umem_pal_page_size();
+		if (ps == 0)
+			ps = 4096;
+		void *p = umem_pal_reserve(ps);
+		if (p == MAP_FAILED) {
+			fprintf(stderr, "PAL: reserve failed\n");
+			rc = 1;
+		} else {
+			if (umem_pal_commit(p, ps) != 0) {
+				fprintf(stderr, "PAL: commit failed\n");
+				rc = 1;
+			} else {
+				*(volatile char *)p = 1;
+				umem_pal_decommit(p, ps,
+				    UMEM_PAL_DECOMMIT_DONTNEED);
+			}
+			umem_pal_release(p, ps);
+		}
+		/* umem_pal_map_rw: one-shot anon RW map, then release. */
+		void *q = umem_pal_map_rw(ps);
+		if (q == MAP_FAILED) {
+			fprintf(stderr, "PAL: map_rw failed\n");
+			rc = 1;
+		} else {
+			umem_pal_release(q, ps);
+		}
+		printf("PAL: mem reserve/commit/decommit/release OK\n");
+	}
+
 	if (rc == 0)
 		printf("PAL/AAL smoke: OK\n");
 	else
