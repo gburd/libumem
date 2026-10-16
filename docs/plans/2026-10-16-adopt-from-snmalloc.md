@@ -187,3 +187,20 @@ EC2: account is now `kiwi` -> 830118047484 (hotdog expired 2026-10-10). The
 account holds other gburd projects (noxu-bench m8id/m8gd metal, unnamed c7i) --
 NEVER touch anything not tagged Project=libumem AND the worker role. Debian
 instances only (EC2_OS=debian).
+
+## EXECUTION MODE (2026-10-16, user: implement all phases, don't check in unless critical)
+Goal restated by user: a more well-organized, maintainable, EFFICIENT slab
+allocator with all of Solaris umem's decades-proven features, modernized for
+today's high-core-count NUMA hardware -- WITHOUT re-architecting what makes it
+umem (hence items 4 and 5 dropped).
+Coordinator runs autonomously; surfaces only for a critical decision or a
+materially-wrong assumption with dramatic impact.
+
+Phase A launched (NO-EC2): @r10rules (item 0 agent-rules split), @r10docs
+(item 3 docs site + Pages), @r10eval (item 6 headline evaluation). PAL/AAL
+DESIGN (item 1) authored directly: docs/design/PAL.md (bed0e99).
+Phase B started: a PRE-refactor baseline gate (job 'basegate') is running on
+intel-lo@palci (kiwi, Debian 13) at bed0e99, so the PAL/AAL refactor's
+"behaviour-preserving" claim has a before-picture (identical gate + null A/B
+required after).
+Account: kiwi 830118047484. Only Project=libumem+role instances touched.
