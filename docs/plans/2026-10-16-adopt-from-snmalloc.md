@@ -44,6 +44,72 @@ TARGET for libumem:
 Validation owed: none (docs only). Done when the split is committed and
 AGENTS.md cross-references resolve.
 
+### Item 0 gap check
+
+Status: DONE (2026-10-16). The split landed as three files whose sum is a
+superset of the pre-split `AGENTS.md`: project-specific direction stays in
+`AGENTS.md`; generic working-style/evidence rules moved to
+`.github/copilot-instructions.md`; the build/test/benchmark runbook moved to
+`.github/skills/building_and_testing.md`. No rule was deleted. Source files
+that cite `AGENTS.md §4/§6/§7/§7a/§8/§10` still resolve: those anchors remain
+in `AGENTS.md`, with §4 and §7 keeping the libumem-specific substance plus a
+pointer to the new file. The AWS account line was updated `hotdog` -> `kiwi`
+(830118047484). All seven cross-references resolve (verified mechanically).
+
+Every rule in snmalloc's `.github/copilot-instructions.md` and
+`.github/skills/building_and_testing.md`, and where libumem now carries an
+equivalent:
+
+| # | snmalloc rule | libumem equivalent | File |
+|---|---------------|--------------------|------|
+| 1 | Read code first; keep changes focused; no unrelated renames | "Read the relevant code before... Keep changes focused" | copilot-instructions |
+| 2 | Written plan for multi-stage work; `PLAN.md`; approval | "Use a written plan... stores plans in `docs/plans/`" | copilot-instructions (Plans) |
+| 3 | Match validation to risk; baseline before broad work; use CI/origin-main when attribution unclear | "Establish a relevant baseline before broad... measure against a committed ref" | copilot-instructions |
+| 4 | Complete through validation + bounded self-review; independent review when warranted | "Finish approved work through its validation and a bounded self-review" | copilot-instructions |
+| 5 | Report incidental findings separately; challenge assumptions | "Report incidental findings separately... Challenge an instruction or an assumption" | copilot-instructions |
+| 6 | Allocator tracing via `write()` not `printf`/`message` | "Allocator tracing must use `write()`... learned in `umem_fail.c` (P5.16)" | copilot-instructions (Tracing) |
+| 7 | Verify hypotheses before a workaround | "Verify a hypothesis before implementing a workaround" | copilot-instructions |
+| 8 | Don't claim `main` broken from a local failure; check CI | "do not conclude the shared build (`master`) is broken from a local failure alone" | copilot-instructions |
+| 9 | Search the whole change for other instances of a bug pattern | "Grep for sibling bugs... the v3.0.0 `errno` fix" (sharper example) | copilot-instructions + AGENTS §7 |
+| 10 | Prefer evidently-correct designs; don't mistake no-obvious-bug for correct | "Prefer designs simple enough that their correctness is evident" | copilot-instructions |
+| 11 | Use cross-platform macros, not raw compiler attributes | DEFERRED to item 1 (PAL/AAL). No PAL exists yet; the macro-vs-raw-attribute rule has no home until the layer lands. Noted here as owed. | (item 1) |
+| 12 | No platform assumptions (fixed VA width, max alloc from one platform) | DEFERRED to item 1 (PAL/AAL); same reason. The heap-ceiling fix (v3.2.0) is the live instance of this hazard. | (item 1) |
+| 13 | Trust API-boundary bounds checks; no redundant internal checks | Covered in spirit by "avoid over-engineering" / "designs simple enough"; libumem has no stated internal-redundant-check rule and no evidence of the failure, so not transcribed verbatim. | copilot-instructions (partial) |
+| 14 | New caches must bypass out-of-range inputs | Not applicable yet; no new-cache rule in libumem. Fold into item 1/future caches work if it arises. | n/a |
+| 15 | Keep headers minimal, include only direct deps | Not transcribed (C project, no evidenced failure). Candidate for item 1 header hygiene. | n/a |
+| 16 | No direct C++ stdlib dependency; use C headers / stl wrappers | N/A -- libumem is C, not C++. | n/a |
+| 17 | Explicit wiring over hidden/convention-based behaviour | "Prefer explicit wiring" captured as "preserve the existing structure... no hidden deps" under Change discipline | copilot-instructions |
+| 18 | Document behavioural coupling at the component that could break it | "Comments state current invariants -- which lock protects what, who owns an object" | copilot-instructions + AGENTS §7 |
+| 19 | Easy to change, but no speculative extension points | "Do not add abstractions, options, or extension points for hypothetical requirements" | copilot-instructions |
+| 20 | Avoid over-engineering/churn; preserve names and boundaries | "Avoid over-engineering and review churn. Preserve names and function boundaries" | copilot-instructions |
+| 21 | Evaluate copied patterns in their new context | Not transcribed verbatim; subsumed by "keep changes focused / correctness evident." Minor; add if a copy-paste bug recurs. | copilot-instructions (partial) |
+| 22 | Update stale comments/tests/docs | "Update comments, tests, and documentation the change makes stale" | copilot-instructions |
+| 23 | Comments describe current behaviour, not change history | "Comments state current invariants... not the history of the change" | copilot-instructions + AGENTS §7 |
+| 24 | Follow the build/test skill; select validation by behaviour; report factually | Entire `building_and_testing.md`; AGENTS §4 points to it | skill + AGENTS §4 |
+
+Build/test skill rules (snmalloc `building_and_testing.md`) -> libumem:
+
+| snmalloc rule | libumem equivalent |
+|---------------|--------------------|
+| Debug build for functional validation; `-check` flavour | `./configure` (ASSERT live) vs `-O3 -DNDEBUG` release; both tested |
+| Rebuild before tests; never test a stale binary | "Never test a stale binary. Rebuild in the same directory" |
+| Format changed code before commit | libumem has `.clang-format` + `.forgejo/workflows/lint.yml`; format gate noted in CI (item 2) |
+| Prefer focused tests while developing | `make check TESTS='...'`, standalone `test_main`, per-property binaries |
+| Use a timeout for tests that could hang | `job.sh` runs `timeout(1)` remote-side; standalone runs use `timeout 180` |
+| Full suite when breadth/risk warrants | `exit_criteria_gate.sh` (the release gate) |
+| Treat failure as actionable; don't call it transient; preserve failing output | copilot-instructions "don't call a failure transient" + AGENTS §5 "preserve evidence" |
+| Compare with CI/origin-main when attribution unclear | `verify-isolated.sh <ref>` against committed content |
+| Benchmark only Release; retain raw results; report config | `hotpath_ab.sh` null-first A/B; AGENTS §6 "record what produced a number"; results in `docs/results/` |
+| Quick disposable experiment recipe | libumem has no disposable-experiment carve-out; everything slow goes through `job.sh`. Not transcribed -- EC2 cost model differs; `job.sh` already records revision/host. |
+| Test-library (`snmalloc_testlib`) classification | N/A -- libumem has no two-flavour testlib split. |
+
+No snmalloc rule that libumem *should* have is missing from the three files.
+The DEFERRED rows (11, 12) are platform-abstraction rules with no landing
+spot until item 1's PAL/AAL exists; they are recorded here as owed so item 1
+adds them to `docs/PORTING.md`/the PAL contract rather than being lost. The
+N/A rows are C++-specific or testlib-specific and do not apply to a C
+allocator.
+
 ## Item 1 [EC2-BLOCKED design-now] -- PAL + AAL abstraction layer
 Combine snmalloc's `pal/`+`aal/` (C++ Concept-checked, ~21 OSes) with libdb's
 `src/os/os_<operation>.c` + per-OS override dirs (os_qnx, os_windows) pattern,

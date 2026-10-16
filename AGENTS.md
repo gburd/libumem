@@ -3,13 +3,36 @@
 Read this before touching anything. These rules come from real failures on
 this project, not style preference.
 
+## See also
+
+This file holds the **project-specific** direction: the EC2/burner story, the
+AWS-profile rotation, the shared-worktree git rules, the security threat model,
+the libumem-specific evidence rules, and the current release state. The rest is
+split out so it can be shared and kept current:
+
+- **[`.github/copilot-instructions.md`](.github/copilot-instructions.md)** --
+  the generic working-style and evidence rules (verify-before-workaround,
+  establish-a-baseline, don't-call-failures-transient, grep-for-sibling-bugs,
+  trace-via-`write()`-not-`printf`, keep-changes-focused, challenge-wrong-
+  assumptions, report-incidental-findings-separately, the plans convention).
+- **[`.github/skills/building_and_testing.md`](.github/skills/building_and_testing.md)**
+  -- the build/test/benchmark runbook (`clean-regen.sh` + `make` in one job,
+  `make check` is a smoke suite, `exit_criteria_gate.sh`, `hotpath_ab.sh`
+  null-first A/B, the P8.3 quiet-rig gate, the `job.sh` pattern, which test
+  targets mean what, `XFAIL_TESTS` discipline).
+
+Kiro, Pi, Claude, and Maki all read this `AGENTS.md`; the shared
+`copilot-instructions.md` is the single generic-rules file (no per-agent
+mirror is maintained in this repo).
+
 ## 1. Never build, test, or benchmark on the local host
 
 The local machine (`floki`) is for editing and git only. Every compile, test,
-stress run, and benchmark runs on EC2 through `scripts/ec2/`.
+stress run, and benchmark runs on EC2 through `scripts/ec2/`. The build/test
+runbook is in `.github/skills/building_and_testing.md`.
 
 ```sh
-export AWS_PROFILE=hotdog          # verify first; see §2
+export AWS_PROFILE=kiwi             # verify first; see §2
 ./scripts/ec2/launch.sh    intel-lo@<worker>
 ./scripts/ec2/bootstrap.sh intel-lo@<worker>
 ./scripts/ec2/job.sh       intel-lo@<worker> start <job> <timeout_s> '<cmd>'
@@ -17,17 +40,19 @@ export AWS_PROFILE=hotdog          # verify first; see §2
 ```
 
 Roles: `intel-lo` (8 vCPU x86_64), `intel-hi` (192 vCPU metal x86_64),
-`arm-lo` (8 vCPU aarch64), `arm-hi` (192 vCPU metal aarch64).
+`arm-lo` (8 vCPU aarch64), `arm-hi` (192 vCPU metal aarch64). Debian instances
+only (`EC2_OS=debian`).
 
 ## 2. The AWS profile rotates. Verify, never assume
 
 This burner account has rotated repeatedly (`numa` → `beef` → `bene` →
-`hotdog`); the profile name `hotdog` itself has rotated across accounts
-(373102893032 → 170848442262 as of 2026-10-09). The account also holds the
-maintainer's OTHER projects' instances (libdb, libxtc, undo, dbsql, noxu,
+`hotdog` → `kiwi`); the profile name itself has rotated across accounts
+(373102893032 → 170848442262 → `kiwi`/830118047484, after `hotdog` expired
+2026-10-10). The account also holds the maintainer's OTHER projects' instances
+(libdb, libxtc, undo, dbsql, noxu-bench m8id/m8gd metal, an unnamed c7i,
 freebsd audits), tagged `Owner=gburd` but NOT `Project=libumem`. That is
-expected, not a stranger's: still, only ever touch `Project=libumem`. At
-session start:
+expected, not a stranger's: still, only ever touch `Project=libumem` **and**
+the worker role you launched. At session start:
 
 ```sh
 aws sts get-caller-identity          # if this fails, probe for a live profile
@@ -56,34 +81,24 @@ already corrupted in-flight work on this project.
 Use a distinct suffix per agent: `intel-lo@ptc`, `arm-hi@frag`. Each gets its
 own instance and its own remote directory (`~/libumem-<worker>`).
 
-## 4. Use `job.sh` for anything slow, not bare `run-remote.sh`
+## 4. Build and test on EC2 → see the building_and_testing skill
 
-`run-remote.sh` keeps an SSH session open for the command's whole life. A
-local timeout then orphans the remote work: it keeps running (on a possibly
-192-vCPU box) while you believe the step ended. Re-running stacks concurrent
-copies that fight over cores and produce fictitious results.
+The full build/test/benchmark runbook lives in
+[`.github/skills/building_and_testing.md`](.github/skills/building_and_testing.md).
+The one rule that must never be broken, repeated here because it is
+project-critical:
 
-`job.sh` puts the deadline and the cleanup on the remote side:
+**Use `job.sh` for anything slow, not bare `run-remote.sh`.** `run-remote.sh`
+keeps an SSH session open for the command's whole life; a local timeout then
+orphans the remote work (it keeps running on a possibly 192-vCPU box while you
+believe the step ended), and re-running stacks concurrent copies that fight
+over cores and produce fictitious results. `job.sh` runs `timeout(1)` and the
+process-group cleanup on the remote side, logs outside the rsynced tree, and
+refuses to start a job already running.
 
-- `timeout` runs remotely, so the limit survives SSH loss
-- process-group cleanup, so `make -j` workers and stress binaries die with
-  the job instead of being orphaned (verified: 0 survivors)
-- logs in `~/libumem-jobs/<job>/`, outside the rsynced tree, so they survive
-  the next sync and are readable after failure
-- refuses to start a job that is already running
-- every poll (`status`, `tail`) returns immediately
-
-```sh
-./scripts/ec2/job.sh intel-lo@w1 start build 1800 './scripts/ec2/clean-regen.sh && make -j$(nproc) && make check'
-./scripts/ec2/job.sh intel-lo@w1 status build
-./scripts/ec2/job.sh intel-lo@w1 tail   build 40
-./scripts/ec2/job.sh intel-lo@w1 fetch  build     # logs -> docs/results/jobs/
-./scripts/ec2/job.sh intel-lo@w1 kill   build
-```
-
-Always run `clean-regen.sh` in the **same** job as `make`. A separate
-invocation re-syncs and leaves stale generated autotools files that fail
-with local `aclocal-1.18`/`missing` paths.
+Always run `clean-regen.sh` in the **same** job as `make`; a separate
+invocation re-syncs and leaves stale generated autotools files that fail with
+local `aclocal-1.18`/`missing` paths.
 
 ## 5. Preserve original evidence before re-running
 
@@ -96,8 +111,9 @@ is not a diagnosis.
 
 ## 6. Evidence rules
 
-- A passing test proves only what it actually executes. `make check` runs 8
-  entries; it is not the comprehensive suite.
+- A passing test proves only what it actually executes. `make check` runs ~8
+  entries; it is not the comprehensive suite (see the building_and_testing
+  skill and `test/README.md`).
 - Distinguish PASS, SKIP, FAIL, and never-executed. Returning 0 for an
   unavailable prerequisite is a bug, not a skip.
 - Record what produced a number: commit, configure flags, instance type,
@@ -107,19 +123,20 @@ is not a diagnosis.
 - Entering a code path is not the same as that path doing its job. The rseq
   assembly is called constantly and still serves zero magazine hits.
 
-## 7. Code and comment standards
+## 7. Code and comment standards → generic rules in copilot-instructions.md
 
-- Comments state invariants: which lock protects what, who owns an object,
-  what lifecycle transitions are legal. Not narration, not confidence.
+The generic code-quality rules (keep changes focused, fix root causes at the
+shared function **then grep for siblings**, comments state invariants not
+narration, trace via `write()` not `printf`) are in
+[`.github/copilot-instructions.md`](.github/copilot-instructions.md). The
+project-specific standing points:
+
 - If a comment claims something the code does not do, that is a bug. Several
-  exist today (fork lock order, "flush all bins").
-- Fix root causes at the shared function, not per caller. **And then grep for
-  siblings.** Fixing one function and claiming the class is closed is the most
-  common failure here: the v3.0.0 `errno` fix landed in
+  have existed in this tree (fork lock order, "flush all bins").
+- The grep-for-siblings rule has a scar here: the v3.0.0 `errno` fix landed in
   `vmem_mmap_top_alloc()` while `vmem_mmap_alloc()` kept the identical defect,
-  and the release notes said "failure paths now leave errno alone." Before
-  claiming a defect class is fixed, search for the same pattern and state what
-  you found.
+  and the release notes claimed the class was closed. Before claiming a defect
+  class is fixed, search for the same pattern and state what you found.
 - Mark deliberate shortcuts with `ponytail:` naming the ceiling and upgrade
   path.
 - Do not ship unsound code to hit a number. Document honestly instead.
@@ -237,5 +254,5 @@ FIXED and the exit criteria are met.
   the specific exposures the audits found, but that is not the same as proven
   safe against an unaudited class. Do not overstate it.
 
-Open work is tracked in the round plans (`docs/plans/2026-09-28-round8.md` and
-earlier), not here.
+Open work is tracked in the round plans (`docs/plans/2026-09-28-round8.md`,
+`docs/plans/2026-10-16-adopt-from-snmalloc.md`, and earlier), not here.
