@@ -105,3 +105,22 @@ fast-forward master to `r10pal`.
   Gate A, then **terminated** by this worker.
 - `intel-lo@palci` (i-0116023c931bc22bc): coordinator's box, **left up**.
 - `arm-lo@palci` (i-0b16e7efe0c037442): the coordinator's, not touched.
+
+## Gate B — fast-path A/B — OBTAINED BY COORDINATOR, PASS both arches
+
+Run on intel-lo@palci (c7i.2xlarge) and arm-lo@palci (c7g.2xlarge), kiwi,
+Debian 13, hotpath_ab.sh, pre=0aed35d (master pre-refactor) post=9eebf0e
+(r10pal; code identical to the merged tip -- later commits are docs only),
+9 replicates, null measured first at every point. docs/results/r10/gateB-*.txt.
+
+- **insn/pair, t=1, all 6 points, BOTH arches: +0.00% median** (nulls ±0.00).
+  The executed instruction count on the fast path is unchanged -- the refactor
+  added no indirection the compiler didn't inline away.
+- **Throughput A/B, all 13 points, BOTH arches: inside the null.** x86 medians
+  -0.27%..+0.39%; arm medians -0.11%..+0.01%. No point outside its null.
+
+Gate A (identical make check + the one new smoke test) + Gate B (null fast
+path) BOTH PASS on x86_64 and aarch64 => the behaviour-preserving bar is met.
+MERGED to master (fast-forward). Gates C (QEMU cross riscv64/armhf/aarch64)
+and D (illumos/SPARCv9) are the NEW coverage, still owed; the #error cascade
+(Gate E) already names those targets.
