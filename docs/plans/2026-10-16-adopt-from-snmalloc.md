@@ -155,6 +155,53 @@ snmalloc (per-mechanism design docs) with libxtc's section taxonomy
 Validation owed: the Pages build is CI (needs a runner), but authoring +
 local `jekyll build` check is NO-EC2. Mostly do-now.
 
+### Item 3 STATUS (2026-10-16, @r10docs) -- AUTHORED, Pages deploy owed
+
+The docs site is authored and committed to master (explicit-path commits,
+not amended): infra from libxtc, content snmalloc-structured.
+
+- INFRA (done): `docs/_config.yml` (title libumem, just-the-docs, baseurl
+  `/libumem`, aux_links to Codeberg+GitHub, note/rationale/not_chosen/warning
+  callouts), `docs/Gemfile`(+`.lock`), `_layouts/content.html`,
+  `_includes/nav_footer_custom.html`, `_sass/custom/custom.scss`,
+  `docs/Doxyfile` (public headers), `docs/gen_api_reference.sh` (adapted to
+  libumem's man(7)-macro pages in the repo root), `docs/lychee.toml`,
+  `docs/check_mermaid.sh`. `.gitignore` gains `!docs/Doxyfile` and ignores
+  the generated `docs/reference/api/`.
+- WORKFLOWS (done): `.github/workflows/pages.yml` (GitHub Pages) and
+  `.forgejo/workflows/pages.yml` (Codeberg Pages): Jekyll + gen_api_reference
+  + Doxygen into /api + lychee + mermaid-check + deploy; branch `master`,
+  path-trigger on docs/**, README.md, SECURITY.md, headers, man pages.
+- CONTENT (done, real prose lifted from README/CHANGELOG/plan/results/reviews,
+  not stubs): landing `docs/index.md`; `docs/design/` (slab-and-vmem,
+  magazine-depot-ptc, rseq-percpu, freelist-mangling, span-table,
+  introspection, heap-ceiling, hardening) + links to the existing
+  `docs/design/PAL.md` (bed0e99) as the porting contract; `docs/guide/`
+  (getting-started, ld-preload, c-api, debugging); `docs/reference/`
+  (build-options, limits, man-pages, api index); `docs/philosophy/` (lineage,
+  what-changed, hardening-stance); `docs/adr/` 0001-0005 (GC removed, rseq
+  default-on, remote-free declined, involution-encoding declined, sparsemap
+  removed); `SECURITY.md`.
+- NOT a separate `docs/porting/` dir: the porting contract lives in the
+  already-committed `docs/design/PAL.md`; the design index and nav link to it.
+
+VALIDATION OWED (needs the CI runner / repo settings -- authored now, deploy
+proven later):
+1. The Pages workflows actually run green. Neither has executed; a runner is
+   required. Local `jekyll build` was NOT run (no ruby/jekyll on floki);
+   structural validation only: all 30 permalinks unique, every internal
+   `relative_url` link resolves to a declared permalink, all front-matter
+   well-formed, `gen_api_reference.sh`/`check_mermaid.sh` pass shellcheck -S
+   error. mandoc/mermaid gates and the Doxygen build run only in CI.
+2. GitHub Pages must be enabled (Settings -> Pages -> Source: GitHub Actions).
+3. Codeberg Pages needs the forgejo deploy `token` secret available to the
+   `.forgejo/workflows/pages.yml` job and the `git-pages` branch/setup.
+4. The two mermaid diagrams (magazine-depot-ptc, span-table) are validated
+   only by the CI mermaid-check; confirm they render.
+5. The lychee external-link pass may flag the USENIX/Codeberg URLs; the
+   config excludes the known rate-limiters, re-check on first green run.
+
+
 ## Item 4 [EC2-BLOCKED design-now] -- Finish F3 via snmalloc message-passing remote-free
 Round 9 proved (c2c) the cross-thread cost is real (15.7x LLC misses) but the
 stripe-rotation prototype did NOT help (remote traffic unchanged). The RIGHT
