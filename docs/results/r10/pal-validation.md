@@ -65,10 +65,31 @@ not a measured result. Do not merge on it until measured.
 
 ## Gate C — QEMU cross-builds (riscv64, armhf, aarch64)
 
-**NOT OBTAINED (owed).** New coverage, not a merge blocker. The intel box was
-occupied; cross-toolchains + qemu-user were not installed. Model on
-`~/src/snmalloc/.github/workflows/main.yml` + `ci/Toolchain.cmake`. Record per
-arch: build-clean / build-only / `#error`-blocked.
+**OBTAINED, PASS all three arches (worker @r10xc).** Full detail +
+`pal_aal_smoke` output + per-arch logs in
+`docs/results/r10/gateC-qemu-crossbuild.md`. Ref master tip `7e5ed07`
+(`git archive`), box `intel-lo@palci` (kiwi, x86_64 host, Debian 13), Debian
+cross-gcc 14.2.0, `qemu-{riscv64,arm,aarch64}-static -L /usr/<triple>`.
+
+| arch | triple | compiles | links | runs |
+|---|---|:---:|:---:|:---:|
+| riscv64 | riscv64-linux-gnu | ✅ | ✅ | ✅ |
+| arm32 (armhf) | arm-linux-gnueabihf | ✅ | ✅ | ✅ |
+| aarch64 | aarch64-linux-gnu | ✅ | ✅ | ✅ |
+
+Each arch built TWICE (rseq auto=yes AND `--disable-rseq`); all 6 reach RUNS.
+`pal_aal_smoke` prints the correct AAL identity on each (RISCV64/ARM32/AARCH64,
+right ptr/word width, `features=0x0019`), and `umem_test` (3/3) + `umem_test2`
+(3/3, incl. a 4-thread stress) PASS under qemu on every arch. No arch was
+`#error`- or link-blocked — the AAL abstraction holds end to end.
+
+Two AAL gaps found and recorded (follow-ups, NOT fixed — docs-only round):
+(1) `getpcstack()` returns depth 0 on riscv64/arm32 (no per-arch frame walk;
+aarch64 gives depth 4) — leak/audit stack capture is empty there; (2) rseq on
+riscv64/arm32 is the classic fallback, not a real critical section (no
+`umem_rseq_<arch>.S`; the x86/arm64 asm self-guards to empty). Both are
+performance/tooling follow-ups, not correctness defects; the core allocator
+and the exercised unit paths run clean.
 
 ## Gate D — illumos / SPARCv9
 

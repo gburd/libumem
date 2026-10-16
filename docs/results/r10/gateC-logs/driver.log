@@ -1,0 +1,36 @@
+
+========== riscv64 (riscv64-linux-gnu) -- DEFAULT configure (rseq auto) ==========
+logged: /home/admin/libumem-gateC-out/riscv64-default.log (exit 0)
+
+========== riscv64 (riscv64-linux-gnu) -- --disable-rseq ==========
+logged: /home/admin/libumem-gateC-out/riscv64-norseq.log (exit 0)
+
+========== arm32 (arm-linux-gnueabihf) -- DEFAULT configure (rseq auto) ==========
+logged: /home/admin/libumem-gateC-out/arm32-default.log (exit 0)
+
+========== arm32 (arm-linux-gnueabihf) -- --disable-rseq ==========
+logged: /home/admin/libumem-gateC-out/arm32-norseq.log (exit 0)
+
+========== aarch64 (aarch64-linux-gnu) -- DEFAULT configure (rseq auto) ==========
+logged: /home/admin/libumem-gateC-out/aarch64-default.log (exit 0)
+
+========== aarch64 (aarch64-linux-gnu) -- --disable-rseq ==========
+logged: /home/admin/libumem-gateC-out/aarch64-norseq.log (exit 0)
+
+========== SUMMARY ==========
+riscv64    default  final-stage=RAN            ### configure rc=0
+riscv64    norseq   final-stage=RAN            ### configure rc=0
+arm32      default  final-stage=RAN            ### configure rc=0
+arm32      norseq   final-stage=RAN            ### configure rc=0
+aarch64    default  final-stage=RAN            ### configure rc=0
+aarch64    norseq   final-stage=RAN            ### configure rc=0
+=== logs in /home/admin/libumem-gateC-out ===
+total 128
+drwxrwxr-x  2 admin admin  4096 Oct 16 18:43 .
+drwx------ 21 admin admin  4096 Oct 16 18:43 ..
+-rw-rw-r--  1 admin admin 17285 Oct 16 18:43 aarch64-default.log
+-rw-rw-r--  1 admin admin 17172 Oct 16 18:44 aarch64-norseq.log
+-rw-rw-r--  1 admin admin 17355 Oct 16 18:43 arm32-default.log
+-rw-rw-r--  1 admin admin 17240 Oct 16 18:43 arm32-norseq.log
+-rw-rw-r--  1 admin admin 17285 Oct 16 18:43 riscv64-default.log
+-rw-rw-r--  1 admin admin 17475 Oct 16 18:43 riscv64-norseq.log

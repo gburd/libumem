@@ -30,8 +30,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   width (sizes from `UMEM_AAL_PTR_BITS`, closing P7.4's assumption). Where an
   arch cannot yet provide a required symbol the gap is named in the `#error`
   cascade, never faked (sparcv8 is a named error pointing at sparcv9;
-  illumos/SPARCv9 cross-compiles, unrun on hardware). Cross-build + QEMU-user
-  test status for riscv64/armhf/aarch64 is recorded in
+  illumos/SPARCv9 cross-compiles, unrun on hardware). **riscv64, armhf (arm32)
+  and aarch64 are validated end to end: QEMU-user cross-build + run (Gate C,
+  2026-10-16).** Each cross-builds the libraries and the test binaries and
+  runs them under `qemu-user-static` — `pal_aal_smoke` prints the correct AAL
+  identity (right ptr/word width, `features=0x0019`) and `umem_test` (3/3) +
+  `umem_test2` (3/3, incl. a 4-thread stress) PASS on all three, in both the
+  default (rseq auto) and `--disable-rseq` builds. Two AAL gaps are recorded
+  as follow-ups, not faked: `getpcstack()` returns depth 0 on riscv64/arm32
+  (no per-arch frame walk — empty leak/audit stacks there), and rseq on those
+  arches is the classic fallback, not a lock-free critical section (no
+  `umem_rseq_<arch>.S`). Full results + per-arch logs in
+  `docs/results/r10/gateC-qemu-crossbuild.md`; status table in
   `docs/results/r10/pal-validation.md`.
 - **Porting contract doc (`docs/porting/README.md`).** Audience, scope,
   layout, build-target, test-port and certify steps, plus the required-symbol

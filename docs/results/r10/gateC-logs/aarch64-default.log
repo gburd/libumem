@@ -1,0 +1,140 @@
+### arch=aarch64 triple=aarch64-linux-gnu rseq= tag=default
+### aarch64-linux-gnu-gcc (Debian 14.2.0-19) 14.2.0
+--- clean-regen ---
+REGEN_OK
+--- configure ---
+configure: NUMA-aware allocation disabled (not available)
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating Doxyfile
+config.status: creating umem.spec
+config.status: creating config.h
+config.status: executing depfiles commands
+config.status: executing libtool commands
+
+Configuration summary:
+  Architecture:     aarch64 (aarch64)
+  OS:               linux-gnu
+  Recursion guard:  yes
+  RSEQ support:     yes
+  NUMA topology:    no
+  AVX2 (non-generic): no
+  PGO:              no
+  Coverage:         no
+  AddressSanitizer: no
+  UBSanitizer:      no
+  ThreadSanitizer:  no
+  Frame pointers:   no
+  libdw (DWARF):    no
+
+### configure rc=0
+--- make lib (libumem.la) ---
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_arena.lo -MD -MP -MF .deps/umem_arena.Tpo -c umem_arena.c  -fPIC -DPIC -o .libs/umem_arena.o
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_hooks.lo -MD -MP -MF .deps/umem_hooks.Tpo -c umem_hooks.c -o umem_hooks.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_arena.lo -MD -MP -MF .deps/umem_arena.Tpo -c umem_arena.c -o umem_arena.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_ptc.lo -MD -MP -MF .deps/umem_ptc.Tpo -c umem_ptc.c -o umem_ptc.o >/dev/null 2>&1
+depbase=`echo umem_own.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_own.lo -MD -MP -MF $depbase.Tpo -c -o umem_own.lo umem_own.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo umem_rseq.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq.lo -MD -MP -MF $depbase.Tpo -c -o umem_rseq.lo umem_rseq.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_own.lo -MD -MP -MF .deps/umem_own.Tpo -c umem_own.c  -fPIC -DPIC -o .libs/umem_own.o
+depbase=`echo pal/pal_posix.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT pal/pal_posix.lo -MD -MP -MF $depbase.Tpo -c -o pal/pal_posix.lo pal/pal_posix.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq.lo -MD -MP -MF .deps/umem_rseq.Tpo -c umem_rseq.c  -fPIC -DPIC -o .libs/umem_rseq.o
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT pal/pal_posix.lo -MD -MP -MF pal/.deps/pal_posix.Tpo -c pal/pal_posix.c  -fPIC -DPIC -o pal/.libs/pal_posix.o
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT vmem.lo -MD -MP -MF .deps/vmem.Tpo -c vmem.c -o vmem.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT pal/pal_posix.lo -MD -MP -MF pal/.deps/pal_posix.Tpo -c pal/pal_posix.c -o pal/pal_posix.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_rseq.lo -MD -MP -MF .deps/umem_rseq.Tpo -c umem_rseq.c -o umem_rseq.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_profile.lo -MD -MP -MF .deps/umem_profile.Tpo -c umem_profile.c -o umem_profile.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_own.lo -MD -MP -MF .deps/umem_own.Tpo -c umem_own.c -o umem_own.o >/dev/null 2>&1
+depbase=`echo aal/umem_rseq_x86_64.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.     -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT aal/umem_rseq_x86_64.lo -MD -MP -MF $depbase.Tpo -c -o aal/umem_rseq_x86_64.lo aal/umem_rseq_x86_64.S &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo aal/umem_rseq_aarch64.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.     -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT aal/umem_rseq_aarch64.lo -MD -MP -MF $depbase.Tpo -c -o aal/umem_rseq_aarch64.lo aal/umem_rseq_aarch64.S &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT aal/umem_rseq_x86_64.lo -MD -MP -MF aal/.deps/umem_rseq_x86_64.Tpo -c aal/umem_rseq_x86_64.S  -fPIC -DPIC -o aal/.libs/umem_rseq_x86_64.o
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT aal/umem_rseq_aarch64.lo -MD -MP -MF aal/.deps/umem_rseq_aarch64.Tpo -c aal/umem_rseq_aarch64.S  -fPIC -DPIC -o aal/.libs/umem_rseq_aarch64.o
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT aal/umem_rseq_x86_64.lo -MD -MP -MF aal/.deps/umem_rseq_x86_64.Tpo -c aal/umem_rseq_x86_64.S -o aal/umem_rseq_x86_64.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT aal/umem_rseq_aarch64.lo -MD -MP -MF aal/.deps/umem_rseq_aarch64.Tpo -c aal/umem_rseq_aarch64.S -o aal/umem_rseq_aarch64.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_inspect.lo -MD -MP -MF .deps/umem_inspect.Tpo -c umem_inspect.c -o umem_inspect.o >/dev/null 2>&1
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem.lo -MD -MP -MF .deps/umem.Tpo -c umem.c -o umem.o >/dev/null 2>&1
+/bin/bash ./libtool  --tag=CC   --mode=link aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -lpthread -lm   -version-info 2:0:0  -o libumem.la -rpath /usr/local/lib init_lib.lo pal/pal_posix.lo umem_agent_support.lo umem_fail.lo umem_stacktrace.lo umem_fork.lo umem_update_thread.lo vmem_mmap.lo vmem_sbrk.lo envvar.lo getpcstack.lo misc.lo vmem_base.lo umem.lo vmem.lo malloc.lo malloc_guard.lo umem_audit.lo umem_inspect.lo umem_introspect.lo umem_hooks.lo umem_ptc.lo umem_profile.lo umem_arena.lo umem_own.lo   umem_rseq.lo aal/umem_rseq_x86_64.lo aal/umem_rseq_aarch64.lo     -ldl 
+libtool: link: aarch64-linux-gnu-gcc -shared  -fPIC -DPIC  .libs/init_lib.o pal/.libs/pal_posix.o .libs/umem_agent_support.o .libs/umem_fail.o .libs/umem_stacktrace.o .libs/umem_fork.o .libs/umem_update_thread.o .libs/vmem_mmap.o .libs/vmem_sbrk.o .libs/envvar.o .libs/getpcstack.o .libs/misc.o .libs/vmem_base.o .libs/umem.o .libs/vmem.o .libs/malloc.o .libs/malloc_guard.o .libs/umem_audit.o .libs/umem_inspect.o .libs/umem_introspect.o .libs/umem_hooks.o .libs/umem_ptc.o .libs/umem_profile.o .libs/umem_arena.o .libs/umem_own.o .libs/umem_rseq.o aal/.libs/umem_rseq_x86_64.o aal/.libs/umem_rseq_aarch64.o   -lpthread -lm -ldl  -g -O2   -Wl,-soname -Wl,libumem.so.2 -o .libs/libumem.so.2.0.0
+libtool: link: (cd ".libs" && rm -f "libumem.so.2" && ln -s "libumem.so.2.0.0" "libumem.so.2")
+libtool: link: (cd ".libs" && rm -f "libumem.so" && ln -s "libumem.so.2.0.0" "libumem.so")
+libtool: link: aarch64-linux-gnu-ar cr .libs/libumem.a  init_lib.o pal/pal_posix.o umem_agent_support.o umem_fail.o umem_stacktrace.o umem_fork.o umem_update_thread.o vmem_mmap.o vmem_sbrk.o envvar.o getpcstack.o misc.o vmem_base.o umem.o vmem.o malloc.o malloc_guard.o umem_audit.o umem_inspect.o umem_introspect.o umem_hooks.o umem_ptc.o umem_profile.o umem_arena.o umem_own.o umem_rseq.o aal/umem_rseq_x86_64.o aal/umem_rseq_aarch64.o
+libtool: link: aarch64-linux-gnu-ranlib .libs/libumem.a
+libtool: link: ( cd ".libs" && rm -f "libumem.la" && ln -s "../libumem.la" "libumem.la" )
+### make libumem.la rc=0
+### STAGE=COMPILES-OK
+--- make smoke + core test binaries ---
+(CDPATH="${ZSH_VERSION+.}:" && cd . && /bin/bash '/home/admin/gateC-aarch64-default/missing' autoheader)
+depbase=`echo umem_test.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_test.o -MD -MP -MF $depbase.Tpo -c -o umem_test.o umem_test.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo umem_test2.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT umem_test2.o -MD -MP -MF $depbase.Tpo -c -o umem_test2.o umem_test2.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo malloc_interpose.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ./libtool  --tag=CC   --mode=compile aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.    -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc_interpose.lo -MD -MP -MF $depbase.Tpo -c -o malloc_interpose.lo malloc_interpose.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I.  -I.  -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT test/port/pal_aal_smoke-pal_aal_smoke.o -MD -MP -MF test/port/.deps/pal_aal_smoke-pal_aal_smoke.Tpo -c -o test/port/pal_aal_smoke-pal_aal_smoke.o `test -f 'test/port/pal_aal_smoke.c' || echo './'`test/port/pal_aal_smoke.c
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc_interpose.lo -MD -MP -MF .deps/malloc_interpose.Tpo -c malloc_interpose.c  -fPIC -DPIC -o .libs/malloc_interpose.o
+mv -f test/port/.deps/pal_aal_smoke-pal_aal_smoke.Tpo test/port/.deps/pal_aal_smoke-pal_aal_smoke.Po
+libtool: compile:  aarch64-linux-gnu-gcc -DHAVE_CONFIG_H -I. -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -MT malloc_interpose.lo -MD -MP -MF .deps/malloc_interpose.Tpo -c malloc_interpose.c -o malloc_interpose.o >/dev/null 2>&1
+rm -f stamp-h1
+touch config.h.in
+rm -f stamp-h1
+cd . && /bin/bash ./config.status config.h
+config.status: creating config.h
+config.status: config.h is unchanged
+/bin/bash ./libtool  --tag=CC   --mode=link aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -lpthread -ldl -R/usr/local/lib -version-info 1:0:0  -o libumem_malloc.la -rpath /usr/local/lib malloc_interpose.lo libumem.la -ldl 
+/bin/bash ./libtool  --tag=CC   --mode=link aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -pthread  -o test/port/pal_aal_smoke test/port/pal_aal_smoke-pal_aal_smoke.o libumem.la -ldl 
+/bin/bash ./libtool  --tag=CC   --mode=link aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE        -o umem_test umem_test.o libumem.la -ldl 
+libtool: link: aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -o test/port/.libs/pal_aal_smoke test/port/pal_aal_smoke-pal_aal_smoke.o  ./.libs/libumem.so -ldl -pthread
+libtool: link: aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -o .libs/umem_test umem_test.o  ./.libs/libumem.so -ldl
+libtool: link: aarch64-linux-gnu-gcc -shared  -fPIC -DPIC  .libs/malloc_interpose.o   -Wl,-rpath -Wl,/home/admin/gateC-aarch64-default/.libs -Wl,-rpath -Wl,/usr/local/lib -lpthread ./.libs/libumem.so -ldl  -g -O2   -Wl,-soname -Wl,libumem_malloc.so.1 -o .libs/libumem_malloc.so.1.0.0
+libtool: link: (cd ".libs" && rm -f "libumem_malloc.so.1" && ln -s "libumem_malloc.so.1.0.0" "libumem_malloc.so.1")
+libtool: link: (cd ".libs" && rm -f "libumem_malloc.so" && ln -s "libumem_malloc.so.1.0.0" "libumem_malloc.so")
+libtool: link: aarch64-linux-gnu-ar cr .libs/libumem_malloc.a  malloc_interpose.o
+libtool: link: aarch64-linux-gnu-ranlib .libs/libumem_malloc.a
+libtool: link: ( cd ".libs" && rm -f "libumem_malloc.la" && ln -s "../libumem_malloc.la" "libumem_malloc.la" )
+/bin/bash ./libtool  --tag=CC   --mode=link aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free   -D_UMEM_INTERNAL       -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -lpthread  -o umem_test2 umem_test2.o libumem.la libumem_malloc.la -ldl 
+libtool: link: aarch64-linux-gnu-gcc -fno-builtin-calloc -fno-builtin-malloc -fno-builtin-realloc -fno-builtin-free -D_UMEM_INTERNAL -g -O2 -std=c17 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -o .libs/umem_test2 umem_test2.o  -lpthread ./.libs/libumem.so ./.libs/libumem_malloc.so -ldl
+### make tests rc=0
+### STAGE=LINKS-OK
+--- run under qemu: pal_aal_smoke ---
+>>> qemu qemu-aarch64-static test/port/.libs/pal_aal_smoke
+AAL: AARCH64 (ptr=64 word=64)
+AAL: getpcstack depth=4
+PAL: linux features=0x0019
+PAL: page_size=4096 ncpus=8 cpu_hint=0
+PAL: getentropy rc=0
+PAL/AAL smoke: OK
+### run test/port/pal_aal_smoke rc=0
+>>> qemu qemu-aarch64-static ./.libs/umem_test
+=== umem_test: Basic functionality and PTC integration ===
+Testing: umem_alloc(), umem_free(), PTC status
+
+Test 1: Basic 32-byte allocation... PASS (data: 'hello there')
+Test 2: PTC status check... ptc_enabled=1 PASS
+Test 3: Post-init 64-byte allocation with verification... PASS
+
+All tests passed (3/3)
+### run umem_test rc=0
+>>> qemu qemu-aarch64-static ./.libs/umem_test2
+=== umem_test2: Multi-threaded stress test ===
+Testing: 4 strings × 1000 iterations, 4 threads
+
+Test 1: Single-threaded allocation/deallocation... PASS (4000 allocations/frees)
+Test 2: PTC status... ptc_enabled=1 PASS
+Test 3: Multi-threaded stress test (4 threads)... PASS (all 4 threads completed 4000 allocations each)
+
+All tests passed (3/3)
+### run umem_test2 rc=0
+### STAGE=RAN
