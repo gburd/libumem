@@ -53,21 +53,26 @@ main(void)
 	umem_aal_pause();
 
 	/*
-	 * getfp()/getpcstack(): reference them so a port missing the arch
-	 * frame walk fails to link.  Called in a way the compiler cannot
-	 * elide (the result feeds rc).
+	 * getpcstack(): reference it so a port missing the arch frame walk
+	 * fails to link.  Called in a way the compiler cannot elide (the
+	 * result feeds rc).  getfp() is part of the AAL contract only where it
+	 * is a real symbol (illumos sparc/x86 subr); on Linux the walk uses
+	 * __builtin_frame_address directly and there is no getfp to link.
 	 */
 	{
 		uintptr_t stack[8];
 		int n = getpcstack(stack, 8, 0);
-		void *fp = getfp();
 		if (n < 0) {
 			fprintf(stderr, "AAL: getpcstack returned %d\n", n);
 			rc = 1;
 		}
-		/* fp may legitimately be any value; just prove it links. */
-		(void) fp;
-		printf("AAL: getpcstack depth=%d, getfp ok\n", n);
+#if defined(__sun) || defined(__illumos__)
+		{
+			void *fp = getfp();
+			(void) fp;
+		}
+#endif
+		printf("AAL: getpcstack depth=%d\n", n);
 	}
 
 	/* --- PAL identity + required ops --- */

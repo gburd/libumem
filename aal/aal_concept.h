@@ -44,13 +44,14 @@ docs/porting/README.md and docs/design/PAL.md."
 /*
  * 2. The required-symbol contract.  Every complete AAL provides:
  *
- *   void *getfp(void);
- *       -- the current frame pointer (misc.h).  x86_64 may inline it from
- *          __builtin_frame_address; SPARC/illumos uses sparc_subr_sol.S; x86
- *          illumos uses x86_subr_compat.c.
+ *   void *getfp(void);  (illumos only)
+ *       -- the current frame pointer (misc.h).  A real symbol only on
+ *          illumos: sparc_subr_sol.S for SPARC, x86_subr_compat.c for x86.
+ *          On Linux/BSD the frame walk uses __builtin_frame_address directly
+ *          and getfp is never defined, so it is NOT a universal AAL symbol.
  *   int   getpcstack(uintptr_t *pcstack, int limit, int check_sighandler);
  *       -- the frame walk (misc.h, getpcstack.c), per-arch and honest about
- *          frame-pointer dependence on x86_64.
+ *          frame-pointer dependence on x86_64.  REQUIRED of every arch.
  *   void  umem_aal_pause(void);
  *       -- cpu-relax (this header's companion aal.h, inline).
  *   UMEM_PREFETCH_READ / UMEM_PREFETCH_WRITE (umem_simd.h)
