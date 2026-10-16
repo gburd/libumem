@@ -2,6 +2,7 @@
 title: "Platform & Architecture Abstraction Layer (design)"
 nav_order: 20
 parent: Design
+permalink: /design/pal/
 ---
 
 # PAL / AAL design
