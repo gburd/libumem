@@ -5,6 +5,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **PAL/AAL abstraction layer (`pal/`, `aal/`).** A behaviour-preserving
+  refactor that relocates libumem's scattered platform and architecture code
+  behind two auditable interfaces, modelled on snmalloc's PAL/AAL split
+  (`docs/design/snmalloc-feature-evaluation.md` item 5, ADOPT) and libdb's
+  per-operation granularity. `pal/pal.h` + `pal/pal_concept.h` and
+  `aal/aal.h` + `aal/aal_concept.h` are the C analogue of snmalloc's C++20
+  Concept: a header enumerating every required `umem_pal_*` / arch symbol plus
+  a compile-time `#error` cascade that fails a port which forgot one (naming
+  the missing symbol and the porting doc), and a link-time smoke test
+  (`test/port/pal_aal_smoke.c`, in `make check`) that references every
+  required symbol so an incomplete port fails to link on the porting box.
+  `pal/pal_posix.c` is the common POSIX base; every op delegates to the exact
+  code path used before the carve-out, so the allocator's behaviour and ABI
+  are unchanged (`make check` is identical to the pre-refactor baseline on
+  x86_64 and aarch64: 72/59/13/0 plus the one new smoke test, and the
+  malloc/free fast path is byte-identical -- `hotpath_ab.sh` null). The
+  per-arch assembly (`x86_subr_compat.c`, `i386_subr_sol.s`,
+  `sparc_subr_sol.S`, `umem_rseq_{x86_64,aarch64}.S`) now lives under `aal/`.
+- **New architecture coverage (the refactor's payoff).** The AAL names
+  arm32 (armhf), riscv64 and sparcv9 as targets with no hard-coded 48-bit VA
+  width (sizes from `UMEM_AAL_PTR_BITS`, closing P7.4's assumption). Where an
+  arch cannot yet provide a required symbol the gap is named in the `#error`
+  cascade, never faked (sparcv8 is a named error pointing at sparcv9;
+  illumos/SPARCv9 cross-compiles, unrun on hardware). Cross-build + QEMU-user
+  test status for riscv64/armhf/aarch64 is recorded in
+  `docs/results/r10/pal-validation.md`.
+- **Porting contract doc (`docs/porting/README.md`).** Audience, scope,
+  layout, build-target, test-port and certify steps, plus the required-symbol
+  list, so a new OS or arch has a written contract rather than tribal
+  knowledge.
+
 ## [4.1.0] - 2026-09-28
 
 Round 8 correctness and diagnosis. No ABI change (soname stays
