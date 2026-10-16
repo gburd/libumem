@@ -357,3 +357,33 @@ Gate C (QEMU cross riscv64/armhf/aarch64) RUNNING (@r10xc): aarch64 cross-
 compile already confirmed (ELF aarch64 lib built). riscv64/arm32 are NEW AALs
 stubbed by the refactor; honest per-arch coverage status being recorded.
 Gate D (illumos/SPARCv9 run) owed; cross-compile only unless a host appears.
+
+## PROGRAM COMPLETE -- v4.2.0 TAGGED (084c068 -> 0cbf7ad), 2026-10-16
+All achievable items done; two declined per user guardrails; EC2 swept clean.
+
+DONE and SHIPPED in v4.2.0:
+- Item 0 (agent-rules split): AGENTS.md + copilot-instructions.md + skills/.
+- Item 1 (PAL/AAL): behaviour-preserving refactor merged; gates A (73/60/13/0
+  both arches = baseline + smoke test), B (+0.00% insn, inside null both
+  arches), C (QEMU riscv64/arm32/aarch64 compile+link+run), E (#error cascade).
+  Two AAL gaps on new arches recorded (getpcstack, lock-free rseq).
+- Item 2 (CI merge): snmalloc-breadth workflows authored (QEMU/TSan/UBSan/fuzz/
+  format/self-host/all-checks); first-green run owed.
+- Item 3 (docs site): Jekyll+just-the-docs, GitHub+Codeberg Pages; deploy owed.
+- Item 6 (evaluation): docs/design/snmalloc-feature-evaluation.md.
+Release gate: exit_criteria_gate gate_failures=0 both arches, umem-4.2.0.tar.gz,
+P8.3 PASS. ABI unchanged (libumem.so.2). Fast path +0.00%.
+
+DECLINED (user guardrails, recorded in ADRs 0003/0004):
+- Item 4 (remote-free): fundamental re-architecture.
+- Item 5 (involution encoding): conflicts with LIFO magazines.
+
+VALIDATION OWED (needs CI runners / hardware, not a fresh account necessarily):
+- Pages deploy green (GitHub + Codeberg).
+- First-green CI run of the new workflows (tune sanitizer/tidy exclude lists).
+- illumos/SPARCv9 hardware run (cross-compiles today).
+FOLLOW-UPS (future rounds): continue the PAL carve-out (migrate remaining
+umem.c/vmem_mmap.c platform code into pal_posix/pal_<os>); per-arch getpcstack
++ lock-free rseq for riscv64/arm32; the snmalloc separate-pagemap/sizeless-free
+idea (removes the O5 header coherence miss) as the one remaining headline worth
+evaluating further.
