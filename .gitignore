@@ -286,3 +286,6 @@ tools/umem
 # Fetched EC2 job logs (scripts/ec2/job.sh fetch). Transient per-run output;
 # commit the curated report under docs/results/ instead.
 docs/results/jobs/
+
+# Generated in-site API pages (built by docs/gen_api_reference.sh at deploy time).
+docs/reference/api/
