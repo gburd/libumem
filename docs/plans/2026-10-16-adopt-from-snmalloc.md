@@ -148,3 +148,42 @@ is DONE vs DESIGNED-BUT-UNVALIDATED. Nothing EC2-dependent is called done until
 a fresh account exists and the validation-owed list is cleared. No shortcuts to
 hit "adopted": a staged design with an owed-validation list is the honest state
 for the blocked items.
+
+## SCOPE REVISION (2026-10-16, user guardrails) + kiwi account live
+
+Two user guardrails narrow the program:
+1. "If remote-free fundamentally changes libumem, don't do it."
+   => ITEM 4 (F3 remote-free) is DROPPED. snmalloc's message-passing remote-free
+   requires a per-allocator identity and an MPSC return queue that libumem does
+   not have; grafting it on is a fundamental re-architecture of the cross-thread
+   path, not an adoption. libumem stays a Solaris-slab port (magazine/depot/PTC).
+   Round 9 already proved the cheaper stripe-rotation did not help; the honest
+   state is: cross-thread locality gap is CHARACTERIZED and DEFERRED, not fixed.
+2. "Skip involution encoding if it conflicts with libumem LIFO magazines."
+   => ITEM 5 (involution encoding) is DROPPED. Confirmed from code: libumem
+   magazines are LIFO stacks -- alloc pops mag_round[--rounds], free pushes
+   mag_round[rounds++] (umem.c:3873, 4031, 4160; comment umem.c:2653 "the alloc
+   paths pop mag_round[--rounds]"). snmalloc's FreelistProtection.md states its
+   backward-link encoding "can only use queues, and not stacks" because
+   construction and consumption order must match. libumem's LIFO magazines and
+   PTC bins violate that precondition. So it conflicts; skipped as instructed.
+   libumem keeps its P5.4/P5.13 forward-link cookie mangling (already stronger
+   than glibc's cookieless safe-linking per AGENTS.md).
+
+REMAINING program (now achievable without re-architecting libumem):
+- Item 0: agent-rules split. NO-EC2.
+- Item 1: PAL/AAL abstraction layer (illumos/SPARCv9, RISC-V, arm32, aarch64,
+  + existing). Compile/cross-test on EC2 (kiwi). This is a REFACTOR that
+  preserves behaviour -- it moves platform code behind one interface, it does
+  not change the allocator. Fits the "don't fundamentally change libumem" rule.
+- Item 2: CI merge (QEMU cross, TSan/UBSan, fuzzing, format/tidy gate,
+  self-host, BSD VM, all-checks). Validate on EC2.
+- Item 3: docs site (libxtc Jekyll+just-the-docs+Pages infra, snmalloc content
+  structure). NO-EC2 authoring; Pages deploy is CI.
+- Item 6: headline-feature evaluation doc, now recording items 4 and 5 as
+  evaluated-and-declined with the reasons above.
+
+EC2: account is now `kiwi` -> 830118047484 (hotdog expired 2026-10-10). The
+account holds other gburd projects (noxu-bench m8id/m8gd metal, unnamed c7i) --
+NEVER touch anything not tagged Project=libumem AND the worker role. Debian
+instances only (EC2_OS=debian).
