@@ -339,3 +339,21 @@ Phase B RUNNING (kiwi, Debian): @r10pal (item 1 refactor, branch r10pal, strict
 behaviour-preserving gate: identical make check + null fast-path A/B both arches,
 then QEMU riscv64/armhf/aarch64 + illumos cross) and @r10ci (item 2 CI merge:
 matrix + QEMU cross + TSan/UBSan + fuzz + format/tidy + self-host + all-checks).
+
+## ITEM 1 (PAL/AAL) MERGED (7e5ed07, 2026-10-16)
+Behaviour-preserving refactor step 1-3 merged to master after both gates PASS
+on x86_64 AND aarch64:
+- Gate A (make check): 73/60/13/0 both arches = baseline 72/59/13/0 + the one
+  new pal_aal_smoke test. No pre-existing test changed state.
+- Gate B (fast-path A/B): insn/pair +0.00% at all 13 points both arches;
+  throughput all inside the null (x86 -0.27..+0.39%, arm -0.11..+0.01%).
+- Gate E (#error cascade + link contract): PASS.
+What merged: pal/{pal.h,pal_concept.h,pal_posix.c}, aal/{aal.h,aal_concept.h}
++ relocated arch .S/.c, docs/porting/README.md, test/port/pal_aal_smoke.c,
+Makefile.am wiring. This is the CONTRACT + POSIX base + arch-file relocation;
+further carve-out of umem.c/vmem_mmap.c platform code into the PAL is a
+follow-up (the layer exists; migration continues incrementally).
+Gate C (QEMU cross riscv64/armhf/aarch64) RUNNING (@r10xc): aarch64 cross-
+compile already confirmed (ELF aarch64 lib built). riscv64/arm32 are NEW AALs
+stubbed by the refactor; honest per-arch coverage status being recorded.
+Gate D (illumos/SPARCv9 run) owed; cross-compile only unless a host appears.
