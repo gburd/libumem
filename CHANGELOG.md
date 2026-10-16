@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-10-16
+
+Follow-ups to v4.2.0's PAL/AAL work; behaviour-preserving, ABI unchanged
+(soname libumem.so.2), fast path +0.00 % on x86_64 and aarch64.
+
+- **getpcstack frame-pointer walks for riscv64 and arm32**: audit/leak stacks
+  now reach callers on those arches (QEMU: riscv64 depth 0->3, arm32 0->1);
+  x86_64/aarch64/SPARC unchanged (preprocessing byte-identical).
+- **PAL memory-syscall carve-out**: the mmap/munmap/mprotect/madvise/reserve
+  sites (9 in vmem_mmap.c, 2 in umem.c) moved behind the umem_pal_* contract in
+  pal/pal_mem.h (static inline -> no fast-path indirection). make check
+  identical both arches; hotpath A/B inside the null; riscv64/arm32/aarch64
+  still cross-compile.
+- Gate (docs/results/r11/): exit_criteria_gate gate_failures=0, umem-4.2.1
+  tarball self-check, both arches.
+
+NOT in this release (owed, recorded honestly): lock-free rseq asm for
+riscv64/arm32 (deferred -- QEMU cannot validate it without false-green risk;
+the classic fallback runs correctly); an illumos/SPARCv9 hardware run (no
+silicon reachable; cross-compile only); the green CI/Pages badge (needs a push
+to trigger runners + the repo Pages setting).
+
+
 - **`getpcstack()` now walks the frame-pointer chain on riscv64 and arm32.**
   These arches previously fell to the generic path and returned depth 0, so
   `UMEM_DEBUG=audit` bufctl backtraces and `findleaks` showed empty stacks
