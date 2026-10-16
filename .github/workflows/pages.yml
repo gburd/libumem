@@ -1,0 +1,138 @@
+name: Docs
+
+# Builds the Jekyll documentation site (docs/) plus the Doxygen API
+# reference (into /api) and deploys to GitHub Pages.
+#
+# Requires Pages enabled in repo settings (Source: GitHub Actions).
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'SECURITY.md'
+      - 'umem.h'
+      - 'umem_inspect.h'
+      - 'umem_own.h'
+      - 'umem_profile.h'
+      - 'umem_hooks.h'
+      - 'umem.1'
+      - '*.3'
+      - '*.7'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Doxygen + mandoc
+        run: sudo apt-get update && sudo apt-get install -y doxygen mandoc
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          working-directory: docs
+          bundler-cache: true
+
+      - name: Generate API reference from man pages
+        run: sh docs/gen_api_reference.sh
+
+      - name: Build Jekyll site
+        working-directory: docs
+        env:
+          JEKYLL_ENV: production
+        run: bundle exec jekyll build --destination _site
+
+      - name: Build Doxygen API reference
+        working-directory: docs
+        run: |
+          doxygen Doxyfile 2>../doxygen-warnings.txt || true
+          count=$(wc -l < ../doxygen-warnings.txt)
+          echo "::notice::Doxygen produced ${count} warning lines"
+          mkdir -p _site/api
+          if [ -d api/html ]; then cp -r api/html/* _site/api/; fi
+
+      - name: Verify site contents
+        working-directory: docs
+        run: |
+          test -s _site/index.html
+          grep -q -i 'libumem' _site/index.html
+          echo "Jekyll site built ($(find _site -type f | wc -l) files)"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_site
+
+  link-check:
+    # Documentation link checker: build the site and verify every link
+    # (internal cross-links, anchors, and external URLs) resolves.
+    # Broken links block the deploy.
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          working-directory: docs
+          bundler-cache: true
+
+      - name: Generate API reference from man pages
+        run: sudo apt-get update && sudo apt-get install -y mandoc && sh docs/gen_api_reference.sh
+
+      - name: Build Jekyll site
+        working-directory: docs
+        run: bundle exec jekyll build --baseurl "" --destination _site
+
+      - name: Check links with lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --config docs/lychee.toml
+            --no-progress
+            --root-dir ${{ github.workspace }}/docs/_site
+            docs/_site/**/*.html
+            README.md
+            SECURITY.md
+          fail: true
+
+  diagram-check:
+    # Validate every ```mermaid diagram in the docs through the real
+    # mermaid parser.  A malformed diagram renders as an error box on
+    # the site, so it blocks the deploy.
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check mermaid diagrams
+        run: sh docs/check_mermaid.sh
+
+  deploy:
+    needs: [build, link-check, diagram-check]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
