@@ -317,3 +317,25 @@ intel-lo@palci (kiwi, Debian 13) at bed0e99, so the PAL/AAL refactor's
 "behaviour-preserving" claim has a before-picture (identical gate + null A/B
 required after).
 Account: kiwi 830118047484. Only Project=libumem+role instances touched.
+
+## PHASE A COMPLETE + PHASE B LAUNCHED (2026-10-16)
+Phase A (NO-EC2) DONE, on master:
+- Item 0 (e470c5f): agent rules split -- AGENTS.md (project-specific + See-also)
+  + .github/copilot-instructions.md (generic) + .github/skills/building_and_testing.md
+  (runbook); gap-check table in this plan; nothing lost (diffed).
+- Item 3 (125949b..f6147da): full docs site -- libxtc Jekyll+just-the-docs infra,
+  snmalloc content structure, real prose. docs/{design,guide,reference,philosophy,
+  adr}/, SECURITY.md, .github+.forgejo pages.yml. 5 ADRs incl. remote-free-declined,
+  involution-declined. Validation owed: Pages deploy green (CI runner).
+- Item 6 (ee69eaa): docs/design/snmalloc-feature-evaluation.md. Verdicts:
+  same-thread-free lock-free = ALREADY-HAVE (fence-free PTC); remote-free = DECLINE
+  (re-architecture, gap real: 15.7x LLC misses); large-page = PARTIAL (density half
+  DONE via heap-ceiling fix; separate-pagemap/sizeless-free = future candidate,
+  removes O5 miss); two-branch fastpath = ADOPT-as-goal (libumem ~5 branches/3
+  essential); PAL = ADOPT (item 1).
+- PAL/AAL design (bed0e99): docs/design/PAL.md.
+- Pre-PAL baseline (01a34c5): ee69eaa x86 Debian 72/59/13/0.
+Phase B RUNNING (kiwi, Debian): @r10pal (item 1 refactor, branch r10pal, strict
+behaviour-preserving gate: identical make check + null fast-path A/B both arches,
+then QEMU riscv64/armhf/aarch64 + illumos cross) and @r10ci (item 2 CI merge:
+matrix + QEMU cross + TSan/UBSan + fuzz + format/tidy + self-host + all-checks).
