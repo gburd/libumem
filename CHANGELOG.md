@@ -5,6 +5,46 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-16
+
+Organization, portability, docs, and CI -- the allocator's behaviour and fast
+path are UNCHANGED (no ABI change; soname stays `libumem.so.2`; the fast-path
+A/B is +0.00 % instructions, inside the null, on x86_64 and aarch64). This
+release makes libumem more maintainable and portable without touching what
+makes it umem.
+
+- **PAL/AAL abstraction layer** (`pal/`, `aal/`): a behaviour-preserving
+  carve-out of the scattered platform/arch code behind two auditable C
+  interfaces with an `#error`-cascade port contract, modelled on snmalloc's
+  PAL/AAL split and libdb's per-operation layout. Gate A: `make check`
+  identical to baseline + one new port smoke test, both arches. Gate B: fast
+  path +0.00 %. Further migration of `umem.c`/`vmem_mmap.c` platform code into
+  the PAL continues incrementally; this release lands the contract, the POSIX
+  base, and the arch-file relocation.
+- **New architecture coverage**: the AAL names illumos/SPARCv9, RISC-V, arm32,
+  aarch64, x86_64, ppc; pointer/word width come from `UMEM_AAL_PTR_BITS` (no
+  hard-coded VA width). QEMU-user cross-build+run confirmed for riscv64, arm32,
+  and aarch64 (`pal_aal_smoke` + core unit tests pass). Two AAL gaps on the new
+  arches recorded as follow-ups: no per-arch `getpcstack` frame walk and no
+  lock-free rseq critical section on riscv64/arm32 (classic fallback runs).
+  illumos/SPARCv9: cross-compiles; no hardware run yet.
+- **Documentation site** (`docs/`, Jekyll + just-the-docs, GitHub + Codeberg
+  Pages): per-mechanism design pages, guide, reference, philosophy, ADRs, a
+  porting contract, and `SECURITY.md`. (Pages CI deploy validation owed.)
+- **Agent rules reorganized** into `AGENTS.md` (project-specific) +
+  `.github/copilot-instructions.md` (generic) + `.github/skills/building_and_testing.md`.
+- **CI merged with snmalloc's breadth**: QEMU cross-build, TSan/UBSan, a fuzz
+  harness, a clang-format gate, a self-host job (`make check` under
+  `LD_PRELOAD=libumem_malloc.so`), FreeBSD VM, and an all-checks gate.
+  (First-green CI run validation owed.)
+- **Evaluated and declined, with reasons** (`docs/design/snmalloc-feature-evaluation.md`,
+  ADRs 0003/0004): snmalloc's message-passing remote-free (would re-architect
+  libumem's cross-thread path -- a fundamental change) and its doubly-linked
+  involution freelist encoding (requires queues; libumem magazines are LIFO
+  stacks). libumem already has snmalloc's lock-free same-thread free (the PTC)
+  and its large-page density win (the heap-ceiling fix).
+
+
 ### Added
 
 - **PAL/AAL abstraction layer (`pal/`, `aal/`).** A behaviour-preserving

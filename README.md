@@ -5,7 +5,7 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v4.1.0): the Linux heap ceiling is gone, the
+> **Status (v4.2.0): the Linux heap ceiling is gone, the
 > maintenance thread runs, the per-CPU caches are used, the drop-in path
 > scales, and the freelist- and ownership-integrity gaps that left libumem
 > behind the size-class allocators are closed — per-thread cache bin slots AND
