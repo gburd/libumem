@@ -1,3 +1,10 @@
+---
+title: "snmalloc feature evaluation"
+parent: Design
+nav_order: 21
+permalink: /design/snmalloc-feature-evaluation/
+---
+
 # snmalloc headline features, evaluated for libumem
 
 Plan: `docs/plans/2026-10-16-adopt-from-snmalloc.md`, item 6. Source study:
