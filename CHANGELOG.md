@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **`getpcstack()` now walks the frame-pointer chain on riscv64 and arm32.**
+  These arches previously fell to the generic path and returned depth 0, so
+  `UMEM_DEBUG=audit` bufctl backtraces and `findleaks` showed empty stacks
+  there (r10 Gate C gap). Added per-arch frame walks modelled on the existing
+  x86_64/aarch64 paths, with the same P5.9 stack-bounds guard so a wild or
+  data-holding frame pointer cannot fault the allocator: riscv64 uses s0/x8
+  with the saved ra/fp pair below the frame pointer (ELF psABI, fp-8/fp-16);
+  arm32 (armhf) uses r7 (Thumb) / r11 (ARM) with the pair at fp[0]/fp[1]
+  (verified against GCC armhf codegen). Full depth needs
+  `-fno-omit-frame-pointer` (`--enable-frame-pointers`), as on x86_64.
+  Behaviour-preserving on existing arches: the x86_64 preprocessed output of
+  `getpcstack.c` is byte-identical to the prior release, and the two new
+  branches are guarded by `__riscv`/`__arm__`. Validated under QEMU-user on
+  kiwi: `pal_aal_smoke` reports `getpcstack depth=3` (riscv64, was 0) and
+  `depth=1` (arm32, was 0); aarch64 stays depth=4; native x86_64 `make check`
+  unchanged. Evidence: `docs/results/r11/getpcstack-newarch.md`.
+
 ## [4.2.0] - 2026-10-16
 
 Organization, portability, docs, and CI -- the allocator's behaviour and fast

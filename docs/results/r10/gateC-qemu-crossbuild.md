@@ -28,8 +28,8 @@ test binaries build), **RUNS** (the subset passes under qemu).
 
 | arch | triple | compiles | links | runs | notes |
 |---|---|:---:|:---:|:---:|---|
-| riscv64 | riscv64-linux-gnu | ✅ | ✅ | ✅ | smoke OK; umem_test 3/3; umem_test2 3/3 (4-thread). rseq auto=yes AND `--disable-rseq` both build+run. `getpcstack depth=0` (no per-arch frame walk — see gaps). |
-| arm32 (armhf) | arm-linux-gnueabihf | ✅ | ✅ | ✅ | smoke OK; umem_test 3/3; umem_test2 3/3 (4-thread). rseq auto=yes AND `--disable-rseq` both build+run. 32-bit (`ptr=32 word=32`). `getpcstack depth=0`. |
+| riscv64 | riscv64-linux-gnu | ✅ | ✅ | ✅ | smoke OK; umem_test 3/3; umem_test2 3/3 (4-thread). rseq auto=yes AND `--disable-rseq` both build+run. `getpcstack depth=0` here → **FIXED in r11: depth=3** with the new per-arch frame walk (`docs/results/r11/getpcstack-newarch.md`). |
+| arm32 (armhf) | arm-linux-gnueabihf | ✅ | ✅ | ✅ | smoke OK; umem_test 3/3; umem_test2 3/3 (4-thread). rseq auto=yes AND `--disable-rseq` both build+run. 32-bit (`ptr=32 word=32`). `getpcstack depth=0` here → **FIXED in r11: depth=1** (one real caller frame; `docs/results/r11/getpcstack-newarch.md`). |
 | aarch64 | aarch64-linux-gnu | ✅ | ✅ | ✅ | smoke OK; umem_test 3/3; umem_test2 3/3 (4-thread). Real rseq `.S` present. `getpcstack depth=4` (per-arch frame walk works). |
 
 All three arches reach **RUNS** in **both** rseq configurations. No arch was
@@ -85,6 +85,14 @@ umem_test2:  Test 1 4000 alloc/free single-thread PASS; Test 2 PTC PASS;
    loop guarded for frame-pointer availability) is owed before claiming
    debugging-tool parity on riscv64/arm32. This is a genuine AAL gap the
    refactor exposed, recorded honestly — it is not a correctness defect.
+
+   **FIXED in r11** (`feat(getpcstack): per-arch frame-pointer walks for
+   riscv64 and arm32`, commit `f03b004`): both arches now have a frame-pointer
+   walk modelled on the x86_64/aarch64 paths, with the P5.9 stack-bounds
+   guard. Under QEMU with `--enable-frame-pointers`, `pal_aal_smoke` reports
+   `getpcstack depth=3` (riscv64) and `depth=1` (arm32), both > 0; aarch64
+   stays depth=4; the x86_64 preprocessed output is byte-identical to master
+   (zero behaviour change). Evidence: `docs/results/r11/getpcstack-newarch.md`.
 
 2. **rseq on riscv64/arm32 is a no-op fallback, not a real critical section.**
    The DEFAULT configure enables rseq (the `linux/rseq.h` header is present),
