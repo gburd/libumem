@@ -62,6 +62,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/security/test_errlog_signal \
 		  test/security/test_stack_bounds \
 		  test/security/test_introspect_peer_uid \
+		  test/port/pal_aal_smoke \
 		  tools/umem_profile_dump
 
 # -version-info 2:0:0 (soname libumem.so.2): v4.0.0 removed the 86 umem_sm_*
@@ -87,7 +88,7 @@ endif
 
 # Conditionally include rseq support
 if ENABLE_RSEQ
-RSEQ_SOURCES = umem_rseq.c umem_rseq.h umem_rseq_x86_64.S umem_rseq_aarch64.S
+RSEQ_SOURCES = umem_rseq.c umem_rseq.h aal/umem_rseq_x86_64.S aal/umem_rseq_aarch64.S
 else
 RSEQ_SOURCES =
 endif
@@ -114,15 +115,15 @@ endif
 # (needed for #ifdef directives in the file).
 if SOLARIS_BUILD
 if ARCH_SPARC
-SPARC_ASM_SOURCES = sparc_subr_sol.S
+SPARC_ASM_SOURCES = aal/sparc_subr_sol.S
 X86_ASM_SOURCES =
 else
 SPARC_ASM_SOURCES =
 # x86 illumos/Solaris: provide getfp()/_breakpoint() via a portable C compat
-# unit (header-independent; see x86_subr_compat.c).  Without these the
+# unit (header-independent; see aal/x86_subr_compat.c).  Without these the
 # LD_PRELOAD malloc interposer aborts on its first stack walk with an
 # undefined 'getfp' symbol.
-X86_ASM_SOURCES = x86_subr_compat.c
+X86_ASM_SOURCES = aal/x86_subr_compat.c
 endif
 else
 SPARC_ASM_SOURCES =
@@ -135,6 +136,11 @@ AM_CCASFLAGS =
 
 libumem_la_SOURCES = init_lib.c \
 			atomic.h \
+			pal/pal.h \
+			pal/pal_concept.h \
+			pal/pal_posix.c \
+			aal/aal.h \
+			aal/aal_concept.h \
 			umem_agent_support.c \
 			umem_fail.c \
 			umem_stacktrace.c \
@@ -339,6 +345,16 @@ test_unit_test_rseq_fastpath_SOURCES = test/unit/test_rseq_fastpath.c
 test_unit_test_rseq_fastpath_LDADD = libumem.la
 test_unit_test_rseq_fastpath_LDFLAGS = -pthread
 test_unit_test_rseq_fastpath_CPPFLAGS = -I$(srcdir)
+
+# PAL/AAL port smoke test: references every required PAL and AAL symbol so a
+# port that forgot one fails to LINK (the C analogue of snmalloc's Concept
+# compile error; docs/design/PAL.md, validation E).  Links libumem.la for the
+# umem_pal_* symbols and the arch frame walk.  In TESTS: a broken port
+# contract must fail the gate, not pass silently.
+test_port_pal_aal_smoke_SOURCES = test/port/pal_aal_smoke.c
+test_port_pal_aal_smoke_LDADD = libumem.la
+test_port_pal_aal_smoke_LDFLAGS = -pthread
+test_port_pal_aal_smoke_CPPFLAGS = -I$(srcdir)
 
 test_property_prop_ownership_SOURCES = test/property/prop_ownership.c test/qc.c
 test_property_prop_ownership_LDADD = libumem.la
@@ -928,6 +944,7 @@ nobase_include_HEADERS = umem.h sys/vmem.h umem_hooks.h \
 # attribution is stale.  Whether test_main can safely join TESTS has not
 # been re-tested -- do not assume either way without running it.
 TESTS = umem_test umem_test2 umem_test3 umem_ptc_fork_test test/test_debug \
+	test/port/pal_aal_smoke \
 	test/debugger/test_inspect_e2e.sh test/debugger/test_lldb_e2e.sh \
 	test/debugger/test_introspect_contracts.sh \
 	test/stress/oracle_fast.sh

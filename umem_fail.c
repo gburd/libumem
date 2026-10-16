@@ -106,6 +106,17 @@ umem_do_abort(void)
 #define	ERR_STACK_FRAMES	128
 
 /*
+ * umem_pal_abort() -- the PAL contract name for the controlled abort.  A thin
+ * forwarder to umem_do_abort() above; see pal/pal.h.  Behaviour-preserving:
+ * the abort logic is unchanged, this only exposes it under the contract name.
+ */
+void __NORETURN
+umem_pal_abort(void)
+{
+	umem_do_abort();
+}
+
+/*
  * Symbolised stack trace into the error ring / stderr.
  *
  * NOT on the recoverable path any more.  umem_err_recoverable() runs on
