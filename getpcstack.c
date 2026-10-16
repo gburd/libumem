@@ -403,6 +403,175 @@ getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
 	return (depth);
 }
 
+#elif defined(__linux__) && defined(__riscv) && (__riscv_xlen == 64)
+/*
+ * RISC-V 64-bit (riscv64) stack unwinding.
+ *
+ * The RISC-V ELF psABI frame pointer is s0/x8.  With a standard frame
+ * (requires -fno-omit-frame-pointer; the AAL requests it via
+ * --enable-frame-pointers, like the x86_64 walk above), s0 points just
+ * ABOVE the saved register area, so the saved return address is at s0[-1]
+ * (fp-8) and the previous frame pointer is at s0[-2] (fp-16).  This differs
+ * from x86/aarch64, where the pair sits at fp[0]/fp[1].
+ *
+ * The P5.9 stack-bounds guard still applies: a wild or data-holding s0 (a
+ * caller built without frame pointers) must never fault the allocator.
+ * umem_frame_readable() bounds [fp-16, fp) against this thread's stack.
+ */
+#define UMEM_HAVE_REAL_PCSTACK 1
+
+/*ARGSUSED*/
+int
+getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
+{
+	uintptr_t *fp;
+	uintptr_t *nextfp;
+	uintptr_t fp_ceiling, stk_lo = 0, stk_hi = 0;
+	int have_bounds;
+	int depth = 0;
+	uintptr_t first_internal = 0;
+
+	if (check_sigthread)
+		return (0);		/* not safe from a signal handler */
+
+	/* Current frame pointer (s0/x8). */
+	__asm__ __volatile__("mv %0, s0" : "=r" (fp));
+
+	/*
+	 * Real stack bounds where the system will tell us (P5.9); the 16 MiB
+	 * span above the starting frame is only the fallback.
+	 */
+	have_bounds = umem_stack_bounds(&stk_lo, &stk_hi);
+	fp_ceiling = (uintptr_t)fp + (16 * 1024 * 1024);
+
+	while (depth < pcstack_limit && fp != NULL) {
+		/* frame pointers are pointer-aligned */
+		if ((uintptr_t)fp & (sizeof (uintptr_t) - 1))
+			break;
+
+		/*
+		 * The RISC-V pair sits BELOW fp (at fp-16/fp-8), so the
+		 * readable range is [fp-16, fp).  Reject a frame whose
+		 * saved-register slots fall outside this thread's stack.
+		 */
+		if ((uintptr_t)fp < 2 * sizeof (uintptr_t))
+			break;
+		if (!umem_frame_readable((uintptr_t)fp - 2 * sizeof (uintptr_t),
+		    have_bounds, stk_lo, stk_hi, fp_ceiling))
+			break;
+
+		nextfp = (uintptr_t *)(fp[-2]);	/* saved frame pointer */
+		/* return address at fp[-1]; leading libumem frames dropped */
+		if (depth > 0 || !umem_pc_internal(fp[-1]))
+			pcstack[depth++] = fp[-1];
+		else if (first_internal == 0)
+			first_internal = fp[-1];
+
+		/* stack grows down: a valid caller frame is higher */
+		if (nextfp <= fp)
+			break;
+		fp = nextfp;
+	}
+
+	/*
+	 * The walk never left libumem (built without frame pointers: s0 holds
+	 * data after the first frame).  Keep that one frame rather than an
+	 * empty stack; findleaks/leaks print why it is only one.
+	 */
+	if (depth == 0 && first_internal != 0 && pcstack_limit > 0)
+		pcstack[depth++] = first_internal;
+
+	return (depth);
+}
+
+#elif defined(__linux__) && defined(__arm__)
+/*
+ * ARM 32-bit (armhf, AAPCS) stack unwinding.
+ *
+ * AAPCS leaves the frame-pointer register ABI- and mode-dependent: GCC uses
+ * r11 for ARM code and r7 for Thumb-2.  With -fno-omit-frame-pointer (the
+ * AAL requests it via --enable-frame-pointers, like the x86_64 walk above)
+ * GCC emits the APCS-style frame on ARM where the frame-pointer register
+ * points at a slot holding the saved fp, and the saved return address (lr)
+ * is in the adjacent higher slot.  We read the pair at fp[0]/fp[1] and treat
+ * fp as pointing at { saved_fp, saved_lr } -- the common AAPCS case.
+ *
+ * This is a heuristic shape (ARM has never had one mandated frame layout),
+ * so the P5.9 stack-bounds guard is load-bearing here: a wild or
+ * data-holding fp (a caller built without frame pointers, or the "wrong"
+ * fp register for this TU's mode) must never fault the allocator.  Every
+ * dereference is bounds-checked against this thread's stack and the chain
+ * must strictly increase; a frame that fails either check simply stops the
+ * walk instead of reading hostile memory.
+ */
+#define UMEM_HAVE_REAL_PCSTACK 1
+
+/*ARGSUSED*/
+int
+getpcstack(uintptr_t *pcstack, int pcstack_limit, int check_sigthread)
+{
+	uintptr_t *fp;
+	uintptr_t *nextfp;
+	uintptr_t fp_ceiling, stk_lo = 0, stk_hi = 0;
+	int have_bounds;
+	int depth = 0;
+	uintptr_t first_internal = 0;
+
+	if (check_sigthread)
+		return (0);		/* not safe from a signal handler */
+
+	/*
+	 * Current frame pointer: r7 in Thumb, r11 in ARM.  __thumb__ is
+	 * defined when this TU is compiled as Thumb (the armhf default on
+	 * Debian), so pick the register the compiler actually used.
+	 */
+#if defined(__thumb__)
+	__asm__ __volatile__("mov %0, r7" : "=r" (fp));
+#else
+	__asm__ __volatile__("mov %0, r11" : "=r" (fp));
+#endif
+
+	/*
+	 * Real stack bounds where the system will tell us (P5.9); the 16 MiB
+	 * span above the starting frame is only the fallback.
+	 */
+	have_bounds = umem_stack_bounds(&stk_lo, &stk_hi);
+	fp_ceiling = (uintptr_t)fp + (16 * 1024 * 1024);
+
+	while (depth < pcstack_limit && fp != NULL) {
+		/* frame pointers are pointer-aligned */
+		if ((uintptr_t)fp & (sizeof (uintptr_t) - 1))
+			break;
+
+		/* Never dereference a frame outside this thread's stack */
+		if (!umem_frame_readable((uintptr_t)fp, have_bounds,
+		    stk_lo, stk_hi, fp_ceiling))
+			break;
+
+		nextfp = (uintptr_t *)(fp[0]);	/* saved frame pointer */
+		/* saved lr at fp[1]; leading libumem frames dropped */
+		if (depth > 0 || !umem_pc_internal(fp[1]))
+			pcstack[depth++] = fp[1];
+		else if (first_internal == 0)
+			first_internal = fp[1];
+
+		/* stack grows down: a valid caller frame is higher */
+		if (nextfp <= fp)
+			break;
+		fp = nextfp;
+	}
+
+	/*
+	 * The walk never left libumem (built without frame pointers: the fp
+	 * register holds data after the first frame).  Keep that one frame
+	 * rather than an empty stack; findleaks/leaks print why it is only one.
+	 */
+	if (depth == 0 && first_internal != 0 && pcstack_limit > 0)
+		pcstack[depth++] = first_internal;
+
+	return (depth);
+}
+
 #elif defined(__MACH__)
 /*
  * Darwin doesn't have any exposed frame info, so give it some space.
