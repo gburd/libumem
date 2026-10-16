@@ -19,6 +19,9 @@ ltmain.sh
 missing
 .deps
 Doxyfile
+# The docs site ships its own hand-written Doxyfile (not the Doxyfile.in
+# autotools artifact); keep it tracked.
+!docs/Doxyfile
 Makefile
 config.h
 config.log

@@ -1,0 +1,23 @@
+---
+layout: default
+---
+
+{%- comment -%}
+  Hero-styled content layout: gives every page the landing-page look --
+  a large title and, when the page front-matter sets `lede:`, a light
+  sub-heading and a horizontal rule -- then renders the page body.
+
+  A page opts out of the auto hero with `hero: false` (the home page,
+  which builds its own hero inline).
+{%- endcomment -%}
+
+{%- if page.hero != false and page.title -%}
+<h1 class="fs-9">{{ page.title }}</h1>
+{%- if page.lede %}
+<p class="fs-6 fw-300">{{ page.lede }}</p>
+{%- endif %}
+
+---
+{%- endif -%}
+
+{{ content }}

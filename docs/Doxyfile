@@ -1,0 +1,118 @@
+# Doxyfile for libumem.
+#
+# Generates the C API reference published to GitHub Pages and Codeberg
+# Pages (into /api).  Markdown guides (the repo README) plus C-header
+# API extraction, with the README as the main page.  Mirrors libxtc's
+# Doxygen setup.
+
+# -- Project settings --
+PROJECT_NAME           = "libumem"
+PROJECT_NUMBER         = "4.1.0"
+PROJECT_BRIEF          = "Slab + magazine allocator with object caches, vmem arenas, and built-in heap debugging"
+PROJECT_LOGO           =
+OUTPUT_DIRECTORY       = api
+
+# -- Build settings --
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = NO
+
+# -- Input files --
+# README as main page, plus the public headers.  Internal headers
+# (umem_impl.h, umem_base.h, the *_partition.h, the arena/numa/ptc
+# internals) are intentionally omitted -- they are not the public API.
+INPUT                  = ../README.md \
+                         ../umem.h \
+                         ../umem_inspect.h \
+                         ../umem_own.h \
+                         ../umem_profile.h \
+                         ../umem_hooks.h
+
+FILE_PATTERNS          = *.h *.md
+RECURSIVE              = NO
+EXCLUDE_PATTERNS       = */test_* */umem_test* *_test.h
+
+USE_MDFILE_AS_MAINPAGE = ../README.md
+
+# -- Source browser --
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+# -- Output format --
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_FILE_EXTENSION    = .html
+HTML_COLORSTYLE_HUE    = 209
+HTML_COLORSTYLE_SAT    = 80
+HTML_COLORSTYLE_GAMMA  = 90
+HTML_DYNAMIC_SECTIONS  = YES
+HTML_INDEX_NUM_ENTRIES = 100
+GENERATE_TREEVIEW      = YES
+SEARCHENGINE           = YES
+SERVER_BASED_SEARCH    = NO
+
+# -- Other output formats (disabled) --
+GENERATE_LATEX         = NO
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+
+# -- Diagrams --
+HAVE_DOT               = NO
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+GRAPHICAL_HIERARCHY    = NO
+
+# -- Preprocessing --
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+PREDEFINED             = __cplusplus \
+                         UMEM_ENABLE_EXPERIMENTAL
+
+# -- Warnings --
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+WARN_FORMAT            = "$file:$line: $text"
+# Surface doc-rot in CI logs without failing on the existing
+# undocumented-symbol backlog.  Flip to YES once the public headers
+# carry full Doxygen comments.
+WARN_AS_ERROR          = NO
+
+# GitHub-flavoured markdown anchor IDs so in-page TOC links resolve.
+MARKDOWN_ID_STYLE      = GITHUB
+
+# -- Grouping and navigation --
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+SORT_MEMBER_DOCS       = YES
+SORT_BRIEF_DOCS        = YES
+
+# -- Markdown and styling --
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+TAB_SIZE               = 8
+
+DOT_NUM_THREADS        = 0
+
+# -- Layout --
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = ..
+SHOW_INCLUDE_FILES     = YES
+SHOW_GROUPED_MEMB_INC  = YES
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = NO
+MULTILINE_CPP_IS_BRIEF = NO
+
+# -- Example paths --
+EXAMPLE_PATH           = ../examples/
+EXAMPLE_PATTERNS       = *.c *.h
+EXAMPLE_RECURSIVE      = YES

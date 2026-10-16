@@ -1,0 +1,87 @@
+// docs/_sass/custom/custom.scss -- libumem site overrides on just-the-docs.
+
+// ---- Tighten the left navigation ------------------------------------
+// The default side nav is wide and airy; narrow it and tighten the line
+// spacing so it takes less room and shows more at a glance.
+$nav-width: 232px !default;
+
+.side-bar {
+  width: $nav-width;
+}
+@media (min-width: 66.5rem) {
+  .side-bar {
+    width: $nav-width;
+  }
+  .main {
+    margin-left: $nav-width;
+  }
+}
+.nav-list .nav-list-item {
+  font-size: 0.75rem;
+  .nav-list-link {
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+    line-height: 1.3;
+  }
+}
+
+// ---- Code-block line spacing ----------------------------------------
+// just-the-docs' default line-height on <pre>/<code> blocks reads as
+// oddly airy.  Tighten it so snippets look like code, not double-spaced
+// prose.
+.main-content {
+  pre.highlight,
+  figure.highlight pre,
+  div.highlighter-rouge pre.highlight {
+    line-height: 1.3;
+  }
+  pre,
+  code {
+    line-height: 1.3;
+  }
+}
+
+// ---- Rendered man-page HTML (from mandoc, in .manpage) --------------
+// mandoc emits semantic classes; colorize them so the API reference
+// reads like a syntax-highlighted man page rather than flat text.
+.manpage {
+  font-size: 0.85rem;
+  line-height: 1.4;
+
+  // section headings (NAME, SYNOPSIS, DESCRIPTION, ...)
+  h1.Sh,
+  h2.Ss {
+    font-size: 0.95rem;
+    margin-top: 1.1em;
+    border-bottom: 1px solid #e6e6e6;
+    padding-bottom: 0.2em;
+  }
+
+  // the head/foot title tables mandoc adds -- quiet them down
+  table.head,
+  table.foot {
+    color: #999;
+    font-size: 0.75rem;
+    width: 100%;
+  }
+
+  // function names, types, arguments, includes, flags
+  code.Nm { color: #b5006e; font-weight: 600; }   // the named functions
+  code.Fn { color: #0b5fa5; font-weight: 600; }   // a function in synopsis
+  var.Ft  { color: #2e7d32; }                     // return / arg types
+  var.Fa  { color: #6a1b9a; }                     // function arguments
+  code.In { color: #a15c00; }                     // #include
+  code.Dv,
+  code.Er { color: #b5006e; }                     // constants / error codes
+  var.Va  { color: #6a1b9a; }
+  code.Fl { color: #a15c00; }                     // flags
+
+  // keep monospace where mandoc uses it
+  code, var, pre { font-family: $mono-font-family; }
+}
+
+// ---- Hide the theme's "This site uses Just the Docs" footer note ----
+.site-footer {
+  // keep our own footer content (added via _includes) but drop the
+  // default attribution line.
+}
