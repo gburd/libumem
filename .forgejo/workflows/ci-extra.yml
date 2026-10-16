@@ -1,0 +1,188 @@
+# libumem CI (Forgejo / Codeberg mirror).
+#
+# Mirrors the subset of .github/workflows/ci.yml whose runner model matches
+# the Codeberg forgejo runner (x86_64 docker only -- see
+# .github/skills/building_and_testing.md and .forgejo/workflows/tests.yml):
+#
+#   fuzz        bounded libFuzzer run over the public malloc API
+#   self-host   make check under LD_PRELOAD=libumem_malloc.so
+#   format      clang-format --dry-run on changed C sources (gate)
+#   tidy        clang-tidy over owned sources (lenient: warnings only)
+#
+# NOT mirrored here (runner model does not match the x86_64 docker runner):
+#   - build-test matrix (release/debug + flavours): already covered by
+#     .forgejo/workflows/tests.yml (normal/release/asan/ubsan/coverage) and,
+#     for aarch64, .forgejo/workflows/aarch64-nightly.yml on EC2.
+#   - qemu-crossbuild (riscv64/armhf/arm64): needs qemu-user + binfmt + a cross
+#     toolchain; runs on the GitHub side (ci.yml). Could be added here once the
+#     Codeberg runner image carries binfmt-support.
+#   - freebsd VM: vmactions needs a KVM-capable GitHub runner, not available on
+#     the Codeberg docker runner.
+#   - all-checks gate: GitHub-side (ci.yml) drives branch protection; Forgejo's
+#     existing tests.yml/lint.yml are the Codeberg gate.
+#
+# VALIDATION STATUS: authored, not yet proven green. validation owed per job:
+# first green run on the Codeberg runner.
+
+name: ci-extra
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  # ==========================================================================
+  # Fuzzing: bounded libFuzzer run over the public malloc API (test/fuzz).
+  # validation owed: first green run.
+  # ==========================================================================
+  fuzz:
+    name: fuzz (libFuzzer, bounded)
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    steps:
+      - name: Install dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 git ca-certificates clang
+
+      - uses: actions/checkout@v4
+
+      - name: Build libumem (for the interposer under test)
+        run: |
+          ./autogen.sh
+          ./configure
+          make -j"$(nproc)" libumem_malloc.la
+
+      - name: Build fuzz harness (libFuzzer + ASan)
+        run: |
+          clang -g -O1 -fsanitize=fuzzer,address \
+            -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION \
+            test/fuzz/fuzz_malloc.c -o fuzz_malloc
+
+      - name: Fuzz the interposed allocator (bounded)
+        run: |
+          ASAN_OPTIONS=detect_leaks=0 \
+          LD_PRELOAD="$PWD/.libs/libumem_malloc.so" \
+            ./fuzz_malloc -max_total_time=90 -timeout=25 \
+            test/fuzz/corpus
+        timeout-minutes: 5
+
+      - name: Upload crash artifacts on failure
+        if: failure()
+        uses: forgejo/upload-artifact@v3
+        with:
+          name: fuzz-crashes
+          path: |
+            crash-*
+            timeout-*
+            oom-*
+          retention-days: 14
+
+  # ==========================================================================
+  # SELF-HOST: make check with the shipped interposer preloaded.
+  # validation owed: first green run.
+  # ==========================================================================
+  self-host:
+    name: self-host (LD_PRELOAD interposer)
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    steps:
+      - name: Install dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 git ca-certificates gdb python3
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          ./autogen.sh
+          ./configure
+          make -j"$(nproc)"
+
+      - name: make check under LD_PRELOAD=libumem_malloc.so
+        run: |
+          LD_PRELOAD="$PWD/.libs/libumem_malloc.so" \
+            make check TESTS='umem_test umem_test2 umem_test3 umem_ptc_fork_test'
+        timeout-minutes: 20
+
+  # ==========================================================================
+  # Format gate: clang-format --dry-run -Werror on CHANGED C sources only.
+  # Uses the committed .clang-format (does NOT reformat the world). A gate.
+  # validation owed: first green run.
+  # ==========================================================================
+  format:
+    name: clang-format (changed files)
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    steps:
+      - name: Install clang-format
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git ca-certificates clang-format
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: clang-format --dry-run on changed C sources
+        run: |
+          set -eo pipefail
+          # Forgejo exposes the PR base sha here; fall back to HEAD~1 on push.
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then
+            base=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+          fi
+          files=$(git diff --name-only --diff-filter=ACMR "$base" HEAD \
+            -- '*.c' '*.h' | grep -vE '^test/(munit|qc|tdigest)\.(c|h)$' || true)
+          if [ -z "$files" ]; then
+            echo "No changed C sources to format-check."
+            exit 0
+          fi
+          echo "Checking:"; echo "$files"
+          echo "$files" | xargs clang-format --dry-run -Werror
+
+  # ==========================================================================
+  # clang-tidy: curated check list over owned sources. LENIENT -- warnings
+  # only, never gates (continue-on-error). See .clang-tidy header.
+  # validation owed: first green run.
+  # ==========================================================================
+  tidy:
+    name: clang-tidy (lenient, warnings)
+    runs-on: docker
+    container:
+      image: codeberg.org/forgejo-contrib/forgejo-runner-debian:bookworm
+    continue-on-error: true
+    steps:
+      - name: Install clang-tidy
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 git ca-certificates clang clang-tidy
+
+      - uses: actions/checkout@v4
+
+      - name: Configure (generate config.h for the headers)
+        run: |
+          ./autogen.sh
+          ./configure CC=clang
+
+      - name: clang-tidy over umem.c (warnings, non-gating)
+        run: |
+          clang-tidy umem.c -- -I. -std=gnu11 \
+            || echo "clang-tidy reported findings (non-gating)"

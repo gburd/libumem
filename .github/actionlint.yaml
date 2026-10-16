@@ -1,0 +1,10 @@
+# actionlint config.
+#
+# The Forgejo/Codeberg runner is addressed by the label `docker` (see
+# .forgejo/workflows/*.yml). actionlint is a GitHub tool and does not know
+# Forgejo's runner labels, so declare it here as a self-hosted label to stop
+# the false-positive "label docker is unknown" error on the .forgejo
+# workflows. GitHub-hosted labels (ubuntu-24.04, ...) are still validated.
+self-hosted-runner:
+  labels:
+    - docker

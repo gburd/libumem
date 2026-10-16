@@ -1,0 +1,40 @@
+# libumem clang-tidy configuration.
+#
+# A curated menu adapted from snmalloc's .clang-tidy, filtered to checks that
+# apply to a C allocator (the modernize-*/cppcoreguidelines-* C++ checks are
+# dropped). These are the structural-bug checks that pay off on this kind of
+# code: macro hygiene, swapped arguments, redundant/dead expressions, side
+# effects in asserts.
+#
+# LENIENT ON PURPOSE: the CI job runs clang-tidy as WARNINGS, not errors
+# (WarningsAsErrors is empty below), so legacy Solaris-heritage code does not
+# block a PR. Path to tightening: once the warning count is driven down on the
+# files we own, move specific checks into WarningsAsErrors (start with
+# bugprone-macro-parentheses and bugprone-swapped-arguments, which are almost
+# always real), and eventually flip the CI job's `-warnings-as-errors`.
+Checks: >
+  -*,
+  clang-diagnostic-*,
+  bugprone-assert-side-effect,
+  bugprone-macro-parentheses,
+  bugprone-macro-repeated-side-effects,
+  bugprone-misplaced-widening-cast,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-memory-comparison,
+  bugprone-suspicious-memset-usage,
+  bugprone-swapped-arguments,
+  bugprone-too-small-loop-variable,
+  misc-redundant-expression,
+  misc-static-assert,
+  readability-non-const-parameter,
+  clang-analyzer-core.*,
+  clang-analyzer-unix.Malloc,
+  clang-analyzer-deadcode.DeadStores
+
+# Empty: clang-tidy findings are reported as warnings, never gate a PR, until
+# the owned-file warning count is driven to zero (see header). Do not add
+# checks here without first clearing them in CI.
+WarningsAsErrors: ''
+
+# Apply the checks to libumem's own sources, not vendored or system headers.
+HeaderFilterRegex: '.*\.(h|c)$'

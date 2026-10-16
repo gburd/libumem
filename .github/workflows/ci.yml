@@ -1,0 +1,463 @@
+# libumem CI (GitHub Actions).
+#
+# Merges libumem's existing autotools gate (.forgejo/workflows/tests.yml) with
+# the breadth of snmalloc's main.yml, adapted to a C/autotools allocator:
+#
+#   build-test      build + make check across Ubuntu x86_64/aarch64,
+#                   Release/Debug, and libumem's configure flavours
+#   qemu-crossbuild cross-build + test under qemu-user (riscv64/armhf/arm64)
+#   sanitizers      TSan + UBSan (clang), oracle/stress run twice
+#   fuzz            bounded libFuzzer run over the public malloc API
+#   format          clang-format --dry-run on changed files (gate)
+#   tidy            clang-tidy over owned sources (lenient: warnings only)
+#   self-host       make check under LD_PRELOAD=libumem_malloc.so
+#   freebsd         FreeBSD VM build + test (vmactions)
+#   all-checks      final gate; branch protection points here
+#
+# VALIDATION STATUS: authored, not yet proven green -- no run has executed on
+# a repo with runners. Each job carries a "validation owed: first green run"
+# note. Static analysis (actionlint) is the only validation applied so far.
+#
+# The EC2-gated heavy benchmarks (scripts/ec2/, metal A/B, hotpath_ab.sh) are
+# deliberately NOT here: they need the burner AWS account + metal instances.
+# They stay manual/dispatch via scripts/ec2/ -- see .github/skills/building_and_testing.md.
+
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' && github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ==========================================================================
+  # Build + test matrix: Ubuntu x86_64 + aarch64, Release + Debug, plus
+  # libumem's configure flavours. Autotools (autogen + configure + make +
+  # make check), NOT CMake.
+  # validation owed: first green run.
+  # ==========================================================================
+  build-test:
+    name: ${{ matrix.os }} ${{ matrix.flavour }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        # Release = the shipped binary (-O3 -g -DNDEBUG: ASSERT() compiled
+        # out, a different program from debug). Debug = default build with
+        # ASSERT() live. introspect/frame-pointers/disable-rseq are libumem's
+        # configure flavours that change the build materially.
+        flavour: [release, debug, introspect, frame-pointers, no-rseq]
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool \
+            pkg-config m4 gdb lldb python3 python3-dev
+
+      - uses: actions/checkout@v4
+
+      - name: Generate configure
+        run: ./autogen.sh
+
+      - name: Configure (${{ matrix.flavour }})
+        run: |
+          case "${{ matrix.flavour }}" in
+            release)        ./configure CFLAGS='-O3 -g -DNDEBUG' ;;
+            debug)          ./configure ;;
+            introspect)     ./configure --enable-introspect ;;
+            frame-pointers) ./configure --enable-frame-pointers ;;
+            no-rseq)        ./configure --disable-rseq ;;
+          esac
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: make check
+        run: make check
+        timeout-minutes: 20
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}-${{ matrix.flavour }}
+          path: |
+            test-suite.log
+            test/**/*.log
+            **/config.log
+          retention-days: 14
+
+  # ==========================================================================
+  # QEMU-user cross-build + test: riscv64, armhf, arm64.
+  #
+  # Template: snmalloc's qemu-crossbuild. Install libstdc++-cross +
+  # qemu-user + binfmt, configure with the cross toolchain triple, build,
+  # `file` to verify the output is really cross-arch, then run make check
+  # under qemu (binfmt makes the foreign binaries directly runnable).
+  #
+  # COORDINATION (@r10pal): these legs depend on the PAL/AAL cross-arch
+  # support landing. Until a given arch's PAL support is complete and proven,
+  # the leg is `continue-on-error: true` so an incomplete port does not fail
+  # the whole CI -- it reports red on that cell only. Flip to false per-arch
+  # as each becomes green.
+  # validation owed: first green run; PAL/AAL completeness per arch.
+  # ==========================================================================
+  qemu-crossbuild:
+    name: cross ${{ matrix.arch.triple }} ${{ matrix.flavour }}
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        flavour: [release, debug]
+        arch:
+          - name: armhf
+            triple: arm-linux-gnueabihf
+            gcc-pkg: gcc-arm-linux-gnueabihf
+            libc-pkg: libc6-dev-armhf-cross
+            qemu: qemu-arm-static
+          - name: arm64
+            triple: aarch64-linux-gnu
+            gcc-pkg: gcc-aarch64-linux-gnu
+            libc-pkg: libc6-dev-arm64-cross
+            qemu: qemu-aarch64-static
+          - name: riscv64
+            triple: riscv64-linux-gnu
+            gcc-pkg: gcc-riscv64-linux-gnu
+            libc-pkg: libc6-dev-riscv64-cross
+            qemu: qemu-riscv64-static
+    steps:
+      - name: Install cross toolchain + QEMU + binfmt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config m4 \
+            qemu-user-static binfmt-support \
+            ${{ matrix.arch.gcc-pkg }} ${{ matrix.arch.libc-pkg }}
+
+      - uses: actions/checkout@v4
+
+      - name: Generate configure
+        run: ./autogen.sh
+
+      # Cross-configure: --host sets the compiler-tool prefix; disable rseq on
+      # the cross legs where PAL arch support may be incomplete (comment, not a
+      # claim). Static-ish run so qemu-user can execute without a sysroot ld
+      # search dance; keep LD_LIBRARY_PATH pointed at the build .libs for tests.
+      - name: Cross-configure (${{ matrix.arch.triple }} / ${{ matrix.flavour }})
+        run: |
+          case "${{ matrix.flavour }}" in
+            release) EXTRA="CFLAGS='-O2 -g -DNDEBUG'" ;;
+            debug)   EXTRA="" ;;
+          esac
+          eval ./configure \
+            --host=${{ matrix.arch.triple }} \
+            --build=x86_64-pc-linux-gnu \
+            CC=${{ matrix.arch.triple }}-gcc \
+            "$EXTRA"
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Verify cross-compilation
+        run: |
+          # Prove the output is really the foreign architecture, not host.
+          file .libs/libumem.so.* || file .libs/libumem.so
+          file test/.libs/umem_test || true
+
+      # Run under qemu-user (binfmt-support auto-runs foreign ELFs). Exclude
+      # the perf/bench entries and anything timing-sensitive under emulation;
+      # the fast unit tests are what prove the port is correct.
+      - name: make check (under qemu-user)
+        run: |
+          export QEMU_LD_PREFIX=/usr/${{ matrix.arch.triple }}
+          make check TESTS='umem_test umem_test2 umem_test3' \
+            || { echo "::warning::qemu cross tests failed for ${{ matrix.arch.triple }} (PAL support may be incomplete -- see job comment)"; exit 1; }
+        timeout-minutes: 30
+
+  # ==========================================================================
+  # TSan + UBSan (clang). Build with both sanitizers, run the oracle/stress
+  # tests TWICE (snmalloc's --repeat-until-fail 2 equivalent), excluding the
+  # known-incompatible entries (the interpose-ratio / timing gates that need a
+  # quiet rig and the fork tests TSan cannot model).
+  # validation owed: first green run; the exclude list may need tuning once a
+  # real sanitizer run surfaces which entries are genuinely incompatible.
+  # ==========================================================================
+  sanitizers:
+    name: TSan + UBSan (clang)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config m4 \
+            clang llvm python3
+
+      - uses: actions/checkout@v4
+
+      - name: Generate configure
+        run: ./autogen.sh
+
+      # TSan and UBSan together, clang. --disable-rseq: rseq's per-CPU
+      # restartable sequences use raw asm TSan cannot instrument and would
+      # false-positive on; the sanitizer leg validates the generic path.
+      - name: Configure (TSan + UBSan)
+        run: |
+          ./configure CC=clang \
+            CFLAGS='-fsanitize=thread,undefined -fno-omit-frame-pointer -g -O1' \
+            LDFLAGS='-fsanitize=thread,undefined' \
+            --disable-rseq
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Oracle + stress, run twice (repeat-until-fail 2 equivalent)
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          set -e
+          # Build the oracle explicitly (it is not in the default `make check`
+          # TESTS set) and run it twice. Short knobs: the sanitizer slows it
+          # ~20x, so a long duration would time the job out.
+          make -j"$(nproc)" test/stress/stress_concurrency_oracle
+          for i in 1 2; do
+            echo "=== oracle pass $i ==="
+            LD_LIBRARY_PATH=.libs \
+              ./test/stress/.libs/stress_concurrency_oracle \
+              --threads=4 --duration=10 --size-class=mixed --pattern=all
+          done
+          # The fast unit tests twice as well; exclude the interpose free-ratio
+          # / scaling gates (need a quiet rig; SKIP under load, not meaningful
+          # here) and the fork reload races (TSan cannot model fork+rseq).
+          for i in 1 2; do
+            echo "=== unit pass $i ==="
+            make check TESTS='umem_test umem_test2 umem_test3'
+          done
+        timeout-minutes: 40
+
+  # ==========================================================================
+  # Fuzzing: bounded libFuzzer run over the public malloc API (test/fuzz).
+  # Builds libumem_malloc.so, builds the harness with libFuzzer+ASan, and
+  # fuzzes the INTERPOSED allocator (LD_PRELOAD) for a bounded wall-clock
+  # budget seeded from the committed corpus. Open-ended fuzzing is manual.
+  # validation owed: first green run.
+  # ==========================================================================
+  fuzz:
+    name: Fuzzing (libFuzzer, bounded)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config m4 clang
+
+      - uses: actions/checkout@v4
+
+      - name: Build libumem (for the interposer under test)
+        run: |
+          ./autogen.sh
+          ./configure
+          make -j"$(nproc)" libumem_malloc.la
+
+      - name: Build fuzz harness (libFuzzer + ASan)
+        run: |
+          clang -g -O1 -fsanitize=fuzzer,address \
+            -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION \
+            test/fuzz/fuzz_malloc.c -o fuzz_malloc
+
+      - name: Fuzz the interposed allocator (bounded)
+        run: |
+          # 90s wall budget + corpus seeds. detect_leaks=0: the harness drains
+          # its live set, but the interposer's bootstrap memalign table is a
+          # deliberate process-lifetime allocation (malloc_interpose.c), not a
+          # leak -- do not fail the fuzzer on it.
+          ASAN_OPTIONS=detect_leaks=0 \
+          LD_PRELOAD=$PWD/.libs/libumem_malloc.so \
+            ./fuzz_malloc -max_total_time=90 -timeout=25 \
+            test/fuzz/corpus
+        timeout-minutes: 5
+
+      - name: Upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: |
+            crash-*
+            timeout-*
+            oom-*
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # ==========================================================================
+  # Format gate: clang-format --dry-run -Werror on CHANGED C sources only.
+  # Uses the committed .clang-format (Solaris cstyle heritage; matches the
+  # existing code -- it does NOT reformat the world). This IS a gate.
+  # validation owed: first green run.
+  # ==========================================================================
+  format:
+    name: clang-format (changed files)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: clang-format --dry-run on changed C sources
+        run: |
+          set -eo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then
+            # push build: diff against the previous commit.
+            base=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+          fi
+          files=$(git diff --name-only --diff-filter=ACMR "$base" HEAD \
+            -- '*.c' '*.h' | grep -vE '^test/(munit|qc|tdigest)\.(c|h)$' || true)
+          if [ -z "$files" ]; then
+            echo "No changed C sources to format-check."
+            exit 0
+          fi
+          echo "Checking:"; echo "$files"
+          # -Werror makes a formatting diff a non-zero exit.
+          echo "$files" | xargs clang-format --dry-run -Werror
+
+  # ==========================================================================
+  # clang-tidy: curated check list over owned sources. LENIENT -- warnings
+  # only, never gates (see .clang-tidy header for the path to tightening).
+  # validation owed: first green run.
+  # ==========================================================================
+  tidy:
+    name: clang-tidy (lenient, warnings)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - name: Install clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config m4 \
+            clang clang-tidy
+
+      - uses: actions/checkout@v4
+
+      - name: Configure (generate config.h for the headers)
+        run: |
+          ./autogen.sh
+          ./configure CC=clang
+
+      - name: clang-tidy over umem.c (warnings, non-gating)
+        run: |
+          # One representative translation unit; expand the file list as the
+          # warning count on owned files is driven down. Never -warnings-as-
+          # errors here -- the .clang-tidy WarningsAsErrors stays empty until
+          # the owned-file count is zero.
+          clang-tidy umem.c -- -I. -std=gnu11 \
+            || echo "::warning::clang-tidy reported findings (non-gating)"
+
+  # ==========================================================================
+  # SELF-HOST: build libumem, then run `make check` with the shipped
+  # interposer preloaded (LD_PRELOAD=.libs/libumem_malloc.so). Exercises the
+  # drop-in continuously -- high-value and libumem-specific. The test harness
+  # processes allocate through libumem, so this is the interposer under real
+  # churn, not a synthetic microbench.
+  # validation owed: first green run.
+  # ==========================================================================
+  self-host:
+    name: self-host (LD_PRELOAD interposer)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config m4 \
+            gdb python3
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          ./autogen.sh
+          ./configure
+          make -j"$(nproc)"
+
+      - name: make check under LD_PRELOAD=libumem_malloc.so
+        env:
+          # The interposer is already libumem's own allocator; preloading it
+          # over the test processes exercises the shipped drop-in on every
+          # alloc the suite makes.
+          LD_PRELOAD: ${{ github.workspace }}/.libs/libumem_malloc.so
+        run: |
+          make check TESTS='umem_test umem_test2 umem_test3 umem_ptc_fork_test'
+        timeout-minutes: 20
+
+  # ==========================================================================
+  # BSD VM job: FreeBSD build + test via vmactions. snmalloc uses the same
+  # action; libumem's platform code has a __FreeBSD__ path (umem.c, vmem_mmap).
+  # validation owed: first green run on the FreeBSD VM.
+  # ==========================================================================
+  freebsd:
+    name: FreeBSD (VM)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build + test on FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.1"
+          usesh: true
+          prepare: |
+            pkg install -y autoconf automake libtool pkgconf gmake m4 python3
+          run: |
+            ./autogen.sh
+            ./configure
+            gmake -j"$(sysctl -n hw.ncpu)"
+            gmake check TESTS='umem_test umem_test2 umem_test3'
+
+  # ==========================================================================
+  # Final gate. Branch protection points at this one check. `needs:` the
+  # REQUIRED jobs only -- qemu-crossbuild (continue-on-error until PAL lands),
+  # tidy (lenient) and freebsd (VM, flaky infra) are intentionally NOT
+  # required so a PAL-incomplete arch, a legacy tidy finding, or VM flakiness
+  # does not block merges.
+  # ==========================================================================
+  all-checks:
+    name: all-checks
+    if: always()
+    needs: [build-test, sanitizers, fuzz, format, self-host]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify required jobs succeeded
+        run: |
+          # `needs` with if:always() still lets this run when a dep failed, so
+          # check each result explicitly and fail if any required one did not
+          # pass. This is the single check branch protection should require.
+          # join() with no separator uses a comma; we split on it below.
+          results='${{ join(needs.*.result) }}'
+          echo "Required job results: $results"
+          IFS=','
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "A required job did not succeed ($r)."
+              exit 1
+            fi
+          done
