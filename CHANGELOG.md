@@ -22,6 +22,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `depth=1` (arm32, was 0); aarch64 stays depth=4; native x86_64 `make check`
   unchanged. Evidence: `docs/results/r11/getpcstack-newarch.md`.
 
+- **PAL memory syscalls carved behind the `umem_pal_*` reserve/commit/
+  decommit/release contract.** The scattered mmap/munmap/mprotect/madvise
+  sites and their per-OS flag sets (`ALLOC_PROT`/`FREE_PROT`,
+  `MAP_NORESERVE`/`MAP_ANON`, the PROT_NONE reservation, the
+  MADV_FREE/MADV_DONTNEED decommit split, illumos `MAP_ALIGN`, the Windows
+  VirtualAlloc/VirtualFree fallbacks) moved out of `vmem_mmap.c` (9 sites) and
+  `umem.c` (2 sites: the slab-page lazy reclaim and the CPU->node table map)
+  into `pal/pal_mem.h` behind the memory contract the PAL design names
+  (`umem_pal_reserve`/`reserve_aligned`/`commit`/`decommit`/`release`, plus
+  `map_rw` for the one-shot anonymous RW map). Each op is a `static inline`
+  emitting the exact syscall and flags the site emitted before, so the
+  generated code is byte-for-byte identical and the fast path (which makes no
+  syscall) is untouched; the arena policy (guard-vs-dontneed decision, errno
+  discipline, vmem bookkeeping) stays with its callers. Per-OS differences
+  stay behind the same capability `#if` the sites used, not new override
+  files. `pal_concept.h` now enumerates the memory contract and the port
+  smoke test exercises a self-contained reserve/commit/decommit/release
+  round-trip, so a port missing any symbol fails to link. Gate A: `make
+  check` identical to baseline, per-test, both arches (x86_64 73/60/13;
+  aarch64 73/62/11). Gate B: fast path +0.00 % instructions/pair at t=1 and
+  t=8, both arches, every point inside the null. Gate C: riscv64, arm32 and
+  aarch64 still cross-compile `libumem.la` and the smoke test runs clean
+  under QEMU. Evidence: `docs/results/r11/pal-carveout-2.md`.
+
 ## [4.2.0] - 2026-10-16
 
 Organization, portability, docs, and CI -- the allocator's behaviour and fast
