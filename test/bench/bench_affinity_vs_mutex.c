@@ -27,6 +27,18 @@
 #include <time.h>
 #include <unistd.h>
 
+/*
+ * CPU-affinity pinning (sched_setaffinity/CPU_SET/cpu_set_t) is a Linux/glibc
+ * extension; illumos, the BSDs and macOS do not provide it.  Guard the
+ * affinity arm so this bench COMPILES everywhere (found by the UltraSPARC/
+ * illumos hardware run, 2026-10-16, docs/results/r12/sparc-illumos-hardware-run.md,
+ * where the un-guarded CPU_ZERO/CPU_SET/sched_setaffinity broke `gmake`).  On a
+ * platform without it, the affinity arm is skipped and the mutex arm still runs.
+ */
+#if defined(__linux__) && defined(CPU_SETSIZE)
+#define HAVE_CPU_AFFINITY 1
+#endif
+
 static int nthreads = 8;
 static long iters_per_thread = 200000;
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -52,6 +64,7 @@ mutex_worker(void *arg)
 	return (NULL);
 }
 
+#ifdef HAVE_CPU_AFFINITY
 static void *
 affinity_worker(void *arg)
 {
@@ -75,6 +88,7 @@ affinity_worker(void *arg)
 	}
 	return (NULL);
 }
+#endif /* HAVE_CPU_AFFINITY */
 
 static double
 run(void *(*fn)(void *))
@@ -110,11 +124,16 @@ main(int argc, char **argv)
 	double mutex_ns = run(mutex_worker);
 	printf("mutex_lock/unlock:            %8.1f ns/op\n", mutex_ns);
 
+#ifdef HAVE_CPU_AFFINITY
 	double affinity_ns = run(affinity_worker);
 	printf("sched_setaffinity pin+unpin:  %8.1f ns/op\n", affinity_ns);
 
 	printf("ratio (affinity/mutex):        %8.1fx\n",
 	    affinity_ns / mutex_ns);
+#else
+	printf("sched_setaffinity pin+unpin:  SKIP (no CPU-affinity API on "
+	    "this platform; Linux/glibc only)\n");
+#endif
 
 	return (0);
 }
