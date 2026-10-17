@@ -47,7 +47,7 @@ only (`EC2_OS=debian`).
 
 This burner account has rotated repeatedly (`numa` → `beef` → `bene` →
 `hotdog` → `kiwi`); the profile name itself has rotated across accounts
-(373102893032 → 170848442262 → `kiwi`/830118047484, after `hotdog` expired
+(373102893032 -> 170848442262 -> kiwi/830118047484 -> kiwi/505435643998 (the burner is replaced wholesale, same profile name; old account + its boxes are torn down on rotation)
 2026-10-10). The account also holds the maintainer's OTHER projects' instances
 (libdb, libxtc, undo, dbsql, noxu-bench m8id/m8gd metal, an unnamed c7i,
 freebsd audits), tagged `Owner=gburd` but NOT `Project=libumem`. That is
