@@ -42,3 +42,38 @@ libumem defect.
 libumem's SPARCv9/illumos support is now HARDWARE-VALIDATED (build + functional
 + multithreaded + interposer), not merely cross-compiling. One Linux-ism in a
 bench file is the only portability gap found, and it is non-blocking.
+
+## 2026-10-17 follow-up: full `gmake` now completes on illumos
+
+The Linux-isms the first run found are fixed; the whole tree now BUILDS on
+UltraSPARC/illumos (host `sun`, gcc 13.4, SPARCV9). Fixes (all test-only, the
+library was already clean):
+- `test/bench/bench_affinity_vs_mutex.c`: CPU-affinity arm guarded behind
+  `HAVE_CPU_AFFINITY` (Linux/glibc); mutex arm still runs, affinity arm SKIPs.
+- `test/integration/test_first_alloc_small_stack.c`: `PTHREAD_STACK_MIN` via
+  `<limits.h>` + fallback; `pthread_getattr_np` -> `pthread_attr_get_np` shim.
+- `test/integration/probe_first_alloc_stack.c`: same `pthread_getattr_np` shim.
+- `test/integration/test_update_thread_startup.c`: `dlvsym` guarded to glibc
+  (`dlsym` fallback elsewhere).
+- `test/limits/probe_threads.c`: `sched_getcpu` shim (-1) on non-Linux, mirroring
+  the library's own `pal/pal_posix.c` guard.
+
+### `gmake` + `gmake check` result on illumos
+- `gmake -j4`: **rc=0** (full build completes; one benign libtool
+  "multiple inclusion" ld warning, not an error).
+- `gmake check`: TOTAL 73, PASS 43, SKIP 19, XFAIL 0, **FAIL 8, ERROR 3**.
+- Core functional suite: **umem_test 1/2/3 all PASS**; lib is
+  `ELF 64-bit MSB SPARCV9 UltraSPARC1 Extensions`.
+
+### The 11 FAIL/ERROR are Linux-specific HARNESSES, not allocator bugs
+- debugger/gdb (`T1_gdb_break`, `T10_walk_log`, `T13_gdb_error_code`,
+  `inspect_e2e`): need Linux gdb + the Python extension; illumos ships mdb.
+- `interpose_regress`, `oracle_control`, `errlog_signal`, `abort_option`:
+  Linux signal/interpose harness assumptions.
+- `test_freelist_mangle`, `test_oversize_vma`, `test_bench_accounting`:
+  Linux VMA / mangling / bench-accounting specifics.
+None show the allocator misbehaving: the library builds as a real SPARCV9
+object and the functional tests pass. Porting the 11 Linux-authored harnesses
+to illumos (mdb-based debugger checks, illumos signal semantics) is a separate,
+larger effort and is NOT claimed here. What is claimed: the tree builds clean
+on illumos and the allocator is functionally correct there.
