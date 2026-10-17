@@ -56,6 +56,10 @@
  */
 #include <pthread.h>
 #include <limits.h>		/* PTHREAD_STACK_MIN (illumos puts it here) */
+/* illumos spells glibc's pthread_getattr_np as pthread_attr_get_np. */
+#if !defined(__GLIBC__) && (defined(__sun) || defined(__illumos__))
+#define pthread_getattr_np pthread_attr_get_np
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

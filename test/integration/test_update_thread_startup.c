@@ -81,10 +81,14 @@ pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 	static int (*real)(pthread_cond_t *, pthread_mutex_t *);
 
 	if (real == NULL) {
-		/* See "WHY dlvsym AND NOT dlsym" above. */
+		/* See "WHY dlvsym AND NOT dlsym" above.  dlvsym and its
+		 * GLIBC_* version tags are glibc-only; on non-glibc (illumos,
+		 * BSD, macOS) fall straight to dlsym so this links everywhere. */
+#ifdef __GLIBC__
 		real = (int (*)(pthread_cond_t *, pthread_mutex_t *))
 		    dlvsym(RTLD_NEXT, "pthread_cond_wait", "GLIBC_2.3.2");
 		if (real == NULL)
+#endif
 			real = (int (*)(pthread_cond_t *, pthread_mutex_t *))
 			    dlsym(RTLD_NEXT, "pthread_cond_wait");
 		if (real == NULL) {

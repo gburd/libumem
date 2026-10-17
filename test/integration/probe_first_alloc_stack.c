@@ -25,6 +25,11 @@
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <pthread.h>
+/* illumos spells glibc's pthread_getattr_np as pthread_attr_get_np (same
+ * semantics).  Shim so the stack-bounds probe builds there (SPARC run). */
+#if !defined(__GLIBC__) && (defined(__sun) || defined(__illumos__))
+#define pthread_getattr_np pthread_attr_get_np
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
