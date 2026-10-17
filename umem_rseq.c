@@ -29,6 +29,8 @@
 #define __NR_rseq 334
 #elif defined(__aarch64__)
 #define __NR_rseq 293
+#elif defined(__riscv) && (__riscv_xlen == 64)
+#define __NR_rseq 293
 #elif defined(__i386__)
 #define __NR_rseq 381
 #else
@@ -130,6 +132,8 @@ umem_rseq_get_area(void)
 		__asm__ volatile ("movq %%fs:0, %0" : "=r"(tp));
 #elif defined(__aarch64__)
 		__asm__ volatile ("mrs %0, tpidr_el0" : "=r"(tp));
+#elif defined(__riscv) && (__riscv_xlen == 64)
+		__asm__ volatile ("mv %0, tp" : "=r"(tp));
 #else
 		return &umem_rseq_area;
 #endif
