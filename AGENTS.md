@@ -224,7 +224,7 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - If you break the shared build, fix it or report it immediately. Everyone
   else is blocked until you do.
 
-## 10. Current state: v4.2.2
+## 10. Current state: v4.3.0
 
 The correctness work is done: the ten reachable defects the 2026-09-21 review
 found in default paths are fixed, each with a demonstrated pre-fix failure on
@@ -255,11 +255,13 @@ hardware-validated beyond x86_64/aarch64:
   Linux-isms fixed). `gmake check` 43P/19S/8F/3E -- the 11 FAIL/ERROR are
   Linux-specific harnesses (gdb/Python debugger checks, Linux signal/VMA
   assumptions), not allocator bugs.
-- **RISC-V (host `lixr`, Spacemit X100, v4.2.2):** the lock-free rseq asm is
-  WRITTEN and hardware-tested but has a signal-storm bug (SEGV in
-  free_fastpath's rseq window); it is NOT shipped -- riscv runs the correct
-  non-rseq fallback. Branch `r12-riscv-rseq`, bug localized in
-  `docs/results/r12/riscv-rseq-hardware.md`.
+- **RISC-V (host `lixr`, Spacemit X100, v4.3.0):** the lock-free rseq asm is
+  WRITTEN, hardware-validated, and SHIPPED. The signal-storm SEGV was a wrong
+  RSEQ signature (0x53053053 instead of RISC-V's 0xf1401073 = `csrw mhartid,
+  x0`); glibc owns the rseq area and the kernel SIGSEGVs on an abort-signature
+  mismatch. Fixed in v4.3.0, validated under the signal storm
+  (repro_rseq_trailing_store + repro_reload_commit_abort PASS, umem_test 1/2/3
+  PASS, rseq engages). `docs/results/r12/riscv-rseq-hardware.md`.
 
 - Performance work is allowed. Every change still needs its before/after A/B
   (`hotpath_ab.sh`) with the fast path inside the null, or the cost recorded
@@ -271,12 +273,15 @@ hardware-validated beyond x86_64/aarch64:
   the specific exposures the audits found, but that is not the same as proven
   safe against an unaudited class. Do not overstate it.
 
-Owed, recorded honestly: the lock-free RISC-V rseq asm (bug above); porting
-the 11 Linux-specific test harnesses to illumos (a separate, larger effort);
-the green CI/Pages badge (needs a push to trigger runners + the repo Pages
-setting). The x86 metal benchmark half of comparison-v3 is blocked on a
-new-account VcpuLimitExceeded gate (quota ticket); arm metal is fine and c1 on
-both arches already confirms no PAL/AAL drift from v2.
+Owed, recorded honestly: porting the 11 Linux-specific test harnesses to
+illumos (a separate, larger effort); the green CI/Pages badge (needs Codeberg
+Actions enabled + a registered Forgejo runner -- a repo-settings step; the
+workflows build green locally, docs/results/r11/task1-ci-pages-local-validation.md).
+The x86 metal benchmark half of comparison-v3 is unrun: the arm half + both-arch
+c1 are done and show no PAL/AAL drift from v2, and the x86 metal launch
+intermittently hits the shared burner account's vCPU quota (other projects'
+instances consume it; headroom comes and goes). The lock-free RISC-V rseq asm
+is now SHIPPED (v4.3.0) -- no longer owed.
 
 Open work is tracked in the round plans (`docs/plans/2026-09-28-round8.md`,
 `docs/plans/2026-10-16-adopt-from-snmalloc.md`, and earlier), not here.
