@@ -55,12 +55,23 @@
  *           follow-up, not done here.
  */
 #include <pthread.h>
+#include <limits.h>		/* PTHREAD_STACK_MIN (illumos puts it here) */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <umem.h>
+
+/*
+ * PTHREAD_STACK_MIN is in <limits.h> on illumos and only visible with the
+ * right feature macro; some platforms omit it entirely.  Fall back to a safe
+ * floor so this test compiles everywhere (found by the UltraSPARC/illumos
+ * hardware run, docs/results/r12/sparc-illumos-hardware-run.md).
+ */
+#ifndef PTHREAD_STACK_MIN
+#define PTHREAD_STACK_MIN 16384
+#endif
 
 #define	FIRST_ALLOC_BUDGET	8192
 #define	SMALL_STACK		(16 * 1024)
