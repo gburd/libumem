@@ -29,6 +29,8 @@
 #define __NR_rseq 334
 #elif defined(__aarch64__)
 #define __NR_rseq 293
+#elif defined(__riscv) && (__riscv_xlen == 64)
+#define __NR_rseq 293
 #elif defined(__i386__)
 #define __NR_rseq 381
 #else
@@ -67,14 +69,19 @@
  * the encoding of "BRK #0x45e0" (see glibc's aarch64/bits/rseq.h and
  * the kernel's tools/testing/selftests/rseq/rseq-arm64.h, both of
  * which define RSEQ_SIG_CODE 0xd428bc00 for aarch64 -- NOT 0x53053053,
- * which is the x86-only value). umem_rseq_aarch64.S must use the same
- * 0xd428bc00 before its abort labels, or (as verified on real Graviton
- * hardware) any migration into a glibc-registered rseq critical
+ * which is the x86-only value). riscv64 uses 0xf1401073, the encoding of
+ * "csrw mhartid, x0" (glibc riscv/bits/rseq.h, kernel rseq-riscv.h) --
+ * also NOT 0x53053053.  umem_rseq_<arch>.S must use the SAME value before
+ * its abort labels, or (as verified on real Graviton AND real RISC-V
+ * hardware) any migration/signal into a glibc-registered rseq critical
  * section aborts into a signature the kernel doesn't recognize and it
- * force-kills the thread with SIGSEGV instead of restarting it.
+ * force-kills the thread with SIGSEGV instead of restarting it.  The
+ * riscv 0x53053053 bug is documented in docs/results/r12.
  */
 #if defined(__aarch64__)
 #define UMEM_RSEQ_SIG 0xd428bc00
+#elif defined(__riscv) && (__riscv_xlen == 64)
+#define UMEM_RSEQ_SIG 0xf1401073
 #else
 #define UMEM_RSEQ_SIG 0x53053053
 #endif
@@ -130,6 +137,8 @@ umem_rseq_get_area(void)
 		__asm__ volatile ("movq %%fs:0, %0" : "=r"(tp));
 #elif defined(__aarch64__)
 		__asm__ volatile ("mrs %0, tpidr_el0" : "=r"(tp));
+#elif defined(__riscv) && (__riscv_xlen == 64)
+		__asm__ volatile ("mv %0, tp" : "=r"(tp));
 #else
 		return &umem_rseq_area;
 #endif

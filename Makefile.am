@@ -88,7 +88,7 @@ endif
 
 # Conditionally include rseq support
 if ENABLE_RSEQ
-RSEQ_SOURCES = umem_rseq.c umem_rseq.h aal/umem_rseq_x86_64.S aal/umem_rseq_aarch64.S
+RSEQ_SOURCES = umem_rseq.c umem_rseq.h aal/umem_rseq_x86_64.S aal/umem_rseq_aarch64.S aal/umem_rseq_riscv64.S
 else
 RSEQ_SOURCES =
 endif

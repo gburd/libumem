@@ -52,3 +52,41 @@ functionally correct (umem_test 1/2/3 PASS, 100k-alloc loop clean), just not
 lock-free. The lock-free asm is on branch r12-riscv-rseq pending the fix above.
 This is the round-10 discipline held: no false-green -- buggy rseq asm found by
 the hardware stress test does not merge.
+
+## 2026-10-17 UPDATE: BUG FOUND AND FIXED -- riscv rseq asm now works
+
+Root cause: **wrong RSEQ signature.** The asm used the x86 filler
+`0x53053053`. RISC-V's rseq signature is `0xf1401073` (the encoding of
+`csrw mhartid, x0`), per glibc `riscv64-linux-gnu/bits/rseq.h` and the kernel
+selftest `rseq-riscv.h`. glibc owns the rseq area on this host (glibc 2.43) and
+registered `0xf1401073` with the kernel; the kernel reads `*(abort_ip-4)` at
+EVERY abort and SIGSEGVs the process on a signature mismatch. So under the
+signal storm, every rseq abort force-killed the process -- the crash localized
+to a libc syscall stub (`kill@@GLIBC_2.27 + 0x8`) because that is where the
+kernel-forced SIGSEGV happened to land the corrupted pc. This is the SAME class
+as the aarch64 signature issue the C-side comment already warned about; the
+riscv `#else` branch had wrongly inherited the x86 value.
+
+The fix (commit on branch r12-riscv-rseq, merged to master):
+1. `aal/umem_rseq_riscv64.S`: `#define RSEQ_SIG 0xf1401073`.
+2. `umem_rseq.c`: add an `#elif defined(__riscv) && __riscv_xlen==64` branch
+   setting `UMEM_RSEQ_SIG 0xf1401073` (was falling through to 0x53053053).
+3. Hardening (not the fatal bug, but correct): 32-byte-align the on-stack
+   `rseq_cs` descriptor -- the kernel's `rseq_get_rseq_cs` requires
+   `__alignof__(struct rseq_cs)==32` and `sp` is only 16-aligned. Frames grew
+   96->128, saved registers relocated, `&rseq_cs = (sp+31) & ~31`.
+
+### Hardware result after the fix (real Spacemit X100, rv64gcv, glibc 2.43)
+- `repro_rseq_trailing_store`: **PASS** -- 6,307,251 pushes, 69,910 signals
+  delivered, **0 double-presence events** (trailing-store ordering holds under
+  the storm).
+- `repro_reload_commit_abort`: **PASS** -- 3,997,434 commits, 2,566 aborts,
+  21,392 signals (aborts restart correctly, no SIGSEGV).
+- `probe_rseq_armed`: rc=0; `probe_rseq_prodcons`: run-until-killed (rc=124
+  timeout, no core).
+- `umem_test` 1/2/3: **PASS**; rseq engages (`rseq_enabled=1 asm_safe=1
+  ncpus=16`) -- using the lock-free asm, not the fallback.
+
+RISC-V now ships the lock-free rseq fast path. The earlier discipline
+(no false-green; keep buggy asm off master) was correct and is why the real
+signal-storm stress existed to catch this.
