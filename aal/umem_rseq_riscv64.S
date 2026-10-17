@@ -27,12 +27,15 @@
  *   - PC-relative label addresses via `lla` (load local address).
  *   - umem_rseq_fs_offset / umem_link_cookie are read GOT-indirect
  *     (-fPIC shared lib) via `la` (which uses the GOT for a global).
- *   - RSEQ signature is 0x53053053 on RV64 (kernel
- *     tools/testing/selftests/rseq/rseq-riscv.h; the C side's
- *     UMEM_RSEQ_SIG #else branch already selects this -- NO aarch64-style
- *     signature mismatch here, because RV64 and the kernel agree on the
- *     x86-style filler value).  Emitted as a .word immediately before each
- *     abort label; the kernel reads *(abort_ip-4) and SIGSEGVs on mismatch.
+ *   - RSEQ signature on RV64 is 0xf1401073 (the encoding of "csrw mhartid,
+ *     x0"), per glibc sysdeps/.../riscv/bits/rseq.h and the kernel selftest
+ *     rseq-riscv.h.  This is NOT the x86-style 0x53053053 filler: when glibc
+ *     owns the rseq area it registered that signature with the kernel, and
+ *     the kernel reads *(abort_ip-4) at abort and SIGSEGVs the process on a
+ *     mismatch.  (An earlier version used 0x53053053 and crashed under a
+ *     signal storm for exactly this reason -- see docs/results/r12.)
+ *     Emitted as a .word immediately before each abort label; must match the
+ *     C side's UMEM_RSEQ_SIG for riscv.
  *   - No branch-delay slots (unlike sparc); straightforward.
  *
  * rseq_cs descriptor (as the kernel defines it): u32 version, u32 flags,
@@ -44,7 +47,7 @@
 
 .text
 
-#define RSEQ_SIG 0x53053053
+#define RSEQ_SIG 0xf1401073
 
 /* Offsets into umem_rseq_cache_t (must match umem_rseq_aarch64.S / the C struct). */
 #define CACHE_LOADED_MAG_OFFSET   0
@@ -92,26 +95,27 @@
 .align 2
 umem_rseq_alloc_fastpath:
 	.cfi_startproc
-	addi	sp, sp, -96
-	.cfi_adjust_cfa_offset 96
-	sd	ra, 88(sp)
+	addi	sp, sp, -128
+	.cfi_adjust_cfa_offset 128
+	sd	ra, 120(sp)
 	.cfi_offset 1, -8
-	sd	s0, 80(sp)
+	sd	s0, 112(sp)
 	.cfi_offset 8, -16
-	sd	s1, 72(sp)
+	sd	s1, 104(sp)
 	.cfi_offset 9, -24
-	sd	s2, 64(sp)
+	sd	s2, 96(sp)
 	.cfi_offset 18, -32
-	sd	s3, 56(sp)
+	sd	s3, 88(sp)
 	.cfi_offset 19, -40
 
 	mv	s0, a0		/* cache */
 	mv	s1, a1		/* cpu_id (32-bit value in a reg) */
 
-	/* rseq_cs on the stack at sp+0 .. sp+32 (32-byte aligned: sp is
-	 * 16-aligned on entry, 96 keeps it 16-aligned; sp+0 is fine for the
-	 * kernel which only needs 32-bit alignment of the struct). */
-	mv	s2, sp		/* s2 = &rseq_cs */
+	/* rseq_cs 32-BYTE aligned (kernel rseq_get_rseq_cs requires
+	 * __alignof__(struct rseq_cs)==32; sp is only 16-aligned, so
+	 * round up into the reserved low 48 bytes of the frame). */
+	addi	s2, sp, 31
+	andi	s2, s2, -32	/* &rseq_cs */
 
 	/* version=0 flags=0 */
 	sw	zero, 0(s2)
@@ -170,13 +174,13 @@ umem_rseq_alloc_fastpath:
 	add	t0, tp, t0
 	sd	zero, 8(t0)	/* clear rseq_cs */
 
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	addi	sp, sp, 96
-	.cfi_adjust_cfa_offset -96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	addi	sp, sp, 128
+	.cfi_adjust_cfa_offset -128
 	ret
 
 .Lrv_alloc_empty:
@@ -194,12 +198,12 @@ umem_rseq_alloc_fastpath:
 	add	t0, tp, t0
 	sd	zero, 8(t0)
 	li	a0, 0
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	addi	sp, sp, 96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	addi	sp, sp, 128
 	ret
 	.cfi_endproc
 .size umem_rseq_alloc_fastpath, .-umem_rseq_alloc_fastpath
@@ -213,20 +217,24 @@ umem_rseq_alloc_fastpath:
 .align 2
 umem_rseq_free_fastpath:
 	.cfi_startproc
-	addi	sp, sp, -96
-	.cfi_adjust_cfa_offset 96
-	sd	ra, 88(sp)
-	sd	s0, 80(sp)
-	sd	s1, 72(sp)
-	sd	s2, 64(sp)
-	sd	s3, 56(sp)
-	sd	s4, 48(sp)
+	addi	sp, sp, -128
+	.cfi_adjust_cfa_offset 128
+	sd	ra, 120(sp)
+	sd	s0, 112(sp)
+	sd	s1, 104(sp)
+	sd	s2, 96(sp)
+	sd	s3, 88(sp)
+	sd	s4, 80(sp)
 
 	mv	s0, a0		/* cache */
 	mv	s1, a1		/* buf */
 	mv	s2, a2		/* cpu_id */
 
-	mv	s3, sp		/* &rseq_cs */
+	/* rseq_cs 32-BYTE aligned (kernel rseq_get_rseq_cs requires
+	 * __alignof__(struct rseq_cs)==32; sp is only 16-aligned, so
+	 * round up into the reserved low 48 bytes of the frame). */
+	addi	s3, sp, 31
+	andi	s3, s3, -32	/* &rseq_cs */
 	sw	zero, 0(s3)
 	sw	zero, 4(s3)
 	lla	t0, .Lrv_free_start
@@ -282,14 +290,14 @@ umem_rseq_free_fastpath:
 	add	t0, tp, t0
 	sd	zero, 8(t0)
 	li	a0, 0		/* success */
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	ld	s4, 48(sp)
-	addi	sp, sp, 96
-	.cfi_adjust_cfa_offset -96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	ld	s4, 80(sp)
+	addi	sp, sp, 128
+	.cfi_adjust_cfa_offset -128
 	ret
 
 	/* magazine full: own epilogue, must NOT fall into the success path */
@@ -298,13 +306,13 @@ umem_rseq_free_fastpath:
 	add	t0, tp, t0
 	sd	zero, 8(t0)
 	li	a0, -1
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	ld	s4, 48(sp)
-	addi	sp, sp, 96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	ld	s4, 80(sp)
+	addi	sp, sp, 128
 	ret
 
 	.align	4
@@ -317,13 +325,13 @@ umem_rseq_free_fastpath:
 	add	t0, tp, t0
 	sd	zero, 8(t0)
 	li	a0, -1
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	ld	s4, 48(sp)
-	addi	sp, sp, 96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	ld	s4, 80(sp)
+	addi	sp, sp, 128
 	ret
 	.cfi_endproc
 .size umem_rseq_free_fastpath, .-umem_rseq_free_fastpath
@@ -340,21 +348,25 @@ umem_rseq_free_fastpath:
 .align 2
 umem_rseq_reload_detach:
 	.cfi_startproc
-	addi	sp, sp, -96
-	.cfi_adjust_cfa_offset 96
-	sd	ra, 88(sp)
-	sd	s0, 80(sp)
-	sd	s1, 72(sp)
-	sd	s2, 64(sp)
-	sd	s3, 56(sp)
-	sd	s4, 48(sp)
+	addi	sp, sp, -128
+	.cfi_adjust_cfa_offset 128
+	sd	ra, 120(sp)
+	sd	s0, 112(sp)
+	sd	s1, 104(sp)
+	sd	s2, 96(sp)
+	sd	s3, 88(sp)
+	sd	s4, 80(sp)
 
 	mv	s0, a0		/* cache */
 	mv	s1, a1		/* cpu_id */
 	mv	s2, a2		/* old_mag_out */
 	mv	s3, a3		/* old_rounds_out */
 
-	mv	s4, sp		/* &rseq_cs */
+	/* rseq_cs 32-BYTE aligned (kernel rseq_get_rseq_cs requires
+	 * __alignof__(struct rseq_cs)==32; sp is only 16-aligned, so
+	 * round up into the reserved low 48 bytes of the frame). */
+	addi	s4, sp, 31
+	andi	s4, s4, -32	/* &rseq_cs */
 	sw	zero, 0(s4)
 	sw	zero, 4(s4)
 	lla	t0, .Lrv_detach_start
@@ -384,14 +396,14 @@ umem_rseq_reload_detach:
 	LOAD_RSEQ_OFFSET t0
 	add	t0, tp, t0
 	sd	zero, 8(t0)
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	ld	s4, 48(sp)
-	addi	sp, sp, 96
-	.cfi_adjust_cfa_offset -96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	ld	s4, 80(sp)
+	addi	sp, sp, 128
+	.cfi_adjust_cfa_offset -128
 	ret
 
 	.align	4
@@ -404,13 +416,13 @@ umem_rseq_reload_detach:
 	add	t0, tp, t0
 	sd	zero, 8(t0)
 	li	a0, 0
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	ld	s4, 48(sp)
-	addi	sp, sp, 96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	ld	s4, 80(sp)
+	addi	sp, sp, 128
 	ret
 	.cfi_endproc
 .size umem_rseq_reload_detach, .-umem_rseq_reload_detach
@@ -425,15 +437,15 @@ umem_rseq_reload_detach:
 .align 2
 umem_rseq_reload_attach:
 	.cfi_startproc
-	addi	sp, sp, -96
-	.cfi_adjust_cfa_offset 96
-	sd	ra, 88(sp)
-	sd	s0, 80(sp)
-	sd	s1, 72(sp)
-	sd	s2, 64(sp)
-	sd	s3, 56(sp)
-	sd	s4, 48(sp)
-	sd	s5, 40(sp)
+	addi	sp, sp, -128
+	.cfi_adjust_cfa_offset 128
+	sd	ra, 120(sp)
+	sd	s0, 112(sp)
+	sd	s1, 104(sp)
+	sd	s2, 96(sp)
+	sd	s3, 88(sp)
+	sd	s4, 80(sp)
+	sd	s5, 72(sp)
 
 	mv	s0, a0		/* cache */
 	mv	s1, a1		/* cpu_id */
@@ -441,7 +453,11 @@ umem_rseq_reload_attach:
 	mv	s3, a3		/* rounds */
 	mv	s4, a4		/* magsize */
 
-	mv	s5, sp		/* &rseq_cs */
+	/* rseq_cs 32-BYTE aligned (kernel rseq_get_rseq_cs requires
+	 * __alignof__(struct rseq_cs)==32; sp is only 16-aligned, so
+	 * round up into the reserved low 48 bytes of the frame). */
+	addi	s5, sp, 31
+	andi	s5, s5, -32	/* &rseq_cs */
 	sw	zero, 0(s5)
 	sw	zero, 4(s5)
 	lla	t0, .Lrv_attach_start
@@ -474,15 +490,15 @@ umem_rseq_reload_attach:
 	LOAD_RSEQ_OFFSET t0
 	add	t0, tp, t0
 	sd	zero, 8(t0)
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	ld	s4, 48(sp)
-	ld	s5, 40(sp)
-	addi	sp, sp, 96
-	.cfi_adjust_cfa_offset -96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	ld	s4, 80(sp)
+	ld	s5, 72(sp)
+	addi	sp, sp, 128
+	.cfi_adjust_cfa_offset -128
 	ret
 
 	.align	4
@@ -495,14 +511,14 @@ umem_rseq_reload_attach:
 	add	t0, tp, t0
 	sd	zero, 8(t0)
 	li	a0, 0
-	ld	ra, 88(sp)
-	ld	s0, 80(sp)
-	ld	s1, 72(sp)
-	ld	s2, 64(sp)
-	ld	s3, 56(sp)
-	ld	s4, 48(sp)
-	ld	s5, 40(sp)
-	addi	sp, sp, 96
+	ld	ra, 120(sp)
+	ld	s0, 112(sp)
+	ld	s1, 104(sp)
+	ld	s2, 96(sp)
+	ld	s3, 88(sp)
+	ld	s4, 80(sp)
+	ld	s5, 72(sp)
+	addi	sp, sp, 128
 	ret
 	.cfi_endproc
 .size umem_rseq_reload_attach, .-umem_rseq_reload_attach
