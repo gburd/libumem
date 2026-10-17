@@ -5,6 +5,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-17
+
+RISC-V (rv64) gains the lock-free per-CPU magazine fast path. ABI unchanged
+(soname libumem.so.2); the x86_64/aarch64/SPARC fast paths are untouched and
+byte-identical (the new code is entirely `#if defined(__riscv) &&
+__riscv_xlen==64 && __linux__`); make check 73/60/13/0 on x86_64 and aarch64.
+
+- **Lock-free rseq fast path for RISC-V rv64** (`aal/umem_rseq_riscv64.S`): the
+  four critical sections (alloc / free / reload-detach / reload-attach) with
+  the same trailing-store commit ordering and P5.13b slot mangling as the
+  x86_64/aarch64 ports. RISC-V previously ran the correct-but-locked fallback;
+  it now gets the same per-CPU magazine fast path.
+- **The bug that kept it off v4.2.2 is fixed.** RISC-V's rseq signature is
+  `0xf1401073` (the encoding of `csrw mhartid, x0`), not the x86 filler
+  `0x53053053`. glibc owns the rseq area and registered the real signature;
+  the kernel reads `*(abort_ip-4)` at every abort and SIGSEGVs the process on a
+  mismatch, so under a signal storm every rseq abort force-killed the process.
+  Fixed the `.S` signature and the `umem_rseq.c` `UMEM_RSEQ_SIG` riscv branch,
+  and 32-byte-aligned the on-stack `rseq_cs` descriptor (the kernel's
+  `rseq_get_rseq_cs` requires `__alignof__(struct rseq_cs)==32`).
+- **Hardware-validated on real 8-core Spacemit X100** (rv64gcv, glibc 2.43):
+  `repro_rseq_trailing_store` PASS (6,307,251 pushes, 69,910 signals delivered,
+  0 double-presence events), `repro_reload_commit_abort` PASS (3,997,434
+  commits, 2,566 aborts, 21,392 signals), umem_test 1/2/3 PASS, rseq engages
+  (`asm_safe=1`). This is the exact signal-storm stress that caught the bug.
+  Evidence: docs/results/r12/riscv-rseq-hardware.md.
+
+Still owed (recorded honestly): the x86 metal half of heavy-load comparison-v3
+(the arm half + both-arch c1 are done and show no PAL/AAL drift from v2; the
+x86 metal launch intermittently hits the shared burner account's vCPU quota);
+the green CI/Pages badge (needs Codeberg Actions enabled + a registered Forgejo
+runner -- a repo-settings step; the workflows build green locally, see
+docs/results/r11/task1-ci-pages-local-validation.md); porting the 11
+Linux-specific test harnesses to illumos.
+
 ## [4.2.2] - 2026-10-17
 
 Hardware-validation release: real UltraSPARC/illumos and real RISC-V silicon.
