@@ -5,6 +5,46 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.2.2] - 2026-10-17
+
+Hardware-validation release: real UltraSPARC/illumos and real RISC-V silicon.
+Test-only portability fixes; the shipped library and its ABI (soname
+libumem.so.2) are unchanged, and the Linux fast path is untouched (make check
+73/60/13/0 identical on x86_64 and aarch64).
+
+- **UltraSPARC/illumos hardware validation (host `sun`, SPARCV9, gcc 13.4).**
+  The library builds as a real `ELF 64-bit MSB SPARCV9 UltraSPARC Extensions`
+  object and is functionally correct there: `umem_test` 1/2/3 (incl. the
+  4-thread stress) all PASS, and the `libumem_malloc` interposer works on
+  64-bit targets. Closes the v4.2.0 "owed SPARC hardware run" item.
+- **Full `gmake` now completes on illumos.** Five Linux-isms in the *test*
+  suite were fixed (the library itself was already clean): the CPU-affinity
+  bench arm guarded behind `HAVE_CPU_AFFINITY`; `PTHREAD_STACK_MIN` sourced
+  from `<limits.h>` with a fallback; `pthread_getattr_np` ->
+  `pthread_attr_get_np` shim; `dlvsym` guarded to glibc (dlsym fallback);
+  `sched_getcpu` shim (-1) on non-Linux, mirroring the library's own
+  pal/pal_posix.c guard. `gmake check` on illumos is 43P/19S/0X/8F/3E; the 11
+  FAIL/ERROR are Linux-specific *harnesses* (gdb/Python debugger checks,
+  Linux signal/interpose/VMA assumptions), not allocator bugs.
+- **RISC-V rseq assembly: WRITTEN and HARDWARE-tested, but NOT shipped.** On
+  real 8-core Spacemit X100 (rv64gcv) silicon the asm assembles, links,
+  engages, and passes the basic functional tests, but SEGVs under a
+  signal-storm stress (fault localized to free_fastpath's critical window; a
+  signal delivered inside the rseq window corrupts the sigframe). The bug is
+  localized with fix hypotheses on record; the asm stays on branch
+  `r12-riscv-rseq`. RISC-V ships on the correct non-rseq fallback (umem_test
+  1/2/3 PASS). Discipline held: no false-green -- buggy rseq asm found by the
+  hardware stress test does not merge.
+- Evidence: docs/results/r12/{sparc-illumos-hardware-run.md,
+  riscv-rseq-hardware.md}. Linux x86_64 + aarch64 regression checks after the
+  test edits: 73/60/13/0, FAIL 0 ERROR 0 (verify-isolated against the tagged
+  commit).
+
+Still owed (recorded honestly): the lock-free RISC-V rseq asm (bug above);
+porting the 11 Linux-specific test harnesses to illumos (mdb-based debugger
+checks, illumos signal semantics) -- a separate, larger effort; the green
+CI/Pages badge (needs a push to trigger runners + the repo Pages setting).
+
 ## [4.2.1] - 2026-10-16
 
 Follow-ups to v4.2.0's PAL/AAL work; behaviour-preserving, ABI unchanged
