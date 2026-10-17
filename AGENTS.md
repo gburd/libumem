@@ -224,7 +224,7 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - If you break the shared build, fix it or report it immediately. Everyone
   else is blocked until you do.
 
-## 10. Current state: v4.0.0
+## 10. Current state: v4.2.2
 
 The correctness work is done: the ten reachable defects the 2026-09-21 review
 found in default paths are fixed, each with a demonstrated pre-fix failure on
@@ -244,6 +244,23 @@ pre-fix exposure and passes after, on x86_64 and aarch64. See the Phase 5
 status table in `docs/plans/2026-09-21-production-readiness.md`; every row is
 FIXED and the exit criteria are met.
 
+**Portability layer and hardware validation (v4.0.0-v4.2.2).** A PAL/AAL
+abstraction (`pal/`, `aal/`) was carved out as a behaviour-preserving refactor
+(fast path +0.00 % both arches); snmalloc was studied, two items adopted (PAL,
+getpcstack new-arch frame walks) and two declined with ADRs (remote-free,
+involution encoding -- they re-architect libumem). The allocator is now
+hardware-validated beyond x86_64/aarch64:
+- **UltraSPARC/illumos (host `sun`, v4.2.2):** builds as a real SPARCV9 object,
+  umem_test 1/2/3 PASS, interposer works, full `gmake` completes (test
+  Linux-isms fixed). `gmake check` 43P/19S/8F/3E -- the 11 FAIL/ERROR are
+  Linux-specific harnesses (gdb/Python debugger checks, Linux signal/VMA
+  assumptions), not allocator bugs.
+- **RISC-V (host `lixr`, Spacemit X100, v4.2.2):** the lock-free rseq asm is
+  WRITTEN and hardware-tested but has a signal-storm bug (SEGV in
+  free_fastpath's rseq window); it is NOT shipped -- riscv runs the correct
+  non-rseq fallback. Branch `r12-riscv-rseq`, bug localized in
+  `docs/results/r12/riscv-rseq-hardware.md`.
+
 - Performance work is allowed. Every change still needs its before/after A/B
   (`hotpath_ab.sh`) with the fast path inside the null, or the cost recorded
   and justified. Soundness is not traded for a number (AGENTS.md 7).
@@ -253,6 +270,13 @@ FIXED and the exit criteria are met.
 - A privileged (setuid/root) or network-facing deployment is now defensible on
   the specific exposures the audits found, but that is not the same as proven
   safe against an unaudited class. Do not overstate it.
+
+Owed, recorded honestly: the lock-free RISC-V rseq asm (bug above); porting
+the 11 Linux-specific test harnesses to illumos (a separate, larger effort);
+the green CI/Pages badge (needs a push to trigger runners + the repo Pages
+setting). The x86 metal benchmark half of comparison-v3 is blocked on a
+new-account VcpuLimitExceeded gate (quota ticket); arm metal is fine and c1 on
+both arches already confirms no PAL/AAL drift from v2.
 
 Open work is tracked in the round plans (`docs/plans/2026-09-28-round8.md`,
 `docs/plans/2026-10-16-adopt-from-snmalloc.md`, and earlier), not here.
