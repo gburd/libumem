@@ -166,17 +166,6 @@ live_remove(int slot)
 	(void) pthread_mutex_unlock(&g_reg_lock);
 }
 
-static void
-live_update(int slot, void *base, size_t size)
-{
-	if (slot < 0)
-		return;
-	(void) pthread_mutex_lock(&g_reg_lock);
-	g_live[slot].base = base;
-	g_live[slot].size = size;
-	(void) pthread_mutex_unlock(&g_reg_lock);
-}
-
 /* ---------------------------------------------------------------- oracle 2 */
 
 static void
@@ -270,25 +259,59 @@ worker(void *arg)
 			continue;
 		}
 
-		/* calloc contract: zeroed storage. */
-		check_zeroed(s->p, sz);
-
 		pat = (unsigned char)(0x40 + (ta->idx & 0x3f));
 		if (pat == 0)
 			pat = 0xa5;
-		memset(s->p, pat, sz);
 		s->size = sz;
 		s->pat = pat;
+		/*
+		 * Register BEFORE touching the buffer.  The window between
+		 * calloc() returning an address and that address being live in
+		 * the registry must be as short as possible: otherwise a
+		 * concurrent thread that frees and re-allocs can be handed the
+		 * same address while this thread's hold is invisible, and the
+		 * overlap check misattributes it (an unregistered-live gap, not
+		 * an allocator fault).  check_zeroed/memset below widened that
+		 * gap enough for illumos's allocator+scheduler to lose the race
+		 * ~120x per run while Linux did not; the invariant is the same
+		 * on both, so close the gap rather than relax the check.
+		 */
 		s->reg = live_insert(s->p, sz, ta->idx, pat);
+
+		/* calloc contract: zeroed storage. */
+		check_zeroed(s->p, sz);
+		memset(s->p, pat, sz);
 
 		/*
 		 * Every few iterations, grow one live allocation via realloc.
 		 * realloc must preserve our bytes and must hand back storage
 		 * that free() also recognizes.
+		 *
+		 * A MOVING realloc is semantically "free(old); the bytes are now
+		 * at new".  The registry must switch old->new with no window in
+		 * which another thread can (a) see old still live after it was
+		 * freed, or (b) see new not-yet-live after it was handed out.
+		 * We get that by holding g_reg_lock across the realloc: no
+		 * concurrent live_insert/live_update can interleave the move, so
+		 * the registry transitions old->new atomically w.r.t. every
+		 * other registered allocation.  (Pre-fix this used a plain
+		 * realloc + after-the-fact live_update; the gap let a racing
+		 * calloc grab the freed old address and overlap a stale entry
+		 * ~1700x/run on illumos, whose realloc moves far more often than
+		 * glibc's in-place grow -- a detector race, not an allocator
+		 * fault, confirmed by the preload arm staying at 0 overlaps.)
 		 */
 		if ((it % 7) == 0) {
 			size_t nsz = sz + 64;
-			unsigned char *np = realloc(s->p, nsz);
+			unsigned char *np;
+
+			(void) pthread_mutex_lock(&g_reg_lock);
+			np = realloc(s->p, nsz);
+			if (np != NULL && s->reg >= 0) {
+				g_live[s->reg].base = np;
+				g_live[s->reg].size = nsz;
+			}
+			(void) pthread_mutex_unlock(&g_reg_lock);
 
 			if (np == NULL) {
 				atomic_fetch_add(&g_failures, 1);
@@ -297,7 +320,6 @@ worker(void *arg)
 				memset(np + sz, pat, nsz - sz);
 				s->p = np;
 				s->size = nsz;
-				live_update(s->reg, np, nsz);
 			}
 		}
 
