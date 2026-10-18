@@ -224,7 +224,7 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - If you break the shared build, fix it or report it immediately. Everyone
   else is blocked until you do.
 
-## 10. Current state: v4.3.0
+## 10. Current state: v4.3.1
 
 The correctness work is done: the ten reachable defects the 2026-09-21 review
 found in default paths are fixed, each with a demonstrated pre-fix failure on
@@ -250,11 +250,17 @@ abstraction (`pal/`, `aal/`) was carved out as a behaviour-preserving refactor
 getpcstack new-arch frame walks) and two declined with ADRs (remote-free,
 involution encoding -- they re-architect libumem). The allocator is now
 hardware-validated beyond x86_64/aarch64:
-- **UltraSPARC/illumos (host `sun`, v4.2.2):** builds as a real SPARCV9 object,
-  umem_test 1/2/3 PASS, interposer works, full `gmake` completes (test
-  Linux-isms fixed). `gmake check` 43P/19S/8F/3E -- the 11 FAIL/ERROR are
-  Linux-specific harnesses (gdb/Python debugger checks, Linux signal/VMA
-  assumptions), not allocator bugs.
+- **UltraSPARC/illumos (host `sun`, v4.3.1):** builds as a real SPARCV9 object
+  and `gmake check` is CLEAN -- 73 total, 50 PASS, 23 SKIP, 0 FAIL, 0 ERROR
+  (stable across repeated runs and under heavy load).  The 2026-10-18 port
+  fixed the 11 Linux-authored harnesses: 7 now PASS (portable RSS/VMA via
+  /proc/self/{psinfo,map}; sigaction for illumos's one-shot signal(); grep -qE
+  for non-GNU grep; gcc-when-no-cc; calloc-race realloc-move window closed;
+  load-tolerant interval accounting) and 4 gdb-driven tests SKIP cleanly
+  (illumos gdb 8.3.1 cannot attach via /proc; the native path is mdb's
+  ::umem_* dcmds).  One real LIBRARY fix: the bundled issetugid() stub
+  shadowed libc's, over-tainting every process (guarded with !HAVE_ISSETUGID).
+  umem_test 1/2/3 PASS; interposer works.
 - **RISC-V (host `lixr`, Spacemit X100, v4.3.0):** the lock-free rseq asm is
   WRITTEN, hardware-validated, and SHIPPED. The signal-storm SEGV was a wrong
   RSEQ signature (0x53053053 instead of RISC-V's 0xf1401073 = `csrw mhartid,
@@ -273,15 +279,15 @@ hardware-validated beyond x86_64/aarch64:
   the specific exposures the audits found, but that is not the same as proven
   safe against an unaudited class. Do not overstate it.
 
-Owed, recorded honestly: porting the 11 Linux-specific test harnesses to
-illumos (a separate, larger effort); the green CI/Pages badge (needs Codeberg
-Actions enabled + a registered Forgejo runner -- a repo-settings step; the
-workflows build green locally, docs/results/r11/task1-ci-pages-local-validation.md).
+Owed, recorded honestly: the green CI/Pages badge (needs Codeberg Actions
+enabled + a registered Forgejo runner -- a repo-settings step; the workflows
+build green locally, docs/results/r11/task1-ci-pages-local-validation.md).
 The x86 metal benchmark half of comparison-v3 is unrun: the arm half + both-arch
 c1 are done and show no PAL/AAL drift from v2, and the x86 metal launch
 intermittently hits the shared burner account's vCPU quota (other projects'
-instances consume it; headroom comes and goes). The lock-free RISC-V rseq asm
-is now SHIPPED (v4.3.0) -- no longer owed.
+instances consume it; headroom comes and goes).  The illumos test-suite port is
+DONE (v4.3.1, gmake check clean); the RISC-V lock-free rseq asm is DONE
+(v4.3.0) -- neither is owed any more.
 
 Open work is tracked in the round plans (`docs/plans/2026-09-28-round8.md`,
 `docs/plans/2026-10-16-adopt-from-snmalloc.md`, and earlier), not here.
