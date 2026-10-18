@@ -38,6 +38,7 @@
  */
 
 #include "umem.h"
+#include "../portable_meminfo.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,32 +51,13 @@
 static long
 vma_count(void)
 {
-	FILE *f = fopen("/proc/self/maps", "r");
-	char line[512];
-	long n = 0;
-
-	if (f == NULL)
-		return (-1);
-	while (fgets(line, sizeof (line), f) != NULL)
-		n++;
-	(void) fclose(f);
-	return (n);
+	return (pm_vma_count());
 }
 
 static long
 rss_kb(void)
 {
-	FILE *f = fopen("/proc/self/status", "r");
-	char line[256];
-	long kb = -1;
-
-	if (f == NULL)
-		return (-1);
-	while (fgets(line, sizeof (line), f) != NULL)
-		if (sscanf(line, "VmRSS: %ld", &kb) == 1)
-			break;
-	(void) fclose(f);
-	return (kb);
+	return (pm_rss_kb());
 }
 
 static void
@@ -137,6 +119,16 @@ main(int argc, char **argv)
 	}
 
 	if (expect_guard) {
+		/*
+		 * PROT_NONE remap: on Linux, mprotect() splits the VMA so one
+		 * extra /proc/self/maps line appears per freed span -- that is
+		 * the observable signature the guard path ran.  illumos does
+		 * NOT split the /proc/self/map array on a protection change
+		 * (verified: PROT_NONE on 10 full mappings added ~0 entries),
+		 * so the VMA-count signature is Linux-only.  Both arms still
+		 * assert what IS observable everywhere: RSS came back (above).
+		 */
+#if defined(__linux__)
 		/* PROT_NONE remap: one VMA per freed span is the SIGNATURE. */
 		if (vma_half - vma_full < freed / 2) {
 			printf("RESULT: FAIL (guard arm: only %ld new VMAs for "
@@ -148,9 +140,20 @@ main(int argc, char **argv)
 		printf("RESULT: PASS (guard arm: %ld new VMAs for %d frees; the "
 		    "PROT_NONE path exists and splits mappings as expected)\n",
 		    vma_half - vma_full, freed);
+#else
+		printf("RESULT: PASS (guard arm: RSS returned; VMA-split "
+		    "signature not checked -- this OS does not expose "
+		    "per-protection map splits)\n");
+#endif
 		return (0);
 	}
 
+	/*
+	 * Default arm: freeing oversize spans must NOT leave new mappings
+	 * behind (vmem_mmap_free must unmap, not PROT_NONE-punch).  The map
+	 * count is observable on both Linux (/proc/self/maps) and illumos
+	 * (/proc/self/map), so this assertion runs everywhere.
+	 */
 	if (vma_half - vma_full > VMA_SLACK) {
 		printf("RESULT: FAIL (%ld new VMAs from freeing %d oversize "
 		    "objects -- vmem_mmap_free is punching PROT_NONE holes "

@@ -14,9 +14,26 @@
 #include <stdatomic.h>
 #include <time.h>
 #include <sys/utsname.h>
+#if defined(__sun) || defined(__illumos__)
+#include <fcntl.h>
+#include <procfs.h>		/* psinfo_t: pr_rssize (illumos RSS source) */
+#endif
 
 /* Get RSS (Resident Set Size) in bytes */
 size_t bench_get_rss_bytes(void) {
+#if defined(__sun) || defined(__illumos__)
+    /* getrusage().ru_maxrss is left 0 on illumos; psinfo pr_rssize (KiB) is
+     * the maintained source (verified SunOS 5.11, 2026-10-17). */
+    int fd = open("/proc/self/psinfo", O_RDONLY);
+    if (fd >= 0) {
+        psinfo_t ps;
+        ssize_t n = read(fd, &ps, sizeof(ps));
+        (void) close(fd);
+        if (n == (ssize_t)sizeof(ps))
+            return (size_t)ps.pr_rssize * 1024;
+    }
+    return 0;
+#else
     struct rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0) {
 #ifdef __linux__
@@ -26,6 +43,7 @@ size_t bench_get_rss_bytes(void) {
 #endif
     }
     return 0;
+#endif
 }
 
 #ifdef __linux__
