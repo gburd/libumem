@@ -911,6 +911,7 @@ EXTRA_DIST = COPYRIGHT OPENSOLARIS.LICENSE umem.spec Doxyfile \
 	test/install/external_consumer.c \
 	test/qc.c test/qc.h test/munit.c test/munit.h \
 	test/tdigest.c test/tdigest.h \
+	test/portable_meminfo.h \
 	test/bench/bench_framework.c test/bench/bench_framework.h test/bench/allocators.c \
 	test/bench/test_bench_accounting.c \
 	test/bench/bench_profile_test.c test/bench/expected_profile.txt \
