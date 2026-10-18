@@ -115,7 +115,22 @@ main(void)
 	warm = malloc(64);
 	free(warm);
 
-	signal(SIGALRM, on_alarm);
+	/*
+	 * sigaction, NOT signal(): on illumos signal() installs a one-shot
+	 * (SysV) handler that resets to SIG_DFL after the first delivery, so
+	 * the second 50us SIGALRM would kill the process with the default
+	 * terminate action (exit 142, "Alarm Clock") instead of re-entering
+	 * the handler.  sigaction without SA_RESETHAND is persistent on every
+	 * platform, which is what this repeated-signal test needs.
+	 */
+	{
+		struct sigaction sa;
+		memset(&sa, 0, sizeof (sa));
+		sa.sa_handler = on_alarm;
+		(void) sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_RESTART;
+		(void) sigaction(SIGALRM, &sa, NULL);
+	}
 	it.it_interval.tv_sec = 0;
 	it.it_interval.tv_usec = 50;
 	it.it_value = it.it_interval;

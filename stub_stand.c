@@ -132,11 +132,22 @@ __mutex_unlock(mutex_t *mp)
 	return (0);
 }
 
+/*
+ * issetugid: only provide the stub where libc does NOT (the standalone/kernel
+ * build).  When HAVE_ISSETUGID is set (illumos and modern Linux both have the
+ * real one), this hardcoded return 1 would shadow libc's and make libumem
+ * treat every process as tainted -- which, among other things, silently
+ * suppresses umem_output error text to stderr (umem_error_enter gates the
+ * fd-2 write on !issetugid()).  Found via test_freelist_mangle on illumos:
+ * the corruption WAS detected (alloc returned NULL) but nothing was reported.
+ */
+#if !defined(HAVE_ISSETUGID) || !HAVE_ISSETUGID
 int
 issetugid(void)
 {
 	return (1);
 }
+#endif
 
 int
 isspace(int c)

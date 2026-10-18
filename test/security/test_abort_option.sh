@@ -42,7 +42,7 @@ if [[ $rc -ne 0 && $rc -ne 77 ]]; then
 	echo "$out" | tail -5
 	exit 1
 fi
-if ! grep -q "refused\|not a libumem allocation" <<<"$out"; then
+if ! grep -qE "refused|not a libumem allocation" <<<"$out"; then
 	echo "FAIL: control arm did not report a refused forgery -- the input is not reaching process_free"
 	echo "$out" | tail -5
 	exit 1
