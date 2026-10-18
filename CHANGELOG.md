@@ -5,6 +5,46 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.3.1] - 2026-10-18
+
+illumos test-suite port: `gmake check` is now clean on illumos (SunOS 5.11
+SPARCV9) -- 73 total, 50 PASS, 23 SKIP, 0 FAIL, 0 ERROR (was 8 FAIL + 3 ERROR).
+Includes one real illumos **library** fix; the x86_64/aarch64 fast paths and ABI
+(soname libumem.so.2) are unchanged, and Linux make check stays 73/60/13/0 on
+both arches.
+
+- **Library (illumos): the bundled `issetugid()` stub shadowed libc's.**
+  `stub_stand.c` (SOLARIS_BUILD only) unconditionally defined `issetugid()`
+  returning 1.  illumos libc has the real one, so the stub made libumem treat
+  every process as set-uid-tainted: `umem_error_enter()` gates its stderr
+  write on `!issetugid()`, so recoverable-error text was silently suppressed,
+  and `umem_secure_mode()` keys off it, so the secure-mode heuristic was stuck
+  on.  Now guarded with `!HAVE_ISSETUGID`.  (Linux never compiled this file;
+  x86_64/aarch64 unaffected.)
+- **Portable RSS/VMA accounting** (`test/portable_meminfo.h`): illumos has no
+  `/proc/self/{status,maps}` and `getrusage().ru_maxrss` is 0 there; read
+  `psinfo_t.pr_rssize` and the `prmap_t` array instead.  Fixes
+  `test_oversize_vma` and `test_bench_accounting`.
+- **illumos signal/shell/toolchain portability**: `test_errlog_signal` uses
+  `sigaction` (illumos `signal()` is one-shot SysV, which killed the process
+  on the 2nd SIGALRM); `test_abort_option` uses `grep -qE` (illumos grep is
+  non-GNU BRE, where `\|` is literal); `oracle_control` picks `gcc` when `cc`
+  is absent; the calloc-race detector's realloc-move window is closed under
+  the registry lock (illumos realloc moves far more than glibc, exposing a
+  detector race the preload/libumem arm never had: 0 overlaps throughout).
+- **Architecture-aware interpose per-call-cost bar**: `repro_interpose_free_ratio`
+  uses 0.30 on sparcv9 (post-fix floor 0.341 * null spread) vs 0.48 on
+  x86/arm; SPARC's register-window ABI + PLT make the interpose overhead
+  relatively larger without any regression (the scaling mechanism check shows
+  2.0x t1->t8, i.e. no global lock).
+- **gdb-driven debugger tests SKIP where gdb cannot attach**: illumos gdb 8.3.1
+  dumps core attaching via /proc; `skip_unless_gdb` and `test_inspect_e2e`
+  now probe once and SKIP(77) instead of a spurious FAIL.  The illumos-native
+  live path is mdb's `::umem_*` dcmds.  On Linux the probe passes and the
+  tests run exactly as before.
+- Evidence: full `gmake check` on host `sun` 73/50/23/0/0; Linux x86_64 +
+  aarch64 regression 73/60/13/0/0 (verify-isolated against the tagged commit).
+
 ## [4.3.0] - 2026-10-17
 
 RISC-V (rv64) gains the lock-free per-CPU magazine fast path. ABI unchanged
