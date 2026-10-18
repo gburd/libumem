@@ -101,9 +101,19 @@ run_case "inject=null + ORACLE_LEGACY_VERDICT=1 (pre-fix behaviour)" 0 \
 # than quietly claiming the full experiment.
 SHIM_SRC=$ROOT/test/stress/oracle_null_shim.c
 SHIM=""
+# Pick a C compiler: the tree's $CC if set, else gcc, else cc.  illumos has
+# gcc but no `cc` on PATH, so the bare `cc` fallback used to fail there and
+# skip cases 5-7 (recorded as a FAIL, correctly, but it was a missing-tool
+# artefact, not an oracle defect).
+SHIM_CC=${CC:-}
+if [[ -z $SHIM_CC ]]; then
+	if command -v gcc >/dev/null 2>&1; then SHIM_CC=gcc
+	elif command -v cc >/dev/null 2>&1; then SHIM_CC=cc
+	else SHIM_CC=cc; fi
+fi
 if [[ -r $SHIM_SRC ]]; then
 	SHIM=$(mktemp -t oracle_shim_XXXXXX.so)
-	if ! ${CC:-cc} -std=c11 -O1 -fPIC -shared -D_GNU_SOURCE \
+	if ! $SHIM_CC -std=c11 -O1 -fPIC -shared \
 	    -o "$SHIM" "$SHIM_SRC" -ldl 2>/tmp/oracle_shim_build.log; then
 		echo "WARNING: could not build the broken-allocator shim:"
 		sed 's/^/    /' /tmp/oracle_shim_build.log
