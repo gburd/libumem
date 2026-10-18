@@ -21,6 +21,25 @@ if [[ ! -x $TOOL ]]; then
 	echo "FAIL: $TOOL not found / not executable"
 	exit 1
 fi
+# The umem tool drives live --pid inspection through gdb.  Where gdb is
+# present but cannot attach (illumos gdb 8.3.1 dumps core attaching via
+# /proc), every --pid assertion here would spuriously FAIL.  Probe once and
+# SKIP -- the illumos-native live path is mdb's ::umem_* dcmds, tested apart.
+if command -v gdb >/dev/null 2>&1; then
+	sleep 20 & _sp_probe=$!
+	# set -e is active: capture gdb's status without letting a nonzero (or a
+	# core-dump) abort the script before we can turn it into a clean SKIP.
+	_gdb_probe=$(timeout 20 gdb -nx -batch -p "$_sp_probe" -ex detach -ex quit 2>&1) && _gdb_rc=0 || _gdb_rc=$?
+	kill "$_sp_probe" 2>/dev/null || true
+	wait "$_sp_probe" 2>/dev/null || true
+	if [[ $_gdb_rc -ne 0 ]] || printf '%s' "$_gdb_probe" | grep -qiE 'dumped core|Value too large|cannot attach'; then
+		echo "SKIP: gdb present but cannot attach on this platform (umem --pid needs it)"
+		printf '%s\n' "$_gdb_probe" | sed 's/^/  gdb: /' | head -3
+		exit 77
+	fi
+else
+	echo "SKIP: gdb not installed (umem --pid needs it)"; exit 77
+fi
 # The JSON assertions below are written in python3.  Skip rather than fail
 # when it is absent: a sandboxed or minimal build environment legitimately
 # has no python3, and the allocator is not what is under test here. 77 is
@@ -36,7 +55,10 @@ if [[ ! -x $ROOT/test/test_inspect_live ]]; then
 fi
 
 PIDFILE=$(mktemp)
-SNAPFILE=$(mktemp -u --suffix=.ums)
+# mktemp --suffix is GNU-only (absent on illumos/BSD).  Use a portable
+# template and append the .ums suffix ourselves (SNAPFILE is a -u name the
+# snapshot writer creates, so we only need a unique path).
+SNAPFILE=$(mktemp -u)${SNAPFILE_SFX:-.ums}
 LOGFILE=$(mktemp)
 
 cleanup() {

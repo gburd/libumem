@@ -27,6 +27,26 @@ trap tool_cleanup EXIT
 
 skip_unless_gdb() {
 	command -v gdb >/dev/null 2>&1 || { echo "SKIP: gdb not installed"; exit 77; }
+	# gdb may be present but unable to attach on this platform.  illumos's
+	# gdb (8.3.1) cannot attach via /proc here -- it retries and dumps core
+	# ('Value too large for defined data type', a largefile/libthread_db
+	# problem independent of libumem; the illumos-native debugger path is
+	# mdb's ::umem_* dcmds, exercised separately).  Probe once against a
+	# throwaway sleeper and SKIP rather than report a spurious FAIL.
+	if [[ -z ${UMEM_GDB_ATTACH_OK:-} ]]; then
+		local _sp _out _rc
+		sleep 30 & _sp=$!
+		_out=$(timeout 20 gdb -nx -batch -p "$_sp" \
+		    -ex 'detach' -ex 'quit' 2>&1) && _rc=0 || _rc=$?
+		kill "$_sp" 2>/dev/null; wait "$_sp" 2>/dev/null
+		if [[ $_rc -ne 0 ]] || \
+		    printf '%s' "$_out" | grep -qiE 'dumped core|Value too large|cannot attach|ptrace|Operation not permitted'; then
+			echo "SKIP: gdb present but cannot attach on this platform"
+			printf '%s\n' "$_out" | sed 's/^/  gdb: /' | head -4
+			exit 77
+		fi
+		export UMEM_GDB_ATTACH_OK=1
+	fi
 }
 
 skip_unless_lldb() {
