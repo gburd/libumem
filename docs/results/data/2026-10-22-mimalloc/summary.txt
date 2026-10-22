@@ -1,0 +1,24 @@
+# libumem vs mimalloc(stock/patched) vs jemalloc vs glibc  -- 2026-10-22T13:58:27Z
+# host=ip-172-31-7-30 box=c7i.metal-48xl nproc=192 threads=192
+# libumem= mimalloc=v2.5.2(stock+dragonfly) jemalloc= gcc=14
+# method: -D 60:10 first 4 dropped; numactl --interleave=all; -L 3072MiB total live; sizes 64:256; GLIBC_TUNABLES set
+# patched mimalloc hot path == stock (patch only ADDS mi_heap_page_is_underutilized; +3720 bytes .text)
+#
+# label        workload   med_Mops  min_Mops  max_Mops  medRSS_MB  med_frag     n
+  umem         prodcons      649.5     648.6     651.5      220.4     0.000     6
+  umem@2       prodcons      602.9     602.6     603.6      226.1     0.000     6
+  mi-stock     prodcons      529.8     527.3     531.1       64.1     0.000     6
+  mi-stock@2   prodcons      548.0     547.2     548.8       64.2     0.000     6
+  mi-patched   prodcons      646.5     645.2     648.0       66.4     0.000     6
+  mi-patched@2 prodcons      449.3     447.8     449.7       62.0     0.000     6
+  jemalloc     prodcons     1013.8    1012.6    1014.3       85.2     0.000     6
+  libc         prodcons     1095.9    1063.6    1096.9       57.2     0.000     6
+  umem         frag          648.6     648.1     650.0     4297.8     1.781     6
+  umem@2       frag          648.8     648.5     650.0     4241.4     1.763     6
+  mi-stock     frag          856.2     856.1     856.5     3808.0     1.577     6
+  mi-stock@2   frag          856.2     856.2     856.4     3808.0     1.584     6
+  mi-patched   frag          856.4     856.3     856.4     3808.0     1.579     6
+  mi-patched@2 frag          855.6     855.6     855.8     3808.0     1.579     6
+  jemalloc     frag         1119.9    1119.5    1120.3     3802.3     1.603     6
+  libc         frag          431.5     431.3     431.6     3896.2     1.628     6
+=== ALL DONE 16:38:33 ===
