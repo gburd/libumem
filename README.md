@@ -5,52 +5,6 @@ and revived in 2024–2025.  Provides high-throughput, low-contention
 memory allocation with first-class runtime debugging on Linux,
 FreeBSD, and macOS.
 
-> **Status (v4.2.1): the Linux heap ceiling is gone, the
-> maintenance thread runs, the per-CPU caches are used, the drop-in path
-> scales, and the freelist- and ownership-integrity gaps that left libumem
-> behind the size-class allocators are closed — per-thread cache bin slots AND
-> the magazine rounds behind them are safe-linked with a per-process cookie
-> glibc does not have (P5.13/P5.13b), and `free()` now confirms exact heap
-> ownership against a span table rather than a convex hull (P7.4); still not a
-> hardened allocator in the sense a security-critical deployment would want.**
-> Ten reachable correctness and lifetime defects found by the 2026-09-21
-> design review, nineteen security findings across the adversarial audits
-> (2026-09-22, 2026-09-24, and the two v3.3.1 follow-ups), and the Phase 6
-> hard-limit findings are fixed — each with a
-> regression that fails before the fix and passes after, on x86_64 and
-> aarch64. v3.3.0 *closed the remaining open limits with a decision
-> rather than a guess*: the 16k-thread drain is a kernel `mmap_lock` property,
-> not an allocator lock (measured, refuted); the 50k-cache fork and per-cache
-> footprint are structural and their only "fixes" are a hot-path cost for a
-> pathological workload or a provably-unsound lock skip (closed); the 2.5-8 KB
-> per-thread retention is ~280 KB, not the feared 5.4 MB (measured); the
-> sustained-load slab batch cannot meet its own p999 target (partial, the real
-> fix is an architectural one). v3.3.1 added the two hardening fixes above.
-> v3.3.2 arms the rseq lock-free per-CPU layer that v3.3.1 had left inert
-> (P8.5b): it is on by default, and at 192 threads it lowers prodcons p999 and
-> roughly halves RSS against `norseq` in short (17-43 s) windows. Its first version aliased buffers under
-> an rseq abort; that was found by a 100-run oracle rate test, not by the
-> gates it had passed, and is fixed with a regression that failed on every
-> pre-fix run. v3.3.2 recorded that several advertised debugging-tool
-> features did not work; v3.3.3 fixes all of them, each with a regression
-> test (see "Known limits" under the tools section), and replaces the v3.3.2
-> 192-thread comparison, which had measured the benchmark harness's own
-> contention, with a 3 x 15-minute-per-allocator run on both architectures.
-> Where a first diagnosis was wrong
-> — the heap ceiling (fixed in two halves), the 1k:4k collapse (the CPU hint,
-> not the per-thread cache), the P6.3b drain, the P5.10 bootstrap check, the
-> P7.4 ~80-span estimate (it is thousands), the P8.5b aliasing cause (not the
-> stale magazine size first suspected), and P8.5b's first p999 claim
-> (measured with an off-switch that no longer worked) — the
-> record says so. Performance conclusions in this file were re-measured with a
-> null control; a proportionate metal comparison shows
-> umem 0.82–1.01 of the best competitor across the small/medium tiers and
-> **0.86–0.97 in the 1–4 KB tier that was 0.51–0.65 before**. Work,
-> evidence, and exit criteria:
-> [`docs/plans/2026-09-21-production-readiness.md`](docs/plans/2026-09-21-production-readiness.md).
-> Claims below are qualified by what has actually been measured; where
-> something is unknown, it says so.
-
 ```bash
 ./autogen.sh && ./configure && make -j"$(nproc)" && make check
 sudo make install     # installs libumem.so, libumem_malloc.so, the umem(1)
