@@ -58,6 +58,353 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+/*
+ * ===========================================================================
+ * FAULT INJECTION (allocation failure testing)
+ * ===========================================================================
+ *
+ * A deterministic, thread-safe allocation-failure injector that lives in the
+ * LD_PRELOAD drop-in only (libumem_malloc.so), never in the core allocator.
+ * It is the allocation layer of the single-host fault-injection test suite
+ * (Noxu DB; owner directive 2026-11-03): it does for malloc/calloc/realloc/
+ * memalign/posix_memalign/aligned_alloc what the FAINT tool
+ * (github.com/misc0110/faint) does, but as a thread-safe allocator-resident
+ * mode rather than a per-allocation backtrace walk, so it works on a heavily
+ * multi-threaded program with many thousands of call sites (FAINT loses
+ * call-site identity and is not thread-safe there; measured).
+ *
+ * One environment variable selects the mode, read once at load (so a child
+ * spawned with it set is faulted; the parent is not):
+ *
+ *   UMEM_FAULT=nth:<n>[,every:<m>]
+ *                          Fail the Nth qualifying allocation of the process
+ *                          (1-based, deterministic, no backtrace). With
+ *                          every:<m>, also fail every m-th allocation after
+ *                          the Nth. The foundation of the "fail the Nth
+ *                          allocation" sweep.
+ *
+ *   UMEM_FAULT=site:<hex>[,count:<c>]
+ *                          Fail allocations whose caller return address is
+ *                          <hex> (a value from a profile run). count:1 fails
+ *                          only the first such allocation; omitted/0 fails
+ *                          every one. The return address is
+ *                          __builtin_return_address(0) of the entry point;
+ *                          it is resolved to file:line OFFLINE afterwards
+ *                          with addr2line against the preloaded program (no
+ *                          per-allocation symbolization on the hot path, the
+ *                          re-entrant trap FAINT fell into).
+ *
+ *   UMEM_FAULT=profile:<file>
+ *                          Record, per allocation, the caller's return
+ *                          address and a hit count; write "ADDR COUNT" lines
+ *                          to <file> at exit. Feeds the site list for the
+ *                          inject phase. Never fails an allocation.
+ *
+ * Optional modifiers (any mode):
+ *   UMEM_FAULT_SIZE_MIN / UMEM_FAULT_SIZE_MAX  Restrict injection to requests
+ *                          in [min,max] bytes (0 = unbounded). Lets a sweep
+ *                          aim at the large allocations JE treats as
+ *                          recoverable (cache / log buffers / rep buffers).
+ *   UMEM_FAULT_LOG=<file>  Append "FAIL seq=.. caller=.. size=.." per injected
+ *                          failure so the harness can assert a fault ACTUALLY
+ *                          fired (a test that passes with no fault is vacuous).
+ *
+ * THREAD SAFETY & REENTRANCY: the allocation counter and the site-fired flag
+ * are atomics; the profile table is lock-free open addressing; and a
+ * thread-local reentrancy guard (fi_in_fault) means libumem's own internal
+ * allocations, and the injector's own bookkeeping, never fault. The injector
+ * adds nothing to the hot path when UMEM_FAULT is unset (one relaxed load of
+ * a flag that is 0).
+ */
+
+/* Armed? A single relaxed load gates the whole injector off the hot path. */
+static int fi_armed = 0;
+
+/*
+ * Thread-local reentrancy guard. Set while the injector (or libumem's own
+ * internal machinery, reached through a faulting entry point) is running, so
+ * a nested allocation never faults and the injector never recurses into
+ * itself. initial-exec TLS for the same reason calloc_depth uses it below:
+ * a single register-relative load, no __tls_get_addr allocation.
+ */
+static __thread int fi_in_fault __attribute__((tls_model("initial-exec")));
+
+/* Nth-allocation mode. */
+static unsigned long long fi_nth = 0;      /* 1-based; 0 = disabled */
+static unsigned long long fi_every = 0;    /* 0 = once; else every Nth after */
+
+/* Site mode. */
+static void *fi_site = NULL;               /* caller return addr to fail */
+static int fi_site_once = 0;
+static atomic_int fi_site_fired = 0;
+
+/* Size window. */
+static size_t fi_size_min = 0;
+static size_t fi_size_max = 0;             /* 0 = unbounded */
+
+/* Profile mode. */
+static int fi_profile = 0;
+static char fi_profile_path[256];
+static char fi_log_path[256];
+static int fi_log_fd = -1;
+
+/* Per-process allocation sequence (every qualifying alloc increments it). */
+static atomic_ullong fi_seq = 0;
+
+/*
+ * Profile table: open-addressed caller-address -> count. Fixed capacity so it
+ * never itself allocates (which would recurse into us). A full table stops
+ * recording new sites (reported at dump). 64 Ki slots covers far more than
+ * the ~thousands of monomorphized Rust call sites.
+ */
+#define FI_PROFILE_SLOTS (1u << 16)
+struct fi_prof_ent {
+	_Atomic(void *) addr;
+	atomic_ullong count;
+};
+static struct fi_prof_ent fi_prof[FI_PROFILE_SLOTS];
+static atomic_size_t fi_prof_used = 0;
+
+/* The one block()/unblock() reentrancy guard is inherited from below; the
+ * profile writer runs only at exit via atexit, single-threaded enough that a
+ * plain file write is safe. */
+
+static unsigned long long
+fi_getenv_ull(const char *name, unsigned long long dflt)
+{
+	const char *v = getenv(name);
+	if (v == NULL || *v == '\0')
+		return (dflt);
+	return (strtoull(v, NULL, 0));
+}
+
+/*
+ * Dump the profile at exit: one "ADDR COUNT\n" line per recorded call site,
+ * ADDR in hex. Offline, addr2line resolves ADDR against the program.
+ */
+static void
+fi_dump_profile(void)
+{
+	if (!fi_profile || fi_profile_path[0] == '\0')
+		return;
+	FILE *f = fopen(fi_profile_path, "w");
+	if (f == NULL)
+		return;
+	unsigned long long total = 0;
+	for (size_t i = 0; i < FI_PROFILE_SLOTS; i++) {
+		void *a = atomic_load_explicit(&fi_prof[i].addr,
+		    memory_order_relaxed);
+		if (a == NULL)
+			continue;
+		unsigned long long c = atomic_load_explicit(&fi_prof[i].count,
+		    memory_order_relaxed);
+		total += c;
+		(void) fprintf(f, "%p %llu\n", a, c);
+	}
+	(void) fprintf(f, "# sites=%zu total_allocs=%llu\n",
+	    atomic_load_explicit(&fi_prof_used, memory_order_relaxed), total);
+	(void) fclose(f);
+}
+
+/* Record one allocation's caller in the profile table (lock-free). */
+static void
+fi_profile_record(void *caller)
+{
+	if (caller == NULL)
+		return;
+	size_t h = ((uintptr_t)caller >> 4) & (FI_PROFILE_SLOTS - 1);
+	for (size_t probe = 0; probe < FI_PROFILE_SLOTS; probe++) {
+		size_t i = (h + probe) & (FI_PROFILE_SLOTS - 1);
+		void *cur = atomic_load_explicit(&fi_prof[i].addr,
+		    memory_order_acquire);
+		if (cur == caller) {
+			atomic_fetch_add_explicit(&fi_prof[i].count, 1,
+			    memory_order_relaxed);
+			return;
+		}
+		if (cur == NULL) {
+			void *expected = NULL;
+			if (atomic_compare_exchange_strong_explicit(
+			    &fi_prof[i].addr, &expected, caller,
+			    memory_order_acq_rel, memory_order_acquire)) {
+				atomic_fetch_add_explicit(&fi_prof_used, 1,
+				    memory_order_relaxed);
+				atomic_fetch_add_explicit(&fi_prof[i].count, 1,
+				    memory_order_relaxed);
+				return;
+			}
+			if (expected == caller) {
+				atomic_fetch_add_explicit(&fi_prof[i].count, 1,
+				    memory_order_relaxed);
+				return;
+			}
+			/* lost the race to another addr; keep probing */
+		}
+	}
+	/* table full: drop (reported via fi_prof_used < sites at dump) */
+}
+
+/* Log one injected failure (best effort). */
+static void
+fi_log(unsigned long long seq, void *caller, size_t size)
+{
+	if (fi_log_fd < 0)
+		return;
+	char buf[128];
+	int n = snprintf(buf, sizeof(buf), "FAIL seq=%llu caller=%p size=%zu\n",
+	    seq, caller, size);
+	if (n > 0)
+		(void) write(fi_log_fd, buf, (size_t)n);
+}
+
+/*
+ * The injector decision, called at the top of each allocating entry point.
+ * `caller` is the application return address (__builtin_return_address(0) of
+ * the entry point). Returns 1 to FAIL the allocation (return NULL / set
+ * errno), 0 to proceed. Thread-safe; cheap when disarmed.
+ */
+static int
+fi_should_fail(void *caller, size_t size)
+{
+	if (__builtin_expect(fi_armed == 0, 1))
+		return (0);
+
+	/*
+	 * Reentrancy guard: if we are already inside the injector on this
+	 * thread (e.g. fi_profile_record / fi_log touched the allocator, or
+	 * libumem's own internal machinery allocated while servicing a faulted
+	 * entry point), do not fault the nested allocation and do not recurse.
+	 */
+	if (fi_in_fault)
+		return (0);
+
+	/* Size window: a request outside [min,max] never fails. */
+	if (fi_size_min != 0 && size < fi_size_min)
+		return (0);
+	if (fi_size_max != 0 && size > fi_size_max)
+		return (0);
+
+	fi_in_fault = 1;
+
+	/* PROFILE phase records, never fails. */
+	if (fi_profile) {
+		fi_profile_record(caller);
+		fi_in_fault = 0;
+		return (0);
+	}
+
+	unsigned long long seq = atomic_fetch_add_explicit(&fi_seq, 1,
+	    memory_order_relaxed) + 1;
+	int fail = 0;
+
+	/* Site mode. */
+	if (fi_site != NULL) {
+		if (caller == fi_site) {
+			if (fi_site_once) {
+				int expected = 0;
+				if (atomic_compare_exchange_strong(
+				    &fi_site_fired, &expected, 1))
+					fail = 1;
+			} else {
+				fail = 1;
+			}
+		}
+	} else if (fi_nth != 0) {
+		/* Nth mode (and every-m-th after the Nth). */
+		if (seq == fi_nth) {
+			fail = 1;
+		} else if (seq > fi_nth && fi_every != 0 &&
+		    ((seq - fi_nth) % fi_every) == 0) {
+			fail = 1;
+		}
+	}
+
+	if (fail)
+		fi_log(seq, caller, size);
+
+	fi_in_fault = 0;
+	return (fail);
+}
+
+/*
+ * Parse one `key:value` (or bare `key`) token of UMEM_FAULT into the injector
+ * state. Tokens are comma-separated; the first selects the mode.
+ */
+static void
+fi_parse_token(const char *key, const char *val)
+{
+	if (strcmp(key, "nth") == 0) {
+		fi_nth = (val != NULL) ? strtoull(val, NULL, 0) : 0;
+	} else if (strcmp(key, "every") == 0) {
+		fi_every = (val != NULL) ? strtoull(val, NULL, 0) : 0;
+	} else if (strcmp(key, "site") == 0) {
+		if (val != NULL)
+			fi_site = (void *)(uintptr_t)strtoull(val, NULL, 0);
+	} else if (strcmp(key, "count") == 0) {
+		/* count:1 => fail the site once; anything else => every time */
+		fi_site_once = (val != NULL &&
+		    strtoull(val, NULL, 0) == 1) ? 1 : 0;
+	} else if (strcmp(key, "profile") == 0) {
+		if (val != NULL && *val != '\0') {
+			fi_profile = 1;
+			(void) strncpy(fi_profile_path, val,
+			    sizeof(fi_profile_path) - 1);
+		}
+	}
+}
+
+/*
+ * Parse UMEM_FAULT (+ the UMEM_FAULT_* modifiers) from the environment.
+ * Called once from the constructor. Sets fi_armed only if a mode is selected.
+ *
+ * Grammar: UMEM_FAULT=mode[:value][,key[:value]]...
+ *   nth:<n>[,every:<m>]
+ *   site:<hex>[,count:<c>]
+ *   profile:<file>
+ */
+static void
+fi_init(void)
+{
+	const char *spec = getenv("UMEM_FAULT");
+	const char *log = getenv("UMEM_FAULT_LOG");
+
+	fi_size_min = (size_t)fi_getenv_ull("UMEM_FAULT_SIZE_MIN", 0);
+	fi_size_max = (size_t)fi_getenv_ull("UMEM_FAULT_SIZE_MAX", 0);
+
+	if (spec != NULL && *spec != '\0') {
+		/* Copy so we can tokenize in place without touching environ. */
+		char buf[512];
+		(void) strncpy(buf, spec, sizeof(buf) - 1);
+		buf[sizeof(buf) - 1] = '\0';
+		char *save = NULL;
+		for (char *tok = strtok_r(buf, ",", &save); tok != NULL;
+		    tok = strtok_r(NULL, ",", &save)) {
+			char *colon = strchr(tok, ':');
+			if (colon != NULL) {
+				*colon = '\0';
+				fi_parse_token(tok, colon + 1);
+			} else {
+				fi_parse_token(tok, NULL);
+			}
+		}
+	}
+
+	if (fi_profile)
+		(void) atexit(fi_dump_profile);
+
+	if (log != NULL && *log != '\0') {
+		(void) strncpy(fi_log_path, log, sizeof(fi_log_path) - 1);
+		/* Open via fopen then dup the fd; append mode. */
+		FILE *lf = fopen(fi_log_path, "a");
+		if (lf != NULL) {
+			fi_log_fd = dup(fileno(lf));
+			(void) fclose(lf);
+		}
+	}
+
+	fi_armed = (fi_profile || fi_site != NULL || fi_nth != 0) ? 1 : 0;
+}
+
 /* External: umem readiness state and functions */
 #define	UMEM_READY_STARTUP	1
 #define	UMEM_READY		3
@@ -635,6 +982,11 @@ umem_interpose_init(void)
 	 */
 	extern uint_t umem_abort;
 	umem_abort = 0;
+
+	/* Arm the allocation-failure injector from UMEM_FAIL_* (no-op unless
+	 * one is set). Read once here so a child spawned with the variables
+	 * set is faulted and the parent is not. */
+	fi_init();
 }
 
 /*
@@ -650,6 +1002,18 @@ malloc(size_t size)
 	 */
 	if (in_dlsym)
 		return (static_alloc(size));
+
+	/*
+	 * Allocation-failure injection (UMEM_FAULT). Checked only after the
+	 * dlsym-bootstrap guard above, so loader-internal allocations are
+	 * never faulted. __builtin_return_address(0) is the application call
+	 * site of this malloc.
+	 */
+	if (__builtin_expect(fi_armed, 0) &&
+	    fi_should_fail(__builtin_return_address(0), size)) {
+		errno = ENOMEM;
+		return (NULL);
+	}
 
 	/*
 	 * Trigger umem initialization if startup is complete but
@@ -847,8 +1211,27 @@ calloc(size_t nelem, size_t elsize)
 		return (ret);
 	}
 
+	/*
+	 * Allocation-failure injection for a top-level calloc. Done here, with
+	 * calloc's own application return address, so the failure is attributed
+	 * to the caller's calloc site (not the internal malloc below).
+	 */
+	if (__builtin_expect(fi_armed, 0) &&
+	    fi_should_fail(__builtin_return_address(0), size)) {
+		errno = ENOMEM;
+		return (NULL);
+	}
+
 	calloc_depth++;
+	/*
+	 * The internal malloc() must not run a SECOND, independent injection
+	 * decision (it would advance the sequence counter at the wrong site).
+	 * The thread-local reentrancy guard suppresses it; the real decision
+	 * was made just above at calloc's own site.
+	 */
+	fi_in_fault = 1;
 	ret = malloc(size);
+	fi_in_fault = 0;
 	if (ret != NULL)
 		calloc_zero_fill(ret, size);
 	calloc_depth--;
@@ -876,6 +1259,18 @@ realloc(void *ptr, size_t size)
 
 	if (size == 0) {
 		free(ptr);
+		return (NULL);
+	}
+
+	/*
+	 * Allocation-failure injection for realloc's grow/move. Done with
+	 * realloc's own application return address and BEFORE the old
+	 * allocation is touched, so a faulted realloc leaves ptr live and
+	 * intact (correct C realloc failure semantics).
+	 */
+	if (__builtin_expect(fi_armed, 0) &&
+	    fi_should_fail(__builtin_return_address(0), size)) {
+		errno = ENOMEM;
 		return (NULL);
 	}
 
@@ -911,7 +1306,11 @@ realloc(void *ptr, size_t size)
 		return (NULL);
 	}
 
+	/* The injection decision was already made above; suppress a second
+	 * one inside the internal malloc via the reentrancy guard. */
+	fi_in_fault = 1;
 	new_ptr = malloc(size);
+	fi_in_fault = 0;
 	if (new_ptr == NULL) {
 		/*
 		 * Failure: ptr is untouched and still recorded under its
@@ -919,7 +1318,6 @@ realloc(void *ptr, size_t size)
 		 */
 		return (NULL);
 	}
-
 	(void) memcpy(new_ptr, ptr, MIN(old_size, size));
 
 	/* Only now does the old allocation stop being the live one. */
@@ -938,6 +1336,20 @@ memalign(size_t align, size_t size)
 	/* Validate alignment: must be a nonzero power of two. */
 	if (align == 0 || (align & (align - 1)) != 0) {
 		errno = EINVAL;
+		return (NULL);
+	}
+
+	/*
+	 * Allocation-failure injection. memalign is the single aligned-alloc
+	 * chokepoint: posix_memalign, aligned_alloc and valloc all route
+	 * through it, so one check here covers every aligned path (Rust's
+	 * System allocator uses posix_memalign / aligned_alloc for
+	 * over-aligned layouts). On failure, errno=ENOMEM + NULL; posix_memalign
+	 * translates that to its ENOMEM return below.
+	 */
+	if (__builtin_expect(fi_armed, 0) &&
+	    fi_should_fail(__builtin_return_address(0), size)) {
+		errno = ENOMEM;
 		return (NULL);
 	}
 
