@@ -32,7 +32,7 @@ stress run, and benchmark runs on EC2 through `scripts/ec2/`. The build/test
 runbook is in `.github/skills/building_and_testing.md`.
 
 ```sh
-export AWS_PROFILE=kiwi             # verify first; see §2
+export AWS_PROFILE=woof             # verify first; see §2
 ./scripts/ec2/launch.sh    intel-lo@<worker>
 ./scripts/ec2/bootstrap.sh intel-lo@<worker>
 ./scripts/ec2/job.sh       intel-lo@<worker> start <job> <timeout_s> '<cmd>'
@@ -46,13 +46,21 @@ only (`EC2_OS=debian`).
 ## 2. The AWS profile rotates. Verify, never assume
 
 This burner account has rotated repeatedly (`numa` → `beef` → `bene` →
-`hotdog` → `kiwi`); the profile name itself has rotated across accounts
-(373102893032 -> 170848442262 -> kiwi/830118047484 -> kiwi/505435643998 (the burner is replaced wholesale, same profile name; old account + its boxes are torn down on rotation)
-2026-10-10). The account also holds the maintainer's OTHER projects' instances
+`hotdog` → `kiwi` → `woof`), and profile names have been reused across
+accounts (373102893032 -> 170848442262 -> kiwi/830118047484 ->
+kiwi/505435643998 -> woof/176550300114 as of 2026-11-05; the old account and
+its boxes are torn down on rotation).  Several stale profile names now resolve
+to an unrelated instance role (399683337502, `EpoxyChronicleInstanceRole`)
+with no EC2 permissions -- an identity that answers `sts` is not proof of the
+burner; check the account number.  `chef` (842964983020) is a short-lived
+burner, not the libumem one.  The account also holds the maintainer's OTHER
+projects' instances
 (libdb, libxtc, undo, dbsql, noxu-bench m8id/m8gd metal, an unnamed c7i,
 freebsd audits), tagged `Owner=gburd` but NOT `Project=libumem`. That is
 expected, not a stranger's: still, only ever touch `Project=libumem` **and**
-the worker role you launched. At session start:
+the worker role you launched. A freshly rotated account has no `libumem-bench`
+key pair; `launch.sh` creates one and writes `~/.ssh/libumem-bench.pem`.  At
+session start:
 
 ```sh
 aws sts get-caller-identity          # if this fails, probe for a live profile

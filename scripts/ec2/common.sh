@@ -13,7 +13,7 @@ set -euo pipefail
 # bene -> hotdog).  Always verify with `aws sts get-caller-identity` before a
 # session; if it fails, probe `aws configure list-profiles` for a live one and
 # update this default rather than assuming the previous one still works.
-export AWS_PROFILE="${AWS_PROFILE:-hotdog}"
+export AWS_PROFILE="${AWS_PROFILE:-woof}"
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-2}"
 export AWS_PAGER=""
 
