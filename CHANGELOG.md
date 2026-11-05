@@ -5,6 +5,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`UMEM_DEBUG=audit` (and `default`, which includes it) aborted or
+  deadlocked on the first allocation under `LD_PRELOAD=libumem_malloc.so`
+  on Linux.**  `getpcstack()` runs on the allocator's own internal paths --
+  `vmem_hash_insert()` records a stack for every audited segment with vmem
+  locks held -- and its first call per thread asked glibc
+  `pthread_getattr_np()` for the stack bounds.  That call mallocs, so libumem
+  re-entered itself from inside `vmem_populate()`: with rseq the
+  `VMC_POPULATOR` assert fired (SIGABRT); with `UMEM_OPTIONS=norseq` or other
+  timing the update thread and the main thread deadlocked on the vmem locks.
+  The stack bounds now come from the mapping that contains the current stack
+  pointer, read from `/proc/self/maps` with `open`/`read` into a stack buffer:
+  no stdio, no allocation.  Reported via the libdb project's runtime
+  fault-injection suite.  Regression: `test/security/test_audit_reentry.sh`
+  (fails at v4.3.1 on x86_64, aarch64 and riscv64; passes after, 100/100 runs
+  per arm).
+
+### Known
+
+- `test/stress/test_norseq.sh` fails on the RISC-V host (`lixr`): rseq
+  reports enabled but the probe's per-CPU layer serves 0 allocations.  Same
+  result before and after the fix above; not yet diagnosed.  x86_64 and
+  aarch64 pass.
+
 ## [4.3.1] - 2026-10-18
 
 illumos test-suite port: `gmake check` is now clean on illumos (SunOS 5.11
