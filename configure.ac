@@ -1,4 +1,4 @@
-AC_INIT([umem], [4.3.1], [], [umem])
+AC_INIT([umem], [4.3.2], [], [umem])
 AM_INIT_AUTOMAKE([dist-bzip2])
 AC_CONFIG_MACRO_DIRS([m4])
 

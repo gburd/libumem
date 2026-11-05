@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-11-05
+
+Bug-fix release.  ABI unchanged (soname libumem.so.2, libumem_malloc.so.1);
+no public header or exported-symbol change.
+
 ### Fixed
 
 - **`UMEM_DEBUG=audit` (and `default`, which includes it) aborted or
