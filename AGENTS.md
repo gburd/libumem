@@ -232,7 +232,15 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - If you break the shared build, fix it or report it immediately. Everyone
   else is blocked until you do.
 
-## 10. Current state: v4.3.1
+## 10. Current state: v4.3.2
+
+v4.3.2 (2026-11-05) fixes `UMEM_DEBUG=audit`/`default` aborting or
+deadlocking under `LD_PRELOAD` on Linux: `getpcstack()` must never allocate
+(it runs inside vmem with locks held), and its stack-bounds lookup now reads
+`/proc/self/maps` with `open`/`read` instead of `pthread_getattr_np()`.
+Regression `test/security/test_audit_reentry.sh`.  Known and undiagnosed:
+`test_norseq.sh` fails on the RISC-V host (rseq enabled, 0 allocations
+served), before and after this release.
 
 The correctness work is done: the ten reachable defects the 2026-09-21 review
 found in default paths are fixed, each with a demonstrated pre-fix failure on
