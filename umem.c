@@ -1549,15 +1549,14 @@ umem_log_event(umem_log_header_t *lp, umem_cache_t *cp,
 	/*
 	 * Do nothing -- and in particular do NOT call getpcstack() -- when
 	 * logging is off (the default).  UMEM_AUDIT() walks the stack before
-	 * umem_log_enter() gets to check lp/umem_logging, and getpcstack()'s
-	 * first call on a thread reaches umem_stack_bounds() ->
-	 * pthread_getattr_np(), which allocates.  On the LD_PRELOAD path that
-	 * allocation is the interposed umem_malloc(); reached from the PTC
-	 * exit-drain (umem_ptc_cleanup -> ... -> umem_slab_create ->
-	 * umem_log_event) it re-enters the allocator while this thread's PTC is
-	 * being torn down, and faults.  The guard that made this safe already
-	 * existed one layer too deep (umem_log_enter); hoisting it here also
-	 * saves a per-slab-create stack walk in the common no-logging case.
+	 * umem_log_enter() gets to check lp/umem_logging.  getpcstack()'s first
+	 * call on a thread used to reach pthread_getattr_np(), which allocates;
+	 * reached from the PTC exit-drain (umem_ptc_cleanup -> ... ->
+	 * umem_slab_create -> umem_log_event) that re-entered the allocator while
+	 * this thread's PTC was being torn down, and faulted.  The bounds lookup
+	 * no longer allocates (getpcstack.c, umem_stack_bounds), so this guard is
+	 * no longer what keeps that path safe -- it stays because it saves a
+	 * per-slab-create stack walk in the common no-logging case.
 	 */
 	if (likely(lp == NULL || umem_logging == 0))
 		return;

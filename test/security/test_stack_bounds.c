@@ -22,8 +22,12 @@
  *   So this is a crash or an info leak (the values become stack PCs in an audit
  *   record that `umemctl leaks` and umem_inspect print), not code execution.
  *
- * THE FIX: pthread_getattr_np()/pthread_attr_getstack() give the thread's real
- * stack bounds, cached per thread; every frame outside [lo, hi) is rejected.
+ * THE FIX: getpcstack() takes the thread's real stack bounds -- the mapping
+ * that contains the current stack pointer, read from /proc/self/maps without
+ * allocating -- cached per thread; every frame outside [lo, hi) is rejected.
+ * (It first used pthread_getattr_np()/pthread_attr_getstack(); that call
+ * allocates and re-entered the allocator under UMEM_DEBUG=audit -- see
+ * test_audit_reentry.sh.)
  *
  * ---------------------------------------------------------------------------
  * WHY THIS TEST CALLS getpcstack() DIRECTLY AND NOT THROUGH umem_alloc()
@@ -70,7 +74,9 @@
  *     - 16-byte aligned                -> the alignment check passes
  *     - PROT_NONE                      -> the read SEGVs
  *
- *   and pthread_attr_getstack() reports exactly the stack we supplied, so the
+ *   and the stack mapping getpcstack() finds for that thread is exactly the
+ *   RW region we supplied (the mprotect splits it into its own mapping, and
+ *   the guard pages on both sides are separate PROT_NONE mappings), so the
  *   fixed walk rejects the frame and reads nothing.
  *
  *   The arms run in a fork child because the pre-fix behaviour is a fatal

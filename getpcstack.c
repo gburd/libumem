@@ -168,28 +168,101 @@ umem_pc_internal(uintptr_t pc)
  * execution -- but it is still an out-of-bounds read inside malloc.
  *
  * So ask the system where this thread's stack is and reject every frame
- * outside it.  glibc's pthread_getattr_np() reports the real mapping
- * (/proc/self/maps for the main thread, the TCB for others).
+ * outside it: the mapping that contains the current stack pointer, read from
+ * /proc/self/maps (see the re-entrancy note below for why not
+ * pthread_getattr_np()).
  *
- * RE-ENTRANCY: the main thread's first lookup reads /proc/self/maps with
- * stdio, which allocates, which re-enters the allocator and can land back
- * here.  in_lookup makes that inner call report "bounds unknown" (the walk
- * then uses the heuristic) instead of recursing.  The answer is cached per
- * thread, so the cost is one lookup per thread.
+ * RE-ENTRANCY -- WHY THIS MUST NOT ALLOCATE.  getpcstack() runs on the
+ * allocator's OWN internal paths: vmem_hash_insert() records it for every
+ * audited segment (vmem.c), the UMEM_AUDIT macro records it per bufctl, and
+ * both are reached with vmem/cache locks held while the arena state is
+ * half-updated.  So this function and everything it calls MUST be
+ * allocation-free.  The earlier implementation called glibc
+ * pthread_getattr_np(), which mallocs a buffer for the thread's CPU-affinity
+ * mask (nptl/pthread_getattr_np.c); under LD_PRELOAD that malloc is libumem's
+ * own, so it re-entered the allocator from inside vmem_populate() and either
+ * tripped the VMC_POPULATOR assert or deadlocked on the vmem locks.  An
+ * in_lookup flag only stopped recursion back into THIS function; the
+ * re-entrant malloc still ran.  (Codeberg bug report 2026-11-04.)
  *
- * FALLBACK, stated rather than hidden: where no bounds are available (not
- * glibc, or the re-entrant call above) the old 16 MiB-ceiling heuristic still
- * applies.  It is a heuristic: it bounds how far the walk can wander UP from
- * a frame that is genuinely on the stack, and nothing more.
+ * So read the bounds without allocating: find the mapping that contains the
+ * current stack pointer by parsing /proc/self/maps with raw open/read into a
+ * stack buffer (no stdio, no malloc).  This is uniform for the main thread
+ * and every other thread -- the current SP lands in exactly one mapping -- so
+ * no pthread descriptor or main-vs-other special case is needed.  The answer
+ * is cached per thread, so the cost is one maps read per thread.
+ *
+ * FALLBACK, stated rather than hidden: where no bounds are available (no
+ * /proc, a parse miss, or a non-Linux build) the old 16 MiB-ceiling heuristic
+ * still applies.  It is a heuristic: it bounds how far the walk can wander UP
+ * from a frame that is genuinely on the stack, and nothing more.
  */
-#if defined(__linux__) && defined(__GLIBC__)
+#if defined(__linux__)
 #define	UMEM_HAVE_STACK_BOUNDS	1
-#include <pthread.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>		/* strtoull (allocation-free, used below) */
+
+/*
+ * Parse /proc/self/maps for the mapping that contains address `sp`, writing
+ * its [start,end) to *lo/*hi.  Returns 1 on a hit, 0 otherwise.  Uses only
+ * open/read/close and a fixed stack buffer -- NO stdio and NO allocation (see
+ * the re-entrancy note above).  The file is read in chunks; a line split
+ * across two reads is carried over in `line`.
+ */
+static int
+umem_maps_find_sp(uintptr_t sp, uintptr_t *lo, uintptr_t *hi)
+{
+	char buf[4096];
+	char line[256];
+	size_t linelen = 0;
+	int fd, hit = 0;
+	ssize_t n;
+
+	fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return (0);
+
+	while (!hit && (n = read(fd, buf, sizeof (buf))) > 0) {
+		ssize_t i;
+		for (i = 0; i < n; i++) {
+			char c = buf[i];
+			if (c != '\n') {
+				if (linelen < sizeof (line) - 1)
+					line[linelen++] = c;
+				continue;
+			}
+			/* complete line: "<start>-<end> ..." in hex */
+			line[linelen] = '\0';
+			linelen = 0;
+			{
+				char *p = line, *endp;
+				uintptr_t start, end;
+				start = (uintptr_t)strtoull(p, &endp, 16);
+				if (endp == p || *endp != '-')
+					continue;
+				p = endp + 1;
+				end = (uintptr_t)strtoull(p, &endp, 16);
+				if (endp == p)
+					continue;
+				if (sp >= start && sp < end) {
+					*lo = start;
+					*hi = end;
+					hit = 1;
+					break;
+				}
+			}
+		}
+	}
+	(void) close(fd);
+	return (hit);
+}
 #endif
 
 /*
  * Returns 1 and fills [*lop, *hip) with this thread's stack, or 0 if the
- * bounds could not be determined.  Never allocates on the cached path.
+ * bounds could not be determined.  Never allocates (see the re-entrancy note
+ * above); the cached path is a plain TLS read.
  */
 static int
 umem_stack_bounds(uintptr_t *lop, uintptr_t *hip)
@@ -199,27 +272,23 @@ umem_stack_bounds(uintptr_t *lop, uintptr_t *hip)
 	    __attribute__((tls_model("initial-exec")));
 	static __thread uintptr_t cached_hi
 	    __attribute__((tls_model("initial-exec")));
-	static __thread int in_lookup
-	    __attribute__((tls_model("initial-exec")));
-	pthread_attr_t attr;
-	void *base;
-	size_t size;
 
 	if (cached_hi == 0) {
-		if (in_lookup)
-			return (0);	/* re-entered through malloc */
-		in_lookup = 1;
-		if (pthread_getattr_np(pthread_self(), &attr) == 0) {
-			if (pthread_attr_getstack(&attr, &base, &size) == 0 &&
-			    size > 0) {
-				cached_lo = (uintptr_t)base;
-				cached_hi = cached_lo + size;
-			}
-			(void) pthread_attr_destroy(&attr);
-		}
-		in_lookup = 0;
-		if (cached_hi == 0)
+		/*
+		 * The SP of THIS frame is on the stack whose mapping we want.
+		 * The whole lookup is allocation-free, so no in_lookup guard is
+		 * needed any more -- but a missed parse just leaves cached_hi 0
+		 * and we report "unknown" (the heuristic then applies), the same
+		 * as before.
+		 */
+		uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+		uintptr_t lo = 0, hi = 0;
+		if (umem_maps_find_sp(sp, &lo, &hi) && hi > lo) {
+			cached_lo = lo;
+			cached_hi = hi;
+		} else {
 			return (0);
+		}
 	}
 	*lop = cached_lo;
 	*hip = cached_hi;
