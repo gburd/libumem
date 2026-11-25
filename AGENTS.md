@@ -32,7 +32,7 @@ stress run, and benchmark runs on EC2 through `scripts/ec2/`. The build/test
 runbook is in `.github/skills/building_and_testing.md`.
 
 ```sh
-export AWS_PROFILE=woof             # verify first; see §2
+export AWS_PROFILE=ants             # verify first; see §2
 ./scripts/ec2/launch.sh    intel-lo@<worker>
 ./scripts/ec2/bootstrap.sh intel-lo@<worker>
 ./scripts/ec2/job.sh       intel-lo@<worker> start <job> <timeout_s> '<cmd>'
@@ -46,15 +46,18 @@ only (`EC2_OS=debian`).
 ## 2. The AWS profile rotates. Verify, never assume
 
 This burner account has rotated repeatedly (`numa` → `beef` → `bene` →
-`hotdog` → `kiwi` → `woof`), and profile names have been reused across
-accounts (373102893032 -> 170848442262 -> kiwi/830118047484 ->
-kiwi/505435643998 -> woof/176550300114 as of 2026-11-05; the old account and
-its boxes are torn down on rotation).  Several stale profile names now resolve
-to an unrelated instance role (399683337502, `EpoxyChronicleInstanceRole`)
-with no EC2 permissions -- an identity that answers `sts` is not proof of the
-burner; check the account number.  `chef` (842964983020) is a short-lived
-burner, not the libumem one.  The account also holds the maintainer's OTHER
-projects' instances
+`hotdog` → `kiwi` → `woof` → `ants`), and profile names have been reused
+across accounts (373102893032 -> 170848442262 -> kiwi/830118047484 ->
+kiwi/505435643998 -> woof/176550300114 -> ants/927725693124 as of 2026-11-25;
+the old account and its boxes are torn down on rotation).  `ants` is SHARED:
+it also runs the maintainer's other projects (pgthr, zstd, davros, the
+solnix OpenIndiana host, and more, in us-east-1/us-east-2/us-west-2).  Stale
+profile names (`hotdog`, `kiwi`, `default`, ...) now resolve to whatever
+instance role the HOST runs under (on werk: 492372116879, `werk-instance`),
+which has no business launching libumem boxes -- an identity that answers
+`sts` is not proof of the burner; check the account number.  `breakfast`
+(847218423625) runs the noxu bench boxes and is not the libumem burner.  The
+account also holds the maintainer's OTHER projects' instances
 (libdb, libxtc, undo, dbsql, noxu-bench m8id/m8gd metal, an unnamed c7i,
 freebsd audits), tagged `Owner=gburd` but NOT `Project=libumem`. That is
 expected, not a stranger's: still, only ever touch `Project=libumem` **and**
@@ -232,7 +235,20 @@ This is ONE working tree with several agents editing it at once. Therefore:
 - If you break the shared build, fix it or report it immediately. Everyone
   else is blocked until you do.
 
-## 10. Current state: v4.3.2
+## 10. Current state: v4.3.3
+
+v4.3.3 (2026-11-25) fixes `malloc()` returning NULL/ENOMEM (and illumos
+`memalign()` segfaulting) when threads race a process's first allocations
+under `LD_PRELOAD`: every thread except the initializer now calls
+`umem_init()` instead of a once-only flag letting losers fall into the
+bootstrap tables.  It also fixes the FreeBSD 14 build (`malloc_usable_size`
+const) and two OpenIndiana test build breaks.  Regression
+`test/stress/test_first_alloc_race.sh`.  The interposer's `malloc()`/`free()`
+are UMEM_HOT_ALIGN now: an unrelated edit earlier in malloc_interpose.c moved
+`free()` and cost 0.22 -> 0.14 on the SPARC ratio probe.  Still owed from
+the OpenIndiana x86 report, which needs that host (mig1/ants project):
+`test_first_alloc_small_stack` failing for the libc control too, the x86
+illumos interpose-ratio bar, and `test_findleaks_rseq` not SKIPping.
 
 v4.3.2 (2026-11-05) fixes `UMEM_DEBUG=audit`/`default` aborting or
 deadlocking under `LD_PRELOAD` on Linux: `getpcstack()` must never allocate
