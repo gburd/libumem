@@ -36,6 +36,7 @@ noinst_PROGRAMS = umem_test umem_test2 umem_test3 \
 		  test/stress/stress_main \
 		  test/stress/stress_concurrency_oracle \
 		  test/stress/repro_calloc_interpose_race \
+		  test/stress/repro_first_alloc_race \
 		  test/unit/test_overflow_contracts \
 		  test/unit/test_free_null \
 		  test/unit/test_aligned_contracts \
@@ -764,6 +765,12 @@ test_stress_repro_calloc_interpose_race_SOURCES = \
 	test/stress/repro_calloc_interpose_race.c
 test_stress_repro_calloc_interpose_race_LDFLAGS = -pthread
 
+# Threads racing the process's first allocations must all be served by umem.
+# Same LD_PRELOAD-only contract as above; driven by test_first_alloc_race.sh.
+test_stress_repro_first_alloc_race_SOURCES = \
+	test/stress/repro_first_alloc_race.c
+test_stress_repro_first_alloc_race_LDFLAGS = -pthread
+
 # P1.7(a,b) regression: checked arithmetic in the arena and bootstrap paths.
 test_unit_test_overflow_contracts_SOURCES = test/unit/test_overflow_contracts.c
 test_unit_test_overflow_contracts_LDADD = libumem.la
@@ -977,6 +984,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/unit/test_hook_contracts \
 	test/unit/test_inspect_contracts \
 	test/stress/interpose_regress.sh \
+	test/stress/test_first_alloc_race.sh \
 	test/stress/oracle_control.sh \
 	test/stress/test_norseq.sh \
 	test/unit/test_lifecycle_churn \
@@ -1374,6 +1382,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/stress/test_norseq.sh \
 	test/bench/check_budget.sh \
 	test/stress/interpose_regress.sh \
+	test/stress/test_first_alloc_race.sh \
 	test/security/test_no_path_exec.sh \
 	test/security/test_secure_env_gate.sh \
 	test/security/test_writer_nofollow.sh \
