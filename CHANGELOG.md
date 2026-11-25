@@ -27,6 +27,11 @@ no public header or exported-symbol change.
   before any thread existed.  Found and bisected (b73692f + 2d4a7ff) by the
   solnix alloc1 work.  Regression: `test/stress/test_first_alloc_race.sh`
   (illumos SPARC: 4/5 to 5/5 runs failed per arm before, 0/5 after).
+  The READY fast path keeps its old shape: the init check stays inline,
+  and `malloc()`/`free()` now start on 64-byte boundaries like the
+  `umem_*` entry points, so later edits to the file cannot move them.
+  `repro_interpose_free_ratio`, 12 alternating reps against v4.3.2: arm
+  0.498-0.531 vs 0.500-0.523, x86 0.550-0.585 vs 0.554-0.590.
 - **FreeBSD 14:** the library did not compile (`malloc_usable_size()` must
   take a `const void *` to match `<malloc_np.h>`), and
   `test/limits/probe_threads.c` conflicted with FreeBSD's `sched_getcpu()`.
