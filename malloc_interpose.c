@@ -687,8 +687,14 @@ interpose_try_ready(void)
 
 /*
  * malloc - main interposition point
+ *
+ * malloc() and free() carry UMEM_HOT_ALIGN for the reason umem_alloc() and
+ * umem_free() do (umem_impl.h): without it their placement follows whatever
+ * precedes them in this file.  On UltraSPARC T-series an unrelated 128-byte
+ * growth of umem_interpose_init() moved them and took repro_interpose_free_ratio
+ * from 0.22 to 0.14; pinned, both trees measured 0.30-0.34.
  */
-void *
+UMEM_HOT_ALIGN void *
 malloc(size_t size)
 {
 	/*
@@ -721,7 +727,7 @@ malloc(size_t size)
 /*
  * free - must handle mixed allocation sources
  */
-void
+UMEM_HOT_ALIGN void
 free(void *ptr)
 {
 	if (ptr == NULL)
