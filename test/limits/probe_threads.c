@@ -32,14 +32,21 @@
 #include <stdatomic.h>
 
 /*
- * sched_getcpu() is a Linux/glibc extension and is not prototyped in
- * <sched.h> on illumos.  This probe only uses it to record the max CPU id
- * seen (a diagnostic), so -1 where unavailable is harmless.  Mirrors the
- * library's own guard in pal/pal_posix.c (SPARC/illumos hardware run).
+ * sched_getcpu() is not available everywhere: illumos does not prototype it,
+ * and FreeBSD 13+ declares it in <sched.h>, so a local definition under the
+ * same name either is needed or conflicts.  Use our own name.  This probe
+ * only records the max CPU id seen (a diagnostic), so -1 where unavailable
+ * is harmless.  Mirrors the library's own guard in pal/pal_posix.c.
  */
-#if !defined(__linux__)
-static int sched_getcpu(void) { return (-1); }
+static int
+probe_getcpu(void)
+{
+#if defined(__linux__)
+	return (sched_getcpu());
+#else
+	return (-1);
 #endif
+}
 
 static pthread_barrier_t ready, go;
 static size_t per_thread = 1000;
@@ -54,7 +61,7 @@ worker(void *arg)
 	(void)arg;
 	void *ptrs[64];
 	size_t i, k;
-	int cpu = sched_getcpu();
+	int cpu = probe_getcpu();
 	int cur;
 
 	do {

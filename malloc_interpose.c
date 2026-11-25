@@ -806,13 +806,23 @@ free(void *ptr)
  * application's malloc_usable_size() reaches libc, which reads libc malloc
  * metadata that does not exist in front of umem/bootstrap/static storage.
  * Uses the same classifier as free()/realloc().
+ *
+ * FreeBSD's <malloc_np.h> (reached through <stdlib.h>) declares it taking a
+ * const pointer, glibc's <malloc.h> a plain one; a definition that disagrees
+ * with the platform prototype does not compile, so match whichever applies.
  */
+#ifdef __FreeBSD__
+#define	UMEM_MUS_CONST	const
+#else
+#define	UMEM_MUS_CONST
+#endif
 size_t
-malloc_usable_size(void *ptr)
+malloc_usable_size(UMEM_MUS_CONST void *ptr)
 {
 	size_t size = 0;
 
-	if (interpose_owner_of(ptr, &size) == OWN_UNKNOWN)
+	/* The classifier only reads; the cast just drops FreeBSD's const. */
+	if (interpose_owner_of((void *)(uintptr_t)ptr, &size) == OWN_UNKNOWN)
 		return (0);
 	return (size);
 }

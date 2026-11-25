@@ -75,7 +75,7 @@ for arm in "" --align; do
 			rc=$?
 			if [[ $rc -ne 0 ]]; then
 				bad=$((bad + 1))
-				[[ -n $first ]] || first="rc=$rc: $(grep -m1 -E 'NULL|FAIL' "$OUT")"
+				[[ -n $first ]] || first="rc=$rc: $(grep -E 'NULL|FAIL' "$OUT" | head -1)"
 			fi
 		done
 		printf '  %-8s threads=%-2d %d/%d failed%s\n' "${arm:---malloc}" \

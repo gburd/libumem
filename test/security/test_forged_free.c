@@ -71,9 +71,20 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#ifdef HAVE_MALLOC_H
 #include <malloc.h>
+#endif
 
 #include "umem_impl.h"
+
+/*
+ * Linked against libumem_malloc, which defines malloc_usable_size().  Not
+ * every libc declares it (OpenIndiana's headers do not), so declare it where
+ * the platform has not; FreeBSD's prototype takes a const pointer.
+ */
+#ifndef HAVE_MALLOC_USABLE_SIZE
+extern size_t malloc_usable_size(void *);
+#endif
 
 static int failures;
 
