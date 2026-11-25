@@ -666,13 +666,14 @@ umem_interpose_init(void)
  * stale read in a thread that is NOT the initializer can only say "not me",
  * which is right; the initializer always sees its own store.  After a failed
  * init (UMEM_READY_INIT_FAILED) nothing calls umem_init() again, as before.
+ *
+ * NB: callers test interpose_state == INTERPOSE_BOOTSTRAP inline before
+ * calling.  Out of line, an unconditional call cost every READY malloc() a
+ * call/return: the per-call ratio probe fell from 0.51 to 0.48 on Graviton3.
  */
 static void
 interpose_try_ready(void)
 {
-	if (atomic_load(&interpose_state) != INTERPOSE_BOOTSTRAP)
-		return;
-
 	if (umem_ready == UMEM_READY_STARTUP ||
 	    (umem_ready == UMEM_READY_INITING &&
 	    umem_init_thr != thr_self()))
@@ -710,7 +711,9 @@ malloc(size_t size)
 	 * by umem_alloc(), but the interposer never calls umem_alloc() while
 	 * in BOOTSTRAP state, so nothing else would start it.
 	 */
-	interpose_try_ready();
+	if (__builtin_expect(atomic_load(&interpose_state) ==
+	    INTERPOSE_BOOTSTRAP, 0))
+		interpose_try_ready();
 
 	/* Fast path: fully initialized */
 	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
@@ -985,7 +988,9 @@ memalign(size_t align, size_t size)
 	}
 
 	/* As in malloc(): start umem rather than serve from a bootstrap table. */
-	interpose_try_ready();
+	if (__builtin_expect(atomic_load(&interpose_state) ==
+	    INTERPOSE_BOOTSTRAP, 0))
+		interpose_try_ready();
 
 	/* Fast path: fully initialized */
 	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
