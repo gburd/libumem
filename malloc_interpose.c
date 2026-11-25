@@ -58,10 +58,13 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-/* External: umem readiness state and functions */
-#define	UMEM_READY_STARTUP	1
-#define	UMEM_READY		3
+/*
+ * External: umem readiness state and functions.  The UMEM_READY_* values
+ * come from umem_impl.h (included above); this file used to keep its own
+ * copies of two of them.
+ */
 extern int umem_ready;
+extern thread_t umem_init_thr;
 extern int umem_init(void);
 extern void *umem_malloc(size_t);
 extern void umem_malloc_free(void *);
@@ -638,6 +641,51 @@ umem_interpose_init(void)
 }
 
 /*
+ * interpose_try_ready -- in BOOTSTRAP state, get umem initialized if this
+ * thread may, and move to READY once it is.  Called by every allocation entry
+ * point that would otherwise serve the request from a bootstrap table.
+ *
+ * WHO CALLS umem_init().  Every thread except the one already running it.
+ * umem_init() elects one initializer under umem_init_lock and makes every
+ * other caller wait on umem_init_cv until it finishes, so a thread that
+ * arrives mid-init waits there (microseconds) and then takes the umem path.
+ * The initializer's OWN recursive allocations (pthread_create, dlsym and the
+ * like inside umem_init()) must not call it again; they fall through to the
+ * bootstrap allocator, which is what the bootstrap tables exist for.
+ *
+ * A once-only flag used to stand in for that election.  A thread that lost
+ * the race skipped umem_init() and served every allocation from
+ * bootstrap_malloc() -- one mmap and one slot of the 256-entry registry each
+ * -- until init finished; memalign() never called umem_init() at all and used
+ * the 512-entry libc-pointer table instead.  With two threads making a
+ * process's first allocations together (routine on illumos, where nothing
+ * allocates before main()) the tables filled within a few hundred calls and
+ * the allocation failed with ENOMEM.
+ *
+ * umem_init_thr is written under umem_init_lock and read unlocked here.  A
+ * stale read in a thread that is NOT the initializer can only say "not me",
+ * which is right; the initializer always sees its own store.  After a failed
+ * init (UMEM_READY_INIT_FAILED) nothing calls umem_init() again, as before.
+ */
+static void
+interpose_try_ready(void)
+{
+	if (atomic_load(&interpose_state) != INTERPOSE_BOOTSTRAP)
+		return;
+
+	if (umem_ready == UMEM_READY_STARTUP ||
+	    (umem_ready == UMEM_READY_INITING &&
+	    umem_init_thr != thr_self()))
+		(void) umem_init();
+
+	if (umem_ready == UMEM_READY) {
+		int expected = INTERPOSE_BOOTSTRAP;
+		atomic_compare_exchange_strong(&interpose_state,
+		    &expected, INTERPOSE_READY);
+	}
+}
+
+/*
  * malloc - main interposition point
  */
 void *
@@ -652,32 +700,11 @@ malloc(size_t size)
 		return (static_alloc(size));
 
 	/*
-	 * Trigger umem initialization if startup is complete but
-	 * umem_init() hasn't been called yet. This breaks the
-	 * chicken-and-egg problem: umem_init() is normally called
-	 * by umem_alloc(), but malloc interposition never calls
-	 * umem_alloc() while in BOOTSTRAP state, so umem never
-	 * initializes.
-	 *
-	 * During umem_init(), recursive malloc() calls will still
-	 * use bootstrap_malloc() because interpose_state remains
-	 * BOOTSTRAP until init completes.
+	 * umem is initialized lazily from here: umem_init() is normally called
+	 * by umem_alloc(), but the interposer never calls umem_alloc() while
+	 * in BOOTSTRAP state, so nothing else would start it.
 	 */
-	if (atomic_load(&interpose_state) == INTERPOSE_BOOTSTRAP) {
-		static volatile int umem_init_attempted = 0;
-
-		if (umem_ready == UMEM_READY_STARTUP &&
-		    !umem_init_attempted) {
-			umem_init_attempted = 1;
-			(void) umem_init();
-		}
-
-		if (umem_ready == UMEM_READY) {
-			int expected = INTERPOSE_BOOTSTRAP;
-			atomic_compare_exchange_strong(&interpose_state,
-			    &expected, INTERPOSE_READY);
-		}
-	}
+	interpose_try_ready();
 
 	/* Fast path: fully initialized */
 	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
@@ -940,6 +967,9 @@ memalign(size_t align, size_t size)
 		errno = EINVAL;
 		return (NULL);
 	}
+
+	/* As in malloc(): start umem rather than serve from a bootstrap table. */
+	interpose_try_ready();
 
 	/* Fast path: fully initialized */
 	if (__builtin_expect(atomic_load(&interpose_state) == INTERPOSE_READY, 1)) {
