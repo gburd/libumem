@@ -5,6 +5,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [4.3.3] - 2026-11-25
+
+Bug-fix release.  ABI unchanged (soname libumem.so.2, libumem_malloc.so.1);
+no public header or exported-symbol change.
+
+### Fixed
+
+- **`malloc()` returned NULL (ENOMEM) when threads raced a process's first
+  allocations under `LD_PRELOAD=libumem_malloc.so`.**  In BOOTSTRAP state the
+  interposer ran `umem_init()` only for the first thread to arrive, behind a
+  once-only flag.  A thread that allocated while that init was still running
+  skipped `umem_init()` and served every request from `bootstrap_malloc()`,
+  one mmap and one slot of the 256-entry bootstrap registry each, until the
+  registry filled.  `memalign()` and the aligned entry points never started
+  umem at all before READY; on illumos they fell into libc's own memalign,
+  which segfaulted.  Every thread except the initializer now calls
+  `umem_init()`, which already makes later callers wait for the first one.
+  It shows on illumos, where nothing allocates before `main()`; on glibc
+  Linux the C runtime mallocs on the main thread first, so umem was ready
+  before any thread existed.  Found and bisected (b73692f + 2d4a7ff) by the
+  solnix alloc1 work.  Regression: `test/stress/test_first_alloc_race.sh`
+  (illumos SPARC: 4/5 to 5/5 runs failed per arm before, 0/5 after).
+- **FreeBSD 14:** the library did not compile (`malloc_usable_size()` must
+  take a `const void *` to match `<malloc_np.h>`), and
+  `test/limits/probe_threads.c` conflicted with FreeBSD's `sched_getcpu()`.
+- **OpenIndiana:** `test_forged_free` and `test_forged_span_gap` did not
+  compile because the headers there do not declare `malloc_usable_size()`.
+
+### Known
+
+- `test/stress/test_norseq.sh` still fails on the RISC-V host, unchanged.
+- On OpenIndiana x86 (reported, not re-run here): the interposer's per-call
+  cost ratio is 0.435 against the 0.48 bar in `interpose_regress.sh`,
+  `test_first_alloc_small_stack.sh` fails even for the libc control, and
+  `test_findleaks_rseq.sh` does not SKIP although rseq does not exist there.
+
 ## [4.3.2] - 2026-11-05
 
 Bug-fix release.  ABI unchanged (soname libumem.so.2, libumem_malloc.so.1);
