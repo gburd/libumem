@@ -1001,6 +1001,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_cpu_hint_spread \
 	test/integration/test_sbrk_foreign_brk \
+	test/integration/test_span_table_coalesce \
 	test/integration/test_ptc_footprint \
 	test/integration/test_ptc_freeonly_trim \
 	test/integration/test_ptc_mag_primed \
@@ -1202,6 +1203,13 @@ noinst_PROGRAMS += test/integration/test_sbrk_foreign_brk
 test_integration_test_sbrk_foreign_brk_SOURCES = test/integration/test_sbrk_foreign_brk.c
 test_integration_test_sbrk_foreign_brk_LDADD = libumem.la
 test_integration_test_sbrk_foreign_brk_LDFLAGS = -pthread
+
+# P7.4's span table holds one entry per run of adjacent heap spans, and stays
+# exact when a span inside a run is returned.
+noinst_PROGRAMS += test/integration/test_span_table_coalesce
+test_integration_test_span_table_coalesce_SOURCES = test/integration/test_span_table_coalesce.c
+test_integration_test_span_table_coalesce_LDADD = libumem.la
+test_integration_test_span_table_coalesce_CPPFLAGS = -I$(srcdir)
 
 # P6.3: per-thread cache struct <= 12 KB, and thread exit hands each bin back
 # in ONE lock-taking call (not one cc_lock per object).  The hand-off count is

@@ -289,6 +289,22 @@ vmem_free_t *vmem_heap_free;
  * hull bounds are intentionally NOT narrowed on removal (they only widen), so
  * the cheap first test never rejects a live pointer.
  *
+ * ONE ENTRY PER RUN.  Address-adjacent spans share one entry: insert joins
+ * a new span to the entries that end at its base and start at its end, and
+ * remove shrinks or splits the run that held the span.  The table therefore
+ * covers exactly the union of the spans, as before, but in a few entries:
+ * the sbrk heap is one contiguous run however many spans it grows by (a gcc
+ * compile created 12,086 of them).  The mmap heap gains little: its spans
+ * are seldom adjacent (a compile's misses spread over many 4 MiB regions),
+ * and the gaps must stay out of the table, because a span given back with
+ * MADV_DONTNEED stays mapped read-write.  Joining cannot admit foreign
+ * memory: there is no gap between adjacent spans.  The only new acceptance
+ * is a range that straddles two adjacent spans, which is umem's own memory
+ * on both sides (a header forged inside a live allocation is already in a
+ * span).  It matters for speed because the per-thread cache in malloc.c
+ * holds one entry, and a free() that misses it pays the search: 14.3 M of a
+ * compile's 21 M frees did when every sbrk span was an entry.
+ *
  * CAPACITY.  A fixed array.  For the common case -- allocations up to
  * UMEM_MAXBUF served from slabs -- the heap coalesces into few large spans.
  * OVERSIZE allocations are the pathological case: each imports its own span
@@ -331,53 +347,114 @@ vmem_span_write_end(void)
 	    memory_order_release);
 }
 
+/* Index of the first entry whose base is above addr; n if there is none. */
+static uint32_t
+vmem_span_table_upper(uintptr_t addr, uint32_t n)
+{
+	uint32_t i;
+
+	for (i = 0; i < n; i++)
+		if (vmem_span_tab[i].vse_base > addr)
+			break;
+	return (i);
+}
+
+/*
+ * Add heap span [base, end).  It joins the entry that ends at base and the
+ * one that starts at end, if any, so the table stays one entry per run of
+ * address-adjacent spans.  Spans never overlap, so only those two can touch.
+ */
 static void
 vmem_span_table_insert(uintptr_t base, uintptr_t end)
 {
 	uint32_t n = atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed);
-	uint32_t i, j;
+	uint32_t i = vmem_span_table_upper(base, n);
+	uint32_t j;
+	int joinprev = (i > 0 && vmem_span_tab[i - 1].vse_end == base);
+	int joinnext = (i < n && vmem_span_tab[i].vse_base == end);
 
-	if (n >= VMEM_SPAN_MAX) {
+	if (!joinprev && !joinnext && n >= VMEM_SPAN_MAX) {
 		atomic_store_explicit(&vmem_span_saturated, 1,
 		    memory_order_release);
 		return;
 	}
-	/* insertion sort by base: keep the array sorted for binary search */
-	for (i = 0; i < n; i++)
-		if (vmem_span_tab[i].vse_base > base)
-			break;
 	vmem_span_write_begin();
-	for (j = n; j > i; j--)
-		vmem_span_tab[j] = vmem_span_tab[j - 1];
-	vmem_span_tab[i].vse_base = base;
-	vmem_span_tab[i].vse_end = end;
-	atomic_store_explicit(&vmem_span_cnt, n + 1, memory_order_relaxed);
-	vmem_span_write_end();
-}
-
-static void
-vmem_span_table_remove(uintptr_t base, uintptr_t end)
-{
-	uint32_t n = atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed);
-	uint32_t i;
-
-	for (i = 0; i < n; i++)
-		if (vmem_span_tab[i].vse_base == base &&
-		    vmem_span_tab[i].vse_end == end)
-			break;
-	if (i == n)
-		return;			/* untracked (e.g. lost to overflow) */
-	vmem_span_write_begin();
-	for (; i + 1 < n; i++)
-		vmem_span_tab[i] = vmem_span_tab[i + 1];
-	atomic_store_explicit(&vmem_span_cnt, n - 1, memory_order_relaxed);
+	if (joinprev && joinnext) {
+		vmem_span_tab[i - 1].vse_end = vmem_span_tab[i].vse_end;
+		for (j = i; j + 1 < n; j++)
+			vmem_span_tab[j] = vmem_span_tab[j + 1];
+		atomic_store_explicit(&vmem_span_cnt, n - 1,
+		    memory_order_relaxed);
+	} else if (joinprev) {
+		vmem_span_tab[i - 1].vse_end = end;
+	} else if (joinnext) {
+		vmem_span_tab[i].vse_base = base;
+	} else {
+		for (j = n; j > i; j--)
+			vmem_span_tab[j] = vmem_span_tab[j - 1];
+		vmem_span_tab[i].vse_base = base;
+		vmem_span_tab[i].vse_end = end;
+		atomic_store_explicit(&vmem_span_cnt, n + 1,
+		    memory_order_relaxed);
+	}
 	vmem_span_write_end();
 }
 
 /*
+ * Drop heap span [base, end) from the run that holds it: the run shrinks
+ * from either end, disappears, or splits in two around the hole.
+ */
+static void
+vmem_span_table_remove(uintptr_t base, uintptr_t end)
+{
+	uint32_t n = atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed);
+	uint32_t i = vmem_span_table_upper(base, n);
+	uint32_t j;
+	vmem_span_ent_t *e;
+
+	if (i == 0 || end > vmem_span_tab[i - 1].vse_end)
+		return;			/* untracked (e.g. lost to overflow) */
+	e = &vmem_span_tab[i - 1];
+	if (e->vse_base != base && e->vse_end != end && n >= VMEM_SPAN_MAX) {
+		/* No slot for the split; the hull fallback is still safe. */
+		atomic_store_explicit(&vmem_span_saturated, 1,
+		    memory_order_release);
+		return;
+	}
+	vmem_span_write_begin();
+	if (e->vse_base == base && e->vse_end == end) {
+		for (j = i - 1; j + 1 < n; j++)
+			vmem_span_tab[j] = vmem_span_tab[j + 1];
+		atomic_store_explicit(&vmem_span_cnt, n - 1,
+		    memory_order_relaxed);
+	} else if (e->vse_base == base) {
+		e->vse_base = end;
+	} else if (e->vse_end == end) {
+		e->vse_end = base;
+	} else {
+		for (j = n; j > i; j--)
+			vmem_span_tab[j] = vmem_span_tab[j - 1];
+		vmem_span_tab[i].vse_base = end;
+		vmem_span_tab[i].vse_end = e->vse_end;
+		e->vse_end = base;
+		atomic_store_explicit(&vmem_span_cnt, n + 1,
+		    memory_order_relaxed);
+	}
+	vmem_span_write_end();
+}
+
+/* Live entries in the span table (runs of adjacent heap spans). */
+uint32_t
+vmem_span_entries(void)
+{
+	return (atomic_load_explicit(&vmem_span_cnt, memory_order_relaxed));
+}
+
+/*
  * Lock-free reader (malloc.c's umem_may_own()).  If [addr, addr+len) is
- * inside one heap span, return 1 and (if base_out/end_out are non-NULL) that
- * span's [base,end) so the caller can cache it for its next free (P7.4:
+ * inside one run of heap spans, return 1 and (if base_out/end_out are
+ * non-NULL) that run's [base,end) so the caller can cache it for its next
+ * free (P7.4:
  * consecutive frees hit the same span, so a per-thread cache of the last hit
  * turns the common heap free back into two compares, no search).  Returns 0
  * if not contained; a saturated table returns 1 with the hull bounds (fall

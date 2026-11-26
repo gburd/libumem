@@ -82,6 +82,8 @@ extern int vmem_span_owns(uintptr_t addr, size_t len);
 extern int vmem_span_find(uintptr_t addr, size_t len, uintptr_t *base_out,
     uintptr_t *end_out);
 extern uint32_t vmem_span_gen(void);
+/* Entries in that table: one per run of address-adjacent spans. */
+extern uint32_t vmem_span_entries(void);
 extern vmem_alloc_t *vmem_heap_alloc;
 extern vmem_free_t *vmem_heap_free;
 
