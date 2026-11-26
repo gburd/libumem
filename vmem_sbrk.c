@@ -284,10 +284,12 @@ vmem_sbrk_alloc(vmem_t *src, size_t size, int vmflags)
 
 	/*
 	 * Growing the heap failed. The vmem_alloc() above called umem_reap().
+	 *
+	 * Leave errno as brk() (or the arena) set it: the caller gets NULL,
+	 * and errno is the only reason it gets (P5.5, as vmem_mmap.c).
 	 */
 	ASSERT((vmflags & VM_NOSLEEP) == VM_NOSLEEP);
 
-	errno = old_errno;
 	return (NULL);
 }
 

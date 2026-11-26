@@ -1025,6 +1025,7 @@ TESTS += test/security/test_no_path_exec.sh \
 	test/security/test_secure_env_gate.sh \
 	test/security/test_writer_nofollow.sh \
 	test/security/test_errno_preserved \
+	test/security/test_errno_preserved_sbrk.sh \
 	test/security/test_free_errno \
 	test/security/test_forged_free \
 	test/security/test_forged_span_gap \
@@ -1376,6 +1377,7 @@ dist_noinst_SCRIPTS = test/debugger/test_inspect_e2e.sh \
 	test/security/test_audit_reentry.sh \
 	test/security/test_reap_interval_zero.sh \
 	test/security/test_errlog_signal.sh \
+	test/security/test_errno_preserved_sbrk.sh \
 	test/integration/test_heap_ceiling_512.sh \
 	test/integration/test_reclaim_returns.sh \
 	test/integration/test_fork_child_reclaim.sh \

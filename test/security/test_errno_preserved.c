@@ -158,7 +158,7 @@ main(void)
 		rc = 1;
 	} else {
 		(void) printf("PASS: errno is ENOMEM after a forced "
-		    "vmem_mmap_alloc failure\n");
+		    "backend failure\n");
 	}
 
 	/*
