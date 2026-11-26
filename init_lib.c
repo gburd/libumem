@@ -68,20 +68,27 @@ vmem_heap_init(void)
 	vmem_backend = VMEM_BACKEND_MMAP;
 	(void) vmem_sbrk_arena(NULL, NULL);
 #else
-# if defined(sun)
+	/*
+	 * __sun, not sun: configure builds with -std=c17, and a strict -std
+	 * drops the bare `sun` macro (as it drops `linux`; see
+	 * umem_get_max_ncpus below), so the illumos branch was dead and its
+	 * libmapmalloc check never ran.  Every platform, illumos included,
+	 * has defaulted to the mmap heap since.  That default is kept here on
+	 * purpose rather than restored to sbrk: the mmap heap gives freed spans
+	 * back to the kernel and keeps the per-thread cache structs out of the
+	 * user slabs' address range, which the sbrk heap does not.
+	 * UMEM_OPTIONS=backend=sbrk selects the illumos libumem default.
+	 */
+# if defined(__sun)
 	void *handle = dlopen("libmapmalloc.so.1", RTLD_NOLOAD);
 
 	if (handle != NULL) {
 		log_message("sbrk backend disabled\n");
 		vmem_backend = VMEM_BACKEND_MMAP;
 	}
-# else
-	if (vmem_backend == 0) {
-		/* prefer mmap, as sbrk() seems to have problems wither working
-		 * with other allocators or has some Solaris specific assumptions. */
-		vmem_backend = VMEM_BACKEND_MMAP;
-	}
 # endif
+	if (vmem_backend == 0)
+		vmem_backend = VMEM_BACKEND_MMAP;
 
 	if ((vmem_backend & VMEM_BACKEND_MMAP) != 0) {
 		vmem_backend = VMEM_BACKEND_MMAP;

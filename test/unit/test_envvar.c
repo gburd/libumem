@@ -263,6 +263,35 @@ static MunitResult test_options_backend_sbrk(const MunitParameter params[], void
     return MUNIT_OK;
 }
 
+/*
+ * Test: the heap backend's platform detection.  With no backend option every
+ * platform gets mmap.  On illumos, init_lib.c must also refuse the sbrk heap
+ * when libmapmalloc is loaded, as illumos libumem does; that check tested
+ * the bare `sun` macro, which -std=c17 does not define, so it never ran and
+ * backend=sbrk was honoured beside libmapmalloc.
+ */
+static MunitResult test_options_backend_default(const MunitParameter params[], void* data) {
+    (void)params; (void)data;
+    munit_assert_int(test_with_env2("UMEM_OPTIONS", "", "backend", "0x2"), ==, 0);
+#if defined(__sun)
+    /* The helper inherits environ, so LD_PRELOAD loads libmapmalloc there. */
+    munit_assert_int(test_with_env("LD_PRELOAD", "libmapmalloc.so.1",
+        "alive", NULL), ==, 0);
+    char *saved = getenv("LD_PRELOAD");
+    saved = saved != NULL ? strdup(saved) : NULL;
+    munit_assert_int(setenv("LD_PRELOAD", "libmapmalloc.so.1", 1), ==, 0);
+    int rc = test_with_env2("UMEM_OPTIONS", "backend=sbrk", "backend", "0x2");
+    if (saved != NULL) {
+        (void) setenv("LD_PRELOAD", saved, 1);
+        free(saved);
+    } else {
+        (void) unsetenv("LD_PRELOAD");
+    }
+    munit_assert_int(rc, ==, 0);
+#endif
+    return MUNIT_OK;
+}
+
 /* Test: UMEM_OPTIONS=allocator=best -> VM_BESTFIT */
 static MunitResult test_options_allocator_best(const MunitParameter params[], void* data) {
     (void)params; (void)data;
@@ -408,6 +437,7 @@ static MunitTest envvar_tests[] = {
 #ifndef UMEM_STANDALONE
     { "/options_backend_mmap", test_options_backend_mmap, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/options_backend_sbrk", test_options_backend_sbrk, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+    { "/options_backend_default", test_options_backend_default, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/options_allocator_best", test_options_allocator_best, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/options_allocator_first", test_options_allocator_first, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
     { "/options_allocator_next", test_options_allocator_next, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
