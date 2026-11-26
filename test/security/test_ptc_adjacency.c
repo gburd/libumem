@@ -36,6 +36,11 @@
  * Post-fix umem_ptc_t comes from umem_ptc_cache (UMC_INTERNAL, its own slabs
  * in umem_internal_arena), so the nearest user object is in a different
  * span.  Reads umem_ptc.h for sizeof and thread_ptc; nothing else internal.
+ *
+ * The mmap heap is pinned (UMEM_OPTIONS=backend=mmap).  Separate spans are
+ * address-separate only there: the sbrk heap is one contiguous run, so an
+ * internal slab can sit directly below a user slab, and this test then
+ * fails whatever cache the struct comes from.
  */
 
 #include "umem_base.h"
@@ -78,6 +83,7 @@ main(void)
 	int t, adjacent = 0, checked = 0;
 	umem_cache_t *cp;
 
+	(void) setenv("UMEM_OPTIONS", "backend=mmap", 1);
 	if (!umem_ptc_enabled) {
 		printf("SKIP: PTC disabled\n");
 		return (77);
