@@ -1000,6 +1000,7 @@ TESTS += test/unit/test_overflow_contracts \
 	test/integration/test_reclaim_returns.sh \
 	test/integration/test_fork_child_reclaim.sh \
 	test/integration/test_cpu_hint_spread \
+	test/integration/test_sbrk_foreign_brk \
 	test/integration/test_ptc_footprint \
 	test/integration/test_ptc_freeonly_trim \
 	test/integration/test_ptc_mag_primed \
@@ -1193,6 +1194,13 @@ noinst_PROGRAMS += test/integration/test_cpu_hint_spread
 test_integration_test_cpu_hint_spread_SOURCES = test/integration/test_cpu_hint_spread.c
 test_integration_test_cpu_hint_spread_LDADD = libumem.la
 test_integration_test_cpu_hint_spread_CPPFLAGS = -I$(srcdir)
+
+# The sbrk heap must grow under libc's break lock on illumos (another
+# thread's sbrk() used to land inside umem's heap growth).
+noinst_PROGRAMS += test/integration/test_sbrk_foreign_brk
+test_integration_test_sbrk_foreign_brk_SOURCES = test/integration/test_sbrk_foreign_brk.c
+test_integration_test_sbrk_foreign_brk_LDADD = libumem.la
+test_integration_test_sbrk_foreign_brk_LDFLAGS = -pthread
 
 # P6.3: per-thread cache struct <= 12 KB, and thread exit hands each bin back
 # in ONE lock-taking call (not one cc_lock per object).  The hand-off count is

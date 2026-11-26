@@ -100,9 +100,26 @@ static sbrk_fail_t sbrk_fails = {
  * Order: sbrk_lock before sbrk_faillock.  No path holds sbrk_faillock
  * while acquiring sbrk_lock (vmem_sbrk_alloc() calls tryfail, which
  * releases sbrk_faillock, before calling _sbrk_grow_aligned()).
+ *
+ * On illumos neither the copy of _sbrk_grow_aligned() below nor sbrk_lock
+ * is used: libc exports _sbrk_grow_aligned() (SUNWprivate_1.1), which holds
+ * libc's __sbrk_lock, the lock sbrk() and brk() take, and illumos libumem
+ * calls it for that reason.  The copy serializes only against itself, so an
+ * sbrk() in another thread (libc's own malloc grows the break that way) can
+ * land between its sbrk(0) and its brk(): both callers then own the same
+ * pages, and a later sbrk(-n) leaves heap memory above the break.  Other
+ * libcs export nothing equivalent, so elsewhere the sbrk backend still
+ * assumes nothing else in the process moves the break.
  */
 static mutex_t sbrk_faillock = DEFAULTMUTEX;
+#if !defined(__sun)
 static mutex_t sbrk_lock = DEFAULTMUTEX;
+#endif
+
+#if defined(__sun)
+extern void *_sbrk_grow_aligned(size_t min_size, size_t low_align,
+    size_t high_align, size_t *actual_size);
+#else
 
  /*
  * _sbrk_grow_aligned() aligns the old break to a low_align boundry,
@@ -160,6 +177,7 @@ _sbrk_grow_aligned(size_t min_size, size_t low_align, size_t high_align,
 		*actual_size = (new_brk - ret_brk);
 	return ((void *)ret_brk);
 }
+#endif	/* __sun */
 
 /*
  * Try to extend src with [pos, pos + size).
@@ -227,9 +245,6 @@ vmem_sbrk_tryfail(vmem_t *src, size_t size, int vmflags)
 static void *
 vmem_sbrk_alloc(vmem_t *src, size_t size, int vmflags)
 {
-	extern void *_sbrk_grow_aligned(size_t min_size, size_t low_align,
-	    size_t high_align, size_t *actual_size);
-
 	void *ret;
 	void *buf;
 	size_t buf_size;
@@ -290,7 +305,9 @@ vmem_sbrk_alloc(vmem_t *src, size_t size, int vmflags)
 void
 vmem_sbrk_lockup(void)
 {
+#if !defined(__sun)
 	(void) mutex_lock(&sbrk_lock);
+#endif
 	(void) mutex_lock(&sbrk_faillock);
 }
 
@@ -298,7 +315,9 @@ void
 vmem_sbrk_release(void)
 {
 	(void) mutex_unlock(&sbrk_faillock);
+#if !defined(__sun)
 	(void) mutex_unlock(&sbrk_lock);
+#endif
 }
 
 vmem_t *
