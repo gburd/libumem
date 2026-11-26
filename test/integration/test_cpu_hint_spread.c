@@ -46,6 +46,12 @@
  *   SKIP: fewer than 2 allowed CPUs, fewer than 2 distinct caches to map
  *         to, pinning refused (restricted cpuset), or no affinity API.
  *
+ * ILLUMOS.  The same test, pinning with processor_bind() and reading the CPU
+ * with getcpuid(); the allowed set is every CPU p_online() reports online.
+ * Before the illumos hint used getcpuid(), it fell back to thr_self() >> 12,
+ * and illumos thread ids are small integers, so the hint was 0 for every
+ * thread: all 8 workers on cache_cpu[0], 7 caches empty, every run.
+ *
  * WHY PIN.  Unpinned, the rseq cpu_id follows where the scheduler actually
  * runs a thread, and an oversubscribed 8-vCPU box (make -j8, +64 busy
  * loops) packed 8 threads onto 3 CPUs: the old "half of min(N, ncpus)" bar
@@ -65,6 +71,16 @@
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
+#if defined(__sun)
+#include <sys/types.h>
+#include <sys/processor.h>
+#include <sys/procset.h>
+#include <errno.h>
+#endif
+
+#if defined(__linux__) || defined(__sun)
+#define	HAVE_PIN	1
+#endif
 
 #define	OBJ	10240
 #define	NTHREADS 8
@@ -73,24 +89,86 @@
 struct wk {
 	int	cpu;	/* CPU this worker pins itself to */
 	int	ran_on;	/* sched_getcpu() after pinning, for the log */
-	int	err;	/* pthread_setaffinity_np() result */
+	int	err;	/* pin_self() result */
 };
+
+#if defined(__linux__)
+#define	MAXCPU	CPU_SETSIZE
+
+/* Pin the calling thread to one CPU; 0 or an errno. */
+static int
+pin_self(int cpu)
+{
+	cpu_set_t one;
+
+	CPU_ZERO(&one);
+	CPU_SET(cpu, &one);
+	return (pthread_setaffinity_np(pthread_self(), sizeof (one), &one));
+}
+
+static int
+current_cpu(void)
+{
+	return (sched_getcpu());
+}
+
+/* Fill allowed[] with the CPUs this process may run on; the count, or -1. */
+static int
+allowed_cpus(int *allowed)
+{
+	cpu_set_t set;
+	int i, n = 0;
+
+	if (sched_getaffinity(0, sizeof (set), &set) != 0)
+		return (-1);
+	for (i = 0; i < CPU_SETSIZE; i++)
+		if (CPU_ISSET(i, &set))
+			allowed[n++] = i;
+	return (n);
+}
+#elif defined(__sun)
+#define	MAXCPU	1024
+
+static int
+pin_self(int cpu)
+{
+	if (processor_bind(P_LWPID, P_MYID, cpu, NULL) != 0)
+		return (errno);
+	return (0);
+}
+
+static int
+current_cpu(void)
+{
+	return ((int)getcpuid());
+}
+
+static int
+allowed_cpus(int *allowed)
+{
+	long max = sysconf(_SC_CPUID_MAX);
+	int i, n = 0;
+
+	if (max < 0)
+		return (-1);
+	for (i = 0; i <= max && i < MAXCPU; i++)
+		if (p_online(i, P_STATUS) == P_ONLINE)
+			allowed[n++] = i;
+	return (n);
+}
+#endif
 
 static void *
 worker(void *arg)
 {
 	struct wk *w = arg;
 	int i;
-#if defined(__linux__)
-	cpu_set_t one;
-
+#ifdef HAVE_PIN
 	/* Pin BEFORE the first allocation: that is when the hint is cached. */
-	CPU_ZERO(&one);
-	CPU_SET(w->cpu, &one);
-	w->err = pthread_setaffinity_np(pthread_self(), sizeof (one), &one);
+	w->err = pin_self(w->cpu);
 	if (w->err != 0)
 		return (NULL);
-	w->ran_on = sched_getcpu();
+	w->ran_on = current_cpu();
 #endif
 	for (i = 0; i < NOPS; i++) {
 		void *p = umem_alloc(OBJ, UMEM_DEFAULT);
@@ -104,19 +182,17 @@ worker(void *arg)
 int
 main(void)
 {
-#if !defined(__linux__)
-	/* ponytail: Linux only; add processor_bind() when a non-Linux rig runs this. */
-	printf("SKIP: no pthread_setaffinity_np on this platform\n");
+#ifndef HAVE_PIN
+	printf("SKIP: no thread-affinity API on this platform\n");
 	return (77);
 #else
 	pthread_t th[NTHREADS];
 	struct wk w[NTHREADS];
-	int allowed[CPU_SETSIZE];
-	cpu_set_t set;
+	int allowed[MAXCPU];
 	umem_cache_t *cp;
 	unsigned c, ncaches, used = 0, empty = 0, expect = 0;
-	unsigned char want[CPU_SETSIZE] = { 0 };
-	int i, n = 0;
+	unsigned char want[MAXCPU] = { 0 };
+	int i, n;
 	void *warm;
 
 	warm = umem_alloc(OBJ, UMEM_DEFAULT);
@@ -125,13 +201,11 @@ main(void)
 	cp = umem_alloc_table[(OBJ - 1) >> UMEM_ALIGN_SHIFT];
 	ncaches = cp->cache_cpu_mask + 1;
 
-	if (sched_getaffinity(0, sizeof (set), &set) != 0) {
-		perror("SKIP: sched_getaffinity");
+	n = allowed_cpus(allowed);
+	if (n < 0) {
+		perror("SKIP: cannot read the allowed CPU set");
 		return (77);
 	}
-	for (i = 0; i < CPU_SETSIZE; i++)
-		if (CPU_ISSET(i, &set))
-			allowed[n++] = i;
 	for (i = 0; i < NTHREADS; i++) {
 		w[i].cpu = allowed[i % (n > 0 ? n : 1)];
 		w[i].ran_on = -1;

@@ -202,9 +202,12 @@ extern "C" {
  * is idempotent and cheap; before, the first allocation computed its hint
  * BEFORE the rseq block in _umem_cache_alloc registered, so the rseq path
  * was never consulted for the value that got cached).  Without rseq, use
- * sched_getcpu() -- a real CPU number.  Only as a last resort fall back to a
- * thread-id hash, and then hash the address bits that vary (>> 12) rather
- * than the ones that never do.
+ * sched_getcpu() -- a real CPU number -- or, on illumos, getcpuid(), libc's
+ * fast-trap equivalent.  Only as a last resort fall back to a thread-id hash,
+ * and then hash the address bits that vary (>> 12) rather than the ones that
+ * never do.  That hash is wrong for illumos, whose thr_self() is a small
+ * integer: `>> 12` made it 0 for every thread, so every thread shared
+ * cache_cpu[0] -- the collapse described above, again.
  *
  * The value is cached in TLS after the first successful read, as before.
  * A first attempt re-read the rseq cpu_id on every call to track migration
@@ -223,6 +226,8 @@ extern __thread int cached_cpu_hint;
 
 #if defined(__linux__)
 #include <sched.h>
+#elif defined(__sun)
+#include <sys/processor.h>
 #endif
 
 static inline int __attribute__((always_inline))
@@ -246,6 +251,9 @@ get_cached_cpu_hint(void)
 #endif
 #if defined(__linux__)
 		hint = sched_getcpu();
+		if (hint < 0)
+#elif defined(__sun)
+		hint = (int)getcpuid();
 		if (hint < 0)
 #endif
 		{

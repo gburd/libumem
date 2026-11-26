@@ -43,6 +43,9 @@
 #include <unistd.h>
 #endif
 #include <sched.h>
+#if defined(__sun)
+#include <sys/processor.h>
+#endif
 #if HAVE_SYS_AUXV_H
 #include <sys/auxv.h>
 #define	UMEM_PAL_HAVE_AUXV	1
@@ -123,8 +126,9 @@ umem_pal_yield(void)
 /*
  * umem_pal_cpu_hint() -- a current-CPU id for striping.  The AAL provides the
  * rseq-backed primitive where present; this POSIX fallback returns the same
- * sched_getcpu() the per-CPU layer uses, or -1 where it is unavailable.  The
- * allocator masks it, so an imprecise answer is a correctness-safe hint.
+ * sched_getcpu() (getcpuid() on illumos) the per-CPU layer uses, or -1 where
+ * neither exists.  The allocator masks it, so an imprecise answer is a
+ * correctness-safe hint.
  */
 int
 umem_pal_cpu_hint(void)
@@ -134,6 +138,8 @@ umem_pal_cpu_hint(void)
 	int cpu = sched_getcpu();
 	errno = save;
 	return (cpu);
+#elif defined(__sun)
+	return ((int)getcpuid());
 #else
 	return (-1);
 #endif
