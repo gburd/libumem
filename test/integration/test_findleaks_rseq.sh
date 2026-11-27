@@ -7,14 +7,13 @@
 # run-to-run spread of the delta; observed band -401..+828, so a bare
 # `diff > 0` on ONE pair of runs flaked -- 1 FAIL in 5 on x86).
 #
-#   1. CORRECTNESS (deterministic, single process, DEFAULT build).  The
-#      workers churn a huge volume of alloc/free (BATCH*iters*nthreads) and
-#      free EVERY buffer, then park.  The application holds nothing.  If
-#      findleaks failed to recognise cached buffers as freed it would report
-#      that whole freed pool as outstanding.  So the default build's
-#      total_buffers must stay far below the churn volume -- a hard,
-#      workload-independent bound.  This is the real invariant and does NOT
-#      depend on the noisy cross-process delta.
+#   1. SANITY (single process, DEFAULT build).  The workers churn a large
+#      volume of alloc/free (BATCH*iters*nthreads), free EVERY buffer, then
+#      park; the application holds nothing.  total_buffers must stay below
+#      what the per-thread caches can hold plus some residue (see
+#      TOTAL_MAX).  This is a bound, not the subtraction's proof: freed
+#      buffers mostly return to slabs, so a findleaks that stopped
+#      subtracting magazines would add only what they hold.
 #
 #   2. RSEQ ATTRIBUTION (robust floor, median of N runs per arm).  Compares
 #      cached_skipped between the default build (rseq subtraction IN) and the
@@ -35,10 +34,24 @@ RUNS="${FINDLEAKS_RUNS:-5}"
 # over RUNS runs of a real signal (hundreds to ~1200 rseq-resident buffers)
 # clears this comfortably; pure noise centred near 0 does not.
 DELTA_FLOOR="${FINDLEAKS_DELTA_FLOOR:-200}"
-# The freed churn pool is BATCH(1024)*iters*nthreads objects; a correct
-# findleaks reports at most a few hundred internal/uncached buffers.  10000 is
-# far below the churn and far above any plausible internal residual.
-TOTAL_MAX="${FINDLEAKS_TOTAL_MAX:-10000}"
+# A correct findleaks still counts what it cannot enumerate: the per-thread
+# caches (ptc_unaccounted), which for this test's 64 B class hold up to a
+# 128-slot bin plus two 255-round magazines per thread, 638 objects, and the
+# program runs one worker per online CPU.  So the bound grows with the
+# thread count: 638 per thread plus 2000 of residue, never below the 10000
+# it used to be.  A fixed 10000 failed every run on a 36-vCPU OpenIndiana
+# host (18479 outstanding, within the 23 k its caches can hold) and on a
+# 48-vCPU Linux host (29 k, within 30.6 k).
+#
+# NB: this bound is a sanity check, and it does not catch a findleaks that
+# stops subtracting.  Most of the freed churn goes back to slabs, which
+# findleaks never counts; only magazine-resident buffers would be added, and
+# on a 2-CPU sparcv9 host that took the count from 1030 to 2050, under
+# either bound (a measurement, with the subtraction compiled out).  The
+# subtraction is asserted where its effect is exact: test_inspect_e2e.sh
+# checks total_buffers == 12 for 12 planted leaks, and check 2 below
+# isolates the rseq part.
+PTC_PER_THREAD=$((128 + 2 * 255))
 
 [ -x "$DEF" ] || { echo "harness: $DEF missing"; exit 99; }
 [ -x "$NEG" ] || { echo "harness: $NEG missing"; exit 99; }
@@ -69,13 +82,17 @@ done
 
 echo "default (last)  : $last_def"
 echo "norseqsub (last): $last_neg"
+nthr=$(field "$last_def" threads)
+bound=$(( ${nthr:-1} * PTC_PER_THREAD + 2000 ))
+[ "$bound" -lt 10000 ] && bound=10000
+TOTAL_MAX="${FINDLEAKS_TOTAL_MAX:-$bound}"
 
-# --- Check 1: correctness (deterministic bound on the default build) ---
+# --- Check 1: sanity bound on the default build ---
 def_total_med=$(printf '%s' "$def_totals" | grep -v '^$' | median)
-echo "check1 correctness: default total_buffers median=$def_total_med (max $TOTAL_MAX)"
+echo "check1 sanity: default total_buffers median=$def_total_med (max $TOTAL_MAX, ${nthr:-?} threads)"
 if [ "$def_total_med" -gt "$TOTAL_MAX" ] 2>/dev/null; then
 	echo "RESULT: FAIL (findleaks reports $def_total_med outstanding after a"
-	echo "  free-everything churn -- it is NOT subtracting cached buffers)"
+	echo "  free-everything churn, more than the per-thread caches can hold)"
 	exit 1
 fi
 
@@ -99,8 +116,8 @@ if [ "$def_skip_med" -eq "$neg_skip_med" ] 2>/dev/null && [ "$diff" -eq 0 ]; the
 	exit 77
 fi
 # Small or negative median: rseq is serving too little to clear the floor,
-# but correctness (check 1) held.  Report SKIP, not FAIL: a below-floor delta
+# but the check 1 bound held.  Report SKIP, not FAIL: a below-floor delta
 # is the noisy regime the floor exists to exclude, not a findleaks defect.
 echo "RESULT: SKIP (rseq attribution median $diff below the $DELTA_FLOOR floor --"
-echo "  too little rseq residency to attribute robustly this box; correctness held)"
+echo "  too little rseq residency to attribute robustly this box; check 1 held)"
 exit 77

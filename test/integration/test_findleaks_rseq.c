@@ -57,12 +57,13 @@
  * bare diff>0 once in five on x86).  rseq residency depends on CPU migration
  * and cannot be pinned deterministically here, so the driver (B) takes the
  * MEDIAN of N runs per arm and requires it above a floor well over the noise,
- * as a BOUND not an equality.  Separately, the DETERMINISTIC correctness
- * invariant is single-process: after the workers free EVERY buffer, the
- * default build's total_buffers (outstanding count) must stay far below the
- * churn volume -- if findleaks failed to subtract cached buffers it would
- * report the whole freed pool as outstanding.  That check does not depend on
- * the noisy delta at all, and is the real thing O9 protects.
+ * as a BOUND not an equality.  Separately, single-process: after the
+ * workers free EVERY buffer, the default build's total_buffers (outstanding
+ * count) must stay below what the per-thread caches can hold (the driver
+ * scales the bound with the thread count this program prints).  That is a
+ * sanity bound and not proof of the subtraction: freed buffers mostly return
+ * to slabs, so a findleaks that subtracted nothing adds only the magazine
+ * residents (measured on 2-CPU sparcv9: 1030 -> 2050).
  *
  * If rseq is unavailable/disabled (no UMEM_RSEQ_AVAILABLE, non-x86/arm, or
  * the kernel refused registration) there is nothing to test: the program
@@ -126,8 +127,7 @@ worker(void *arg)
 /*
  * Read BOTH findleaks fields in one report: cached_skipped (buffers the
  * cache walk subtracted) and total_buffers (outstanding, i.e. reported as
- * still-live/leaked).  total_buffers is the DETERMINISTIC single-process
- * correctness oracle -- see main().
+ * still-live/leaked).  The driver bounds total_buffers; see main().
  */
 static void
 findleaks_counts(long *cached_skipped, long *total_buffers)
@@ -195,11 +195,11 @@ main(int argc, char **argv)
 	}
 
 #ifdef UMEM_FINDLEAKS_NO_RSEQ_SUBTRACT
-	printf("cached_skipped=%ld total_buffers=%ld arm=norseqsub\n",
-	    skipped, total);
+	printf("cached_skipped=%ld total_buffers=%ld threads=%d arm=norseqsub\n",
+	    skipped, total, g_nthreads);
 #else
-	printf("cached_skipped=%ld total_buffers=%ld arm=default\n",
-	    skipped, total);
+	printf("cached_skipped=%ld total_buffers=%ld threads=%d arm=default\n",
+	    skipped, total, g_nthreads);
 #endif
 	return (0);
 }
