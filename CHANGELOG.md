@@ -49,6 +49,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   test's shim did not supply: every arm SKIPped on SPARC, and it fits the
   SEGVs reported in every arm on OpenIndiana x86.  Linux-calibrated depth
   caps no longer apply to other platforms.
+- **`test_findleaks_rseq` failed on hosts with many CPUs.**  Its fixed bound
+  of 10000 outstanding buffers was below what the per-thread caches, which
+  findleaks cannot enumerate, hold with one worker per CPU (18479 on 36
+  vCPUs, 29293 on 48).  The bound now scales with the thread count.
 
 ### Performance
 
