@@ -56,9 +56,17 @@
  */
 #include <pthread.h>
 #include <limits.h>		/* PTHREAD_STACK_MIN (illumos puts it here) */
-/* illumos spells glibc's pthread_getattr_np as pthread_attr_get_np. */
+/*
+ * illumos spells glibc's pthread_getattr_np as pthread_attr_get_np, and it
+ * fills an attr the caller has already initialized (glibc's initializes
+ * it).  On an uninitialized one it reads the attr's pointer from stack
+ * garbage: EINVAL when that is NULL (every arm here SKIPped on SPARC), and
+ * a store through it otherwise, which fits the SEGVs reported on
+ * OpenIndiana x86, libc control included.
+ */
 #if !defined(__GLIBC__) && (defined(__sun) || defined(__illumos__))
-#define pthread_getattr_np pthread_attr_get_np
+#define	pthread_getattr_np(t, a)	\
+	(pthread_attr_init(a) != 0 ? -1 : pthread_attr_get_np((t), (a)))
 #endif
 #include <stdint.h>
 #include <stdio.h>

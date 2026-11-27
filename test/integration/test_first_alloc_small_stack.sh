@@ -42,12 +42,21 @@ ARGS=(api);    run "umem_alloc API, bad UMEM_OPTIONS item" \
 	UMEM_OPTIONS=first_alloc_small_stack_bogus_item
 ARGS=(malloc 4096); run "glibc malloc, 4 KiB budget (control)" X_=1
 # Per-arch enforced depth cap (green now, red if first-alloc depth grows).
-if [[ $(uname -m) == aarch64 ]]; then
+# The caps were calibrated on Linux (glibc) x86_64 and arm64; libc frames
+# differ elsewhere (UltraSPARC illumos peaks at 5968 B), so other platforms
+# do not check one.
+case "$(uname -s)/$(uname -m)" in
+Linux/aarch64)
 	ARGS=(api cap:3800); run "umem_alloc first-alloc depth <= 3800 B (arm64)" X_=1
 	ARGS=(api 4096);     run "umem_alloc API, 4 KiB budget survival (arm64)" X_=1
-else
+	;;
+Linux/x86_64)
 	ARGS=(api cap:5400); run "umem_alloc first-alloc depth <= 5400 B (x86_64)" X_=1
-fi
+	;;
+*)
+	echo "SKIP: first-alloc depth cap (none calibrated for $(uname -s)/$(uname -m))"
+	;;
+esac
 [[ $rc -eq 0 ]] && echo "PASS: first allocation on a small stack" \
 	|| echo "FAIL: first allocation on a small stack"
 exit $rc
