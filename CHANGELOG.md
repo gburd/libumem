@@ -5,6 +5,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **illumos: every thread used one per-CPU cache.**  The CPU hint fell back
+  to `thr_self() >> 12`, and illumos thread ids are small integers, so the
+  hint was 0 for every thread and every magazine-layer operation (sizes
+  above the per-thread cache, and its misses) serialised on
+  `cache_cpu[0]`'s lock: the P8.2 collapse again, on illumos only.  The hint
+  is now `getcpuid()` there.  OpenIndiana (c5.9xlarge): eight threads
+  mallocing and freeing 10240-byte batches go from 0.7 to 21-24 Mops/s
+  (illumos libumem: 0.4).  It costs xmalloc-test, where one thread frees
+  what another allocated, 16-19% at 64 B and 12% at mixed sizes: with every
+  thread on one cache, producer and consumer had shared a magazine pair.  No
+  cheaper hint keeps the gain without that cost (measured).
+  `test_cpu_hint_spread` now runs on illumos.
+- **The sbrk heap raced other users of the break on illumos.**  It grew the
+  break with a private copy of libc's `_sbrk_grow_aligned()` under its own
+  lock, so another thread's `sbrk()` (libc's malloc grows the break that
+  way) could land between its `sbrk(0)` and `brk()`, and both owned the same
+  pages.  On illumos it now calls libc's locked `_sbrk_grow_aligned()`, as
+  illumos libumem does.  Reachable only with `UMEM_OPTIONS=backend=sbrk`.
+  Regression `test_sbrk_foreign_brk` (illumos; 20/20 runs overlapped
+  before).  Elsewhere the sbrk backend still assumes nothing else moves the
+  break.
+- **A failed sbrk-heap allocation returned NULL with errno unchanged.**
+  `vmem_sbrk_alloc()` kept the pre-P5.5 pattern `vmem_mmap_alloc()` had
+  lost; it now restores errno only on success.  Regression
+  `test_errno_preserved_sbrk.sh` (Linux and illumos).
+- **illumos: the libmapmalloc check never compiled.**  `init_lib.c` tested
+  the bare `sun` macro, which `-std=c17` does not define.  With `__sun`,
+  `UMEM_OPTIONS=backend=sbrk` is refused when libmapmalloc is loaded, as in
+  illumos libumem.  The default heap stays mmap.
+
+### Performance
+
+- **free()'s exact heap-ownership check (P7.4) keeps one span-table entry
+  per run of address-adjacent spans**, instead of one per span.  The sbrk
+  heap is one run however often it grows, so its per-thread span cache stops
+  missing: on an OpenIndiana gcc compile the misses fall from 14.3 M to
+  1.1 M of 21 M frees, and under `backend=sbrk` glibc bench-malloc-thread
+  gains 41-50% and larson 12-89%.  The table still accepts exactly the union
+  of the spans.  The default mmap heap moves by at most 2.3% (noise): its
+  spans are separate mappings, and the gaps between them must stay out.
+  Regression `test_span_table_coalesce`.
+
 ### Documented
 
 - **The heap is mmap by default on every platform, illumos included**
