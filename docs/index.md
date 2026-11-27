@@ -111,7 +111,7 @@ gcc myapp.c -lumem -o myapp
 
 - [Architecture decision records]({{ '/adr/' | relative_url }}) -- GC removed,
   rseq default-on, remote-free declined, involution encoding declined,
-  sparsemap removed.
+  sparsemap removed, mmap heap by default.
 
 ## Source and license
 

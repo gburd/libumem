@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documented
+
+- **The heap is mmap by default on every platform, illumos included**
+  (maintainer decision, 2026-11-27; `docs/adr/0006-mmap-heap-default.md`).
+  `UMEM_OPTIONS=backend=sbrk` selects the sbrk heap, illumos libumem's
+  default.  `umem_alloc(3MALLOC)`, inherited from Solaris, said sbrk was the
+  default and the fallback for an unsupported `backend=` value; both are
+  mmap, and the page now says so.
+
 ## [4.3.3] - 2026-11-25
 
 Bug-fix release.  ABI unchanged (soname libumem.so.2, libumem_malloc.so.1);

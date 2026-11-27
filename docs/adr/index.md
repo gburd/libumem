@@ -16,3 +16,4 @@ the context, the decision, and the alternatives not taken.
 - [ADR-0003: Message-passing remote-free declined]({{ '/adr/0003-remote-free-declined/' | relative_url }})
 - [ADR-0004: Involution freelist encoding declined]({{ '/adr/0004-involution-encoding-declined/' | relative_url }})
 - [ADR-0005: Vendored sparsemap removed]({{ '/adr/0005-sparsemap-removed/' | relative_url }})
+- [ADR-0006: mmap heap by default]({{ '/adr/0006-mmap-heap-default/' | relative_url }})
