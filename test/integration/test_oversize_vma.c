@@ -35,6 +35,12 @@
  * completely as the remap did.  It is asserted loosely (freed half's RSS
  * gone within 25 %), because RSS accounting has page-cluster granularity
  * and the point of this test is the VMA count.
+ *
+ * The default arm also reads the freed spans back through their stale
+ * pointers: a span below the guard is discarded, so it must not still hold
+ * its old bytes.  illumos's MADV_DONTNEED drops RSS but keeps the data (it only
+ * syncs), which left every freed span readable as it was; the discard is
+ * MADV_PURGE there (pal_mem.h).
  */
 
 #include "umem.h"
@@ -69,12 +75,26 @@ touch(void *p)
 		((char *)p)[o] = 1;
 }
 
+/* Pages of a freed span that still read the value touch() wrote. */
+static long
+stale_pages(const void *p)
+{
+	const volatile char *c = p;
+	size_t o;
+	long kept = 0;
+
+	for (o = 0; o < OBJ; o += 4096)
+		kept += (c[o] == 1);
+	return (kept);
+}
+
 int
 main(int argc, char **argv)
 {
 	static void *held[NOBJ];
+	static void *gone[NOBJ / 2];	/* stale pointers to the freed half */
 	int expect_guard = (argc > 1 && strcmp(argv[1], "guard") == 0);
-	long vma0, vma_full, vma_half, rss_full, rss_half;
+	long vma0, vma_full, vma_half, rss_full, rss_half, kept = 0;
 	int i, freed = 0;
 
 	for (i = 0; i < NOBJ; i++) {
@@ -90,6 +110,7 @@ main(int argc, char **argv)
 	rss_full = rss_kb();
 
 	for (i = 0; i < NOBJ; i += 2) {
+		gone[freed] = held[i];
 		umem_free(held[i], OBJ);
 		held[i] = NULL;
 		freed++;
@@ -161,7 +182,27 @@ main(int argc, char **argv)
 		    vma_half - vma_full, freed);
 		return (1);
 	}
+
+	/*
+	 * The freed spans' contents are gone.  Nothing has allocated since the
+	 * frees, so every one is still free and still mapped read-write (the
+	 * guard is not in play below 16 MiB).  Asserted where the decommit
+	 * discards (Linux, illumos); FreeBSD's MADV_DONTNEED and MADV_FREE do
+	 * not promise to, so there the count is only reported.
+	 */
+	for (i = 0; i < freed; i++)
+		kept += stale_pages(gone[i]);
+	printf("  freed spans read back: %ld of %ld pages still hold their "
+	    "old data\n", kept, (long)freed * (OBJ / 4096));
+#if !defined(__linux__) && !defined(__sun)
+	kept = 0;
+#endif
+	if (kept != 0) {
+		printf("RESULT: FAIL (freed spans below the guard were not "
+		    "discarded: a stale pointer still reads their contents)\n");
+		return (1);
+	}
 	printf("RESULT: PASS (%ld new VMAs from %d oversize frees; RSS "
-	    "returned)\n", vma_half - vma_full, freed);
+	    "returned; freed spans discarded)\n", vma_half - vma_full, freed);
 	return (0);
 }
