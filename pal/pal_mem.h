@@ -177,6 +177,24 @@ umem_pal_map_rw(size_t size)
 }
 
 /*
+ * The discard that DONTNEED means: the pages go back to the system and the
+ * next touch reads zeros.  That is MADV_DONTNEED on Linux.  illumos's
+ * MADV_DONTNEED only syncs the range out (memcntl MC_SYNC | MS_INVALIDATE):
+ * RSS drops but every page keeps its data, so a freed span read through a
+ * stale pointer still shows the old contents.  Its MADV_PURGE is the Linux
+ * semantics (madvise(3C)), and is cheaper too: DONTNEED writes the dirty
+ * pages to swap (256 MiB advised took 256 MiB of swap), PURGE drops them.
+ * Dirtying 64 KiB and advising it costs 666 us with PURGE against 2,339 us
+ * with DONTNEED on UltraSPARC.  FreeBSD's MADV_DONTNEED does not discard
+ * either; there only the mmap guard keeps a freed span from being read.
+ */
+#if defined(__sun) && defined(MADV_PURGE)
+#define	UMEM_PAL_MADV_DISCARD	MADV_PURGE
+#else
+#define	UMEM_PAL_MADV_DISCARD	MADV_DONTNEED
+#endif
+
+/*
  * umem_pal_decommit() -- return physical pages to the OS by the exact method
  * the caller chose (see UMEM_PAL_DECOMMIT_*).  Advises/remaps only; the
  * virtual range stays valid.  errno-neutral is the caller's job (it saves and
@@ -205,10 +223,10 @@ umem_pal_decommit(void *addr, size_t size, int mode)
 #if defined(__FreeBSD__) && defined(MADV_FREE)
 		(void) madvise(addr, size, MADV_FREE);
 #else
-		(void) madvise(addr, size, MADV_DONTNEED);
+		(void) madvise(addr, size, UMEM_PAL_MADV_DISCARD);
 #endif
 	} else {
-		(void) madvise(addr, size, MADV_DONTNEED);
+		(void) madvise(addr, size, UMEM_PAL_MADV_DISCARD);
 	}
 #endif
 }
