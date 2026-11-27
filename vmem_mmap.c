@@ -131,7 +131,9 @@ vmem_mmap_alloc(vmem_t *src, size_t size, int vmflags)
  * MADV_DONTNEED gives the kernel the pages back just as completely -- RSS
  * after either is the same, measured -- and does not touch the VMA.  What it
  * does NOT give is the fault-on-use-after-free property: a stale pointer
- * into a DONTNEED'd span reads zeros instead of dying.  That property is
+ * into a DONTNEED'd span reads zeros instead of dying.  ("DONTNEED" is
+ * umem_pal_decommit()'s discard: MADV_DONTNEED on Linux, MADV_PURGE on
+ * illumos, whose MADV_DONTNEED keeps the data.)  That property is
  * real, and worth keeping where it is cheap: a multi-megabyte oversize
  * object is exactly the kind of buffer a use-after-free is dangerous in,
  * and there can never be enough of them to matter for VMA count.  A 4 KiB

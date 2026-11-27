@@ -36,6 +36,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the bare `sun` macro, which `-std=c17` does not define.  With `__sun`,
   `UMEM_OPTIONS=backend=sbrk` is refused when libmapmalloc is loaded, as in
   illumos libumem.  The default heap stays mmap.
+- **illumos: freed heap spans stayed readable.**  Spans below `mmap_guard`
+  and idle slab pages are returned with `madvise()`, and illumos's
+  `MADV_DONTNEED` only syncs: RSS drops, but the dirty pages go to swap with
+  their data, so a stale pointer read the freed object back.  The discard is
+  `MADV_PURGE` there (madvise(3C): the Linux semantics).  It is cheaper as
+  well: a gcc compile of sqlite3.c under `LD_PRELOAD` on UltraSPARC goes from
+  297-302 s to 248-252 s.  Regression: `test_oversize_vma` reads the freed
+  spans back (34000 of 34000 pages kept their data before, 0 after).
+- **illumos: `test_first_alloc_small_stack` never read the stack bounds.**
+  illumos's `pthread_attr_get_np()` needs an initialized attr, which the
+  test's shim did not supply: every arm SKIPped on SPARC, and it fits the
+  SEGVs reported in every arm on OpenIndiana x86.  Linux-calibrated depth
+  caps no longer apply to other platforms.
 
 ### Performance
 
